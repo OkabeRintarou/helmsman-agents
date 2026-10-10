@@ -11,6 +11,9 @@ defmodule Helmsman do
       Workspaces.Membership,
       Actors,
       Actors.Actor,
+      Invitations,
+      Invitations.Invitation,
+      Members,
       Policy,
       Events,
       Bootstrap

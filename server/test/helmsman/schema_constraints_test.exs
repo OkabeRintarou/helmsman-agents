@@ -80,6 +80,48 @@ defmodule Helmsman.SchemaConstraintsTest do
     end
   end
 
+  describe "invitations" do
+    defp invitation(workspace_id, user, attrs) do
+      Map.merge(
+        %{
+          workspace_id: workspace_id,
+          role: "member",
+          token_hash: :crypto.strong_rand_bytes(32),
+          invited_by_id: user.id,
+          expires_at: DateTime.utc_now(:second)
+        },
+        attrs
+      )
+    end
+
+    test "rejects an invalid role", %{user: user, workspace_id: ws} do
+      assert rejected("invitations", invitation(ws, user, %{role: "guest"})) ==
+               "invitations_role_check"
+    end
+
+    test "cannot be both accepted and revoked", %{user: user, other: other, workspace_id: ws} do
+      now = DateTime.utc_now(:second)
+
+      row =
+        invitation(ws, user, %{
+          accepted_at: now,
+          accepted_by_id: other.id,
+          revoked_at: now,
+          revoked_by_id: user.id
+        })
+
+      assert rejected("invitations", row) == "invitations_accepted_or_revoked_check"
+    end
+
+    test "token hashes are unique", %{user: user, workspace_id: ws} do
+      hash = :crypto.strong_rand_bytes(32)
+      insert!("invitations", invitation(ws, user, %{token_hash: hash}))
+
+      assert rejected("invitations", invitation(ws, user, %{token_hash: hash})) ==
+               "invitations_token_hash_index"
+    end
+  end
+
   describe "actors" do
     test "an agent needs an owner", %{workspace_id: ws} do
       assert rejected("actors", actor(ws, %{kind: "agent", name: "bot"})) ==

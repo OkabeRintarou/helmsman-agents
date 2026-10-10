@@ -1,8 +1,8 @@
 defmodule HelmsmanWeb.WorkspaceShellTest do
   @moduledoc """
   The shell on real workspace pages (`/w/:slug`): workspaces come from
-  `Helmsman.Workspaces.list_for_user/1` and membership changes (DR-8) are handled
-  for the real scope.
+  `Helmsman.Workspaces.list_for_user/1` and membership changes (DR-8) are
+  triggered through `Helmsman.Members` rather than hand-built messages.
   """
   use HelmsmanWeb.ConnCase, async: true
 
@@ -10,7 +10,7 @@ defmodule HelmsmanWeb.WorkspaceShellTest do
   import Helmsman.AccountsFixtures
   import Helmsman.WorkspacesFixtures
 
-  alias HelmsmanWeb.Shell
+  alias Helmsman.Members
 
   setup %{conn: conn} do
     user = user_fixture(%{display_name: "Alice"})
@@ -18,10 +18,18 @@ defmodule HelmsmanWeb.WorkspaceShellTest do
 
     other = user_fixture()
     beta = workspace_fixture(other, %{slug: "beta", name: "Beta"})
-    member_fixture(beta, user, :member)
+    beta_m = member_fixture(beta, user, :member)
     hidden = workspace_fixture(other, %{slug: "hidden", name: "Hidden"})
 
-    %{conn: log_in_user(conn, user), user: user, acme: acme, beta: beta, hidden: hidden}
+    %{
+      conn: log_in_user(conn, user),
+      user: user,
+      other: other,
+      acme: acme,
+      beta: beta,
+      beta_m: beta_m,
+      hidden: hidden
+    }
   end
 
   test "renders the shell with the workspace and the user", %{conn: conn} do
@@ -56,42 +64,57 @@ defmodule HelmsmanWeb.WorkspaceShellTest do
     refute_redirected(view)
   end
 
-  describe "membership changes (DR-8) with the real scope" do
+  describe "membership changes (DR-8) from Helmsman.Members" do
+    setup %{user: user, beta: beta, other: other} do
+      gamma = workspace_fixture(other, %{slug: "gamma", name: "Gamma"})
+      gamma_m = member_fixture(gamma, user, :member)
+
+      %{
+        beta_owner: workspace_scope_fixture(other, beta),
+        gamma_m: gamma_m,
+        gamma_owner: workspace_scope_fixture(other, gamma)
+      }
+    end
+
     test "removal from the current workspace leaves with a flash",
-         %{conn: conn, user: user, beta: beta} do
+         %{conn: conn, beta_m: beta_m, beta_owner: owner} do
       {:ok, view, _html} = live(conn, ~p"/w/beta")
 
-      Phoenix.PubSub.broadcast(
-        Helmsman.PubSub,
-        Shell.topic(user.id),
-        {:membership_changed, beta.id, :removed}
-      )
+      {:ok, _} = Members.remove(owner, beta_m.id)
 
       {path, flash} = assert_redirect(view)
       assert path == "/"
       assert flash["error"] == "你已被移出 Beta"
     end
 
-    test "a role change re-mounts the current page", %{conn: conn, user: user, beta: beta} do
+    test "leaving the current workspace elsewhere leaves this page too",
+         %{conn: conn, user: user, beta: beta} do
       {:ok, view, _html} = live(conn, ~p"/w/beta")
 
-      Phoenix.PubSub.broadcast(
-        Helmsman.PubSub,
-        Shell.topic(user.id),
-        {:membership_changed, beta.id, {:role, :viewer}}
-      )
+      {:ok, _} = Members.leave(workspace_scope_fixture(user, beta))
 
-      assert_redirect(view, "/w/beta")
+      {path, _flash} = assert_redirect(view)
+      assert path == "/"
     end
 
-    test "changes in other workspaces are ignored", %{conn: conn, user: user, acme: acme} do
+    test "a role change re-mounts the current page with the new role",
+         %{conn: conn, beta_m: beta_m, beta_owner: owner} do
+      {:ok, view, _html} = live(conn, ~p"/w/beta")
+      assert has_element?(view, "#workspace-role", "member")
+
+      {:ok, _} = Members.change_role(owner, beta_m.id, :viewer)
+
+      assert_redirect(view, "/w/beta")
+      {:ok, view, _html} = live(conn, ~p"/w/beta")
+      assert has_element?(view, "#workspace-role", "viewer")
+    end
+
+    test "changes in other workspaces are ignored",
+         %{conn: conn, gamma_m: gamma_m, gamma_owner: owner} do
       {:ok, view, _html} = live(conn, ~p"/w/beta")
 
-      Phoenix.PubSub.broadcast(
-        Helmsman.PubSub,
-        Shell.topic(user.id),
-        {:membership_changed, acme.id, :removed}
-      )
+      {:ok, _} = Members.change_role(owner, gamma_m.id, :viewer)
+      {:ok, _} = Members.remove(owner, gamma_m.id)
 
       assert render(view) =~ "Beta"
       refute_redirected(view)

@@ -62,6 +62,9 @@ config :helmsman, Helmsman.Mailer, adapter: Swoosh.Adapters.Local
 # Sender of system emails; production reads HELMSMAN_MAILER_FROM.
 config :helmsman, :mailer_from, {"Helmsman", "noreply@localhost"}
 
+# How long an invitation link stays valid.
+config :helmsman, :invitation_ttl_days, 7
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",

@@ -1150,3 +1150,8 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "需要重新登录才能修改邮箱或密码。"
 msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "你被邀请加入 %{workspace}"
+msgstr ""
