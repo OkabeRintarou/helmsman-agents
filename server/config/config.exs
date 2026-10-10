@@ -27,6 +27,9 @@ config :phoenix_live_view,
   # the attribute set on all root tags. Used for Phoenix.LiveView.ColocatedCSS.
   root_tag_attribute: "phx-r"
 
+# UI copy is Chinese first (design D6): the "ui" gettext domain, default locale zh.
+config :helmsman, HelmsmanWeb.Gettext, default_locale: "zh", locales: ~w(zh en)
+
 # Configure the mailer
 #
 # By default it uses the "Local" adapter which stores the emails

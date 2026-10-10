@@ -40,5 +40,16 @@ defmodule HelmsmanWeb.Router do
       live_dashboard "/dashboard", metrics: HelmsmanWeb.Telemetry
       forward "/mailbox", Plug.Swoosh.MailboxPreview
     end
+
+    # Component showcase (spec web-components); also hosts the shell tests.
+    scope "/dev", HelmsmanWeb.Dev do
+      pipe_through :browser
+
+      live_session :dev_ui,
+        on_mount: [{HelmsmanWeb.Dev.UiLive, :demo_scope}, HelmsmanWeb.Shell] do
+        live "/ui", UiLive, :index
+        live "/ui/projects", UiLive, :projects
+      end
+    end
   end
 end

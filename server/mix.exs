@@ -12,7 +12,10 @@ defmodule Helmsman.MixProject do
       deps: deps(),
       compilers: [:boundary, :phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
-      dialyzer: [plt_local_path: "priv/plts"]
+      dialyzer: [plt_local_path: "priv/plts", plt_add_apps: [:mix]],
+      # No line numbers in POT references, so `gettext.extract --check-up-to-date`
+      # (precommit) only fails when messages change.
+      gettext: [write_reference_line_numbers: false]
     ]
   end
 
@@ -52,10 +55,10 @@ defmodule Helmsman.MixProject do
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.5", runtime: Mix.env() == :dev},
-      {:heroicons,
-       github: "tailwindlabs/heroicons",
-       tag: "v2.2.0",
-       sparse: "optimized",
+      {:lucide,
+       github: "lucide-icons/lucide",
+       tag: "1.55.0",
+       sparse: "icons",
        app: false,
        compile: false,
        depth: 1},
@@ -106,6 +109,8 @@ defmodule Helmsman.MixProject do
         "deps.unlock --check-unused",
         "format --check-formatted",
         "credo --strict",
+        "gettext.extract --check-up-to-date",
+        "helmsman.check_ui_classes",
         "test"
       ]
     ]

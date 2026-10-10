@@ -1,160 +1,438 @@
 defmodule HelmsmanWeb.Layouts do
   @moduledoc """
-  This module holds layouts and related functionality
-  used by your application.
+  Application layouts.
+
+  * `root.html.heex` — document skeleton; its inline script applies the theme,
+    sidebar state and platform before the stylesheet loads (no flash of the wrong theme).
+    It also holds `#hm-overlays`, the portal target of all modal layers (a sibling of
+    `#hm-shell`).
+  * `app/1` — workspace shell: sidebar + content surface with a page header slot.
+  * `auth/1` — centered card for unauthenticated pages (no sidebar).
   """
   use HelmsmanWeb, :html
 
-  # Embed all files in layouts/* within this module.
-  # The default root.html.heex file contains the HTML
-  # skeleton of your application, namely HTML headers
-  # and other static content.
+  alias HelmsmanWeb.CommandPalette
+
   embed_templates "layouts/*"
 
   @doc """
-  Renders your app layout.
+  Workspace shell (spec web-app-shell): sidebar with workspace switcher, search entry,
+  new-task entry, grouped navigation and user menu; a floating content surface with a
+  48px page header (`:header` slot, usually `<.page_header>`) and the page body.
 
-  This function is typically invoked from every template,
-  and it often contains your application menu, sidebar,
-  or similar.
-
-  ## Examples
-
-      <Layouts.app flash={@flash}>
-        <h1>Content</h1>
+      <Layouts.app flash={@flash} current_scope={@current_scope} shell={@shell}>
+        <:header><.page_header title="项目" /></:header>
+        ...
       </Layouts.app>
-
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
+  attr :current_scope, :map, default: nil, doc: "the current scope (user, workspace)"
+  attr :shell, :map, default: nil, doc: "shell data assigned by HelmsmanWeb.Shell"
 
-  attr :current_scope, :map,
+  attr :new_task, JS,
     default: nil,
-    doc: "the current [scope](https://phoenix.hexdocs.pm/scopes.html)"
+    doc: "JS for the 新建任务 entry (defaults to adding ?panel=new to the current URL)"
 
+  slot :header
   slot :inner_block, required: true
 
   def app(assigns) do
+    shell = assigns.shell || %{nav: [], workspaces: [], recent_tasks: [], path: nil}
+    workspace = assigns.current_scope && Map.get(assigns.current_scope, :workspace)
+    user = assigns.current_scope && Map.get(assigns.current_scope, :user)
+
+    assigns =
+      assign(assigns,
+        shell: shell,
+        workspace: workspace,
+        user: user,
+        new_task: assigns.new_task || JS.patch(new_task_path(shell))
+      )
+
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <img src={~p"/images/logo.svg"} width="36" />
-          <span class="text-sm font-semibold">v{Application.spec(:phoenix, :vsn)}</span>
-        </a>
+    <div id="hm-shell" phx-hook="Hotkeys" class="flex h-dvh overflow-hidden bg-shell text-fg">
+      <a
+        href="#hm-main"
+        class="sr-only z-50 rounded-field bg-raised px-3 py-2 text-body text-fg shadow-popover focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
+      >
+        {dgettext("ui", "跳到主要内容")}
+      </a>
+      <div
+        id="hm-sidebar-backdrop"
+        class="fixed inset-0 z-30 hidden bg-scrim lg:hidden"
+        aria-hidden="true"
+        phx-click={close_drawer()}
+      />
+      <aside
+        id="hm-sidebar"
+        aria-label={dgettext("ui", "主导航")}
+        data-cancel={close_drawer()}
+        class={[
+          "hm-sidebar fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col gap-1 bg-shell px-2 py-2",
+          "motion-safe:transition-transform motion-safe:duration-150 [&.hm-drawer-open]:translate-x-0",
+          "lg:static lg:z-auto lg:w-60 lg:translate-x-0 lg:sidebar-collapsed:w-13"
+        ]}
+      >
+        <div class="flex items-center gap-1">
+          <.workspace_switcher workspace={@workspace} workspaces={@shell.workspaces} />
+          <.icon_button
+            icon="lucide-panel-left"
+            label={dgettext("ui", "折叠侧栏")}
+            size="sm"
+            class="hidden lg:inline-flex lg:sidebar-collapsed:hidden"
+            phx-click={JS.dispatch("hm:toggle-sidebar")}
+          />
+        </div>
+        <.sidebar_action
+          id="hm-search-entry"
+          icon="lucide-search"
+          label={dgettext("ui", "搜索")}
+          phx-click={CommandPalette.open()}
+        >
+          <:kbd>
+            <.kbd mod>K</.kbd>
+          </:kbd>
+        </.sidebar_action>
+        <.sidebar_action
+          id="hm-new-task"
+          icon="lucide-square-pen"
+          label={dgettext("ui", "新建任务")}
+          data-hm-new-task
+          phx-click={@new_task |> close_drawer()}
+        >
+          <:kbd>
+            <.kbd>C</.kbd>
+          </:kbd>
+        </.sidebar_action>
+        <nav
+          aria-label={dgettext("ui", "页面")}
+          class="mt-2 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto"
+        >
+          <div :for={group <- @shell.nav} id={"hm-nav-#{group.id}"} class="flex flex-col gap-px">
+            <p class="hm-nav-label px-2 pb-1 text-micro font-medium text-fg-subtle lg:sidebar-collapsed:sr-only">
+              {group.label}
+            </p>
+            <.nav_link :for={item <- group.items} item={item} />
+          </div>
+        </nav>
+        <.icon_button
+          icon="lucide-panel-left-open"
+          label={dgettext("ui", "展开侧栏")}
+          size="sm"
+          class="hidden lg:sidebar-collapsed:inline-flex"
+          phx-click={JS.dispatch("hm:toggle-sidebar")}
+        />
+        <.user_menu user={@user} />
+      </aside>
+      <div class="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
+        <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-box lg:border lg:border-border">
+          {render_slot(@header)}
+          <main id="hm-main" tabindex="-1" class="min-h-0 flex-1 overflow-y-auto focus:outline-none">
+            {render_slot(@inner_block)}
+          </main>
+          <.flash_group flash={@flash} />
+        </div>
       </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-4 items-center">
-          <li>
-            <a href="https://phoenixframework.org/" class="btn btn-ghost">Website</a>
-          </li>
-          <li>
-            <a href="https://github.com/phoenixframework/phoenix" class="btn btn-ghost">GitHub</a>
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li>
-            <a href="https://phoenix.hexdocs.pm/overview.html" class="btn btn-primary">
-              Get Started <span aria-hidden="true">&rarr;</span>
-            </a>
-          </li>
-        </ul>
-      </div>
-    </header>
+    </div>
+    <.live_component
+      module={CommandPalette}
+      id="command-palette"
+      scope={@current_scope}
+      shell={@shell}
+    />
+    """
+  end
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
+  defp new_task_path(%{uri: uri}) when is_binary(uri),
+    do: HelmsmanWeb.Url.put_params(uri, %{panel: "new"})
+
+  defp new_task_path(_shell), do: "?panel=new"
+
+  attr :workspace, :map, default: nil
+  attr :workspaces, :list, default: []
+
+  defp workspace_switcher(assigns) do
+    current = assigns.workspace && assigns.workspace.slug
+
+    items =
+      Enum.map(assigns.workspaces, fn ws ->
+        %{
+          id: "hm-ws-#{ws.slug}",
+          label: ws.name,
+          checked: ws.slug == current,
+          on_select: JS.push("hm:switch-workspace", value: %{slug: ws.slug})
+        }
+      end) ++
+        [
+          %{type: :divider},
+          %{
+            id: "hm-ws-new",
+            label: dgettext("ui", "新建工作区"),
+            icon: "lucide-plus",
+            navigate: "/workspaces/new"
+          }
+        ]
+
+    assigns = assign(assigns, :items, items)
+
+    ~H"""
+    <.dropdown
+      id="hm-workspace-switcher"
+      items={@items}
+      label={dgettext("ui", "切换工作区")}
+      class="min-w-0 flex-1"
+      trigger_class="h-8 w-full min-w-0 px-2 font-medium"
+      popover_class="w-60"
+    >
+      <:trigger>
+        <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-badge bg-brand text-micro font-semibold text-on-brand">
+          {initial(@workspace)}
+        </span>
+        <span class="truncate text-body lg:sidebar-collapsed:sr-only">
+          {(@workspace && @workspace.name) || "Helmsman"}
+        </span>
+        <.icon
+          name="lucide-chevrons-up-down"
+          class="ml-auto size-3.5 text-fg-subtle lg:sidebar-collapsed:hidden"
+        />
+      </:trigger>
+    </.dropdown>
+    """
+  end
+
+  defp initial(nil), do: "H"
+  defp initial(%{name: name}), do: name |> String.first() |> String.upcase()
+
+  attr :id, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+  attr :rest, :global
+  slot :kbd
+
+  defp sidebar_action(assigns) do
+    ~H"""
+    <span class="hm-tooltip-host relative flex">
+      <button
+        id={@id}
+        type="button"
+        class="flex h-8 w-full items-center gap-2 rounded-field px-2 text-body text-fg-muted hover:bg-hover hover:text-fg"
+        {@rest}
+      >
+        <.icon name={@icon} class="size-4 shrink-0" />
+        <span class="truncate lg:sidebar-collapsed:sr-only">{@label}</span>
+        <span class="ml-auto lg:sidebar-collapsed:hidden">{render_slot(@kbd)}</span>
+      </button>
+      <span role="tooltip" class={[tooltip_class(:right), "hidden lg:sidebar-collapsed:block"]}>
+        {@label}
+      </span>
+    </span>
+    """
+  end
+
+  attr :item, :map, required: true
+
+  defp nav_link(assigns) do
+    ~H"""
+    <span class="hm-tooltip-host relative flex">
+      <.link
+        navigate={@item.path}
+        aria-current={@item.current? && "page"}
+        phx-click={close_drawer()}
+        class={[
+          "flex h-8 w-full items-center gap-2 rounded-field px-2 text-body",
+          if(@item.current?,
+            do: "bg-selected font-medium text-fg",
+            else: "text-fg-muted hover:bg-hover hover:text-fg"
+          )
+        ]}
+      >
+        <.icon name={@item.icon} class="size-4 shrink-0" />
+        <span class="truncate lg:sidebar-collapsed:sr-only">{@item.label}</span>
+        <span
+          :if={@item.badge}
+          class="ml-auto text-caption text-fg-subtle lg:sidebar-collapsed:hidden"
+        >
+          {@item.badge}
+        </span>
+      </.link>
+      <span role="tooltip" class={[tooltip_class(:right), "hidden lg:sidebar-collapsed:block"]}>
+        {@item.label}
+      </span>
+    </span>
+    """
+  end
+
+  attr :user, :map, default: nil
+
+  defp user_menu(%{user: nil} = assigns), do: ~H""
+
+  defp user_menu(assigns) do
+    name = Map.get(assigns.user, :name) || Map.get(assigns.user, :email) || ""
+    theme_group = dgettext("ui", "主题")
+
+    items = [
+      %{
+        id: "hm-account",
+        label: dgettext("ui", "账号设置"),
+        icon: "lucide-user-cog",
+        navigate: "/users/settings"
+      },
+      %{type: :divider},
+      theme_item("system", dgettext("ui", "跟随系统"), "lucide-monitor", theme_group),
+      theme_item("light", dgettext("ui", "亮"), "lucide-sun", theme_group),
+      theme_item("dark", dgettext("ui", "暗"), "lucide-moon", theme_group),
+      %{type: :divider},
+      %{
+        id: "hm-log-out",
+        label: dgettext("ui", "退出登录"),
+        icon: "lucide-log-out",
+        href: "/users/log-out",
+        method: "delete"
+      }
+    ]
+
+    assigns = assign(assigns, name: name, items: items)
+
+    ~H"""
+    <.dropdown
+      id="hm-user-menu"
+      items={@items}
+      label={dgettext("ui", "用户菜单")}
+      placement={:top}
+      class="w-full"
+      trigger_class="h-9 w-full min-w-0 px-2"
+      popover_class="w-56"
+    >
+      <:trigger>
+        <.avatar name={@name} src={@user[:avatar_url]} />
+        <span class="truncate text-body text-fg lg:sidebar-collapsed:sr-only">{@name}</span>
+      </:trigger>
+    </.dropdown>
+    """
+  end
+
+  defp theme_item(theme, label, icon, group) do
+    %{
+      id: "hm-theme-#{theme}",
+      group: group,
+      label: label,
+      icon: icon,
+      checked: :client,
+      attrs: %{"data-theme-option": theme},
+      on_select: JS.dispatch("phx:set-theme", detail: %{theme: theme})
+    }
+  end
+
+  @doc """
+  Centered card layout for authentication pages (login, registration, `/device`).
+  """
+  attr :flash, :map, required: true
+  attr :title, :string, default: nil
+  slot :inner_block, required: true
+
+  def auth(assigns) do
+    ~H"""
+    <div class="flex min-h-dvh flex-col items-center justify-center bg-shell px-4 py-12">
+      <div class="mb-6 flex items-center gap-2 text-title font-semibold text-fg">
+        <span class="inline-flex size-7 items-center justify-center rounded-field bg-brand text-on-brand">
+          <.icon name="lucide-ship-wheel" class="size-4" />
+        </span>
+        Helmsman
+      </div>
+      <main
+        id="hm-main"
+        class="w-full max-w-[400px] rounded-box border border-border bg-surface p-6"
+      >
+        <h1 :if={@title} class="mb-4 text-heading font-semibold text-fg">{@title}</h1>
         {render_slot(@inner_block)}
-      </div>
-    </main>
-
-    <.flash_group flash={@flash} />
+      </main>
+    </div>
+    <div class="fixed right-4 bottom-4 z-[60]">
+      <.flash_group flash={@flash} />
+    </div>
     """
   end
 
   @doc """
-  Shows the flash group with standard titles and content.
-
-  ## Examples
-
-      <.flash_group flash={@flash} />
+  Flash notices in the bottom-right corner of the content surface.
   """
   attr :flash, :map, required: true, doc: "the map of flash messages"
   attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <div
+      id={@id}
+      class="pointer-events-none absolute right-4 bottom-4 z-[60] flex flex-col items-end gap-2"
+    >
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 
       <.flash
         id="client-error"
         kind={:error}
-        title={gettext("We can't find the internet")}
-        phx-disconnected={
-          show(".phx-client-error #client-error")
-          |> JS.remove_attribute("hidden", to: ".phx-client-error #client-error")
-        }
+        title={dgettext("ui", "无法连接到服务器")}
+        phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
         hidden
       >
-        {gettext("Attempting to reconnect")}
-        <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
+        {dgettext("ui", "正在重新连接")}
+        <.icon name="lucide-loader-circle" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
 
       <.flash
         id="server-error"
         kind={:error}
-        title={gettext("Something went wrong!")}
-        phx-disconnected={
-          show(".phx-server-error #server-error")
-          |> JS.remove_attribute("hidden", to: ".phx-server-error #server-error")
-        }
+        title={dgettext("ui", "出了点问题")}
+        phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
         phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
         hidden
       >
-        {gettext("Attempting to reconnect")}
-        <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
+        {dgettext("ui", "正在重新连接")}
+        <.icon name="lucide-loader-circle" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
     </div>
     """
   end
 
   @doc """
-  Provides dark vs light theme toggle based on themes defined in app.css.
-
-  See <head> in root.html.heex which applies the theme before page load.
+  Segmented theme switch (跟随系统 / 亮 / 暗) for pages without the user menu.
+  The active option is highlighted by CSS from `<html data-theme-pref>`.
   """
   def theme_toggle(assigns) do
+    assigns =
+      assign(assigns, :options, [
+        {"system", "lucide-monitor", dgettext("ui", "跟随系统")},
+        {"light", "lucide-sun", dgettext("ui", "亮")},
+        {"dark", "lucide-moon", dgettext("ui", "暗")}
+      ])
+
     ~H"""
-    <div class="card relative flex flex-row items-center border-2 border-base-300 bg-base-300 rounded-full">
-      <div class="absolute w-1/3 h-full rounded-full border-1 border-base-200 bg-base-100 brightness-200 left-0 [[data-theme=light]_&]:left-1/3 [[data-theme=dark]_&]:left-2/3 [[data-theme-source=system]_&]:!left-0 transition-[left]" />
-
+    <div
+      role="group"
+      aria-label={dgettext("ui", "主题")}
+      class="inline-flex items-center gap-0.5 rounded-field border border-border bg-surface p-0.5"
+    >
       <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="system"
+        :for={{theme, icon, label} <- @options}
+        type="button"
+        data-theme-option={theme}
+        aria-label={label}
+        title={label}
+        class="hm-theme-option inline-flex size-6 items-center justify-center rounded-badge text-fg-muted hover:text-fg"
+        phx-click={JS.dispatch("phx:set-theme", detail: %{theme: theme})}
       >
-        <.icon name="hero-computer-desktop-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="light"
-      >
-        <.icon name="hero-sun-micro" class="size-4 opacity-75 hover:opacity-100" />
-      </button>
-
-      <button
-        class="flex p-2 cursor-pointer w-1/3"
-        phx-click={JS.dispatch("phx:set-theme")}
-        data-phx-theme="dark"
-      >
-        <.icon name="hero-moon-micro" class="size-4 opacity-75 hover:opacity-100" />
+        <.icon name={icon} class="size-3.5" />
       </button>
     </div>
     """
+  end
+
+  @doc false
+  def title_suffix(assigns) do
+    case assigns[:current_scope] do
+      %{workspace: %{name: name}} -> " · #{name}"
+      _ -> " · Helmsman"
+    end
   end
 end
