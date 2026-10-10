@@ -9,86 +9,229 @@
 /* Required for Tailwind to automatically pick up changes in colocated CSS files in dev */
 @source "../../_build/dev/phoenix-colocated/helmsman/*/";
 
-/* A Tailwind plugin that makes "hero-#{ICON}" classes available.
-   The heroicons installation itself is managed by your mix.exs */
-@plugin "../vendor/heroicons";
+/* "lucide-<name>" icon classes; the icon set is the :lucide dependency in mix.exs. */
+@plugin "../vendor/lucide";
 
-/* daisyUI Tailwind Plugin. */
+/* daisyUI is only used inside HelmsmanWeb.CoreComponents / HelmsmanWeb.Components.*
+   (design D1 / DR-1). Only the whitelisted components are emitted. */
 @plugin "daisyui/packages/bundle/daisyui" {
   themes: false;
+  include: rootscrolllock, rootcolor, rootscrollgutter, svg, properties, button, input, select, textarea, checkbox, toggle, radio, fieldset, label, badge, dropdown, tooltip, loading, kbd;
 }
 
-/* daisyUI theme plugin.
-  We ship with two themes, a light one inspired on Phoenix colors and a dark one inspired
-  on Elixir colors. Build your own at: https://daisyui.com/theme-generator/ */
+/* Theme values: design D3. HelmsmanWeb.Dev.ThemeTokens parses the `--hm-*` values
+   below at compile time to check contrast, so keep them as `oklch(L C H [/ A])`. */
 @plugin "daisyui/packages/bundle/daisyui-theme" {
-  name: "dark";
-  default: false;
-  prefersdark: true;
-  color-scheme: "dark";
-  --color-base-100: oklch(30.33% 0.016 252.42);
-  --color-base-200: oklch(25.26% 0.014 253.1);
-  --color-base-300: oklch(20.15% 0.012 254.09);
-  --color-base-content: oklch(97.807% 0.029 256.847);
-  --color-primary: oklch(58% 0.233 277.117);
-  --color-primary-content: oklch(96% 0.018 272.314);
-  --color-secondary: oklch(58% 0.233 277.117);
-  --color-secondary-content: oklch(96% 0.018 272.314);
-  --color-accent: oklch(60% 0.25 292.717);
-  --color-accent-content: oklch(96% 0.016 293.756);
-  --color-neutral: oklch(37% 0.044 257.287);
-  --color-neutral-content: oklch(98% 0.003 247.858);
-  --color-info: oklch(58% 0.158 241.966);
-  --color-info-content: oklch(97% 0.013 236.62);
-  --color-success: oklch(60% 0.118 184.704);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
-  --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.21875rem;
-  --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
-  --noise: 0;
-}
-
-@plugin "daisyui/packages/bundle/daisyui-theme" {
-  name: "light";
+  name: "helmsman-light";
   default: true;
   prefersdark: false;
   color-scheme: "light";
-  --color-base-100: oklch(98% 0 0);
-  --color-base-200: oklch(96% 0.001 286.375);
-  --color-base-300: oklch(92% 0.004 286.32);
-  --color-base-content: oklch(21% 0.006 285.885);
-  --color-primary: oklch(70% 0.213 47.604);
-  --color-primary-content: oklch(98% 0.016 73.684);
-  --color-secondary: oklch(55% 0.027 264.364);
-  --color-secondary-content: oklch(98% 0.002 247.839);
-  --color-accent: oklch(0% 0 0);
-  --color-accent-content: oklch(100% 0 0);
-  --color-neutral: oklch(44% 0.017 285.786);
-  --color-neutral-content: oklch(98% 0 0);
-  --color-info: oklch(62% 0.214 259.815);
-  --color-info-content: oklch(97% 0.014 254.604);
-  --color-success: oklch(70% 0.14 182.503);
-  --color-success-content: oklch(98% 0.014 180.72);
-  --color-warning: oklch(66% 0.179 58.318);
-  --color-warning-content: oklch(98% 0.022 95.277);
-  --color-error: oklch(58% 0.253 17.585);
-  --color-error-content: oklch(96% 0.015 12.422);
+  --color-base-100: oklch(1 0 0);
+  --color-base-200: oklch(0.985 0.002 230);
+  --color-base-300: oklch(0.95 0.005 230);
+  --color-base-content: oklch(0.22 0.01 240);
+  --color-primary: oklch(0.52 0.10 210);
+  --color-primary-content: oklch(1 0 0);
+  --color-secondary: oklch(0.48 0.01 240);
+  --color-secondary-content: oklch(1 0 0);
+  --color-accent: oklch(0.52 0.10 210);
+  --color-accent-content: oklch(1 0 0);
+  --color-neutral: oklch(0.22 0.01 240);
+  --color-neutral-content: oklch(1 0 0);
+  --color-info: oklch(0.58 0.13 255);
+  --color-info-content: oklch(1 0 0);
+  --color-success: oklch(0.58 0.14 150);
+  --color-success-content: oklch(1 0 0);
+  --color-warning: oklch(0.62 0.14 65);
+  --color-warning-content: oklch(0.22 0.01 240);
+  --color-error: oklch(0.56 0.20 25);
+  --color-error-content: oklch(1 0 0);
   --radius-selector: 0.25rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.21875rem;
-  --size-field: 0.21875rem;
-  --border: 1.5px;
-  --depth: 1;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
+  --size-selector: 0.2rem;
+  --size-field: 0.2rem;
+  --border: 1px;
+  --depth: 0;
   --noise: 0;
+  --hm-shell: oklch(0.962 0.004 230);
+  --hm-canvas: oklch(0.985 0.002 230);
+  --hm-surface: oklch(1 0 0);
+  --hm-raised: oklch(1 0 0);
+  --hm-hover: oklch(0.95 0.005 230);
+  --hm-selected: oklch(0.925 0.012 215);
+  --hm-border: oklch(0.915 0.004 230);
+  --hm-border-strong: oklch(0.86 0.006 230);
+  --hm-fg: oklch(0.22 0.01 240);
+  --hm-fg-muted: oklch(0.48 0.01 240);
+  --hm-fg-subtle: oklch(0.60 0.01 240);
+  --hm-brand: oklch(0.52 0.10 210);
+  --hm-brand-fg: oklch(0.49 0.10 210);
+  --hm-success: oklch(0.58 0.14 150);
+  --hm-success-fg: oklch(0.49 0.13 150);
+  --hm-warning: oklch(0.62 0.14 65);
+  --hm-warning-fg: oklch(0.51 0.13 60);
+  --hm-danger: oklch(0.56 0.20 25);
+  --hm-danger-fg: oklch(0.53 0.20 25);
+  --hm-info: oklch(0.58 0.13 255);
+  --hm-info-fg: oklch(0.50 0.13 255);
+  --hm-review: oklch(0.55 0.15 300);
+  --hm-review-fg: oklch(0.52 0.15 300);
+  --hm-on-brand: oklch(1 0 0);
+  --hm-on-danger: oklch(1 0 0);
+  --hm-on-warning: oklch(0.22 0.01 240);
+  --hm-badge-mix: 12%;
+}
+
+@plugin "daisyui/packages/bundle/daisyui-theme" {
+  name: "helmsman-dark";
+  default: false;
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(0.225 0.009 240);
+  --color-base-200: oklch(0.195 0.008 240);
+  --color-base-300: oklch(0.27 0.01 240);
+  --color-base-content: oklch(0.95 0.005 240);
+  --color-primary: oklch(0.72 0.10 205);
+  --color-primary-content: oklch(0.165 0.008 240);
+  --color-secondary: oklch(0.72 0.01 240);
+  --color-secondary-content: oklch(0.225 0.009 240);
+  --color-accent: oklch(0.72 0.10 205);
+  --color-accent-content: oklch(0.165 0.008 240);
+  --color-neutral: oklch(0.95 0.005 240);
+  --color-neutral-content: oklch(0.225 0.009 240);
+  --color-info: oklch(0.72 0.12 255);
+  --color-info-content: oklch(0.165 0.008 240);
+  --color-success: oklch(0.72 0.14 150);
+  --color-success-content: oklch(0.165 0.008 240);
+  --color-warning: oklch(0.80 0.13 80);
+  --color-warning-content: oklch(0.165 0.008 240);
+  --color-error: oklch(0.70 0.17 22);
+  --color-error-content: oklch(0.165 0.008 240);
+  --radius-selector: 0.25rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
+  --size-selector: 0.2rem;
+  --size-field: 0.2rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+  --hm-shell: oklch(0.165 0.008 240);
+  --hm-canvas: oklch(0.195 0.008 240);
+  --hm-surface: oklch(0.225 0.009 240);
+  --hm-raised: oklch(0.255 0.010 240);
+  --hm-hover: oklch(0.27 0.01 240);
+  --hm-selected: oklch(0.30 0.03 215);
+  --hm-border: oklch(1 0 0 / 0.08);
+  --hm-border-strong: oklch(1 0 0 / 0.14);
+  --hm-fg: oklch(0.95 0.005 240);
+  --hm-fg-muted: oklch(0.72 0.01 240);
+  --hm-fg-subtle: oklch(0.62 0.01 240);
+  --hm-brand: oklch(0.72 0.10 205);
+  --hm-brand-fg: oklch(0.74 0.09 205);
+  --hm-success: oklch(0.72 0.14 150);
+  --hm-success-fg: oklch(0.74 0.12 150);
+  --hm-warning: oklch(0.80 0.13 80);
+  --hm-warning-fg: oklch(0.82 0.11 80);
+  --hm-danger: oklch(0.70 0.17 22);
+  --hm-danger-fg: oklch(0.74 0.15 22);
+  --hm-info: oklch(0.72 0.12 255);
+  --hm-info-fg: oklch(0.74 0.10 255);
+  --hm-review: oklch(0.72 0.13 300);
+  --hm-review-fg: oklch(0.74 0.11 300);
+  --hm-on-brand: oklch(0.165 0.008 240);
+  --hm-on-danger: oklch(0.165 0.008 240);
+  --hm-on-warning: oklch(0.165 0.008 240);
+  --hm-badge-mix: 16%;
+}
+
+@theme inline {
+  --color-shell: var(--hm-shell);
+  --color-canvas: var(--hm-canvas);
+  --color-surface: var(--hm-surface);
+  --color-raised: var(--hm-raised);
+  --color-hover: var(--hm-hover);
+  --color-selected: var(--hm-selected);
+  --color-border: var(--hm-border);
+  --color-border-strong: var(--hm-border-strong);
+  --color-fg: var(--hm-fg);
+  --color-fg-muted: var(--hm-fg-muted);
+  --color-fg-subtle: var(--hm-fg-subtle);
+  --color-brand: var(--hm-brand);
+  --color-brand-fg: var(--hm-brand-fg);
+  --color-success: var(--hm-success);
+  --color-success-fg: var(--hm-success-fg);
+  --color-warning: var(--hm-warning);
+  --color-warning-fg: var(--hm-warning-fg);
+  --color-danger: var(--hm-danger);
+  --color-danger-fg: var(--hm-danger-fg);
+  --color-info: var(--hm-info);
+  --color-info-fg: var(--hm-info-fg);
+  --color-review: var(--hm-review);
+  --color-review-fg: var(--hm-review-fg);
+  --color-on-brand: var(--hm-on-brand);
+  --color-on-danger: var(--hm-on-danger);
+  --color-on-warning: var(--hm-on-warning);
+}
+
+@theme {
+  /* Backdrop behind modal layers (same in both themes). */
+  --color-scrim: oklch(0.15 0.01 240 / 0.45);
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC",
+    "WenQuanYi Micro Hei", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono",
+    "Noto Sans Mono CJK SC", monospace;
+
+  --text-micro: 11px;
+  --text-micro--line-height: 14px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-label: 13px;
+  --text-label--line-height: 18px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-title: 16px;
+  --text-title--line-height: 24px;
+  --text-heading: 20px;
+  --text-heading--line-height: 28px;
+  --text-display: 24px;
+  --text-display--line-height: 32px;
+
+  --radius-badge: 0.25rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.625rem;
+
+  --shadow-popover: 0 4px 12px -2px oklch(0 0 0 / 0.12), 0 1px 3px oklch(0 0 0 / 0.08);
+  --shadow-overlay: 0 16px 40px -8px oklch(0 0 0 / 0.24), 0 2px 8px oklch(0 0 0 / 0.10);
+
+  --animate-flash-out: hm-flash-out 200ms ease-out 5s forwards;
+  --animate-row-flash: hm-row-flash 600ms ease-out;
+  --animate-pulse-soft: hm-pulse-soft 1.6s ease-in-out infinite;
+
+  @keyframes hm-flash-out {
+    to {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+  }
+  @keyframes hm-row-flash {
+    from {
+      background-color: var(--hm-selected);
+    }
+  }
+  @keyframes hm-pulse-soft {
+    50% {
+      opacity: 0.45;
+    }
+  }
+}
+
+/* Status badge tint: the graphic color composited over surface in gamma (sRGB) space. */
+@utility tint-* {
+  background-color: color-mix(in srgb, --value(--color-*) var(--hm-badge-mix), var(--hm-surface));
 }
 
 /* Add variants based on LiveView classes */
@@ -97,9 +240,91 @@
 @custom-variant phx-change-loading (.phx-change-loading&, .phx-change-loading &);
 
 /* Use the data attribute for dark mode  */
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+@custom-variant dark (&:where([data-theme=helmsman-dark], [data-theme=helmsman-dark] *));
+/* Collapsed sidebar (lg and up), set by the inline script in root.html.heex */
+@custom-variant sidebar-collapsed (&:where([data-sidebar=collapsed] *));
 
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-/* This file is for your main application CSS */
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 100%;
+    background-color: var(--hm-shell);
+    color: var(--hm-fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+  }
+  :focus-visible {
+    outline: 2px solid var(--hm-brand);
+    outline-offset: 2px;
+  }
+  ::placeholder {
+    color: var(--hm-fg-subtle);
+  }
+}
+
+/* Platform modifier keys in <.kbd>: both spans are rendered, CSS picks one. */
+.hm-kbd-mac { display: none; }
+html[data-platform=mac] .hm-kbd-mac { display: inline; }
+html[data-platform=mac] .hm-kbd-other { display: none; }
+
+/* Client-side checked state in menus (theme preference). */
+html[data-theme-pref=system] [data-theme-option=system] .hm-client-check,
+html[data-theme-pref=light] [data-theme-option=light] .hm-client-check,
+html[data-theme-pref=dark] [data-theme-option=dark] .hm-client-check {
+  display: inline-block;
+}
+html[data-theme-pref=system] .hm-theme-option[data-theme-option=system],
+html[data-theme-pref=light] .hm-theme-option[data-theme-option=light],
+html[data-theme-pref=dark] .hm-theme-option[data-theme-option=dark] {
+  background-color: var(--hm-selected);
+  color: var(--hm-fg);
+}
+
+/* Pop-up menus flip when there is no room (anchor positioning where supported). */
+@supports (position-try-fallbacks: flip-block) {
+  .hm-popover {
+    position: fixed;
+    inset: auto;
+    margin: 4px 0;
+    position-try-fallbacks: flip-block, flip-inline;
+  }
+  .hm-popover.top-full { position-area: block-end span-inline-end; }
+  .hm-popover.top-full.right-0 { position-area: block-end span-inline-start; }
+  .hm-popover.bottom-full { position-area: block-start span-inline-end; }
+  .hm-popover.bottom-full.right-0 { position-area: block-start span-inline-start; }
+}
+
+/* Tooltip (pure CSS): 300ms hover delay, immediate on keyboard focus. */
+.hm-tooltip {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 100ms ease-out, visibility 0s linear 100ms;
+}
+.hm-tooltip-host:hover > .hm-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 300ms, 300ms;
+}
+.hm-tooltip-host:has(:focus-visible) > .hm-tooltip,
+.hm-tooltip-host:focus-visible > .hm-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s, 0s;
+}
+
+/* Reduced motion (design D4): finish decorative animations immediately but keep
+   animation-delay so timed content (e.g. the 5s info flash) still lasts its full time. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

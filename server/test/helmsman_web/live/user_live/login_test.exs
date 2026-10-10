@@ -8,9 +8,9 @@ defmodule HelmsmanWeb.UserLive.LoginTest do
     test "renders login page", %{conn: conn} do
       {:ok, _lv, html} = live(conn, ~p"/users/log-in")
 
-      assert html =~ "Log in"
-      assert html =~ "Sign up"
-      assert html =~ "Log in with email"
+      assert html =~ "登录"
+      assert html =~ "注册"
+      assert html =~ "发送登录链接"
     end
   end
 
@@ -25,7 +25,7 @@ defmodule HelmsmanWeb.UserLive.LoginTest do
         |> render_submit()
         |> follow_redirect(conn, ~p"/users/log-in")
 
-      assert html =~ "If your email is in our system"
+      assert html =~ "如果该邮箱已注册"
 
       assert Helmsman.Repo.get_by!(Helmsman.Accounts.UserToken, user_id: user.id).context ==
                "login"
@@ -39,7 +39,7 @@ defmodule HelmsmanWeb.UserLive.LoginTest do
         |> render_submit()
         |> follow_redirect(conn, ~p"/users/log-in")
 
-      assert html =~ "If your email is in our system"
+      assert html =~ "如果该邮箱已注册"
     end
   end
 
@@ -70,7 +70,7 @@ defmodule HelmsmanWeb.UserLive.LoginTest do
       render_submit(form, %{user: %{remember_me: true}})
 
       conn = follow_trigger_action(form, conn)
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Invalid email or password"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "邮箱或密码错误"
       assert redirected_to(conn) == ~p"/users/log-in"
     end
   end
@@ -81,11 +81,11 @@ defmodule HelmsmanWeb.UserLive.LoginTest do
 
       {:ok, _login_live, login_html} =
         lv
-        |> element("main a", "Sign up")
+        |> element("main a", "注册")
         |> render_click()
         |> follow_redirect(conn, ~p"/users/register")
 
-      assert login_html =~ "Register"
+      assert login_html =~ "注册账号"
     end
   end
 
@@ -96,14 +96,16 @@ defmodule HelmsmanWeb.UserLive.LoginTest do
     end
 
     test "shows login page with email filled in", %{conn: conn, user: user} do
-      {:ok, _lv, html} = live(conn, ~p"/users/log-in")
+      {:ok, lv, html} = live(conn, ~p"/users/log-in")
 
-      assert html =~ "You need to reauthenticate"
-      refute html =~ "Register"
-      assert html =~ "Log in with email"
+      assert html =~ "进行账号的敏感操作前，需要重新验证身份"
+      refute has_element?(lv, ~s(a[href="/users/register"]))
+      assert html =~ "发送登录链接"
 
-      assert html =~
-               ~s(<input type="email" name="user[email]" id="login_form_magic_email" value="#{user.email}")
+      assert has_element?(
+               lv,
+               ~s(input#login_form_magic_email[type="email"][name="user[email]"][value="#{user.email}"])
+             )
     end
   end
 end

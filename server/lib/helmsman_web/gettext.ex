@@ -22,4 +22,8 @@ defmodule HelmsmanWeb.Gettext do
   See the [Gettext Docs](https://gettext.hexdocs.pm) for detailed usage.
   """
   use Gettext.Backend, otp_app: :helmsman
+
+  # The plural forms compiled from the .po headers are passed to Gettext.Plural, whose
+  # Expo.PluralForms struct is opaque to dialyzer (false positive).
+  @dialyzer :no_opaque
 end

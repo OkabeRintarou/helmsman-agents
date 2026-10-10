@@ -5,11 +5,11 @@ defmodule HelmsmanWeb.UserSessionController do
   alias HelmsmanWeb.UserAuth
 
   def create(conn, %{"_action" => "confirmed"} = params) do
-    create(conn, params, "User confirmed successfully.")
+    create(conn, params, dgettext("ui", "账号已确认。"))
   end
 
   def create(conn, params) do
-    create(conn, params, "Welcome back!")
+    create(conn, params, dgettext("ui", "欢迎回来！"))
   end
 
   # magic link login
@@ -24,7 +24,7 @@ defmodule HelmsmanWeb.UserSessionController do
 
       _ ->
         conn
-        |> put_flash(:error, "The link is invalid or it has expired.")
+        |> put_flash(:error, dgettext("ui", "链接无效或已过期。"))
         |> redirect(to: ~p"/users/log-in")
     end
   end
@@ -42,13 +42,13 @@ defmodule HelmsmanWeb.UserSessionController do
       {:error, :invalid_credentials} ->
         # In order to prevent user enumeration attacks, don't disclose whether the email is registered.
         conn
-        |> put_flash(:error, "Invalid email or password")
+        |> put_flash(:error, dgettext("ui", "邮箱或密码错误"))
         |> put_flash(:email, String.slice(email, 0, 160))
         |> redirect(to: ~p"/users/log-in")
 
       {:error, :rate_limited} ->
         conn
-        |> put_flash(:error, "请求过于频繁，请稍后再试")
+        |> put_flash(:error, dgettext("ui", "请求过于频繁，请稍后再试"))
         |> put_flash(:email, String.slice(email, 0, 160))
         |> redirect(to: ~p"/users/log-in")
     end
@@ -64,24 +64,24 @@ defmodule HelmsmanWeb.UserSessionController do
 
       conn
       |> put_session(:user_return_to, ~p"/users/settings")
-      |> create(params, "Password updated successfully!")
+      |> create(params, dgettext("ui", "密码已更新。"))
     else
       false ->
         conn
         |> put_session(:user_return_to, ~p"/users/settings")
-        |> put_flash(:error, "You must log in again to change your email or password.")
+        |> put_flash(:error, dgettext("ui", "需要重新登录才能修改邮箱或密码。"))
         |> redirect(to: ~p"/users/log-in")
 
       {:error, %Ecto.Changeset{}} ->
         conn
-        |> put_flash(:error, "Password could not be updated. Please try again.")
+        |> put_flash(:error, dgettext("ui", "密码更新失败，请重试。"))
         |> redirect(to: ~p"/users/settings")
     end
   end
 
   def delete(conn, _params) do
     conn
-    |> put_flash(:info, "Logged out successfully.")
+    |> put_flash(:info, dgettext("ui", "已退出登录。"))
     |> UserAuth.log_out_user()
   end
 end

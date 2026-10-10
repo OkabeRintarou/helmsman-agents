@@ -86,8 +86,16 @@ defmodule HelmsmanWeb do
 
       # HTML escaping functionality
       import Phoenix.HTML
-      # Core UI components
+      # Core UI components (daisyUI classes may only appear in these modules)
       import HelmsmanWeb.CoreComponents
+      import HelmsmanWeb.Components.Actor
+      import HelmsmanWeb.Components.DataTable
+      import HelmsmanWeb.Components.FilterBar
+      import HelmsmanWeb.Components.Layout
+      import HelmsmanWeb.Components.Menu
+      import HelmsmanWeb.Components.Overlay
+      import HelmsmanWeb.Components.Status
+      import HelmsmanWeb.Components.Text
 
       # Common modules used in templates
       alias HelmsmanWeb.Layouts

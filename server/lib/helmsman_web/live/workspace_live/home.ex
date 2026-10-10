@@ -9,9 +9,16 @@ defmodule HelmsmanWeb.WorkspaceLive.Home do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <h1 id="workspace-name" class="text-2xl font-semibold">{@current_scope.workspace.name}</h1>
-      <p id="workspace-role">{@current_scope.role}</p>
+    <Layouts.app flash={@flash} current_scope={@current_scope} shell={@shell}>
+      <:header>
+        <.page_header title={@current_scope.workspace.name} />
+      </:header>
+      <div class="px-6 py-4">
+        <p id="workspace-name" class="text-heading font-semibold text-fg">
+          {@current_scope.workspace.name}
+        </p>
+        <p id="workspace-role" class="text-body text-fg-muted">{@current_scope.role}</p>
+      </div>
     </Layouts.app>
     """
   end

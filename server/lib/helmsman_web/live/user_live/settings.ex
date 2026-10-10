@@ -7,36 +7,40 @@ defmodule HelmsmanWeb.UserLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="text-center">
-        <.header>
-          Account Settings
-          <:subtitle>Manage your account email address and password settings</:subtitle>
-        </.header>
-      </div>
+    <Layouts.auth flash={@flash}>
+      <.header>
+        {dgettext("ui", "账号设置")}
+        <:subtitle>{dgettext("ui", "管理显示名、邮箱和密码")}</:subtitle>
+      </.header>
 
       <.form
         for={@display_name_form}
         id="display_name_form"
         phx-submit="update_display_name"
         phx-change="validate_display_name"
+        class="flex flex-col gap-3"
       >
         <.input
           field={@display_name_form[:display_name]}
           type="text"
-          label="Display name"
+          label={dgettext("ui", "显示名")}
           maxlength="64"
           required
         />
-        <.button variant="primary" phx-disable-with="Saving...">Save Display Name</.button>
+        <.button type="submit" variant="primary" phx-disable-with={dgettext("ui", "正在保存…")}>
+          {dgettext("ui", "保存显示名")}
+        </.button>
       </.form>
 
-      <div class="divider" />
+      <hr class="my-6 border-border" />
 
-      <div :if={!@sudo_mode?} id="reauthenticate_notice">
+      <div :if={!@sudo_mode?} id="reauthenticate_notice" class="text-body text-fg-muted">
         <p>
-          <.link navigate={~p"/users/log-in"} class="font-semibold underline">Log in again</.link>
-          to change your email or password.
+          {dgettext("ui", "修改邮箱或密码前，需要")}<.link
+            navigate={~p"/users/log-in"}
+            class="font-medium text-brand-fg underline"
+            phx-no-format
+          >{dgettext("ui", "重新登录")}</.link>
         </p>
       </div>
 
@@ -46,19 +50,22 @@ defmodule HelmsmanWeb.UserLive.Settings do
         id="email_form"
         phx-submit="update_email"
         phx-change="validate_email"
+        class="flex flex-col gap-3"
       >
         <.input
           field={@email_form[:email]}
           type="email"
-          label="Email"
+          label={dgettext("ui", "邮箱")}
           autocomplete="username"
           spellcheck="false"
           required
         />
-        <.button variant="primary" phx-disable-with="Changing...">Change Email</.button>
+        <.button type="submit" variant="primary" phx-disable-with={dgettext("ui", "正在提交…")}>
+          {dgettext("ui", "修改邮箱")}
+        </.button>
       </.form>
 
-      <div :if={@sudo_mode?} class="divider" />
+      <hr :if={@sudo_mode?} class="my-6 border-border" />
 
       <.form
         :if={@sudo_mode?}
@@ -69,6 +76,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
         phx-change="validate_password"
         phx-submit="update_password"
         phx-trigger-action={@trigger_submit}
+        class="flex flex-col gap-3"
       >
         <input
           name={@password_form[:email].name}
@@ -80,7 +88,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
         <.input
           field={@password_form[:password]}
           type="password"
-          label="New password"
+          label={dgettext("ui", "新密码")}
           autocomplete="new-password"
           spellcheck="false"
           required
@@ -88,15 +96,15 @@ defmodule HelmsmanWeb.UserLive.Settings do
         <.input
           field={@password_form[:password_confirmation]}
           type="password"
-          label="Confirm new password"
+          label={dgettext("ui", "确认新密码")}
           autocomplete="new-password"
           spellcheck="false"
         />
-        <.button variant="primary" phx-disable-with="Saving...">
-          Save Password
+        <.button type="submit" variant="primary" phx-disable-with={dgettext("ui", "正在保存…")}>
+          {dgettext("ui", "保存密码")}
         </.button>
       </.form>
-    </Layouts.app>
+    </Layouts.auth>
     """
   end
 
@@ -109,10 +117,10 @@ defmodule HelmsmanWeb.UserLive.Settings do
         socket =
           case Accounts.update_user_email(socket.assigns.current_scope.user, token) do
             {:ok, _user} ->
-              put_flash(socket, :info, "Email changed successfully.")
+              put_flash(socket, :info, dgettext("ui", "邮箱已修改。"))
 
             {:error, _} ->
-              put_flash(socket, :error, "Email change link is invalid or it has expired.")
+              put_flash(socket, :error, dgettext("ui", "邮箱修改链接无效或已过期。"))
           end
 
         {:ok, push_navigate(socket, to: ~p"/users/settings")}
@@ -158,7 +166,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
          socket
          |> assign(:current_scope, scope)
          |> assign(:display_name_form, to_form(Accounts.change_user_display_name(user)))
-         |> put_flash(:info, "Display name updated successfully.")}
+         |> put_flash(:info, dgettext("ui", "显示名已更新。"))}
 
       {:error, changeset} ->
         {:noreply, assign(socket, display_name_form: to_form(changeset, action: :insert))}
@@ -192,7 +200,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
           &url(~p"/users/settings/confirm-email/#{&1}")
         )
 
-        info = "A link to confirm your email change has been sent to the new address."
+        info = dgettext("ui", "确认链接已发送到新邮箱。")
         {:noreply, socket |> put_flash(:info, info)}
 
       changeset ->
@@ -233,6 +241,6 @@ defmodule HelmsmanWeb.UserLive.Settings do
   defp require_reauthentication(socket) do
     socket
     |> assign(:sudo_mode?, false)
-    |> put_flash(:error, "You must log in again to change your email or password.")
+    |> put_flash(:error, dgettext("ui", "需要重新登录才能修改邮箱或密码。"))
   end
 end

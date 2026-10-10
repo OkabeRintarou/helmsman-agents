@@ -1,0 +1,1157 @@
+## "msgid"s in this file come from POT (.pot) files.
+###
+### Do not add, change, or remove "msgid"s manually here as
+### they're tied to the ones in the corresponding POT file
+### (with the same domain).
+###
+### Use "mix gettext.extract --merge" or "mix gettext.merge"
+### to merge POT files into PO files.
+msgid ""
+msgstr ""
+"Language: zh\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "%{date}：%{value}"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 正在处理"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 等 %{count} 个正在处理"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 分钟前"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 天前"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 小时前"
+msgstr ""
+
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "Agent 团队"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "Token"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "一句话说明要做什么"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "不能为空"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "中"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "主导航"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "主题"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "亮"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "优先级"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "优先级：%{label}"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "低"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "低优先级"
+msgstr ""
+
+#: lib/helmsman_web/shell.ex
+#, elixir-autogen, elixir-format
+msgid "你已被移出 %{workspace}"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "你无权触发 keel/dev"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "保存失败：请检查标题。"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "停止中"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "全零数据"
+msgstr ""
+
+#: lib/helmsman_web/components/core_components.ex
+#: lib/helmsman_web/components/overlay.ex
+#, elixir-autogen, elixir-format
+msgid "关闭"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "关闭后将无法再次查看，请立即复制保存。"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "准备中"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "出了点问题"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/actions.ex
+#, elixir-autogen, elixir-format
+msgid "切换主题：亮"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/actions.ex
+#, elixir-autogen, elixir-format
+msgid "切换主题：暗"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/actions.ex
+#, elixir-autogen, elixir-format
+msgid "切换主题：跟随系统"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "切换工作区"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "刚刚"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "创建"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "创建第一个任务开始吧"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "删除"
+msgstr ""
+
+#: lib/helmsman_web/components/data_table.ex
+#, elixir-autogen, elixir-format
+msgid "加载更多"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "单选"
+msgstr ""
+
+#: lib/helmsman_web/components/overlay.ex
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "取消"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "只有成员可以开始任务"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "只有管理员可以移动"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "右侧面板（?panel=new）"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "吊销"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "吊销 Token？"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "吊销后使用该 Token 的客户端将立即失效。"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "同步"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "同步中"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette.ex
+#, elixir-autogen, elixir-format
+msgid "命令面板"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "图标"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "在线"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "复制"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "复制到剪贴板"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/actions.ex
+#, elixir-autogen, elixir-format
+msgid "复制当前页面链接"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "复制链接"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "复选框"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "外接"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "失败"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "对比度"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "小队"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "展开侧栏"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "已保存"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "已停止"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "已复制"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "已拒绝"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "已撤销"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "已结束"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "已验收"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "布局"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "带图标"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "开关"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "开始"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "开始任务…"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "弹层"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "弹窗（?modal=log）"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "待验收"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "忙碌"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "成功提示"
+msgstr ""
+
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "我的工作"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "截止日期"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "所属：%{owner} · %{mode}"
+msgstr ""
+
+#: lib/helmsman_web/components/layout.ex
+#, elixir-autogen, elixir-format
+msgid "打开导航"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "托管"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "执行记录"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "折叠侧栏"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "按钮"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "排队中"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "提交中"
+msgstr ""
+
+#: lib/helmsman_web/components/filter_bar.ex
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "搜索"
+msgstr ""
+
+#: lib/helmsman_web/components/filter_bar.ex
+#, elixir-autogen, elixir-format
+msgid "搜索…"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/actions.ex
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "操作"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "操作失败：这是一条错误提示"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "数据表格与筛选"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "文本"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "新建"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/command_palette/actions.ex
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "新建任务"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "新建工作区"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "无法访问剪贴板，已选中文本，请手动复制"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "无法连接到服务器"
+msgstr ""
+
+#: lib/helmsman_web/components/text.ex
+#, elixir-autogen, elixir-format
+msgid "昨天"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "暂不开始"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "暗"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "更多操作"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "更新第一行"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/ident.ex
+#, elixir-autogen, elixir-format
+msgid "最近访问"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "未知"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "查看全部"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "标签"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "标签页"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "标题"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "正在重新连接"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette.ex
+#, elixir-autogen, elixir-format
+msgid "没有匹配的结果"
+msgstr ""
+
+#: lib/helmsman_web/components/menu.ex
+#, elixir-autogen, elixir-format
+msgid "没有匹配的选项"
+msgstr ""
+
+#: lib/helmsman_web/components/layout.ex
+#, elixir-autogen, elixir-format
+msgid "没有符合条件的结果"
+msgstr ""
+
+#: lib/helmsman_web/components/layout.ex
+#, elixir-autogen, elixir-format
+msgid "清除筛选"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "状态"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "状态：%{label}"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "用户菜单"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "示例任务"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "示例标签"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "禁用"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "禁用并说明原因"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "离线"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "移动到项目"
+msgstr ""
+
+#: lib/helmsman_web/components/filter_bar.ex
+#, elixir-autogen, elixir-format
+msgid "移除筛选：%{label}"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "等待中"
+msgstr ""
+
+#: lib/helmsman_web/components/filter_bar.ex
+#, elixir-autogen, elixir-format
+msgid "筛选"
+msgstr ""
+
+#: lib/helmsman_web/components/menu_list.ex
+#, elixir-autogen, elixir-format
+msgid "筛选…"
+msgstr ""
+
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器"
+msgstr ""
+
+#: lib/helmsman_web/components/menu_list.ex
+#, elixir-autogen, elixir-format
+msgid "筛选选项"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "组件"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "组件陈列"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette.ex
+#, elixir-autogen, elixir-format
+msgid "结果"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "菜单"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "行式布局"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "表单控件"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "认领任务"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "认领后是否立即开始？"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "说明"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "负责人"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "负责人（12 项）"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/controllers/page_html/home.html.heex
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "账号设置"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "跟随系统"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "跳到主要内容"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/ident.ex
+#, elixir-autogen, elixir-format
+msgid "跳转到任务"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "身份"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette.ex
+#, elixir-autogen, elixir-format
+msgid "输入任务编号、页面或操作…"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "运行中"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "近 14 天运行次数"
+msgstr ""
+
+#: lib/helmsman_web/components/layout.ex
+#, elixir-autogen, elixir-format
+msgid "还没有数据"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "进行中"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/controllers/page_html/home.html.heex
+#, elixir-autogen, elixir-format
+msgid "退出登录"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "选择"
+msgstr ""
+
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "配置"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "重命名"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "错误提示"
+msgstr ""
+
+#: lib/helmsman_web/components/layout.ex
+#, elixir-autogen, elixir-format
+msgid "面包屑"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/command_palette/pages.ex
+#, elixir-autogen, elixir-format
+msgid "页面"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "项目"
+msgstr ""
+
+#: lib/helmsman_web/components/status.ex
+#, elixir-autogen, elixir-format
+msgid "高"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "高优先级"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "（已停用）"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "（已归档）"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "已填写的内容不会保存。"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "放弃"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "放弃…"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "放弃填写？"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "保存"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "只读成员不能保存"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "名称"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format, fuzzy
+msgid "禁用提交"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "仅本次登录"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "保存密码"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "保存显示名"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "修改邮箱"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "修改邮箱或密码前，需要"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "创建账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "发出的邮件可在此查看："
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "发送登录链接"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "在此设备上保持登录"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "如果该邮箱已注册，你很快会收到一封登录邮件。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "密码"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "密码已更新。"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "密码更新失败，请重试。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "已有账号？"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "已退出登录。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "当前使用本地邮件适配器。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "或"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "提示：如果更习惯用密码登录，可以在账号设置中设置密码。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "新密码"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "显示名"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "显示名已更新。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "显示名（可选）"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "欢迎回来！"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "欢迎，%{email}"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "正在保存…"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "正在创建…"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "正在提交…"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "正在登录…"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "正在确认…"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "注册"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "注册仅限受邀"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "注册账号"
+msgstr ""
+
+#: lib/helmsman_web/controllers/page_html/home.html.heex
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#: lib/helmsman_web/live/user_live/login.ex
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "登录"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "登录并保持登录"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "登录链接无效或已过期。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "确认并仅本次登录"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/confirmation.ex
+#, elixir-autogen, elixir-format
+msgid "确认并保持登录"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "确认新密码"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "确认邮件已发送到 %{email}，请打开邮件中的链接确认账号。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "确认链接已发送到新邮箱。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "管理显示名、邮箱和密码"
+msgstr ""
+
+#: lib/helmsman_web/user_auth.ex
+#, elixir-autogen, elixir-format
+msgid "请先登录。"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#: lib/helmsman_web/live/user_live/login.ex
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "请求过于频繁，请稍后再试"
+msgstr ""
+
+#: lib/helmsman_web/user_auth.ex
+#, elixir-autogen, elixir-format
+msgid "请重新登录以验证身份。"
+msgstr ""
+
+#: lib/helmsman_web/controllers/page_html/home.html.heex
+#, elixir-autogen, elixir-format
+msgid "账号"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "账号已确认。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "还没有账号？"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#, elixir-autogen, elixir-format
+msgid "进行账号的敏感操作前，需要重新验证身份。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/login.ex
+#: lib/helmsman_web/live/user_live/registration.ex
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "邮箱"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "邮箱修改链接无效或已过期。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "邮箱已修改。"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "邮箱或密码错误"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "重新登录"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#, elixir-autogen, elixir-format
+msgid "链接无效或已过期。"
+msgstr ""
+
+#: lib/helmsman_web/controllers/user_session_controller.ex
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "需要重新登录才能修改邮箱或密码。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/registration.ex
+#, elixir-autogen, elixir-format
+msgid "你被邀请加入 %{workspace}"
+msgstr ""

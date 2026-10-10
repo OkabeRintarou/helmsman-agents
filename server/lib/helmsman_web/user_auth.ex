@@ -5,6 +5,7 @@ defmodule HelmsmanWeb.UserAuth do
   """
 
   use HelmsmanWeb, :verified_routes
+  use Gettext, backend: HelmsmanWeb.Gettext
 
   import Plug.Conn
   import Phoenix.Controller
@@ -236,7 +237,7 @@ defmodule HelmsmanWeb.UserAuth do
     else
       socket =
         socket
-        |> Phoenix.LiveView.put_flash(:error, "You must log in to access this page.")
+        |> Phoenix.LiveView.put_flash(:error, dgettext("ui", "请先登录。"))
         |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
       {:halt, socket}
@@ -264,7 +265,7 @@ defmodule HelmsmanWeb.UserAuth do
     else
       socket =
         socket
-        |> Phoenix.LiveView.put_flash(:error, "You must re-authenticate to access this page.")
+        |> Phoenix.LiveView.put_flash(:error, dgettext("ui", "请重新登录以验证身份。"))
         |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
       {:halt, socket}
@@ -309,7 +310,7 @@ defmodule HelmsmanWeb.UserAuth do
       conn
     else
       conn
-      |> put_flash(:error, "You must log in to access this page.")
+      |> put_flash(:error, dgettext("ui", "请先登录。"))
       |> maybe_store_return_to()
       |> redirect(to: ~p"/users/log-in")
       |> halt()

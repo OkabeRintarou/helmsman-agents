@@ -24,16 +24,93 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/helmsman"
 import topbar from "../vendor/topbar"
+import Hotkeys from "./hooks/hotkeys"
+
+const RECENT_TASKS = "hm:recent-tasks"
+const recentTasks = () => {
+  try { return JSON.parse(localStorage.getItem(RECENT_TASKS)) || [] } catch (_e) { return [] }
+}
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  params: () => ({_csrf_token: csrfToken, recent_tasks: recentTasks()}),
+  hooks: {...colocatedHooks, Hotkeys},
+})
+
+// Focus return for modal layers (design D5c): remember the element focused when a layer
+// opens and focus it again when that layer closes.
+const focusStack = []
+window.addEventListener("hm:overlay-open", ({target}) => {
+  const el = document.activeElement
+  if (el && el !== document.body && !target.contains(el)) focusStack.push({layer: target.id, el, id: el.id})
+})
+window.addEventListener("hm:overlay-close", ({target}) => {
+  const index = focusStack.findLastIndex(entry => entry.layer === target.id)
+  if (index === -1) return
+  const [{el, id}] = focusStack.splice(index, 1)
+  const restore = el.isConnected ? el : id && document.getElementById(id)
+  restore?.focus({preventScroll: true})
+})
+window.addEventListener("hm:clear-input", ({target}) => { target.value = "" })
+
+// Buttons disabled with a reason stay focusable (aria-disabled) but must not act: cancel
+// clicks (also the synthetic click of implicit Enter submission) and their submits.
+const disabledButton = el => el?.closest?.("[data-hm-disabled]")
+window.addEventListener("click", e => {
+  if (disabledButton(e.target)) { e.preventDefault(); e.stopImmediatePropagation() }
+}, true)
+window.addEventListener("submit", e => {
+  if (disabledButton(e.submitter)) { e.preventDefault(); e.stopImmediatePropagation() }
+}, true)
+
+// Sidebar collapse (lg and up); the root layout applies the stored state before paint.
+window.addEventListener("hm:toggle-sidebar", () => {
+  const html = document.documentElement
+  const collapsed = html.getAttribute("data-sidebar") !== "collapsed"
+  collapsed ? html.setAttribute("data-sidebar", "collapsed") : html.removeAttribute("data-sidebar")
+  localStorage.setItem("hm:sidebar", collapsed ? "collapsed" : "expanded")
+})
+
+// Task pages push this on mount; the command palette lists these when empty.
+window.addEventListener("phx:hm:visit-task", ({detail}) => {
+  if (!detail?.ident) return
+  const list = [detail.ident, ...recentTasks().filter(i => i !== detail.ident)].slice(0, 10)
+  localStorage.setItem(RECENT_TASKS, JSON.stringify(list))
+})
+
+// Command palette actions that run on the client.
+window.addEventListener("phx:hm:palette-action", ({detail}) => {
+  const dialog = document.getElementById("command-palette-dialog")
+  if (dialog?.getAttribute("data-cancel")) liveSocket.execJS(dialog, dialog.getAttribute("data-cancel"))
+  if (detail.action === "new-task") document.querySelector("[data-hm-new-task]")?.click()
+  if (detail.action === "theme") window.dispatchEvent(new CustomEvent("phx:set-theme", {detail}))
+  if (detail.action === "copy-link") navigator.clipboard?.writeText(window.location.href)
+})
+
+// Submitting buttons: aria-busy while the submit is pending; afterwards move focus to
+// the first invalid field of the form.
+window.addEventListener("phx:push", ({detail}) => {
+  if (detail.eventType !== "submit") return
+  const buttons = detail.loadingElements.filter(el => el.hasAttribute?.("data-hm-busy"))
+  buttons.forEach(b => b.setAttribute("aria-busy", "true"))
+  const form = detail.loadingElements.find(el => el.tagName === "FORM")
+  detail.loadingComplete?.then(() => {
+    buttons.forEach(b => b.removeAttribute("aria-busy"))
+    requestAnimationFrame(() => form?.querySelector("[aria-invalid=true]")?.focus())
+  })
+})
+
+// Info flashes fade out by CSS; clear them on the server afterwards so a repeated
+// message is rendered (and animated) again.
+window.addEventListener("animationend", ({target, animationName}) => {
+  const clear = animationName === "hm-flash-out" && target.getAttribute?.("data-hm-flash-clear")
+  if (clear) liveSocket.execJS(target, clear)
 })
 
 // Show progress bar on live navigation and form submits
-topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
+const brand = getComputedStyle(document.documentElement).getPropertyValue("--hm-brand").trim()
+topbar.config({barColors: {0: brand || "currentColor"}, shadowBlur: 0})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 

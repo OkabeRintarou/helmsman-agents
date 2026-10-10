@@ -33,8 +33,8 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         |> log_in_user(user_fixture())
         |> live(~p"/users/settings")
 
-      assert html =~ "Change Email"
-      assert html =~ "Save Password"
+      assert html =~ "修改邮箱"
+      assert html =~ "保存密码"
     end
 
     test "redirects if user is not logged in", %{conn: conn} do
@@ -42,7 +42,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
 
       assert {:redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/log-in"
-      assert %{"error" => "You must log in to access this page."} = flash
+      assert %{"error" => "请先登录。"} = flash
     end
 
     test "shows email and password forms 19 minutes after logging in", %{conn: conn} do
@@ -86,7 +86,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         |> form("#email_form", %{"user" => %{"email" => unique_user_email()}})
         |> render_submit()
 
-      assert html =~ "You must log in again to change your email or password."
+      assert html =~ "需要重新登录才能修改邮箱或密码。"
       assert has_element?(lv, "#reauthenticate_notice")
       refute has_element?(lv, "#email_form")
       assert has_element?(lv, "#display_name_form")
@@ -105,7 +105,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
 
       html = render_submit(form)
 
-      assert html =~ "You must log in again to change your email or password."
+      assert html =~ "需要重新登录才能修改邮箱或密码。"
       refute has_element?(lv, "#password_form")
       refute has_element?(lv, ~s(#password_form[phx-trigger-action]))
       assert Accounts.get_user_by_email_and_password(user.email, valid_user_password())
@@ -140,7 +140,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         |> form("#display_name_form", %{"user" => %{"display_name" => "Captain Nemo"}})
         |> render_submit()
 
-      assert result =~ "Display name updated successfully"
+      assert result =~ "显示名已更新"
 
       assert lv |> element("#display_name_form input[name='user[display_name]']") |> render() =~
                ~s(value="Captain Nemo")
@@ -158,7 +158,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         })
         |> render_submit()
 
-      assert result =~ "should be at most 64 character(s)"
+      assert result =~ "最多 64 个字符"
       assert Accounts.get_user!(user.id).display_name == user.display_name
     end
   end
@@ -181,7 +181,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         })
         |> render_submit()
 
-      assert result =~ "A link to confirm your email"
+      assert result =~ "确认链接已发送到新邮箱"
       assert Accounts.get_user_by_email(user.email)
     end
 
@@ -196,8 +196,8 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
           "user" => %{"email" => "with spaces"}
         })
 
-      assert result =~ "Change Email"
-      assert result =~ "must have the @ sign and no spaces"
+      assert result =~ "修改邮箱"
+      assert result =~ "必须包含 @ 且不能有空格"
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn, user: user} do
@@ -210,8 +210,8 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         })
         |> render_submit()
 
-      assert result =~ "Change Email"
-      assert result =~ "did not change"
+      assert result =~ "修改邮箱"
+      assert result =~ "没有变化"
     end
   end
 
@@ -244,7 +244,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       assert get_session(new_password_conn, :user_token) != get_session(conn, :user_token)
 
       assert Phoenix.Flash.get(new_password_conn.assigns.flash, :info) =~
-               "Password updated successfully"
+               "密码已更新"
 
       assert Accounts.get_user_by_email_and_password(user.email, new_password)
     end
@@ -262,9 +262,9 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
           }
         })
 
-      assert result =~ "Save Password"
-      assert result =~ "should be at least 12 character(s)"
-      assert result =~ "does not match password"
+      assert result =~ "保存密码"
+      assert result =~ "至少 12 个字符"
+      assert result =~ "与密码不一致"
     end
 
     test "renders errors with invalid data (phx-submit)", %{conn: conn} do
@@ -280,9 +280,9 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
         })
         |> render_submit()
 
-      assert result =~ "Save Password"
-      assert result =~ "should be at least 12 character(s)"
-      assert result =~ "does not match password"
+      assert result =~ "保存密码"
+      assert result =~ "至少 12 个字符"
+      assert result =~ "与密码不一致"
     end
   end
 
@@ -305,7 +305,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       assert {:live_redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/settings"
       assert %{"info" => message} = flash
-      assert message == "Email changed successfully."
+      assert message == "邮箱已修改。"
       refute Accounts.get_user_by_email(user.email)
       assert Accounts.get_user_by_email(email)
 
@@ -314,7 +314,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       assert {:live_redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/settings"
       assert %{"error" => message} = flash
-      assert message == "Email change link is invalid or it has expired."
+      assert message == "邮箱修改链接无效或已过期。"
     end
 
     test "does not update email with invalid token", %{conn: conn, user: user} do
@@ -322,7 +322,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       assert {:live_redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/settings"
       assert %{"error" => message} = flash
-      assert message == "Email change link is invalid or it has expired."
+      assert message == "邮箱修改链接无效或已过期。"
       assert Accounts.get_user_by_email(user.email)
     end
 
@@ -332,7 +332,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       assert {:redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/log-in"
       assert %{"error" => message} = flash
-      assert message == "You must log in to access this page."
+      assert message == "请先登录。"
     end
 
     test "works 19 minutes after logging in", %{conn: conn, user: user, token: token} do
@@ -340,7 +340,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
 
       {:error, redirect} = live(conn, ~p"/users/settings/confirm-email/#{token}")
       assert {:live_redirect, %{to: "/users/settings", flash: flash}} = redirect
-      assert flash["info"] == "Email changed successfully."
+      assert flash["info"] == "邮箱已修改。"
       refute Accounts.get_user_by_email(user.email)
     end
 
@@ -350,7 +350,7 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       {:error, redirect} = live(conn, ~p"/users/settings/confirm-email/#{token}")
       assert {:redirect, %{to: path, flash: flash}} = redirect
       assert path == ~p"/users/log-in"
-      assert %{"error" => "You must re-authenticate to access this page."} = flash
+      assert %{"error" => "请重新登录以验证身份。"} = flash
       assert Accounts.get_user_by_email(user.email)
     end
   end

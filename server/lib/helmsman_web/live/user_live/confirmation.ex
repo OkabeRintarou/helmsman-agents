@@ -6,69 +6,79 @@ defmodule HelmsmanWeb.UserLive.Confirmation do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div class="mx-auto max-w-sm">
-        <div class="text-center">
-          <.header>Welcome {@user.email}</.header>
-        </div>
+    <Layouts.auth flash={@flash}>
+      <.header>{dgettext("ui", "欢迎，%{email}", email: @user.email)}</.header>
 
-        <.form
-          :if={!@user.confirmed_at}
-          for={@form}
-          id="confirmation_form"
-          phx-mounted={JS.focus_first()}
-          phx-submit="submit"
-          action={~p"/users/log-in?_action=confirmed"}
-          phx-trigger-action={@trigger_submit}
+      <.form
+        :if={!@user.confirmed_at}
+        for={@form}
+        id="confirmation_form"
+        phx-mounted={JS.focus_first()}
+        phx-submit="submit"
+        action={~p"/users/log-in?_action=confirmed"}
+        phx-trigger-action={@trigger_submit}
+        class="flex flex-col gap-2"
+      >
+        <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
+        <.button
+          type="submit"
+          variant="primary"
+          name={@form[:remember_me].name}
+          value="true"
+          phx-disable-with={dgettext("ui", "正在确认…")}
+          class="w-full"
         >
-          <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
+          {dgettext("ui", "确认并保持登录")}
+        </.button>
+        <.button type="submit" phx-disable-with={dgettext("ui", "正在确认…")} class="w-full">
+          {dgettext("ui", "确认并仅本次登录")}
+        </.button>
+      </.form>
+
+      <.form
+        :if={@user.confirmed_at}
+        for={@form}
+        id="login_form"
+        phx-submit="submit"
+        phx-mounted={JS.focus_first()}
+        action={~p"/users/log-in"}
+        phx-trigger-action={@trigger_submit}
+        class="flex flex-col gap-2"
+      >
+        <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
+        <%= if @current_scope do %>
           <.button
+            type="submit"
+            variant="primary"
+            phx-disable-with={dgettext("ui", "正在登录…")}
+            class="w-full"
+          >
+            {dgettext("ui", "登录")}
+          </.button>
+        <% else %>
+          <.button
+            type="submit"
+            variant="primary"
             name={@form[:remember_me].name}
             value="true"
-            phx-disable-with="Confirming..."
-            class="btn btn-primary w-full"
+            phx-disable-with={dgettext("ui", "正在登录…")}
+            class="w-full"
           >
-            Confirm and stay logged in
+            {dgettext("ui", "在此设备上保持登录")}
           </.button>
-          <.button phx-disable-with="Confirming..." class="btn btn-primary btn-soft w-full mt-2">
-            Confirm and log in only this time
+          <.button type="submit" phx-disable-with={dgettext("ui", "正在登录…")} class="w-full">
+            {dgettext("ui", "仅本次登录")}
           </.button>
-        </.form>
+        <% end %>
+      </.form>
 
-        <.form
-          :if={@user.confirmed_at}
-          for={@form}
-          id="login_form"
-          phx-submit="submit"
-          phx-mounted={JS.focus_first()}
-          action={~p"/users/log-in"}
-          phx-trigger-action={@trigger_submit}
-        >
-          <input type="hidden" name={@form[:token].name} value={@form[:token].value} />
-          <%= if @current_scope do %>
-            <.button phx-disable-with="Logging in..." class="btn btn-primary w-full">
-              Log in
-            </.button>
-          <% else %>
-            <.button
-              name={@form[:remember_me].name}
-              value="true"
-              phx-disable-with="Logging in..."
-              class="btn btn-primary w-full"
-            >
-              Keep me logged in on this device
-            </.button>
-            <.button phx-disable-with="Logging in..." class="btn btn-primary btn-soft w-full mt-2">
-              Log me in only this time
-            </.button>
-          <% end %>
-        </.form>
-
-        <p :if={!@user.confirmed_at} class="alert alert-outline mt-8">
-          Tip: If you prefer passwords, you can enable them in the user settings.
-        </p>
-      </div>
-    </Layouts.app>
+      <p
+        :if={!@user.confirmed_at}
+        class="mt-6 rounded-field border border-border p-3 text-body text-fg-muted"
+      >
+        {dgettext("ui", "提示：如果更习惯用密码登录，可以在账号设置中设置密码。")}
+      </p>
+    </Layouts.auth>
     """
   end
 
@@ -82,7 +92,7 @@ defmodule HelmsmanWeb.UserLive.Confirmation do
     else
       {:ok,
        socket
-       |> put_flash(:error, "Magic link is invalid or it has expired.")
+       |> put_flash(:error, dgettext("ui", "登录链接无效或已过期。"))
        |> push_navigate(to: ~p"/users/log-in")}
     end
   end

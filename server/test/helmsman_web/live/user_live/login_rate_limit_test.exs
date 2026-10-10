@@ -61,7 +61,7 @@ defmodule HelmsmanWeb.UserLive.LoginRateLimitTest do
 
     assert Enum.take(known_results, 3) == Enum.take(unknown_results, 3)
     assert [{:redirected, info} | _] = known_results
-    assert info =~ "If your email is in our system"
+    assert info =~ "如果该邮箱已注册"
 
     assert List.last(known_results) == List.last(unknown_results)
     assert List.last(known_results) == {:rendered, "请求过于频繁，请稍后再试"}
@@ -93,7 +93,7 @@ defmodule HelmsmanWeb.UserLive.LoginRateLimitTest do
 
     for _ <- 1..10 do
       conn = post_login.("wrong password")
-      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "Invalid email or password"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) == "邮箱或密码错误"
     end
 
     conn = post_login.(valid_user_password())
