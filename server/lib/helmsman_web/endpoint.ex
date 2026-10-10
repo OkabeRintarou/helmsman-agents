@@ -8,12 +8,14 @@ defmodule HelmsmanWeb.Endpoint do
     store: :cookie,
     key: "_helmsman_key",
     signing_salt: "UEooEoYk",
-    same_site: "Lax"
+    same_site: "Lax",
+    # Compile-time: config/prod.exs enables it for production builds.
+    secure: Application.compile_env(:helmsman, :secure_session_cookie, false)
   ]
 
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+    websocket: [connect_info: [:peer_data, session: @session_options]],
+    longpoll: [connect_info: [:peer_data, session: @session_options]]
 
   # Serve at "/" the static files from "priv/static" directory.
   #

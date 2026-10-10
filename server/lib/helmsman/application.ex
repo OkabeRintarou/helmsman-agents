@@ -9,13 +9,18 @@ defmodule Helmsman.Application do
 
   use Application
 
+  require Logger
+
   @impl true
   def start(_type, _args) do
+    warn_if_mailer_only_logs()
+
     children = [
       HelmsmanWeb.Telemetry,
       Helmsman.Repo,
       {DNSCluster, query: Application.get_env(:helmsman, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Helmsman.PubSub},
+      {Helmsman.RateLimit, clean_period: :timer.minutes(1)},
       # Start a worker by calling: Helmsman.Worker.start_link(arg)
       # {Helmsman.Worker, arg},
       # Start to serve requests, typically the last entry
@@ -26,6 +31,15 @@ defmodule Helmsman.Application do
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Helmsman.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp warn_if_mailer_only_logs do
+    if Application.get_env(:helmsman, Helmsman.Mailer)[:adapter] == Swoosh.Adapters.Logger do
+      Logger.warning(
+        "HELMSMAN_MAILER_ADAPTER=log: emails are not delivered; their full content, " <>
+          "including login links, is written to the log"
+      )
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

@@ -37,3 +37,5 @@ docker compose up -d db
 - 类型检查单独运行：在任一项目目录执行 `mix dialyzer`（首次构建 PLT 需要几分钟）。
 - 启动服务端：`cd server && mix phx.server`，访问 <http://localhost:4000>。
 - 使用其他 PostgreSQL：设置 `DATABASE_URL`（例如 `postgres://user:pass@host/helmsman_test`），服务端的开发与测试配置会改用该地址。
+- 注册模式 `HELMSMAN_SIGNUP`：`invite`（缺省）或 `open`；空库时第一个注册的用户不受限制并成为实例管理员。开发环境的邮件（含 magic link）在 <http://localhost:4000/dev/mailbox> 查看。
+- 生产环境必须设置 `HELMSMAN_MAILER_ADAPTER`：`smtp`（读 `HELMSMAN_MAILER_SMTP_HOST`、`_PORT`（缺省 587）、`_USERNAME`、`_PASSWORD`、`_TLS`（`always` | `if_available`））或 `log`（邮件只写日志，启动时警告）；发件人 `HELMSMAN_MAILER_FROM`，缺省 `Helmsman <noreply@PHX_HOST>`。

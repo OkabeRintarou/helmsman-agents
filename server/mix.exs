@@ -44,6 +44,7 @@ defmodule Helmsman.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:bcrypt_elixir, "~> 3.0"},
       {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
@@ -70,6 +71,8 @@ defmodule Helmsman.MixProject do
        compile: false,
        depth: 1},
       {:swoosh, "~> 1.16"},
+      {:gen_smtp, "~> 1.3"},
+      {:hammer, "~> 7.5"},
       {:req, "~> 0.5"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
@@ -109,10 +112,25 @@ defmodule Helmsman.MixProject do
         "deps.unlock --check-unused",
         "format --check-formatted",
         "credo --strict",
-        "gettext.extract --check-up-to-date",
+        &check_gettext/1,
         "helmsman.check_ui_classes",
         "test"
       ]
     ]
+  end
+
+  # `gettext.extract --check-up-to-date` in a separate VM: it force-recompiles the
+  # project, and doing that after this VM consolidated protocols leaves "already
+  # consolidated" warnings (e.g. the derived Inspect of Accounts.User) in the compile
+  # manifest, which fails the next `compile --warnings-as-errors`.
+  defp check_gettext(_args) do
+    {_, status} =
+      System.cmd("mix", ["gettext.extract", "--check-up-to-date"],
+        env: [{"MIX_ENV", to_string(Mix.env())}],
+        into: IO.stream(),
+        stderr_to_stdout: true
+      )
+
+    if status != 0, do: Mix.raise("gettext.extract --check-up-to-date failed")
   end
 end

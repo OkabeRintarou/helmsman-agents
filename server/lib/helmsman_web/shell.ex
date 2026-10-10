@@ -11,15 +11,17 @@ defmodule HelmsmanWeb.Shell do
     page; messages about other workspaces are ignored.
   * Handles the `hm:switch-workspace` event from the workspace switcher.
 
-  The scope is read from `socket.assigns.current_scope` (`user`, `workspace`). Until
-  `add-workspaces-actors` provides the membership list, the workspaces come from
-  `scope.workspaces` when present, otherwise just the current workspace.
+  The scope is read from `socket.assigns.current_scope` (`user`, `workspace`). For a
+  `Helmsman.Accounts.Scope` the switcher lists `Helmsman.Workspaces.list_for_user/1`; the
+  `/dev/ui` demo scope (a plain map) carries its own `workspaces`.
   """
   use Gettext, backend: HelmsmanWeb.Gettext
 
   import Phoenix.Component, only: [assign: 3]
   import Phoenix.LiveView
 
+  alias Helmsman.Accounts.{Scope, User}
+  alias Helmsman.Workspaces
   alias HelmsmanWeb.Nav
 
   @max_recent 10
@@ -105,6 +107,9 @@ defmodule HelmsmanWeb.Shell do
   defp current_workspace(_scope), do: nil
 
   defp workspaces(nil), do: []
+
+  defp workspaces(%Scope{user: %User{} = user}),
+    do: user |> Workspaces.list_for_user() |> Enum.map(& &1.workspace)
 
   defp workspaces(scope) do
     case Map.get(scope, :workspaces) do

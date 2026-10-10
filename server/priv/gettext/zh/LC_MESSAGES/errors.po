@@ -91,3 +91,13 @@ msgstr "必须大于或等于 %{number}"
 
 msgid "must be equal to %{number}"
 msgstr "必须等于 %{number}"
+
+## From Helmsman.Accounts.User (custom validation messages)
+msgid "must have the @ sign and no spaces"
+msgstr "必须包含 @ 且不能有空格"
+
+msgid "did not change"
+msgstr "没有变化"
+
+msgid "does not match password"
+msgstr "与密码不一致"

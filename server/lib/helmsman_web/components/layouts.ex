@@ -267,7 +267,11 @@ defmodule HelmsmanWeb.Layouts do
   defp user_menu(%{user: nil} = assigns), do: ~H""
 
   defp user_menu(assigns) do
-    name = Map.get(assigns.user, :name) || Map.get(assigns.user, :email) || ""
+    user = assigns.user
+
+    name =
+      Map.get(user, :display_name) || Map.get(user, :name) || Map.get(user, :email) || ""
+
     theme_group = dgettext("ui", "主题")
 
     items = [
@@ -304,7 +308,7 @@ defmodule HelmsmanWeb.Layouts do
       popover_class="w-56"
     >
       <:trigger>
-        <.avatar name={@name} src={@user[:avatar_url]} />
+        <.avatar name={@name} src={Map.get(@user, :avatar_url)} />
         <span class="truncate text-body text-fg lg:sidebar-collapsed:sr-only">{@name}</span>
       </:trigger>
     </.dropdown>
@@ -324,7 +328,8 @@ defmodule HelmsmanWeb.Layouts do
   end
 
   @doc """
-  Centered card layout for authentication pages (login, registration, `/device`).
+  Centered card layout for authentication pages (login, registration, confirmation,
+  `/device`) and the account settings page, which lies outside any workspace.
   """
   attr :flash, :map, required: true
   attr :title, :string, default: nil
@@ -333,12 +338,15 @@ defmodule HelmsmanWeb.Layouts do
   def auth(assigns) do
     ~H"""
     <div class="flex min-h-dvh flex-col items-center justify-center bg-shell px-4 py-12">
-      <div class="mb-6 flex items-center gap-2 text-title font-semibold text-fg">
+      <.link
+        href="/"
+        class="mb-6 flex items-center gap-2 rounded-field text-title font-semibold text-fg"
+      >
         <span class="inline-flex size-7 items-center justify-center rounded-field bg-brand text-on-brand">
           <.icon name="lucide-ship-wheel" class="size-4" />
         </span>
         Helmsman
-      </div>
+      </.link>
       <main
         id="hm-main"
         class="w-full max-w-[400px] rounded-box border border-border bg-surface p-6"

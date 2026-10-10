@@ -1,6 +1,8 @@
 defmodule HelmsmanWeb.Router do
   use HelmsmanWeb, :router
 
+  import HelmsmanWeb.UserAuth
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -8,6 +10,7 @@ defmodule HelmsmanWeb.Router do
     plug :put_root_layout, html: {HelmsmanWeb.Layouts, :root}
     plug :protect_from_forgery
     plug :put_secure_browser_headers
+    plug :fetch_current_scope_for_user
   end
 
   pipeline :api do
@@ -51,5 +54,48 @@ defmodule HelmsmanWeb.Router do
         live "/ui/projects", UiLive, :projects
       end
     end
+  end
+
+  ## Authentication routes
+
+  scope "/", HelmsmanWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live_session :require_authenticated_user,
+      on_mount: [{HelmsmanWeb.UserAuth, :require_authenticated}] do
+      live "/users/settings", UserLive.Settings, :edit
+      live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+    end
+
+    post "/users/update-password", UserSessionController, :update_password
+  end
+
+  ## Workspace routes
+
+  scope "/", HelmsmanWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live_session :workspace,
+      on_mount: [
+        {HelmsmanWeb.UserAuth, :require_authenticated},
+        {HelmsmanWeb.UserAuth, :require_workspace},
+        HelmsmanWeb.Shell
+      ] do
+      live "/w/:slug", WorkspaceLive.Home, :show
+    end
+  end
+
+  scope "/", HelmsmanWeb do
+    pipe_through [:browser]
+
+    live_session :current_user,
+      on_mount: [{HelmsmanWeb.UserAuth, :mount_current_scope}] do
+      live "/users/register", UserLive.Registration, :new
+      live "/users/log-in", UserLive.Login, :new
+      live "/users/log-in/:token", UserLive.Confirmation, :new
+    end
+
+    post "/users/log-in", UserSessionController, :create
+    delete "/users/log-out", UserSessionController, :delete
   end
 end
