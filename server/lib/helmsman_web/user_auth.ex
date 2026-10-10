@@ -11,6 +11,7 @@ defmodule HelmsmanWeb.UserAuth do
 
   alias Helmsman.Accounts
   alias Helmsman.Accounts.Scope
+  alias Helmsman.Workspaces
 
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
@@ -199,6 +200,12 @@ defmodule HelmsmanWeb.UserAuth do
       on user_token.
       Redirects to login page if there's no logged user.
 
+    * `:require_workspace` - Must run after `:require_authenticated`. Puts
+      the workspace of the `slug` route parameter, the user's role and
+      human identity in the current_scope. Raises
+      `HelmsmanWeb.NotFoundError` (404) when the workspace does not exist
+      or the user is not a member, so both cases look the same.
+
   ## Examples
 
   Use the `on_mount` lifecycle macro in LiveViews to mount or authenticate
@@ -233,6 +240,19 @@ defmodule HelmsmanWeb.UserAuth do
         |> Phoenix.LiveView.redirect(to: ~p"/users/log-in")
 
       {:halt, socket}
+    end
+  end
+
+  def on_mount(:require_workspace, %{"slug" => slug}, _session, socket) do
+    %Scope{user: user} = scope = socket.assigns.current_scope
+
+    case Workspaces.fetch_for_user(user, slug) do
+      {:ok, %{workspace: workspace, membership: membership, actor: actor}} ->
+        scope = %{Scope.put_workspace(scope, workspace, membership, actor) | via: :web}
+        {:cont, Phoenix.Component.assign(socket, :current_scope, scope)}
+
+      {:error, :not_found} ->
+        raise HelmsmanWeb.NotFoundError
     end
   end
 

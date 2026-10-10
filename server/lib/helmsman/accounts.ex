@@ -7,7 +7,10 @@ defmodule Helmsman.Accounts do
   alias Helmsman.Repo
 
   alias Helmsman.Accounts.{SignupGate, User, UserNotifier, UserToken}
+  alias Helmsman.Locks
   alias Helmsman.RateLimit
+  alias Helmsman.Tx
+  alias Helmsman.Workspaces
 
   ## Database getters
 
@@ -99,14 +102,19 @@ defmodule Helmsman.Accounts do
   Registers a user.
 
   The first user of the instance is always allowed and becomes the instance
-  administrator. Later users are allowed in `:open` signup mode; in `:invite`
-  mode `Helmsman.Accounts.SignupGate.allow?/1` decides. The decision runs in
-  one transaction serialized by a global advisory lock.
+  administrator and the owner of the workspace `default`. Later users are
+  allowed in `:open` signup mode; in `:invite` mode
+  `Helmsman.Accounts.SignupGate.allow?/1` decides. The decision runs in one
+  transaction serialized by a global advisory lock.
 
   ## Options
 
     * `:ip` - client IP; when given, the submission counts against the
       per-IP registration rate limit (successful or not).
+    * `:skip_signup_gate` - allow the registration whatever the signup mode
+      (command-line bootstrap).
+    * `:skip_default_workspace` - do not create the `default` workspace for
+      the first user (command-line bootstrap).
 
   Other options are passed to `Helmsman.Accounts.SignupGate.allow?/1`.
 
@@ -127,22 +135,35 @@ defmodule Helmsman.Accounts do
           | {:error, Ecto.Changeset.t() | :signup_closed | :rate_limited}
   def register_user(attrs, opts \\ []) do
     with :ok <- check_register_rate(opts) do
-      Repo.transact(fn -> register_user_locked(attrs, opts) end)
+      Tx.run(fn -> register_user_locked(attrs, opts) end)
     end
   end
 
   # Runs inside the registration transaction.
   defp register_user_locked(attrs, opts) do
-    Repo.query!("SELECT pg_advisory_xact_lock(1)")
+    Locks.registration!()
     user_count = Repo.aggregate(User, :count)
     race_delay()
 
-    with {:ok, instance_admin?} <- signup_decision(user_count, opts) do
-      %User{instance_admin: instance_admin?}
-      |> User.registration_changeset(attrs)
-      |> Repo.insert()
+    with {:ok, instance_admin?} <- signup_decision(user_count, opts),
+         {:ok, user} <-
+           %User{instance_admin: instance_admin?}
+           |> User.registration_changeset(attrs)
+           |> Repo.insert(),
+         {:ok, _workspace} <- maybe_create_default_workspace(user, opts) do
+      {:ok, user}
     end
   end
+
+  defp maybe_create_default_workspace(%User{instance_admin: true} = user, opts) do
+    if Keyword.get(opts, :skip_default_workspace, false) do
+      {:ok, nil}
+    else
+      Workspaces.create_in_transaction(user, %{slug: "default", name: "Default"})
+    end
+  end
+
+  defp maybe_create_default_workspace(_user, _opts), do: {:ok, nil}
 
   defp check_register_rate(opts) do
     case Keyword.fetch(opts, :ip) do
@@ -154,9 +175,10 @@ defmodule Helmsman.Accounts do
   defp signup_decision(0, _opts), do: {:ok, true}
 
   defp signup_decision(_count, opts) do
-    case signup_mode() do
-      :open -> {:ok, false}
-      :invite -> invited_signup(SignupGate.allow?(opts))
+    cond do
+      Keyword.get(opts, :skip_signup_gate, false) -> {:ok, false}
+      signup_mode() == :open -> {:ok, false}
+      true -> invited_signup(SignupGate.allow?(opts))
     end
   end
 
@@ -445,6 +467,25 @@ defmodule Helmsman.Accounts do
     {encoded_token, user_token} = UserToken.build_email_token(user, "login")
     Repo.insert!(user_token)
     UserNotifier.deliver_login_instructions(user, magic_link_url_fun.(encoded_token))
+  end
+
+  @doc """
+  Generates a magic link login token for `user` without sending an email
+  (command-line bootstrap). The token is valid for 15 minutes.
+  """
+  @spec generate_login_token(User.t()) :: String.t()
+  def generate_login_token(%User{} = user) do
+    {encoded_token, user_token} = UserToken.build_email_token(user, "login")
+    Repo.insert!(user_token)
+    encoded_token
+  end
+
+  @doc """
+  Marks the user as confirmed.
+  """
+  @spec confirm_user(User.t()) :: {:ok, User.t()} | {:error, Ecto.Changeset.t()}
+  def confirm_user(%User{} = user) do
+    user |> User.confirm_changeset() |> Repo.update()
   end
 
   @doc """

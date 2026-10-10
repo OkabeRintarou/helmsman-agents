@@ -59,6 +59,20 @@ defmodule HelmsmanWeb.Router do
     post "/users/update-password", UserSessionController, :update_password
   end
 
+  ## Workspace routes
+
+  scope "/", HelmsmanWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    live_session :workspace,
+      on_mount: [
+        {HelmsmanWeb.UserAuth, :require_authenticated},
+        {HelmsmanWeb.UserAuth, :require_workspace}
+      ] do
+      live "/w/:slug", WorkspaceLive.Home, :show
+    end
+  end
+
   scope "/", HelmsmanWeb do
     pipe_through [:browser]
 

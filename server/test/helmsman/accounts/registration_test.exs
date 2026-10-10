@@ -3,6 +3,9 @@ defmodule Helmsman.Accounts.RegistrationTest do
   use Helmsman.DataCase, async: false
 
   alias Helmsman.Accounts
+  alias Helmsman.Actors.Actor
+  alias Helmsman.Workspaces
+  alias Helmsman.Workspaces.Workspace
 
   import Helmsman.AccountsFixtures
 
@@ -50,6 +53,45 @@ defmodule Helmsman.Accounts.RegistrationTest do
       assert {:ok, second} = Accounts.register_user(valid_user_attributes())
       refute second.instance_admin
     end
+  end
+
+  describe "default workspace" do
+    test "the first user owns the workspace default" do
+      assert {:ok, first} = Accounts.register_user(valid_user_attributes())
+
+      assert {:ok, %{workspace: ws, membership: membership, actor: actor}} =
+               Workspaces.fetch_for_user(first, "default")
+
+      assert ws.name == "Default"
+      assert membership.role == :owner
+      assert actor.kind == :human
+      assert Repo.get_by(Actor, workspace_id: ws.id, kind: :system).name == "helmsman"
+    end
+
+    test "a second user gets no workspace" do
+      put_signup_mode(:open)
+      {:ok, _first} = Accounts.register_user(valid_user_attributes())
+      {:ok, second} = Accounts.register_user(valid_user_attributes())
+
+      assert Workspaces.list_for_user(second) == []
+      assert Repo.aggregate(Workspace, :count) == 1
+    end
+
+    test "skip_default_workspace leaves the first user without a workspace" do
+      assert {:ok, first} =
+               Accounts.register_user(valid_user_attributes(), skip_default_workspace: true)
+
+      assert first.instance_admin
+      assert Workspaces.list_for_user(first) == []
+    end
+  end
+
+  test "skip_signup_gate registers in invite mode" do
+    put_signup_mode(:invite)
+    {:ok, _first} = Accounts.register_user(valid_user_attributes())
+
+    assert {:ok, user} = Accounts.register_user(valid_user_attributes(), skip_signup_gate: true)
+    refute user.instance_admin
   end
 
   test "instance_admin cannot be set through registration attrs" do

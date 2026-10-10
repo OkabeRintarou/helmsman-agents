@@ -38,7 +38,10 @@ end
 
 config :helmsman, Helmsman.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  # The first-user race test holds one unboxed connection per racer at a
+  # barrier, so its ten concurrent registrations need at least ten connections
+  # even when the BEAM reports only a small number of schedulers.
+  pool_size: max(System.schedulers_online() * 2, 10)
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

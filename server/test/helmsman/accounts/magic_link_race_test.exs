@@ -9,14 +9,19 @@ defmodule Helmsman.Accounts.MagicLinkRaceTest do
 
   alias Ecto.Adapters.SQL.Sandbox
   alias Helmsman.Accounts
+  alias Helmsman.CommittedData
   alias Helmsman.Repo
 
+  # Every user of this module has an email in this domain, so cleanup only
+  # deletes rows the module created.
+  @domain "magic-link-race.test"
+
   setup do
-    on_exit(fn -> unboxed(&delete_committed_users/0) end)
+    on_exit(&delete_committed_users/0)
   end
 
   test "a link of an unconfirmed user logs in exactly once" do
-    {user, token} = unboxed(fn -> with_link(unconfirmed_user_fixture()) end)
+    {user, token} = unboxed(fn -> with_link(unconfirmed_user_fixture(racer_attrs())) end)
 
     results = race(user, [fn -> consume(token) end, fn -> consume(token) end])
 
@@ -25,7 +30,7 @@ defmodule Helmsman.Accounts.MagicLinkRaceTest do
   end
 
   test "a link of a confirmed user logs in exactly once and never raises" do
-    {user, token} = unboxed(fn -> with_link(user_fixture()) end)
+    {user, token} = unboxed(fn -> with_link(user_fixture(racer_attrs())) end)
 
     results = race(user, [fn -> consume(token) end, fn -> consume(token) end])
 
@@ -35,7 +40,7 @@ defmodule Helmsman.Accounts.MagicLinkRaceTest do
   test "two different links of an unconfirmed user log in exactly once without deadlock" do
     {user, token1, token2} =
       unboxed(fn ->
-        user = unconfirmed_user_fixture()
+        user = unconfirmed_user_fixture(racer_attrs())
         {_user, token1} = with_link(user)
         {_user, token2} = with_link(user)
         {user, token1, token2}
@@ -48,7 +53,7 @@ defmodule Helmsman.Accounts.MagicLinkRaceTest do
   end
 
   test "a link and a password change of the same user do not deadlock" do
-    {user, token} = unboxed(fn -> with_link(user_fixture()) end)
+    {user, token} = unboxed(fn -> with_link(user_fixture(racer_attrs())) end)
 
     change_password = fn ->
       unboxed(fn -> Accounts.update_user_password(user, %{password: "new valid password"}) end)
@@ -120,9 +125,21 @@ defmodule Helmsman.Accounts.MagicLinkRaceTest do
     end
   end
 
+  # Also removes the `default` workspace of the first user.
+  defp racer_attrs, do: %{email: "user#{System.unique_integer([:positive])}@#{@domain}"}
+
+  # Also removes the `default` workspace a first user gets.
   defp delete_committed_users do
-    Repo.delete_all(Accounts.UserToken)
-    Repo.delete_all(Accounts.User)
+    import Ecto.Query
+
+    pattern = "%@" <> @domain
+
+    ids =
+      unboxed(fn ->
+        Repo.all(from(u in Accounts.User, where: like(u.email, ^pattern), select: u.id))
+      end)
+
+    CommittedData.delete_user_data!(ids)
   end
 
   defp unboxed(fun), do: Sandbox.unboxed_run(Repo, fun)

@@ -12,7 +12,7 @@ defmodule Helmsman.MixProject do
       deps: deps(),
       compilers: [:boundary, :phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
-      dialyzer: [plt_local_path: "priv/plts"]
+      dialyzer: [plt_local_path: "priv/plts", plt_add_apps: [:mix]]
     ]
   end
 
