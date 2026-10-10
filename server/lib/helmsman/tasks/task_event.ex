@@ -1,7 +1,12 @@
 defmodule Helmsman.Tasks.TaskEvent do
   @moduledoc """
   One entry of a task's history: a status change (or the creation, with no
-  `from_status`) and who made it. Rows are only ever inserted.
+  `from_status`), who made it and the evidence attached to it (`comment`,
+  `commits`, `tests`). `auto` marks transitions the system made on its own.
+  Rows are only ever inserted.
+
+  `tests`, when present, is `%{"command" => String.t(), "passed" =>
+  boolean(), "summary" => String.t()}` (see `Helmsman.Tasks.Evidence`).
   """
 
   use Ecto.Schema
@@ -19,6 +24,9 @@ defmodule Helmsman.Tasks.TaskEvent do
     field :to_status, Ecto.Enum, values: Task.statuses()
     belongs_to :actor, Actor
     field :comment, :string
+    field :commits, {:array, :string}, default: []
+    field :tests, :map
+    field :auto, :boolean, default: false
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end

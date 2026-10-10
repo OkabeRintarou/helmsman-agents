@@ -39,6 +39,10 @@ defmodule Helmsman.Tasks.Task do
     belongs_to :assignee, Actor
     field :lock_version, :integer, default: 1
 
+    # Every commit in the task's history (first occurrence first), filled in
+    # by `Helmsman.Tasks` when it loads tasks for their summary.
+    field :commits, {:array, :string}, virtual: true, default: []
+
     has_many :events, TaskEvent
 
     timestamps(type: :utc_datetime_usec)

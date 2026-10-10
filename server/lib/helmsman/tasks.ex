@@ -11,6 +11,10 @@ defmodule Helmsman.Tasks do
   After the commit, every creation or edit broadcasts
   `{:task_created | :task_updated, summary}` on the project topic and
   `{:task_updated, ident}` on the task topic.
+
+  Status changes go through `transition/4` only (designs/05): the rules
+  live in `Helmsman.Tasks.StateMachine`, the evidence checks in
+  `Helmsman.Tasks.Evidence`.
   """
 
   import Ecto.Query, warn: false
@@ -19,11 +23,22 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
   alias Helmsman.Events
+  alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Projects
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
-  alias Helmsman.Tasks.{Ident, Task, TaskEvent}
+
+  alias Helmsman.Tasks.{
+    Evidence,
+    Ident,
+    StateMachine,
+    Task,
+    TaskEvent,
+    TransitionContext,
+    TransitionSteps
+  }
+
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Workspace
 
@@ -39,8 +54,19 @@ defmodule Helmsman.Tasks do
           created_by: actor_ref(),
           assignee: actor_ref(),
           lock_version: pos_integer(),
+          commits: [String.t()],
           created_at: DateTime.t(),
           updated_at: DateTime.t()
+        }
+  @type event_view :: %{
+          from: String.t() | nil,
+          to: String.t(),
+          actor: actor_ref(),
+          comment: String.t() | nil,
+          commits: [String.t()],
+          tests: %{command: String.t(), passed: boolean(), summary: String.t()} | nil,
+          auto: boolean(),
+          at: DateTime.t()
         }
 
   @default_limit 50
@@ -195,6 +221,7 @@ defmodule Helmsman.Tasks do
         |> filter_label(opts[:label])
         |> filter_assignee(workspace_id, opts[:assignee])
         |> Repo.all()
+        |> put_commits()
 
       {:ok, tasks}
     end
@@ -298,6 +325,95 @@ defmodule Helmsman.Tasks do
     end
   end
 
+  ## Transitions
+
+  @doc """
+  Moves the task `ident` to the status `to` (`:transition_task`) and
+  returns its detail (`detail/1`).
+
+  `to` is read by `Helmsman.Tasks.StateMachine.normalize/1`; `opts` (a map
+  or keyword list) may carry `comment`, `commits` and `tests`, checked by
+  `Helmsman.Tasks.Evidence.normalize/1`. Both are checked before the
+  transaction starts.
+
+  In one transaction, after the maintenance lock and the membership row:
+  the workspace graph lock, the task row `FOR UPDATE`, the check context
+  (`Helmsman.Tasks.TransitionContext`), `Helmsman.Tasks.StateMachine.check/3`,
+  the history entry, the new status and the steps of
+  `Helmsman.Tasks.TransitionSteps`. Concurrent transitions of a task run
+  one after the other, each checked against the status the previous one
+  committed.
+
+  Moving a `new` task without an assignee to `in_progress` claims it: the
+  acting identity becomes the assignee and `lock_version` grows by one.
+  Other transitions leave both unchanged.
+
+  After the commit `{:task_updated, summary}` is broadcast on the project
+  topic and `{:task_transitioned, %{ident: ident, event: event}}` on the
+  task topic, `event` being the new history entry (`event_view/1`).
+
+  Errors: `{:invalid_status, input, valid}`, `{:invalid_comment, _}`,
+  `{:invalid_commits, bad}`, `{:invalid_tests, _}`, `:forbidden`,
+  `:not_found`, `:no_actor` and the reasons of `StateMachine.check/3`
+  (`{:invalid_transition, from, to, allowed}`,
+  `{:self_verify_requires_tests, assignee}`, ...).
+  """
+  @spec transition(Scope.t(), String.t(), term(), map() | keyword()) ::
+          {:ok, map()} | {:error, error() | tuple()}
+  def transition(scope, ident, to, opts \\ %{})
+
+  def transition(%Scope{actor: nil}, _ident, _to, _opts), do: {:error, :no_actor}
+
+  def transition(%Scope{workspace: %Workspace{}} = scope, ident, to, opts)
+      when is_binary(ident) and (is_map(opts) or is_list(opts)) do
+    with {:ok, to} <- StateMachine.normalize(to),
+         {:ok, evidence} <- Evidence.normalize(opts) do
+      Workspaces.write_transaction(scope, :transition_task, fn scope ->
+        transition_locked(scope, ident, to, evidence)
+      end)
+    end
+  end
+
+  # Lock order: maintenance lock, membership row (write_transaction), graph
+  # lock, task row (designs/01 §4).
+  defp transition_locked(scope, ident, to, evidence) do
+    with {:ok, ident, _key, _seq} <- Ident.parse(ident),
+         :ok <- Locks.graph!(scope.workspace.id),
+         {:ok, task} <- lock_task(scope.workspace.id, ident),
+         ctx = TransitionContext.build(task, scope, to, evidence),
+         :ok <- StateMachine.check(task.status, to, ctx) do
+      event =
+        Repo.insert!(%TaskEvent{
+          workspace_id: task.workspace_id,
+          task_id: task.id,
+          from_status: task.status,
+          to_status: to,
+          actor_id: scope.actor.id,
+          comment: evidence.comment,
+          commits: evidence.commits,
+          tests: evidence.tests,
+          auto: false
+        })
+
+      task = task |> Changeset.change(transition_changes(task, to, scope)) |> Repo.update!()
+
+      with :ok <- TransitionSteps.run(task, event, scope) do
+        task = preload_detail(task)
+        event = Enum.find(task.events, &(&1.id == event.id))
+        notify_transition(task, event)
+        {:ok, detail(task)}
+      end
+    end
+  end
+
+  # Claiming is the only transition that edits a field, so the only one
+  # that bumps the version: a status change alone must not make concurrent
+  # field edits stale.
+  defp transition_changes(%Task{status: :new, assignee_id: nil} = task, :in_progress, scope),
+    do: [status: :in_progress, assignee_id: scope.actor.id, lock_version: task.lock_version + 1]
+
+  defp transition_changes(_task, to, _scope), do: [status: to]
+
   ## Assignee
 
   # `assignee` is an identity name of the workspace; nil or "" clears it,
@@ -353,11 +469,21 @@ defmodule Helmsman.Tasks do
     Events.after_commit(Events.topic(:task, task.id), {:task_updated, task.ident})
   end
 
+  defp notify_transition(%Task{} = task, %TaskEvent{} = event) do
+    Events.after_commit(Events.topic(:project, task.project_id), {:task_updated, summary(task)})
+
+    Events.after_commit(
+      Events.topic(:task, task.id),
+      {:task_transitioned, %{ident: task.ident, event: event_view(event)}}
+    )
+  end
+
   ## External form
 
   @doc """
   The summary map of a task (MCP, web, notifications). Needs `created_by`
-  and `assignee` preloaded.
+  and `assignee` preloaded and `commits` filled in, as every task returned
+  by this module has.
   """
   @spec summary(Task.t()) :: summary()
   def summary(%Task{} = task) do
@@ -371,6 +497,7 @@ defmodule Helmsman.Tasks do
       created_by: actor_ref(task.created_by),
       assignee: actor_ref(task.assignee),
       lock_version: task.lock_version,
+      commits: task.commits,
       created_at: task.inserted_at,
       updated_at: task.updated_at
     }
@@ -382,21 +509,33 @@ defmodule Helmsman.Tasks do
   """
   @spec detail(Task.t()) :: map()
   def detail(%Task{} = task) do
-    history =
-      Enum.map(task.events, fn event ->
-        %{
-          from: event.from_status && Atom.to_string(event.from_status),
-          to: Atom.to_string(event.to_status),
-          actor: actor_ref(event.actor),
-          comment: event.comment,
-          at: event.inserted_at
-        }
-      end)
-
     task
     |> summary()
-    |> Map.merge(%{description: task.description, history: history})
+    |> Map.merge(%{description: task.description, history: Enum.map(task.events, &event_view/1)})
   end
+
+  @doc """
+  The external form of a history entry, in `detail/1` and in the
+  `:task_transitioned` notification. Needs `actor` preloaded.
+  """
+  @spec event_view(TaskEvent.t()) :: event_view()
+  def event_view(%TaskEvent{} = event) do
+    %{
+      from: event.from_status && Atom.to_string(event.from_status),
+      to: Atom.to_string(event.to_status),
+      actor: actor_ref(event.actor),
+      comment: event.comment,
+      commits: event.commits,
+      tests: tests_view(event.tests),
+      auto: event.auto,
+      at: event.inserted_at
+    }
+  end
+
+  defp tests_view(nil), do: nil
+
+  defp tests_view(%{} = tests),
+    do: %{command: tests["command"], passed: tests["passed"], summary: tests["summary"]}
 
   # Keys never contain "-".
   defp project_key(ident), do: ident |> String.split("-", parts: 2) |> hd()
@@ -406,6 +545,27 @@ defmodule Helmsman.Tasks do
 
   defp preload_detail(task) do
     events = from(e in TaskEvent, order_by: [asc: e.inserted_at, asc: e.id], preload: :actor)
-    Repo.preload(task, [:created_by, :assignee, events: events], force: true)
+    task = Repo.preload(task, [:created_by, :assignee, events: events], force: true)
+    %{task | commits: task.events |> Enum.flat_map(& &1.commits) |> Enum.uniq()}
+  end
+
+  # One query for the commits of all `tasks`, whatever their number.
+  defp put_commits([]), do: []
+
+  defp put_commits(tasks) do
+    ids = Enum.map(tasks, & &1.id)
+
+    commits =
+      from(e in TaskEvent,
+        where: e.task_id in ^ids and fragment("cardinality(?) > 0", e.commits),
+        order_by: [asc: e.inserted_at, asc: e.id],
+        select: {e.task_id, e.commits}
+      )
+      |> Repo.all()
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+    Enum.map(tasks, fn task ->
+      %{task | commits: commits |> Map.get(task.id, []) |> List.flatten() |> Enum.uniq()}
+    end)
   end
 end

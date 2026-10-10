@@ -186,6 +186,11 @@ defmodule Helmsman.PolicyMatrixTest do
                 role <- @roles,
                 kind <- [:human, :agent] do
               {action, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
+            # transition_task: member and above, agents too (not management)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:transition_task, role, kind, @none,
+               if(role == :viewer, do: :forbidden, else: :ok)}
             end
           ]
           |> List.flatten()
@@ -275,7 +280,8 @@ defmodule Helmsman.PolicyMatrixTest do
           :update_project,
           :archive_project,
           :create_task,
-          :update_task
+          :update_task,
+          :transition_task
         ] do
       refute action in management
     end

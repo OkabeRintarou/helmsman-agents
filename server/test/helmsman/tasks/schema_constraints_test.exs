@@ -166,6 +166,34 @@ defmodule Helmsman.Tasks.SchemaConstraintsTest do
                "task_events_status_check"
     end
 
+    test "evidence columns default to no commits, no tests, not automatic", ctx do
+      id = insert!("task_events", event(ctx, %{}))
+
+      assert %{rows: [[[], nil, false]]} =
+               Repo.query!("SELECT commits, tests, auto FROM task_events WHERE id = $1", [id])
+    end
+
+    test "rejects tests that are not an object with a boolean passed", ctx do
+      for tests <- [%{}, "x", [], %{"passed" => "yes"}, %{"passed" => nil}] do
+        assert rejected("task_events", event(ctx, %{tests: tests})) ==
+                 "task_events_tests_check",
+               "tests #{inspect(tests)}"
+      end
+    end
+
+    test "accepts SQL NULL tests and a valid test result", ctx do
+      assert insert!("task_events", event(ctx, %{tests: nil}))
+
+      id =
+        insert!(
+          "task_events",
+          event(ctx, %{tests: %{"command" => "mix test", "passed" => true, "summary" => "ok"}})
+        )
+
+      assert %{rows: [[%{"passed" => true}]]} =
+               Repo.query!("SELECT tests FROM task_events WHERE id = $1", [id])
+    end
+
     test "rejects an actor of another workspace", ctx do
       assert rejected("task_events", event(ctx, %{actor_id: ctx.bob})) ==
                "task_events_actor_id_fkey"

@@ -71,7 +71,8 @@ defmodule Helmsman.Policy do
     :update_project,
     :archive_project,
     :create_task,
-    :update_task
+    :update_task,
+    :transition_task
   ]
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -177,7 +178,7 @@ defmodule Helmsman.Policy do
       do: allow_if(role_at_least?(scope, :admin))
 
   def authorize(%Scope{} = scope, action, _resource)
-      when action in [:create_task, :update_task],
+      when action in [:create_task, :update_task, :transition_task],
       do: allow_if(role_at_least?(scope, :member))
 
   def authorize(_scope, _action, _resource), do: {:error, :forbidden}
