@@ -3,6 +3,7 @@ defmodule Helmsman.PolicyMatrixTest do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
+  alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Policy
   alias Helmsman.Workspaces.Workspace
 
@@ -16,6 +17,9 @@ defmodule Helmsman.PolicyMatrixTest do
   @own_actor &__MODULE__.own_actor/1
   @other_human &__MODULE__.other_human/1
   @system_actor &__MODULE__.system_actor/1
+  @own_token %ApiToken{id: 300, workspace_id: 1, user_id: 10}
+  @other_token %ApiToken{id: 301, workspace_id: 1, user_id: 11}
+  @foreign_token %ApiToken{id: 302, workspace_id: 2, user_id: 10}
 
   def no_resource(_scope), do: nil
   def own_actor(scope), do: scope.actor
@@ -123,6 +127,48 @@ defmodule Helmsman.PolicyMatrixTest do
             # leave_workspace: every human; agents never
             for role <- @roles, kind <- [:human, :agent] do
               {:leave_workspace, role, kind, @none, if(kind == :human, do: :ok, else: :forbidden)}
+            end,
+            # create_token: member and above; agents never
+            for role <- @roles, kind <- [:human, :agent] do
+              expected = if kind == :human and role != :viewer, do: :ok, else: :forbidden
+              {:create_token, role, kind, @none, expected}
+            end,
+            # list_own_tokens: every human, viewers included
+            for role <- @roles, kind <- [:human, :agent] do
+              {:list_own_tokens, role, kind, @none, if(kind == :human, do: :ok, else: :forbidden)}
+            end,
+            # revoke_own_token: every human (the viewers' one write), only
+            # their own token of this workspace
+            for role <- @roles, kind <- [:human, :agent] do
+              [
+                {:revoke_own_token, role, kind, @own_token,
+                 if(kind == :human, do: :ok, else: :forbidden)},
+                {:revoke_own_token, role, kind, @other_token, :forbidden},
+                {:revoke_own_token, role, kind, @foreign_token, :forbidden},
+                {:revoke_own_token, role, kind, @none, :forbidden}
+              ]
+            end,
+            # list_all_tokens: owner and admin humans
+            for role <- @roles, kind <- [:human, :agent] do
+              expected = if kind == :human and role in [:owner, :admin], do: :ok, else: :forbidden
+              {:list_all_tokens, role, kind, @none, expected}
+            end,
+            # revoke_any_token: owner and admin humans, tokens of this
+            # workspace
+            for role <- @roles, kind <- [:human, :agent] do
+              expected = if kind == :human and role in [:owner, :admin], do: :ok, else: :forbidden
+
+              [
+                {:revoke_any_token, role, kind, @other_token, expected},
+                {:revoke_any_token, role, kind, @own_token, expected},
+                {:revoke_any_token, role, kind, @foreign_token, :forbidden},
+                {:revoke_any_token, role, kind, @none, :forbidden}
+              ]
+            end,
+            # identify: member and above, agents too (not a management
+            # action); viewers never
+            for role <- @roles, kind <- [:human, :agent] do
+              {:identify, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
             end
           ]
           |> List.flatten()
@@ -185,6 +231,31 @@ defmodule Helmsman.PolicyMatrixTest do
 
     test "owner demotes themselves (the last-owner rule is checked by Members)",
       do: assert(change(:owner, :owner, :admin, true) == :ok)
+  end
+
+  test "token actions are management actions; identify is not" do
+    management = MapSet.new(Policy.management_actions())
+
+    for action <- [
+          :create_token,
+          :list_own_tokens,
+          :revoke_own_token,
+          :list_all_tokens,
+          :revoke_any_token
+        ] do
+      assert action in management
+    end
+
+    refute :identify in management
+  end
+
+  test "token-authenticated scopes (no actor) follow the role" do
+    scope = %Scope{user: @user, workspace: @workspace, role: :member, actor: nil, via: :mcp}
+    assert Policy.authorize(scope, :create_token) == :ok
+    assert Policy.authorize(scope, :identify) == :ok
+    assert Policy.authorize(scope, :revoke_own_token, @own_token) == :ok
+    assert Policy.authorize(scope, :revoke_any_token, @other_token) == {:error, :forbidden}
+    assert Policy.authorize(%{scope | role: :viewer}, :identify) == {:error, :forbidden}
   end
 
   test "unknown actions and scopes without a role are refused" do

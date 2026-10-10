@@ -8,6 +8,7 @@ defmodule Helmsman.Actors do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
+  alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Repo
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Workspace
@@ -185,5 +186,177 @@ defmodule Helmsman.Actors do
         current -> current |> Actor.rename_changeset(%{name: new_name}) |> Repo.update()
       end
     end)
+  end
+
+  ## External agents
+
+  @type identify_error ::
+          :forbidden | :not_found | :name_taken | :agent_disabled | Ecto.Changeset.t() | atom()
+
+  @doc """
+  Creates or reuses the agent identity `name` for the scope's user
+  (designs/03 §4), as a workspace write (`:identify`, member and above;
+  agents too).
+
+  `attrs`: `:name`, optional `:project` (project key) and `:worktree`.
+
+    * no actor has the name: an agent owned by the user is created;
+    * an active agent of the user's: it is reused; `project_key` and
+      `worktree` are updated when given and `last_seen_at` always;
+    * an agent of the user's that is disabled: `{:error, :agent_disabled}`;
+    * any other actor (a human, including the user's own, someone else's
+      agent, a squad, the system identity): `{:error, :name_taken}`.
+
+  A name that breaks the actor naming rule returns `{:error, changeset}`,
+  whether or not an actor with a case-insensitively equal name exists.
+  """
+  @spec identify(Scope.t(), map()) :: {:ok, Actor.t()} | {:error, identify_error()}
+  def identify(%Scope{} = scope, attrs) when is_map(attrs) do
+    name = Map.get(attrs, :name)
+    meta = %{project_key: Map.get(attrs, :project), worktree: Map.get(attrs, :worktree)}
+
+    Workspaces.write_transaction(scope, :identify, nil, fn scope ->
+      # Checked before the lookup: names are citext, so an invalid variant
+      # such as `Keel/Dev` would otherwise match and reuse `keel/dev`.
+      with :ok <- validate_agent_name(scope, name) do
+        identify_locked(scope, name, meta)
+      end
+    end)
+  end
+
+  defp identify_locked(scope, name, meta) do
+    case actor_by_name(scope.workspace.id, name, :update) do
+      nil -> insert_agent(scope, name, meta)
+      actor -> reuse_agent(scope, actor, meta)
+    end
+  end
+
+  defp validate_agent_name(scope, name) do
+    if is_binary(name) and Actor.valid_name?(name) do
+      :ok
+    else
+      changeset = new_agent_changeset(scope, name)
+      {:error, %{changeset | action: :insert}}
+    end
+  end
+
+  defp new_agent_changeset(scope, name) do
+    %Actor{workspace_id: scope.workspace.id, kind: :agent, owner_id: scope.user.id}
+    |> Actor.create_changeset(%{name: name})
+  end
+
+  defp insert_agent(scope, name, meta) do
+    changeset = new_agent_changeset(scope, name)
+
+    row = %{
+      workspace_id: scope.workspace.id,
+      kind: :agent,
+      name: name,
+      owner_id: scope.user.id,
+      project_key: meta.project_key,
+      worktree: meta.worktree,
+      last_seen_at: DateTime.utc_now()
+    }
+
+    with %Ecto.Changeset{valid?: true} <- changeset,
+         :conflict <- insert_ignoring_conflicts(row) do
+      # Someone created the name concurrently; judge what they created.
+      case actor_by_name(scope.workspace.id, name, :update) do
+        nil -> {:error, :name_taken}
+        actor -> reuse_agent(scope, actor, meta)
+      end
+    else
+      %Ecto.Changeset{} = changeset -> {:error, %{changeset | action: :insert}}
+      {:ok, actor} -> {:ok, actor}
+    end
+  end
+
+  defp reuse_agent(%Scope{user: %User{id: user_id}}, actor, meta) do
+    case actor do
+      %Actor{kind: :agent, owner_id: ^user_id, disabled_at: nil} ->
+        changes =
+          meta
+          |> Enum.reject(fn {_field, value} -> is_nil(value) end)
+          |> Map.new()
+          |> Map.put(:last_seen_at, DateTime.utc_now())
+
+        actor |> Ecto.Changeset.change(changes) |> Repo.update()
+
+      %Actor{kind: :agent, owner_id: ^user_id} ->
+        {:error, :agent_disabled}
+
+      _other ->
+        {:error, :name_taken}
+    end
+  end
+
+  defp actor_by_name(workspace_id, name, :update) when is_binary(name),
+    do: workspace_id |> name_query(name) |> lock("FOR UPDATE") |> Repo.one()
+
+  defp actor_by_name(workspace_id, name, :share) when is_binary(name),
+    do: workspace_id |> name_query(name) |> lock("FOR SHARE") |> Repo.one()
+
+  defp actor_by_name(_workspace_id, _name, _lock), do: nil
+
+  defp name_query(workspace_id, name),
+    do: from(a in Actor, where: a.workspace_id == ^workspace_id and a.name == ^name)
+
+  @type resolve_error ::
+          :forbidden | {:agent_disabled, String.t()} | :needs_session_agent | :not_found
+
+  @doc """
+  Resolves the actor a write over MCP or REST is recorded as
+  (designs/03 §4), in order:
+
+    1. `opts[:requested]`, the name given by the request (MCP `actor` /
+       `author`, REST `X-Helmsman-Actor`);
+    2. `opts[:session_actor_id]`, the MCP session identity set by
+       `identify/2`;
+    3. the token's default agent;
+    4. REST: the user's human identity; MCP: `{:error, :needs_session_agent}`
+       (the MCP endpoint then creates the session's own agent).
+
+  Steps 1-3 only accept an agent the token's user owns: anything else is
+  `{:error, :forbidden}`, and a disabled one `{:error, {:agent_disabled,
+  name}}`. Call it inside the write's transaction: the actor row is locked
+  `FOR SHARE`.
+  """
+  @spec resolve_writer(Scope.t(), keyword()) :: {:ok, Actor.t()} | {:error, resolve_error()}
+  def resolve_writer(%Scope{via: via} = scope, opts) when via in [:api, :mcp] do
+    workspace_id = scope.workspace.id
+
+    cond do
+      name = opts[:requested] ->
+        own_agent(scope, actor_by_name(workspace_id, name, :share))
+
+      id = opts[:session_actor_id] ->
+        own_agent(scope, actor_by_id(workspace_id, id))
+
+      match?(%ApiToken{default_agent_id: id} when not is_nil(id), scope.token) ->
+        own_agent(scope, actor_by_id(workspace_id, scope.token.default_agent_id))
+
+      via == :api ->
+        case get_human(workspace_id, scope.user.id) do
+          nil -> {:error, :not_found}
+          human -> {:ok, human}
+        end
+
+      via == :mcp ->
+        {:error, :needs_session_agent}
+    end
+  end
+
+  defp own_agent(%Scope{user: %User{id: user_id}}, actor) do
+    case actor do
+      %Actor{kind: :agent, owner_id: ^user_id, disabled_at: nil} -> {:ok, actor}
+      %Actor{kind: :agent, owner_id: ^user_id, name: name} -> {:error, {:agent_disabled, name}}
+      _other -> {:error, :forbidden}
+    end
+  end
+
+  defp actor_by_id(workspace_id, id) do
+    Repo.one(
+      from(a in Actor, where: a.workspace_id == ^workspace_id and a.id == ^id, lock: "FOR SHARE")
+    )
   end
 end

@@ -189,4 +189,61 @@ defmodule Helmsman.SchemaConstraintsTest do
       assert insert!("actors", actor(other_ws, %{name: "alice"}))
     end
   end
+
+  describe "api_tokens" do
+    defp api_token(workspace_id, user, attrs) do
+      Map.merge(
+        %{
+          workspace_id: workspace_id,
+          user_id: user.id,
+          name: "laptop",
+          token_hash: :crypto.strong_rand_bytes(32),
+          prefix: "abcdefgh",
+          scopes: ["mcp"]
+        },
+        attrs
+      )
+    end
+
+    test "rejects empty and unknown scopes", %{user: user, workspace_id: ws} do
+      for scopes <- [[], ["admin"], ["mcp", "admin"]] do
+        assert rejected("api_tokens", api_token(ws, user, %{scopes: scopes})) ==
+                 "api_tokens_scopes_check"
+      end
+
+      assert insert!(
+               "api_tokens",
+               api_token(ws, user, %{scopes: ["mcp", "api:read", "api:write"]})
+             )
+    end
+
+    test "rejects empty names and names over 64 characters", %{user: user, workspace_id: ws} do
+      for name <- ["", String.duplicate("n", 65)] do
+        assert rejected("api_tokens", api_token(ws, user, %{name: name})) ==
+                 "api_tokens_name_length"
+      end
+    end
+
+    test "token hashes are unique", %{user: user, workspace_id: ws} do
+      hash = :crypto.strong_rand_bytes(32)
+      insert!("api_tokens", api_token(ws, user, %{token_hash: hash}))
+
+      assert rejected("api_tokens", api_token(ws, user, %{token_hash: hash})) ==
+               "api_tokens_token_hash_index"
+    end
+
+    test "the default agent must belong to the token's workspace",
+         %{user: user, workspace_id: ws} do
+      other_ws = insert!("workspaces", %{slug: "beta", name: "Beta"})
+      own = insert!("actors", actor(ws, %{kind: "agent", name: "bot", owner_id: user.id}))
+
+      foreign =
+        insert!("actors", actor(other_ws, %{kind: "agent", name: "bot", owner_id: user.id}))
+
+      assert rejected("api_tokens", api_token(ws, user, %{default_agent_id: foreign})) ==
+               "api_tokens_default_agent_id_fkey"
+
+      assert insert!("api_tokens", api_token(ws, user, %{default_agent_id: own}))
+    end
+  end
 end

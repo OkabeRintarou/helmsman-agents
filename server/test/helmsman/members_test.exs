@@ -2,10 +2,12 @@ defmodule Helmsman.MembersTest do
   use Helmsman.DataCase, async: true
 
   import Helmsman.AccountsFixtures
+  import Helmsman.ApiTokensFixtures
   import Helmsman.WorkspacesFixtures
 
   alias Helmsman.Actors
   alias Helmsman.Actors.Actor
+  alias Helmsman.ApiTokens
   alias Helmsman.Events
   alias Helmsman.Invitations
   alias Helmsman.Members
@@ -172,6 +174,29 @@ defmodule Helmsman.MembersTest do
       refute human.disabled_at
     end
 
+    test "removing a member revokes all their tokens for the workspace",
+         %{workspace: ws, owner_scope: owner_scope} do
+      {admin, _} = add_member(ws, :admin)
+      {bob, bob_m} = add_member(ws, :member)
+      created = for _ <- 1..3, do: api_token_fixture(bob)
+      %{api_token: already} = api_token_fixture(bob)
+      {:ok, already} = ApiTokens.revoke(bob, already.id)
+      %{api_token: owners} = api_token_fixture(owner_scope)
+      elsewhere = workspace_fixture(bob.user)
+      %{api_token: other} = api_token_fixture(workspace_scope_fixture(bob.user, elsewhere))
+
+      assert {:ok, _} = Members.remove(admin, bob_m.id)
+
+      for %{token: token, api_token: api_token} <- created do
+        assert Repo.reload!(api_token).revoked_at
+        assert ApiTokens.authenticate(token, "mcp") == {:error, :unauthorized}
+      end
+
+      assert Repo.reload!(already).revoked_at == already.revoked_at
+      refute Repo.reload!(owners).revoked_at
+      refute Repo.reload!(other).revoked_at
+    end
+
     test "admin cannot remove an owner; owner can remove another owner",
          %{workspace: ws, owner_scope: owner} do
       {admin, _} = add_member(ws, :admin)
@@ -215,12 +240,17 @@ defmodule Helmsman.MembersTest do
   describe "leave/1" do
     test "any member may leave", %{workspace: ws} do
       for role <- [:admin, :member, :viewer] do
-        {scope, _} = add_member(ws, role)
+        # Tokens are created as a member; a viewer may hold some from
+        # before a demotion.
+        {scope, membership} = add_member(ws, :member)
+        %{api_token: token} = api_token_fixture(scope)
+        Repo.update!(Ecto.Changeset.change(membership, role: role))
         agent = agent!(ws, scope.user, "bot-#{role}")
 
         assert {:ok, _} = Members.leave(scope)
         refute Workspaces.get_membership(ws.id, scope.user.id)
         assert Repo.reload!(agent).disabled_at
+        assert Repo.reload!(token).revoked_at
       end
     end
 

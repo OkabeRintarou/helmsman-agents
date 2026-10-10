@@ -31,6 +31,9 @@ config :helmsman, Helmsman.RateLimit,
   password_ip: {10, :timer.minutes(1)},
   register_ip: {10, :timer.hours(1)}
 
+# Requests per minute per API token (designs/03 §2).
+config :helmsman, :api_token_rate_limit, 600
+
 # Configure the endpoint
 config :helmsman, HelmsmanWeb.Endpoint,
   url: [host: "localhost"],

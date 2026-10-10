@@ -5,7 +5,8 @@ defmodule Helmsman.Accounts.Scope do
   A scope always carries the `user`. Inside a workspace it also carries the
   `workspace`, the user's `role` there and the `actor` the request runs as
   (the user's human identity, or an agent). `via` tells the entry point
-  (`:web`, `:mcp`, `:api` or `:run`) and `run` the agent run, if any.
+  (`:web`, `:mcp`, `:api` or `:run`), `run` the agent run, if any, and
+  `token` the API token a `:mcp` / `:api` request authenticated with.
 
   Domain functions take the scope as their first argument and authorize
   with `Helmsman.Policy`.
@@ -13,6 +14,7 @@ defmodule Helmsman.Accounts.Scope do
 
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
+  alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Workspaces.{Membership, Workspace}
 
   @type via :: :web | :mcp | :api | :run
@@ -23,10 +25,11 @@ defmodule Helmsman.Accounts.Scope do
           role: Membership.role() | nil,
           actor: Actor.t() | nil,
           via: via() | nil,
-          run: term()
+          run: term(),
+          token: ApiToken.t() | nil
         }
 
-  defstruct user: nil, workspace: nil, role: nil, actor: nil, via: nil, run: nil
+  defstruct user: nil, workspace: nil, role: nil, actor: nil, via: nil, run: nil, token: nil
 
   @doc """
   Creates a scope for the given user.

@@ -21,6 +21,7 @@ defmodule Helmsman.Members do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
+  alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Events
   alias Helmsman.Policy
   alias Helmsman.Repo
@@ -182,11 +183,10 @@ defmodule Helmsman.Members do
   # Everything that goes when a user leaves or is removed, in the same
   # transaction. The human identity stays (history keeps the name; it is
   # reused on rejoining); the agents stay disabled until their owner
-  # re-enables them.
+  # re-enables them; their API tokens for the workspace are revoked.
   #
-  # Changes still to hook in here: add-api-tokens revokes the user's tokens
-  # for the workspace; M5 takes their runtimes offline and cancels / stops
-  # their agents' runs.
+  # Still to hook in here: M5 takes their runtimes offline and cancels /
+  # stops their agents' runs.
   defp cascade_removal(workspace_id, user_id) do
     now = DateTime.utc_now(:second)
 
@@ -201,6 +201,14 @@ defmodule Helmsman.Members do
         where: a.owner_id == ^user_id and is_nil(a.disabled_at)
       ),
       set: [disabled_at: now, updated_at: now]
+    )
+
+    Repo.update_all(
+      from(t in ApiToken,
+        where: t.workspace_id == ^workspace_id and t.user_id == ^user_id,
+        where: is_nil(t.revoked_at)
+      ),
+      set: [revoked_at: now, updated_at: now]
     )
 
     :ok

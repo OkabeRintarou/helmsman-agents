@@ -26,6 +26,10 @@ defmodule Helmsman.Actors.Actor do
     belongs_to :user, User
     belongs_to :owner, User
     field :disabled_at, :utc_datetime
+    # Set by `Helmsman.Actors.identify/2` for external agents.
+    field :project_key, :string
+    field :worktree, :string
+    field :last_seen_at, :utc_datetime_usec
 
     timestamps(type: :utc_datetime)
   end

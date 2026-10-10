@@ -14,6 +14,8 @@ defmodule Helmsman do
       Invitations,
       Invitations.Invitation,
       Members,
+      ApiTokens,
+      ApiTokens.ApiToken,
       Policy,
       Events,
       Bootstrap

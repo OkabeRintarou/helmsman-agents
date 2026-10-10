@@ -9,6 +9,7 @@ defmodule Helmsman.Policy do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
+  alias Helmsman.ApiTokens.ApiToken
 
   @type action :: atom()
 
@@ -26,6 +27,11 @@ defmodule Helmsman.Policy do
     # agent configuration, tokens, runtimes
     :manage_agents,
     :manage_tokens,
+    :create_token,
+    :list_own_tokens,
+    :revoke_own_token,
+    :list_all_tokens,
+    :revoke_any_token,
     :manage_runtimes,
     # squads and autopilots (automation)
     :manage_squads,
@@ -53,7 +59,13 @@ defmodule Helmsman.Policy do
     :revoke_invitation,
     :change_member_role,
     :remove_member,
-    :leave_workspace
+    :leave_workspace,
+    :create_token,
+    :list_own_tokens,
+    :revoke_own_token,
+    :list_all_tokens,
+    :revoke_any_token,
+    :identify
   ]
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -123,6 +135,31 @@ defmodule Helmsman.Policy do
   def authorize(%Scope{} = scope, :leave_workspace, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
+  ## API tokens (agents never: all are management actions)
+
+  def authorize(%Scope{} = scope, :create_token, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
+  # Viewers too: a demoted user must still be able to see and revoke the
+  # credentials they issued.
+  def authorize(%Scope{} = scope, :list_own_tokens, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
+
+  def authorize(%Scope{} = scope, :revoke_own_token, %ApiToken{} = token),
+    do: allow_if(role_at_least?(scope, :viewer) and own_token?(scope, token))
+
+  def authorize(%Scope{} = scope, :list_all_tokens, _resource),
+    do: allow_if(role_at_least?(scope, :admin))
+
+  def authorize(%Scope{} = scope, :revoke_any_token, %ApiToken{} = token),
+    do: allow_if(role_at_least?(scope, :admin) and in_workspace?(scope, token))
+
+  ## Agent identity
+
+  # Not a management action: the one agents may perform (designs/03 §4).
+  def authorize(%Scope{} = scope, :identify, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
   def authorize(_scope, _action, _resource), do: {:error, :forbidden}
 
   defp not_above_own?(%Scope{role: own}, role)
@@ -136,6 +173,14 @@ defmodule Helmsman.Policy do
   end
 
   defp own_human?(_scope, _actor), do: false
+
+  defp own_token?(%Scope{user: %{id: user_id}} = scope, %ApiToken{user_id: user_id} = token),
+    do: in_workspace?(scope, token)
+
+  defp own_token?(_scope, _token), do: false
+
+  defp in_workspace?(%Scope{workspace: %{id: id}}, %{workspace_id: id}), do: true
+  defp in_workspace?(_scope, _resource), do: false
 
   defp role_at_least?(%Scope{role: role}, min) when is_map_key(@role_rank, role),
     do: @role_rank[role] >= @role_rank[min]
