@@ -1,8 +1,8 @@
 # Reference repositories (not part of this project)
 /scratch/
 
-# OpenSpec configuration and generated agent integrations
-/openspec/config.yaml
+# OpenSpec (specs, changes and config stay local) and generated agent integrations
+/openspec/
 /.agents/skills/.openspec-target
 /.agents/skills/openspec-*/
 /.github/agents/openspec.agent.md
