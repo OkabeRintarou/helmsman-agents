@@ -9,10 +9,10 @@
 
 | 项 | 说明 |
 |---|---|
-| App 本身 | 每个 Helmsman 实例一个。实例管理员在 `/admin/github` 用 GitHub 的 App manifest 流程一键创建，App ID、私钥、webhook 密钥加密存库；也可以用环境变量 `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET` 提供 |
+| App 本身 | 每个 Helmsman 实例一个。实例管理员在 `/admin/github` 用 GitHub 的 App manifest 流程一键创建，App ID、私钥、webhook 密钥、OAuth client 加密存库（`github_apps`）；也可以用环境变量 `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET` / `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` 提供（环境变量优先）。App 必须开启「安装时请求用户授权（OAuth）」，见「安装」 |
 | 权限 | Contents 读写、Pull requests 读写、Checks 只读、Commit statuses 只读、Metadata 只读。**不**申请 Administration：不预读分支保护规则，以 GitHub 合并接口的响应为准（§4） |
-| Webhook | `pull_request`、`check_suite`、`check_run`、`status`、`installation`、`installation_repositories` → `POST /webhooks/github`。校验 `X-Hub-Signature-256`；按 `X-GitHub-Delivery` 去重 |
-| 安装 | 工作区 admin 在 `/w/:slug/settings/github` 点「连接 GitHub」，跳到 GitHub 安装页选择组织和仓库，回调后把这次安装关联到工作区。一个安装只能关联一个工作区 |
+| Webhook | `pull_request`、`check_suite`、`check_run`、`status`、`repository`（改名、转移、归档、默认分支变化）、`installation`、`installation_repositories` → `POST /webhooks/github`。校验 `X-Hub-Signature-256`；按 `X-GitHub-Delivery` 去重；先落库入队再异步处理。安装与仓库事件只作为「重新读取」的信号，不应用负载里的值（乱序无害） |
+| 安装 | 工作区 admin 在 `/w/:slug/settings/github` 点「连接 GitHub」，跳到 GitHub 安装页选择组织和仓库，回调后把这次安装关联到工作区。一个安装只能关联一个工作区。**回调里的 `installation_id` 不可信**（任何人都能拼一个别人的安装 ID）：App 开启安装时的用户授权，回调带回 `code`，服务端换成用户令牌，只有该安装出现在 `GET /user/installations` 里才关联，用户令牌随即丢弃。「断开」只解除本地关联（仓库标记为不可用，项目的绑定保留），不在 GitHub 上卸载 App；重新连接同一安装即恢复 |
 
 API 调用用 Req 直接访问 REST / GraphQL；App 身份用 RS256 JWT（JOSE）换安装令牌，安装令牌缓存到过期前 5 分钟。所有调用都在 Oban 任务里执行，失败按 GitHub 的限流头退避重试。
 

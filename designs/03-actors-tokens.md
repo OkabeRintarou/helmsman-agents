@@ -84,7 +84,7 @@ Agent（托管与外接）统一在 `/w/:slug/agents` 管理（12 §5）。
   - `initialize` 时在 server 的 `init/2` 回调里登记 `session_id → token_id`；
   - 路由里在 anubis 之前加 `HelmsmanWeb.Plugs.MCPSessionGuard`：带会话 id 的**每个请求**（POST / GET / DELETE）都要求会话已登记且 `token_id` 与本次 Token 一致，否则返回 404（MCP 规范里「会话不存在」的响应，客户端会重新 initialize）。
     换句话说，会话 id 泄露了，没有同一个 Token 也用不了。
-- **每个请求重新校验**：Token 未吊销 / 未过期、用户仍是成员、会话 actor 未停用——任一失败按 401 / 403 处理，不依赖会话里缓存的状态。
+- **每个请求重新校验**：Token 未吊销 / 未过期、用户仍是成员（`BearerAuth`，失败 401）。会话身份被停用时不踢掉会话：写操作返回 `agent_disabled` 工具错误、提示重新 `identify`，读操作照常——Agent 能自己换一个身份继续。这些都不依赖会话里缓存的状态。
 - 空闲超时：anubis 的会话超时与 ETS 过期统一配置为 24 小时；会话结束时删除登记。
 - 会话建立 / 结束时在 `Phoenix.Presence` 主题 `workspace:<id>:agents` 上 track / untrack，界面据此显示在线的外接 Agent（托管 Agent 的状态来自运行时与运行，12 §3.4）。
 - 服务重启后 MCP 会话全部失效，客户端会重新 initialize（MCP 规范要求）。新会话需要再 `identify`；

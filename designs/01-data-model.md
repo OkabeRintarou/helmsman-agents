@@ -64,18 +64,19 @@ erDiagram
 | 表 | 列 | 约束 / 索引 |
 |---|---|---|
 | `agent_profiles` | `workspace_id`、`actor_id`、`mode`、`provider`、`runtime_id`、`model`、`effort`、`instructions`、`description`、`access`、`access_member_ids bigint[]`、`capabilities text[]`、`max_concurrency`、`timeout_minutes`、`idle_timeout_minutes`、`custom_args text[]`、`env`（加密）、`extra_mcp_servers`（加密）、`wake_on_requested`、`archived_at`、时间戳 | 唯一 `actor_id`；详见 12 §2 |
-| `daemons` | `user_id`、`machine_id`、`name`、`os`、`arch`、`version`、`isolation`、`token_hash`、`max_concurrency`、`last_seen_at`、`revoked_at`、时间戳 | 唯一 `(user_id, machine_id)`、`token_hash`；不属于某个工作区 |
+| `daemons` | `user_id`、`machine_id`、`name`、`os`、`arch`、`version`、`token_hash`、`max_concurrency`、`last_seen_at`、`revoked_at`、时间戳 | 唯一 `(user_id, machine_id)`、`token_hash`；不属于某个工作区 |
 | `daemon_workspaces` | `daemon_id`、`workspace_id` | 主键 `(daemon_id, workspace_id)`；登录时勾选的工作区（12 §3.1），领取只能领这些工作区的运行 |
 | `device_codes` | `device_code_hash`、`user_code`、`machine_info jsonb`、`user_id`（确认后填）、`workspace_ids bigint[]`、`status`（pending \| approved \| denied \| used）、`expires_at` | 设备码登录（12 §3.1），10 分钟过期；`user_code` 在未过期的记录中唯一 |
-| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`visibility`、`status`、`disabled_at`、时间戳 | 唯一 `(workspace_id, daemon_id, provider)` |
+| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`status`、`disabled_at`、时间戳 | 唯一 `(workspace_id, daemon_id, provider)` |
 | `runs` | 见 13 §1 | 部分唯一 `(task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`；唯一 `retry_of_id`；索引 `(runtime_id, status, priority DESC, inserted_at, id)`、`(task_id, inserted_at DESC)`、`(agent_id, status)`、`(daemon_id, status)` |
 | `run_tokens` | `run_id`、`token_hash`、`expires_at`、`revoked_at` | `token_hash` 唯一；运行进入终态时吊销 |
 | `run_events` | `run_id`、`seq`、`type`、`data jsonb`、`at` | 主键 `(run_id, seq)`；按月分区，便于整块清理 |
 | `steer_receipts` | `feedback_id`、`run_id`、`acked_at` | 主键 `(feedback_id, run_id)`（13 §8） |
 | `squads` / `squad_members` | 见 16 §1.1 | `squads.actor_id` 唯一；`squad_members` 主键 `(squad_id, actor_id)` |
 | `autopilots` / `autopilot_runs` | 见 16 §2.1 | `autopilot_runs` 部分唯一 `(autopilot_id) WHERE status = 'started'`、`(autopilot_id) WHERE status = 'pending'`；唯一 `(autopilot_id, delivery_id)` |
-| `github_installations` | `workspace_id`、`installation_id`、`account_login`、`suspended_at`、时间戳 | 唯一 `installation_id`（一个安装只属于一个工作区） |
-| `repositories` | `workspace_id`、`installation_id`、`github_id`、`owner`、`name`、`default_branch`、`archived` | 唯一 `(workspace_id, github_id)` |
+| `github_apps` | `app_id`、`slug`、`name`、`html_url`、`owner_login`、`client_id`、`client_secret`（加密）、`private_key`（加密）、`webhook_secret`（加密）、`created_by_id`、时间戳 | 实例级单行（15 §1）；环境变量配置时不用这张表 |
+| `github_installations` | `workspace_id`、`installation_id`、`account_login`、`account_type`、`suspended_at`、`disconnected_at`、`fetched_at`、`repos_fetched_at`、时间戳 | 唯一 `installation_id`（一个安装只属于一个工作区）；两个 `*_fetched_at` 是最近一次被应用的 GitHub 读取结果的抓取时刻，更早抓取的结果不再写入（webhook 只触发重新读取，15 §1） |
+| `repositories` | `workspace_id`、`installation_id`、`github_id`、`owner`、`name`、`default_branch`、`archived`、`private`、`removed_at`、时间戳 | 唯一 `(workspace_id, github_id)`；`removed_at` = 不再在安装范围内或安装已断开（保留行，项目绑定不丢） |
 | `task_pull_requests` | 见 15 §3 | 唯一 `(repository_id, number)`、`task_id`；索引 `(merge_status)` |
 | `task_branches` | `task_id`、`repository_id`、`branch`、`rescue_branches text[]`、`pushed_shas`（每次推送的 `run_id`、`head_sha`） | 唯一 `task_id`；15 §4.1 判断出处与「验收的是否是推送过的版本」 |
 | `github_deliveries` | `delivery_id`、`received_at` | 主键 `delivery_id`；webhook 去重，保留 7 天 |
@@ -118,7 +119,7 @@ erDiagram
 | Token → 默认 Agent | `(workspace_id, default_agent_id)` |
 | 运行 → 任务 / Agent / 运行时；Agent 配置 → 运行时；PR / 分支 → 任务 / 仓库；仓库 → 安装 | `(workspace_id, task_id)`、`(workspace_id, agent_id)`、`(workspace_id, runtime_id)`、`(workspace_id, repository_id)`、`(workspace_id, installation_id)` |
 
-这样即使应用层漏了条件，也写不出跨工作区的引用。数据库表达不了的规则（Token 的默认 Agent 必须属于 Token 的用户、Agent 未停用、`epic_id` 指向的是 `kind = epic`、Agent 只能绑定自己的或公开的运行时）在写入事务里校验。
+这样即使应用层漏了条件，也写不出跨工作区的引用。数据库表达不了的规则（Token 的默认 Agent 必须属于 Token 的用户、Agent 未停用、`epic_id` 指向的是 `kind = epic`、Agent 只能绑定所属用户自己的运行时，12 §3.3）在写入事务里校验。
 
 ## 4. 事务与加锁
 

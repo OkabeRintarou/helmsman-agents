@@ -182,7 +182,7 @@ helmsman-agents/
 | `PHX_HOST` / `PORT` | 对外域名 / 端口；守护进程和 GitHub webhook 都要能访问到 |
 | `HELMSMAN_SIGNUP` | `invite`（缺省）\| `open` |
 | `HELMSMAN_MAILER_*` | Swoosh 配置；不配时 magic link 打到日志（仅限 dev） |
-| `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET` | 可选；也可以在 `/admin/github` 用 manifest 流程创建（15 §1） |
+| `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET` / `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` | 可选；也可以在 `/admin/github` 用 manifest 流程创建（15 §1） |
 
 ## 8. 测试策略
 
@@ -250,12 +250,12 @@ helmsman-agents/
 | 40 | M11 | `add-rest-api` | 架构 | `/api/v1`、ErrorMapper、OpenAPI、限流 | 19、31、38 |
 | 41 | M11 | `add-export-import` | 架构 | 快照导出、merge / replace 导入、actor 映射与认领、bosun 导入 | 31、38 |
 | 42 | M11 | 数据设置页 | 前端 | 导出 / 导入页、认领导入的身份 | 7、41 |
-| 43 | M11 | `add-release-distribution` | 架构 | release + Docker、健康检查、LiveDashboard、清理任务、守护进程多平台构建与安装脚本 | 20；放最后 |
+| 43 | M11 | `add-release-distribution` | 架构 | release + Docker、健康检查、LiveDashboard、清理任务、守护进程多平台构建与安装脚本、后台服务（systemd / launchd）与 `daemon stop/restart/status/logs`、macOS 钥匙串 | 20；放最后 |
 
 ### 9.2 可以并行的部分
 
 - 16、20、21 只依赖协议，可以和 M1–M4 同时做；17 只依赖 4，可以和 M2–M4 并行。
-- 5、6、8 在 4 之后并行；9 与 12 并行；23 在 8 之后即可开工，可与 M3–M5 并行。
+- 5、6、8 在 4 之后并行；9 与 12 并行；23 在 8 合并后即开工（已定，缩短到 M6 的时间），与 M3–M5 并行。
 - 25 只依赖 11、18，可在 M5 之后与 23、24 并行；30、31、37 在 M3 之后就能开工，不必等 M7；29 的三个适配器互相并行。
 - 前端变更与同里程碑的后端变更并行开发：前端先按后端变更的规格（领域函数签名、PubSub 消息）用桩数据写页面，后端合并后再接上。
 
@@ -268,7 +268,7 @@ helmsman-agents/
 | M5 | 网页上指派 → 本机 Claude Code 自动开工 → 写反馈 → DONE，浏览器全程实时 |
 | M6 | 「指派 → 运行 → 推送 → 开 PR → DONE → VERIFIED → CI 通过 → 自动合并」端到端跑通（15 §7）；CI 失败或合并冲突时任务自动重开，并以原指派的授权来源排队一次修复运行；评审 Agent 在自己的运行里验收后，要等该运行收尾才合并 |
 
-自举（后续开发的工单放在 Helmsman 自己的项目里、由托管 Agent 执行）需要代码仓库，所以最早在 M6 之后；是否在 M5 先加一种不依赖 GitHub 的仓库模式，待产品决定。
+自举（后续开发的工单放在 Helmsman 自己的项目里、由托管 Agent 执行）需要代码仓库，所以在 M6 之后进行；不在 M5 加「任意 git 远端、只推分支」之类不依赖 GitHub 的过渡模式。
 
 ### 9.4 约定
 
@@ -286,12 +286,13 @@ helmsman-agents/
 | `run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建 | 19 `add-run-lifecycle` |
 | 插话的兜底触发在 13 §2 里没有对应的触发类型 | 28 `add-run-steering` |
 | 运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas` | 24 `add-daemon-git-workspace` |
-| 公开运行时的隔离不成立：`isolation = user` 只有一个执行用户，不同用户的运行能互读 worktree 和 CLI 登录文件 | 待产品决定是否推迟公开运行时；决定前 17 只实现私有运行时 |
+
+公开运行时的隔离问题（`isolation = user` 只有一个执行用户，不同用户的运行能互读 worktree 和 CLI 登录文件）已决定：本期不做公开运行时，守护进程只实现 `isolation = none`（12 §3.3、14 §9），两者推迟到扩展点（§10）。
 
 ## 10. 扩展点（不在本期）
 
 - **更多代码托管**：GitHub Enterprise Server（按主机区分 App、安装、仓库 ID）、GitLab、Gitea / Forgejo，实现 15 的同一组接口（开 PR、查 CI、合并、webhook）。
-- **更强的执行隔离**：守护进程的执行用户换成容器 / 微型虚拟机（14 §9）；云端托管执行环境，用户不用自备机器。
+- **执行隔离与公开运行时**：本期守护进程只有 `isolation = none`，运行时只能绑定主人自己的 Agent（12 §3.3、14 §9）。扩展时先做执行隔离——每个触发用户（或每次运行）一个独立的执行系统用户、容器或微型虚拟机，守护进程的令牌与文件对它不可读，不同用户的 worktree 与 CLI 登录文件互不可见——再在此基础上开放「公开运行时」（主人允许工作区成员把自己的 Agent 绑到这台机器）；届时 `daemons` 加 `isolation`、`runtimes` 加 `visibility`，`join` 新增隔离模式字段并升协议版本（旧守护进程视为 `none`；其余消息不变，14 §9）。云端托管执行环境（用户不用自备机器）也在这条线上。
 - **Skills**：可复用的说明与脚本包，按 CLI 写到各自的约定目录（参考 multica）。
 - **收件箱 / 通知**：`question` 待回答、被指派、合并失败 → 站内收件箱；邮件 / IM 用 Oban 投递。
 - **对外 Webhook**：任务与运行事件推送到外部（Oban + 签名）。

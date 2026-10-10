@@ -29,7 +29,7 @@
 
 **一条运行只会被领取一次。** 领取后出了任何问题（租约过期、机器离线），这一条就以失败结束，需要的话另建一条新运行（§5）。所以旧守护进程迟到的上报只会撞上一个已结束的运行，直接被拒绝，不需要额外的版本号。
 
-`run_events`：`run_id`、`seq`、`type`（`text` `thinking` `tool_call` `tool_result` `status` `error`）、`data jsonb`、`at`。主键 `(run_id, seq)`，守护进程重发不会重复。保留 30 天（按月分区整块删除），`runs` 本身永久保留。
+`run_events`：`run_id`、`seq`、`type`（守护进程上报的归一化事件，取值以 `HelmsmanProtocol.Event.types/0` 为准：`text` `thinking` `tool_call` `tool_result` `usage` `session` `result` `error` `status`，14 §4）、`data jsonb`、`at`。主键 `(run_id, seq)`，守护进程重发不会重复。保留 30 天（按月分区整块删除），`runs` 本身永久保留。
 
 ## 2. 触发规则
 

@@ -5,6 +5,7 @@
 ## 1. 端点与认证
 
 - 只开 Streamable HTTP：`/mcp`。
+- **只协商有会话的协议版本**（2025-03-26、2025-06-18、2025-11-25）：`identify` 设置的身份挂在会话上（03 §4–5）。MCP 2026-07-28 起的无会话请求返回 400（不支持的协议版本），客户端需回退到 `initialize` 握手。支持无会话版本是扩展点：身份只能来自每次请求的 `actor` 参数或 Token 的缺省 Agent。
 - 每个请求必须带 `Authorization: Bearer hm_…`，Token 要有 `mcp` scope；无效 / 吊销 / 过期 → 401。
 - **Token 决定工作区**，所以 URL 里不带 slug；一个 Agent 要访问两个工作区就配两个 Token。
 - 托管 Agent 运行中用的是 `hmr_` 运行令牌（12 §4）：同一个端点、同一套工具，区别是身份固定为这个 Agent、运行结束令牌即失效、`identify` 只返回当前身份，并且只能做这次运行 `capabilities` 允许的事（缺省只能写本次运行的任务，13 §2.3）。
@@ -12,7 +13,7 @@
 ```elixir
 # router.ex
 pipeline :mcp do
-  plug HelmsmanWeb.Plugs.BearerAuth, scope: "mcp"   # assigns.scope = %Scope{via: :mcp, ...}
+  plug HelmsmanWeb.Plugs.BearerAuth, scope: "mcp", via: :mcp   # assigns.current_scope = %Scope{via: :mcp, ...}
   plug HelmsmanWeb.Plugs.MCPSessionGuard            # 会话必须属于同一个 Token（03 §5）
 end
 
@@ -22,7 +23,7 @@ scope "/mcp" do
 end
 ```
 
-anubis 把 `conn.assigns` 传进工具的 `frame.assigns`，工具从 `frame.assigns.scope` 拿到用户、工作区、角色，再按 03 §4 补上 actor。
+anubis 把每个请求的 `conn.assigns` 合并进工具的 `frame.assigns`，工具从 `frame.assigns.current_scope` 拿到用户、工作区、角色（每个请求都是最新的），再按 03 §4 补上 actor。
 
 客户端配置（设置页生成，可直接复制）：
 
@@ -43,12 +44,12 @@ defmodule HelmsmanMCP.Tools.TransitionTask do
     schema: %{task_id: {:string, required: true}, to: {:string, required: true}, ...}
 
   @impl true
-  def call(%{"task_id" => id, "to" => to} = args, scope),
+  def call(%{"task_id" => id, "to" => to} = args, %HelmsmanMCP.Context{scope: scope}),
     do: Helmsman.Tasks.transition(scope, id, to, Map.take(args, ~w(comment commits tests)))
 end
 ```
 
-`HelmsmanMCP.Server`（`use Anubis.Server`）启动时把所有 `HelmsmanMCP.Tool` 模块注册上去，负责：取 scope → 解析 actor → 调 `call/2` → 把 `{:ok, map}` 转成 JSON 文本、`{:error, reason}` 转成 `isError: true` 加英文提示。要换 MCP 库（或自己实现协议）只改这一个模块。
+`HelmsmanMCP.Server`（`use Anubis.Server`）在会话初始化时把所有 `HelmsmanMCP.Tool` 模块注册上去，收到调用后交给与 MCP 库无关的 `HelmsmanMCP.Pipeline`：取 scope 与会话 → 解析 actor（写工具，03 §4）→ 调 `call/2`（第二个参数是 `%HelmsmanMCP.Context{scope, session}`）→ 把 `{:ok, map}` 转成 JSON 文本、`{:error, reason}` 转成 `isError: true` 加英文提示。要换 MCP 库（或自己实现协议）只改 `Server` 这一个模块。
 
 ## 3. 工具目录
 
@@ -59,7 +60,7 @@ end
 | 身份 | `identify(name, project?, worktree?)` `whoami()` `list_actors()` | 见 03 §4；为兼容 bosun 也接受 `kind` 参数，但只能是 `agent` |
 | 项目 | `list_projects(include_archived?)` `get_project(key)` `create_project(key, name, description?)` `update_project(key, …)` | 后两个需要 admin |
 | 任务 | `list_tasks(project_key, status?, label?, kind?, epic?, assignee?, query?, limit?, offset?)` `search_tasks(query, project_key?, limit?)` `get_task(task_id)` `create_task(project_key, title, description?, priority?, labels?, kind?, epic?, assignee?)` `update_task(task_id, …)` | |
-| 状态 | `transition_task(task_id, to, comment?, commits?, tests?)` | |
+| 状态 | `transition_task(task_id, to, comment?, commits?, tests?, feedback?)` | `feedback = {kind, content}`：迁移原因，与迁移在同一事务里写入（06）；bosun 没有这个参数，不传时行为与 bosun 一致 |
 | 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | |
 | 反馈 | `add_feedback(task_id, content, kind?)` `update_feedback(feedback_id, content, kind?)` `list_feedback(task_id)` | |
 | 查询 | `query_tasks(bql, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name, bql, filter_id?, shared?)` `delete_filter(filter_id)` | `save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致） |

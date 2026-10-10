@@ -18,11 +18,12 @@
 | `/w/:slug/runs/:id` | `RunLive.Show` | 单次运行的完整执行记录（任务页里的弹窗也能看，这里便于分享链接） |
 | `/w/:slug/squads` | `SquadLive.Index` | 小队（16 §3） |
 | `/w/:slug/autopilots`、`/w/:slug/autopilots/:id` | `AutopilotLive.*` | 自动化（16 §3） |
-| `/w/:slug/settings/members` | `MembersLive` | 成员、角色、邀请 |
-| `/w/:slug/settings/tokens` | `TokensLive` | API Token（03 §3） |
-| `/w/:slug/settings/runtimes` | `RuntimesLive` | 我的机器与运行时（12 §5） |
-| `/w/:slug/settings/github` | `GitHubLive` | 连接 GitHub、仓库列表（15 §1） |
-| `/w/:slug/settings/data` | `DataLive` | 导出 / 导入（11） |
+| `/w/:slug/settings` | `SettingsLive.General` | 常规：工作区名称、slug（owner）、退出工作区；设置的第一个标签，侧栏「设置」指向这里 |
+| `/w/:slug/settings/members` | `SettingsLive.Members` | 成员、角色、邀请 |
+| `/w/:slug/settings/tokens` | `SettingsLive.Tokens` | API Token（03 §3） |
+| `/w/:slug/settings/runtimes` | `SettingsLive.Runtimes` | 我的机器与运行时（12 §5） |
+| `/w/:slug/settings/github` | `SettingsLive.GitHub` | 连接 GitHub、仓库列表（15 §1） |
+| `/w/:slug/settings/data` | `SettingsLive.Data` | 导出 / 导入（11） |
 | `/device` | `DeviceLive` | 守护进程登录时输入设备码并确认（12 §3.1） |
 | `/admin/github` | `Admin.GitHubLive` | 实例管理员创建 GitHub App（15 §1） |
 
@@ -71,7 +72,7 @@
 |---|---|---|
 | `project:<id>` | `TaskLive.Index` | 用 `stream_insert` 更新那一行；不在当前筛选条件里的行移除 |
 | `task:<id>` | `TaskLive.Show` | 重新加载详情；用户正在编辑的字段不覆盖，只提示「有更新」 |
-| `workspace:<id>` | `DashboardLive`、侧栏 | 项目增减、待回答数量 |
+| `workspace:<id>` | 外壳（`Shell.on_mount`，每个 `/w/:slug` 页面一份），页面不得再自行订阅 | 外壳处理工作区改名 / 改 slug；其余消息（项目增减、成员变化、待回答数量等）交给页面的 `handle_info/2`，如 `DashboardLive`、侧栏、设置页 |
 | `workspace:<id>:agents`（Presence） | `DashboardLive`、`AgentLive.Index` | 在线的外接 Agent |
 | `workspace:<id>:runs` | `DashboardLive`、`AgentLive.*`、侧栏 | Agent 忙闲、队列长度（13 §9） |
 | `workspace:<id>:runtimes` | `RuntimesLive`、`AgentLive.*` | 机器上线 / 离线 |
@@ -79,6 +80,8 @@
 | `user:<id>` | 根布局 | 被移出工作区 / 角色变化 → 重新挂载 |
 
 列表页用 LiveView streams，不在 socket 里保存整张表；分页用「加载更多」。执行记录同样用 streams。
+
+**消息处理约定**：一个主题上有多种消息，页面只写自己关心的 `handle_info/2` 子句。`HelmsmanWeb.live_view/0` 为所有 LiveView 加 `@before_compile HelmsmanWeb.LiveFallback`：模块定义了 `handle_info/2` 且没有自有兜底（第一个参数为裸变量、无 guard 的子句）时，在其子句之后追加一个忽略其余消息的子句（`Logger.debug` 记一行）；页面已有自有兜底时不追加，自有兜底须对未处理的消息返回 `{:noreply, socket}`；没定义时由外壳 `:halt`。都不捕获页面子句里的异常（`add-workspace-settings-ui` DR-2）。
 
 ## 6. 测试
 

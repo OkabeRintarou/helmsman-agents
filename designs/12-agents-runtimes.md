@@ -58,25 +58,24 @@
 
 ### 3.1 注册
 
-1. 用户在机器上执行 `helmsman login --server https://helmsman.example.com`：设备码流程（类似 `gh auth login`）——终端显示一个短码，用户在浏览器 `/device` 页面登录、**勾选这台机器要服务的工作区**并确认，守护进程拿到 `hmd_` 令牌（§4）。之后可以在设置页增减工作区。
-2. `helmsman daemon start`：连接服务器（14 §3），上报机器信息、隔离模式（14 §9）和检测到的 CLI（名称、版本、可用模型）。
+1. 用户在机器上执行 `helmsman login --server https://helmsman.example.com`：设备码流程（类似 `gh auth login`）——终端显示一个短码，用户在浏览器 `/device` 页面登录、**勾选这台机器要服务的工作区**并确认，守护进程拿到 `hmd_` 令牌（§4）。之后可以在设置页增减工作区。HTTP 接口与错误码见 `protocol/`（`add-daemon-protocol` 的 `DeviceAuth`）。
+2. `helmsman daemon start`：连接服务器（14 §3），上报机器信息和检测到的 CLI（名称、版本、可用模型）。
 3. 服务端为「这台机器 × 每个检测到的 CLI × 勾选的每个工作区」upsert 一条 `runtimes`。用户可以在设置页关掉某个 CLI。
 
 ### 3.2 字段
 
 | 表 | 列 |
 |---|---|
-| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改）、`os`、`arch`、`version`、`isolation`（`none` \| `user`）、`token_hash`、`max_concurrency`（缺省 4）、`last_seen_at`、`revoked_at` |
-| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`visibility`（`private` \| `workspace`）、`status`（`online` \| `offline`）、`disabled_at` |
+| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改）、`os`、`arch`、`version`、`token_hash`、`max_concurrency`（缺省 4）、`last_seen_at`、`revoked_at` |
+| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`status`（`online` \| `offline`）、`disabled_at` |
 
 唯一键 `(workspace_id, daemon_id, provider)`。
 
-### 3.3 私有与公开
+### 3.3 运行时只属于主人
 
-- 运行时缺省**私有**：只有它的主人能把自己的 Agent 绑上去。owner / admin 也不例外——那是别人的机器和 CLI 额度。
-- 只有主人能把它改成**公开**：之后工作区成员都可以把自己的 Agent 绑到这台机器上执行。不会共享 CLI 的登录凭据，只是允许把执行路由过来。
-- **公开要求守护进程以 `isolation = user` 运行**（14 §9）。否则别人的 Agent 就能以机器主人的身份执行任意命令、读到守护进程令牌——这比「共享 CLI 额度」严重得多。守护进程退回 `none` 模式时，它的公开运行时自动变回私有。
-- 已绑定的 Agent 在运行时被改回私有后：已有的绑定保留，新绑定不允许。
+- 运行时**只能绑定主人自己的 Agent**：Agent 的所属用户（`actors.owner_id`）必须等于运行时所在守护进程的 `user_id`。owner / admin 也不例外——那是别人的机器和 CLI 额度。绑定在保存 Agent 配置的事务里校验（01 §3）。
+- 本期没有「公开运行时」。原因：守护进程只实现 `isolation = none`（14 §9），CLI 和守护进程是同一个系统用户；如果允许别人的 Agent 路由到这台机器，它就能以机器主人的身份执行任意命令、读到 `hmd_` 令牌和其他任务的 worktree。真正的多用户隔离（每个用户一个执行用户或容器）是扩展点（00 §10）。
+- **多人共用一台服务器**：建一个专用的 Helmsman 账号（例如 `build-box`，在工作区里是 member），用它在服务器上 `helmsman login`；再以这个账号创建 Agent，`access = workspace`（§2.1）。成员都能触发这些 Agent，执行时用的是这台服务器上专用系统用户的环境与 CLI 额度；Agent 的执行配置只有登录这个账号的人能改（§2）。风险落在这台服务器和这个专用账号上，而不是某个成员的个人机器上。
 
 ### 3.4 在线状态
 
@@ -99,5 +98,5 @@
 
 - `/w/:slug/agents`：Agent 列表（在线 / 忙碌 / 空闲 / 离线、所属用户、CLI、最近运行）；新建、编辑、归档。
 - `/w/:slug/agents/:name`：配置、正在跑和排队的运行、历史运行、用量统计。
-- `/w/:slug/settings/runtimes`：我的机器与运行时（在线状态、CLI 版本、可见性、并发上限）；admin 看全部，可以禁用。
-- 新建 Agent 的表单里，运行时下拉只列出可用的（自己的 + 公开的），模型下拉来自所选运行时上报的列表。
+- `/w/:slug/settings/runtimes`：我的机器与运行时（在线状态、CLI 版本、并发上限）；admin 看全部，可以禁用。
+- 新建 Agent 的表单里，运行时下拉只列出自己的运行时（§3.3），模型下拉来自所选运行时上报的列表。
