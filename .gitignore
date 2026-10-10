@@ -1,0 +1,30 @@
+# Reference repositories (not part of this project)
+/scratch/
+
+# OpenSpec configuration and generated agent integrations
+/openspec/config.yaml
+/.agents/skills/.openspec-target
+/.agents/skills/openspec-*/
+/.github/agents/openspec.agent.md
+/.github/prompts/opsx-*.prompt.md
+/.github/skills/openspec-*/
+/.github/workflows/copilot-setup-steps.yml
+
+# Elixir / Mix build artifacts
+_build/
+deps/
+*.ez
+erl_crash.dump
+.elixir_ls/
+.lexical/
+cover/
+burrito_out/
+
+# Frontend assets
+node_modules/
+
+# Local environment
+.env
+.env.*
+!.env.example
+.DS_Store
