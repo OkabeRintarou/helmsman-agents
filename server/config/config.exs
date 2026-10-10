@@ -7,9 +7,29 @@
 # General application configuration
 import Config
 
+config :helmsman, :scopes,
+  user: [
+    default: true,
+    module: Helmsman.Accounts.Scope,
+    assign_key: :current_scope,
+    access_path: [:user, :id],
+    schema_key: :user_id,
+    schema_type: :id,
+    schema_table: :users,
+    test_data_fixture: Helmsman.AccountsFixtures,
+    test_setup_helper: :register_and_log_in_user
+  ]
+
 config :helmsman,
   ecto_repos: [Helmsman.Repo],
   generators: [timestamp_type: :utc_datetime]
+
+# Authentication rate limits, as {limit, window_ms} per bucket.
+config :helmsman, Helmsman.RateLimit,
+  magic_link_ip: {5, :timer.minutes(1)},
+  magic_link_email: {3, :timer.minutes(10)},
+  password_ip: {10, :timer.minutes(1)},
+  register_ip: {10, :timer.hours(1)}
 
 # Configure the endpoint
 config :helmsman, HelmsmanWeb.Endpoint,
@@ -35,6 +55,9 @@ config :phoenix_live_view,
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
 config :helmsman, Helmsman.Mailer, adapter: Swoosh.Adapters.Local
+
+# Sender of system emails; production reads HELMSMAN_MAILER_FROM.
+config :helmsman, :mailer_from, {"Helmsman", "noreply@localhost"}
 
 # Configure esbuild (the version is required)
 config :esbuild,

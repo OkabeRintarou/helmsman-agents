@@ -1,5 +1,5 @@
 defmodule Helmsman do
-  use Boundary, deps: [], exports: [Repo]
+  use Boundary, deps: [], exports: [Repo, Accounts, Accounts.Scope, Accounts.User]
 
   @moduledoc """
   Helmsman keeps the contexts that define your domain

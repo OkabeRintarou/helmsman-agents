@@ -1,5 +1,19 @@
 import Config
 
+# Only in tests, remove the complexity from the password hashing algorithm
+config :bcrypt_elixir, :log_rounds, 1
+
+# Most tests register several users and share 127.0.0.1 as client IP, so
+# signup is open and rate limits are effectively off by default. Tests of
+# these features switch them with Application.put_env (async: false).
+config :helmsman, :signup_mode, :open
+
+config :helmsman, Helmsman.RateLimit,
+  magic_link_ip: {1_000_000, :timer.minutes(1)},
+  magic_link_email: {1_000_000, :timer.minutes(10)},
+  password_ip: {1_000_000, :timer.minutes(1)},
+  register_ip: {1_000_000, :timer.hours(1)}
+
 # Configure your database
 #
 # The MIX_TEST_PARTITION environment variable can be used

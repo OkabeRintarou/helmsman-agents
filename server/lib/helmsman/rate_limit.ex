@@ -1,0 +1,47 @@
+defmodule Helmsman.RateLimit do
+  @moduledoc """
+  Node-local rate limiting for authentication entry points (ETS backend).
+
+  Limits are read at call time from `config :helmsman, Helmsman.RateLimit`,
+  one `{limit, scale_ms}` tuple per bucket:
+
+    * `:magic_link_ip` - magic link requests per client IP
+    * `:magic_link_email` - magic link requests per normalized email
+    * `:password_ip` - password log in attempts per client IP
+    * `:register_ip` - registration submissions per client IP
+  """
+
+  use Hammer, backend: :ets
+
+  @type bucket :: :magic_link_ip | :magic_link_email | :password_ip | :register_ip
+
+  @doc """
+  Counts one request against `bucket` for `key`.
+
+  Returns `:ok` while the request is within the configured limit, otherwise
+  `{:error, :rate_limited}`.
+  """
+  @spec check(bucket(), term()) :: :ok | {:error, :rate_limited}
+  def check(bucket, key) do
+    {limit, scale_ms} = limit_for(bucket)
+
+    case hit({bucket, key}, scale_ms, limit) do
+      {:allow, _count} -> :ok
+      {:deny, _retry_after} -> {:error, :rate_limited}
+    end
+  end
+
+  @doc """
+  Formats a client IP (as found in `conn.remote_ip` or LiveView peer data)
+  into a rate limit key.
+  """
+  @spec ip_key(:inet.ip_address() | nil) :: String.t()
+  def ip_key(nil), do: "unknown"
+  def ip_key(ip) when is_tuple(ip), do: ip |> :inet.ntoa() |> to_string()
+
+  defp limit_for(bucket) do
+    :helmsman
+    |> Application.fetch_env!(__MODULE__)
+    |> Keyword.fetch!(bucket)
+  end
+end

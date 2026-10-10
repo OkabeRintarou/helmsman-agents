@@ -19,6 +19,10 @@ config :helmsman, HelmsmanWeb.Endpoint,
     ]
   ]
 
+# The session cookie options are a compile-time module attribute of the
+# endpoint, so the Secure flag must be decided here, not in runtime.exs.
+config :helmsman, :secure_session_cookie, true
+
 # Configure Swoosh API Client
 config :swoosh, api_client: Swoosh.ApiClient.Req
 
