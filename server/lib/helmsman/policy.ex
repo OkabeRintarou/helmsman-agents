@@ -65,7 +65,13 @@ defmodule Helmsman.Policy do
     :revoke_own_token,
     :list_all_tokens,
     :revoke_any_token,
-    :identify
+    :identify,
+    :read_tasks,
+    :create_project,
+    :update_project,
+    :archive_project,
+    :create_task,
+    :update_task
   ]
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -159,6 +165,20 @@ defmodule Helmsman.Policy do
   # Not a management action: the one agents may perform (designs/03 §4).
   def authorize(%Scope{} = scope, :identify, _resource),
     do: allow_if(role_at_least?(scope, :member))
+
+  ## Projects and tasks (not management actions: agents act with their
+  ## owner's role, designs/08 §3)
+
+  def authorize(%Scope{} = scope, :read_tasks, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
+
+  def authorize(%Scope{} = scope, action, _resource)
+      when action in [:create_project, :update_project, :archive_project],
+      do: allow_if(role_at_least?(scope, :admin))
+
+  def authorize(%Scope{} = scope, action, _resource)
+      when action in [:create_task, :update_task],
+      do: allow_if(role_at_least?(scope, :member))
 
   def authorize(_scope, _action, _resource), do: {:error, :forbidden}
 

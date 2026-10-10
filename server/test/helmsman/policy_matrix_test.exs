@@ -169,6 +169,23 @@ defmodule Helmsman.PolicyMatrixTest do
             # action); viewers never
             for role <- @roles, kind <- [:human, :agent] do
               {:identify, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
+            # read_tasks: everyone, humans and agents
+            for role <- @roles, kind <- [:human, :agent] do
+              {:read_tasks, role, kind, @none, :ok}
+            end,
+            # create/update/archive_project: owner and admin; not management
+            # actions, so an admin's agent may too
+            for action <- [:create_project, :update_project, :archive_project],
+                role <- @roles,
+                kind <- [:human, :agent] do
+              {action, role, kind, @none, if(role in [:owner, :admin], do: :ok, else: :forbidden)}
+            end,
+            # create_task, update_task: member and above, agents too
+            for action <- [:create_task, :update_task],
+                role <- @roles,
+                kind <- [:human, :agent] do
+              {action, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
             end
           ]
           |> List.flatten()
@@ -247,6 +264,21 @@ defmodule Helmsman.PolicyMatrixTest do
     end
 
     refute :identify in management
+  end
+
+  test "project and task actions are not management actions" do
+    management = MapSet.new(Policy.management_actions())
+
+    for action <- [
+          :read_tasks,
+          :create_project,
+          :update_project,
+          :archive_project,
+          :create_task,
+          :update_task
+        ] do
+      refute action in management
+    end
   end
 
   test "token-authenticated scopes (no actor) follow the role" do

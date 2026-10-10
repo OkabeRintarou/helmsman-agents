@@ -16,6 +16,10 @@ defmodule Helmsman do
       Members,
       ApiTokens,
       ApiTokens.ApiToken,
+      Projects,
+      Projects.Project,
+      Tasks,
+      Tasks.Task,
       Policy,
       Events,
       Bootstrap

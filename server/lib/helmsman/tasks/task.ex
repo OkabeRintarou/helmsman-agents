@@ -1,0 +1,113 @@
+defmodule Helmsman.Tasks.Task do
+  @moduledoc """
+  A task (designs/04 §2): one piece of work in a project, identified for
+  ever by `ident` (`KEY-N`).
+
+  `status` only changes through the state machine; field edits never touch
+  it. `lock_version` grows by one with every edit that changes something.
+  """
+
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  alias Helmsman.Actors.Actor
+  alias Helmsman.Projects.Project
+  alias Helmsman.Tasks.TaskEvent
+  alias Helmsman.Workspaces.Workspace
+
+  @type status :: :new | :in_progress | :done | :verified | :rejected | :cancelled
+  @type priority :: :low | :medium | :high
+  @type t :: %__MODULE__{}
+
+  @statuses [:new, :in_progress, :done, :verified, :rejected, :cancelled]
+  @priorities [:low, :medium, :high]
+  @max_description_bytes 65_536
+  @max_labels 20
+  @max_label_length 32
+
+  schema "tasks" do
+    belongs_to :workspace, Workspace
+    belongs_to :project, Project
+    field :seq, :integer
+    field :ident, :string
+    field :title, :string
+    field :description, :string, default: ""
+    field :status, Ecto.Enum, values: @statuses, default: :new
+    field :priority, Ecto.Enum, values: @priorities, default: :medium
+    field :labels, {:array, :string}, default: []
+    belongs_to :created_by, Actor
+    belongs_to :assignee, Actor
+    field :lock_version, :integer, default: 1
+
+    has_many :events, TaskEvent
+
+    timestamps(type: :utc_datetime_usec)
+  end
+
+  @doc "All statuses."
+  @spec statuses() :: [status()]
+  def statuses, do: @statuses
+
+  @doc "All priorities."
+  @spec priorities() :: [priority()]
+  def priorities, do: @priorities
+
+  @doc """
+  Changeset for the editable fields: title, description, priority and
+  labels. Anything else in `attrs` (status, ident, ...) is ignored; the
+  caller sets the other columns.
+  """
+  @spec changeset(t(), map()) :: Ecto.Changeset.t()
+  def changeset(task, attrs) do
+    task
+    |> cast(attrs, [:title, :description, :priority, :labels], empty_values: [])
+    |> update_change(:title, &normalize_title/1)
+    |> update_change(:description, &normalize_description/1)
+    |> update_change(:labels, &normalize_labels/1)
+    |> validate_required([:title, :priority])
+    |> validate_length(:title, min: 1, max: 200, count: :codepoints)
+    |> validate_length(:description, max: @max_description_bytes, count: :bytes)
+    |> validate_labels()
+    |> check_constraint(:title, name: :tasks_title_length, message: "must be 1-200 characters")
+    |> check_constraint(:description,
+      name: :tasks_description_size,
+      message: "must be at most 64 KB"
+    )
+    |> check_constraint(:labels, name: :tasks_labels_count, message: "must be at most 20 labels")
+    |> check_constraint(:priority, name: :tasks_priority_check, message: "is invalid")
+    |> unique_constraint(:ident, name: :tasks_workspace_id_ident_index)
+    |> unique_constraint(:seq, name: :tasks_project_id_seq_index)
+    |> foreign_key_constraint(:assignee_id, name: :tasks_assignee_id_fkey)
+  end
+
+  @doc """
+  Normalizes labels: trimmed, downcased, blanks dropped, duplicates removed,
+  input order kept.
+  """
+  @spec normalize_labels([String.t()] | nil) :: [String.t()]
+  def normalize_labels(nil), do: []
+
+  def normalize_labels(labels) when is_list(labels) do
+    labels
+    |> Enum.map(&String.trim/1)
+    |> Enum.map(&String.downcase/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp normalize_title(title) when is_binary(title), do: String.trim(title)
+  defp normalize_title(title), do: title
+
+  defp normalize_description(nil), do: ""
+  defp normalize_description(description), do: description
+
+  defp validate_labels(changeset) do
+    changeset
+    |> validate_length(:labels, max: @max_labels, message: "must be at most 20 labels")
+    |> validate_change(:labels, fn :labels, labels ->
+      if Enum.all?(labels, &(String.length(&1) <= @max_label_length)),
+        do: [],
+        else: [labels: "each label must be 1-32 characters"]
+    end)
+  end
+end

@@ -15,8 +15,8 @@ defmodule Helmsman.CommittedData do
 
   @doc """
   Deletes, children first, the committed rows of the given users: the
-  workspaces they own (including a first user's `default` workspace), their
-  invitations, API tokens, memberships and identities elsewhere, their
+  workspaces they own (including a first user's `default` workspace) with
+  their projects and tasks, their invitations, API tokens, memberships and identities elsewhere, their
   session tokens and the users. `extra_workspace_ids` are deleted too,
   whoever owns them (for tests whose outcome may leave a workspace without
   an owner). Every other row is left alone.
@@ -30,6 +30,10 @@ defmodule Helmsman.CommittedData do
         )
 
       workspace_ids = Enum.uniq(List.flatten(rows) ++ extra_workspace_ids)
+
+      for table <- ["task_events", "tasks", "projects"] do
+        Repo.query!("DELETE FROM #{table} WHERE workspace_id = ANY($1)", [workspace_ids])
+      end
 
       Repo.query!(
         "DELETE FROM invitations WHERE workspace_id = ANY($1) OR invited_by_id = ANY($2) " <>
