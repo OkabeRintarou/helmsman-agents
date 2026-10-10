@@ -25,7 +25,7 @@ API 调用用 Req 直接访问 REST / GraphQL；App 身份用 RS256 JWT（JOSE�
 
 ## 3. PR 的生命周期
 
-**一个任务一个对账任务**：所有与 PR 有关的变化（任务迁移、守护进程上报 `pushed`、webhook、定时轮询）都只做一件事——入队 `ReconcilePR(task_id)`（Oban 唯一键 = task_id，已排队的就不重复排）。它每次都读**当前**的任务状态、最近的验收事件和 GitHub 上 PR 的**实际**状态，算出该做什么再做，做完再读一遍确认。这样：
+**一个任务一个对账任务**：所有与 PR 有关的变化（任务迁移、守护进程上报 `pushed`、该任务上的运行进入终态、webhook、定时轮询）都只做一件事——入队 `ReconcilePR(task_id)`（Oban 唯一键 = task_id，已排队的就不重复排）。它每次都读**当前**的任务状态、最近的验收事件和 GitHub 上 PR 的**实际**状态，算出该做什么再做，做完再读一遍确认。这样：
 
 - 事件乱序、重复都没关系（webhook 只是唤醒信号，内容不直接写库）；
 - 旧的「合并」请求不会在任务已经重开之后执行——执行时它看到的是重开后的状态。
@@ -69,8 +69,9 @@ PR 合并后：在同一处理里检查依赖它的任务，满足条件的 `def
 
 **2. 验收的就是交付的那一版。**
 
-- 任务上有运行在 `claimed` / `running` / `cancelling` 时不能验收（05 §2 `{:run_active, …}`）——避免「Agent 先把任务置 DONE、守护进程还没推送」时被验收；
+- 任务上有**其他**运行在 `claimed` / `running` / `cancelling` 时不能验收（05 §2 `{:run_active, …}`；发起验收的运行本身除外）——避免「Agent 先把任务置 DONE、守护进程还没推送」时被验收；
 - 验收时记下 `verified_sha` = 当时 PR 的 head，而且这个 SHA 必须是某次运行上报 `pushed` 的 `head_sha`（有人手动往分支推过提交时不满足，只能手动合并）；
+- **合并要等运行全部收尾**：验收可以在评审 Agent 自己的运行里发生（上一条的例外），但合并（自动合并和 §6 的「立即合并」）要求任务上**没有任何** `claimed` / `running` / `cancelling` 的运行，包括验收所在的那次运行——它收尾时可能还会自动提交并推送（14 §7）。有活跃运行时 `merge_status = waiting`；运行进入终态后重新对账（§3），先重读 PR head：与 `verified_sha` 不同 → `stale`，相同才继续往下走。合并成功之前不删分支。
 - 合并请求带 `sha = verified_sha`：验收之后又有新推送，GitHub 会拒绝（409）。这时 `merge_status = stale`，PR 卡片提示「验收后有新提交」，有验收权限的人可以点「按当前提交重新验收」（记一条 `review` Feedback 并更新 `verified_sha`）。
 
 **3. CI 通过。** head 上所有 check run 和 commit status 都已完成且成功；`require_ci` 时至少要有一个。分支保护里还有尚未上报的必需检查时，GitHub 的合并接口会拒绝，按「进行中」处理。
@@ -85,7 +86,11 @@ PR 合并后：在同一处理里检查依赖它的任务，满足条件的 `def
 flowchart TD
     V[任务 VERIFIED] --> C{前提 1、2 成立？<br/>策略允许这类验收人？}
     C -- 否 --> N[merge_status = blocked<br/>PR 卡片说明原因，可手动合并]
-    C -- 是 --> K{CI 状态}
+    C -- 是 --> A{任务上还有运行在<br/>claimed / running / cancelling？}
+    A -- 是 --> WR[merge_status = waiting<br/>运行进入终态后重新对账]
+    A -- 否 --> H{PR head = verified_sha？}
+    H -- 否 --> S
+    H -- 是 --> K{CI 状态}
     K -- 进行中 --> W[merge_status = waiting<br/>等 webhook / 轮询，最长 6 小时]
     K -- 失败 --> R[自动重开 §5]
     K -- 成功 --> M[调用合并接口，带 sha]
@@ -96,7 +101,7 @@ flowchart TD
     M -- 405 其他规则 --> B[merge_status = blocked<br/>提示需要人在 GitHub 上处理]
 ```
 
-合并前再读一次任务：仍是 VERIFIED、最近的验收事件仍是触发这次合并的那一条，否则什么都不做。
+合并前再读一次任务：仍是 VERIFIED、最近的验收事件仍是触发这次合并的那一条、仍没有活跃运行，否则什么都不做。
 
 ## 5. 自动重开：让 Agent 自己修
 

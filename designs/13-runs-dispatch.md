@@ -13,7 +13,7 @@
 | `lane` | `work`（做任务本身）\| `reply`（回应一条提及），见 §3 |
 | `status` | 见 §4 |
 | `triggers jsonb` | 触发原因列表：`[%{kind, by_actor_id, feedback_id, event_id, at}]`；合并后可能有多条（§3） |
-| `root_initiator_user_id` | 授权来源：这次运行最终是替谁干活（§2.2）。领取时会重新校验 |
+| `root_initiator_user_id` | 授权来源：这次运行最终是替谁干活。人引起的是这个人；托管 Agent 在运行中引起的，取引起它的那次运行的 `root_initiator_user_id`（不是 Agent 的所属用户）；延续类继承（§2.2）。领取时会重新校验 |
 | `causal_agent_ids bigint[]` | 触发链上经过的所有 Agent（含自己），用于防循环（§7）和自动合并的独立性判断（15 §4） |
 | `capabilities text[]` | 这次运行的 `hmr_` 令牌能做什么（§2.3） |
 | `priority smallint` | 取任务优先级（high 3 / medium 2 / low 1）；自动化运行为 1 |
@@ -37,7 +37,7 @@
 
 ### 2.1 触发表
 
-**新发起**——授权来自触发者本人（12 §2.1）：
+**新发起**——授权来自触发者（12 §2.1、§2.2）：人直接操作时是这个人；托管 Agent 在运行中引起的（@提及、委派、在运行里建任务并指派）是那次运行的授权来源。目标是小队时，触发者必须能触发这个小队（16 §1.1）：
 
 | 触发 | 条件 | lane | 运行要做什么 |
 |---|---|---|---|
@@ -62,14 +62,18 @@
 
 不触发的情况：
 
-- 触发者无权触发该 Agent（新发起）或继承来的授权已失效（延续，见 §2.2）：只记录，界面和 MCP 说明原因。
+- 触发者（§2.2）无权触发该 Agent 或小队（新发起，12 §2.1、16 §1.1）或继承来的授权已失效（延续，见 §2.2）：只记录，界面和 MCP 说明原因。
 - 任务在 VERIFIED / CANCELLED / REJECTED（`resubmit` 除外）：指派不产生运行。
 - Agent 已归档、运行时被禁用。
 
 ### 2.2 授权来源
 
-- 每条运行记录 `root_initiator_user_id`：新发起时是触发者（Agent 引起的新发起，是该 Agent 所属用户）；延续时继承。
-- 领取时重新校验：这个用户仍是工作区成员（member 以上）、仍有权触发该 Agent、Agent 未归档。任何一条不成立 → 运行取消，原因 `unauthorized`。
+- 每条运行记录 `root_initiator_user_id`：
+  - 人引起的新发起（界面，或用 `hm_` Token 调 MCP / REST，包括代表 Token 用户的外接 Agent）：这个人；
+  - 托管 Agent 在运行中引起的新发起（@提及、委派、在运行里建任务并指派）：**引起它的那次运行的** `root_initiator_user_id`，而不是该 Agent 的所属用户。否则 bob 指派了 alice 的 Agent A，A 再 @alice 的 `owner_only` Agent C，bob 就借道触发了 C。这条只适用于运行能力允许的触发（`write_task`、`delegate`、`create_tasks`，§2.3）；运行令牌调 `run_agent` 一律 `forbidden`，不存在「运行里手动触发」；
+  - 延续：继承（§2.1）。
+- 新发起时按这个用户校验能否触发目标：Agent 按 12 §2.1，小队按 16 §1.1。
+- 领取时重新校验：这个用户仍是工作区成员（member 以上）、仍有权触发该 Agent、Agent 未归档。任何一条不成立 → 运行取消，原因 `unauthorized`。以小队 leader 身份的运行只校验 leader；成员在被委派时各自校验（16 §1.2）。
 
 ### 2.3 运行的能力范围
 
@@ -176,10 +180,11 @@ SELECT r.* FROM runs r
 
 | 副作用 | 何时 | 幂等键 |
 |---|---|---|
-| NEW → IN_PROGRESS（§7） | `running` 之后 | `task_events.source_run_id` + 类型 |
-| 兜底回帖（§7） | `succeeded` 之后 | `feedback.source_run_id` |
+| NEW → IN_PROGRESS（§7） | `running` 之后 | `task_events` 部分唯一 `(source_run_id) WHERE auto AND from_status = 'new' AND to_status = 'in_progress'` |
+| 兜底回帖（§7） | `succeeded` 之后 | `feedback` 部分唯一 `(source_run_id) WHERE fallback` |
 | 唤醒 leader（`delegate_done`） | 委派运行结束之后 | 触发记录里的 `run_id` |
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
+| 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行进入任一终态之后（任务有分支或 PR 时） | Oban 唯一键 |
 
 ## 5. 失败与重试
 
@@ -204,7 +209,7 @@ SELECT r.* FROM runs r
 
 ## 6. 提示词
 
-提示词由**服务端**生成（守护进程只负责传给 CLI），保证同一版本的服务端行为一致。结构：
+提示词由**服务端**生成（守护进程只负责传给 CLI），保证同一版本的服务端行为一致。提示词用**英文**，与 MCP 工具描述、错误文本一致；Agent 的 `instructions` 和 Feedback 原文照原样放入，不翻译。下面的示例为了便于阅读写成中文。结构：
 
 ```
 <Agent 的 instructions>
@@ -235,7 +240,7 @@ SELECT r.* FROM runs r
 服务端只做两件事，其余由 Agent 按工作流自己推进（`transition_task` / `add_feedback`）：
 
 1. 运行进入 `running` 时，若任务还是 NEW，且这个 Agent 是执行方（或执行方是小队、而这次运行正是以该小队 leader 身份运行的）：自动 NEW → IN_PROGRESS（actor = 该 Agent，`auto = true`）。
-2. 运行**成功结束**时，若 Agent 在这次运行里一条 Feedback 都没写：把它最后的输出（`summary`）以该 Agent 的名义写成一条 `comment`。失败的运行不写，失败原因显示在运行卡片上。
+2. 运行**成功结束**时，若这次运行里没有任何 `source_run_id` 指向它的 Feedback（运行令牌写入的 Feedback 都会自动填 `source_run_id`）：把它最后的输出（`summary`）以该 Agent 的名义写成一条 `comment`，`fallback = true`。失败的运行不写，失败原因显示在运行卡片上。
 
 任务的 → DONE 事件记下当时所在的运行（`task_events.source_run_id`），自动合并据此判断「验收的是不是那次运行交付的代码」（15 §4）。
 
@@ -245,7 +250,7 @@ SELECT r.* FROM runs r
 
 - `causal_agent_ids` 的来源：
   - 人引起的新发起：只有目标 Agent 自己；
-  - Agent 引起的新发起（@提及、委派、在运行里建任务并指派、`run_agent`）：引起它的那次运行的链 + 目标 Agent；
+  - Agent 引起的新发起（@提及、委派、在运行里建任务并指派）：引起它的那次运行的链 + 目标 Agent；
   - 延续：继承授权来源那次运行的链 + 目标 Agent。例如「回调提出方」继承提出方当初建任务那次运行的链，**不会**把执行方加进来——提出方 Agent 被唤醒去验收执行方的工作，本来就是独立的评审（15 §4.1）。
 - 链长超过 5，或者新发起的目标 Agent 已经在链上（A → B → A），不再触发，并在任务上留一条系统备注。
 - 同一任务每小时最多 20 次运行（可按工作区配置），超出的触发只记录不执行。

@@ -145,7 +145,7 @@ helmsman-agents/
 ├── daemon/                        # :helmsman_daemon —— 守护进程（Burrito 打包）
 │   ├── lib/helmsman_daemon/       #   connection、detector、repo_cache、run_worker、adapters/*
 │   └── test/                      #   假 CLI 与录制的输出 fixture
-├── docs/AGENT-WORKFLOW.md         # 面向 Agent 的协作规则（MCP 资源返回它）
+├── docs/AGENT-WORKFLOW.md / .en.md  # 面向 Agent 的协作规则，中 / 英两版（MCP 资源返回英文版）
 └── designs/                       # 本目录
 ```
 
@@ -197,26 +197,96 @@ helmsman-agents/
 | LiveView | `Phoenix.LiveViewTest`；实时刷新用两个进程互相验证 |
 | CI | GitHub Actions + postgres service：三个项目各自 `mix precommit`（compile --warnings-as-errors、format、credo、test）+ dialyzer；守护进程按平台矩阵构建 |
 
-## 9. 里程碑
+## 9. 里程碑与变更路线
 
-派发是核心能力，排在检索、BQL 之前：
+派发是核心能力，排在检索、BQL 之前。每个里程碑拆成若干 OpenSpec 变更（`openspec/changes/<id>/`）：一个变更 = 一个分支，能独立实现、独立测试，验收方式写在各自的 tasks.md 里。
 
-| # | 内容 | 文档 |
-|---|---|---|
-| M0 | 工具链、三个 Mix 项目骨架、docker-compose、CI、`phx.gen.auth` | 00 |
-| M1 | 工作区、成员、邀请、角色、Scope、Policy；Actor 与 API Token | 01–03 |
-| M2 | 项目、任务、状态机、历史；LiveView 页面 | 04、05、09 |
-| M3 | Feedback（含 @提及解析）、Markdown、Mermaid | 06、09 |
-| M4 | MCP 服务端：工具全集、资源、`docs/AGENT-WORKFLOW.md`；外接 Agent 用 Claude Code 手工跑通 | 08 |
-| M5 | **派发最小闭环**：托管 Agent 配置、守护进程（登录、注册、Channel、领取）、Claude Code 适配器、运行与执行记录、指派触发、停止与重试。完成标准：网页上指派 → 本机 Claude Code 自动开工 → 写反馈 → DONE，浏览器全程实时 | 12、13、14 |
-| M6 | **GitHub**：App 接入、仓库绑定、每任务分支、推送、PR、验收后自动合并、CI 失败 / 冲突自动打回 | 15 |
-| M7 | 其余触发（打回 / 重开 / 提及 / 回答 / 回调提出方）、插话；Codex、Copilot CLI、Cursor CLI 适配器（开工前先实测各 CLI，见 14 §4） | 13、14 |
-| M8 | Epic、关联、阻塞；依赖满足（代码任务 = 前置 PR 已合并）后自动开工 | 04、05、07、13 §2.4 |
-| M9 | 小队、自动化 | 16 |
-| M10 | 全文检索、BQL、保存的筛选器 | 10 |
-| M11 | 导出 / 导入（含 bosun）、REST、`mix release` + Docker、守护进程安装脚本与发布 | 11、14 §1 |
+- 「负责」：**架构** = hm-architect 写规格、hm-coder 实现（必要的页面挂载点除外）；**前端** = hm-frontend 写规格并实现（`id` 以 hm-frontend 的变更为准）。
+- 「依赖」列的编号指本表的 #；分号后是只影响验收或个别功能的软依赖。
 
-M5 结束时系统就能「自举」：后续开发的工单放在 Helmsman 自己的项目里，由托管 Agent 自动执行。
+### 9.1 路线
+
+| # | 里程碑 | 变更 | 负责 | 范围 | 依赖 |
+|---|---|---|---|---|---|
+| 1 | M0 | `setup-project-skeleton` | 架构 | 工具链、protocol / server / daemon 三项目 + boundary、compose、CI、首个 migration | — |
+| 2 | M0 | `add-user-auth` | 架构 | phx.gen.auth（magic link + 密码）、`display_name` / `instance_admin`、注册模式 | 1 |
+| 3 | M0 | `add-web-ui-foundation` | 前端 | 视觉体系、外壳、基础组件、命令面板 | 1；认证页改样式需 2 |
+| 4 | M1 | `add-workspaces-actors` | 架构 | 工作区、成员、Scope、Policy 矩阵、human / system actor、工作区锁、首用户引导 | 2 |
+| 5 | M1 | `add-invitations-members` | 架构 | 邀请、改角色、移除成员、最后一个 owner 规则 | 4 |
+| 6 | M1 | `add-api-tokens` | 架构 | `hm_` Token、Bearer 认证、身份解析（03 §4） | 4 |
+| 7 | M1 | 工作区与设置页 | 前端 | 建 / 切换工作区、成员与邀请页、接受邀请页、Token 页 | 3、5、6 |
+| 8 | M2 | `add-projects-tasks` | 架构 | 项目、任务 CRUD、`KEY-N`、版本检查、广播 | 4 |
+| 9 | M2 | `add-task-state-machine` | 架构 | 状态机、`transition`、历史、完成证据、自验收 | 8 |
+| 10 | M2 | 项目与任务页 | 前端 | 项目页、任务列表 / 详情、字段编辑、迁移按钮与证据面板 | 3、9 |
+| 11 | M3 | `add-feedback` | 架构 | 不可变 Feedback、修订链、待回答、@提及解析（不触发）、迁移原因写入 | 9 |
+| 12 | M3 | `add-markdown-rendering` | 架构 | 服务端 Markdown 渲染与净化、Mermaid 块输出、ident 与 @提及链接 | 8 |
+| 13 | M3 | Feedback 界面 | 前端 | 时间线、写 / 修订面板、编辑与预览、Mermaid / 编辑器 hook、@补全 | 10、11、12 |
+| 14 | M4 | `add-mcp-endpoint` | 架构 | anubis 接入、Tool 行为、会话守卫、Presence、ErrorText、身份工具 | 6 |
+| 15 | M4 | `add-mcp-task-tools` | 架构 | 项目 / 任务 / 迁移 / 反馈工具、资源、prompt、AGENT-WORKFLOW；M4 手工验收 | 11、14 |
+| 16 | M5 | `add-daemon-protocol` | 架构 | RunSpec、Channel 消息、事件类型、协议版本 | 1 |
+| 17 | M5 | `add-agent-profiles-runtimes` | 架构 | `agent_profiles`（加密字段）、`access`、守护进程 / 运行时、设备码登录与 `hmd_` | 4 |
+| 18 | M5 | `add-run-dispatch` | 架构 | 运行与运行令牌、入队合并、指派触发、授权来源 / 能力 / 防循环、`hmr_` Scope | 9、14、17 |
+| 19 | M5 | `add-run-lifecycle` | 架构 | DaemonChannel、领取 / 启动前校验 / 心跳 / 租约 / 结束 / 停止 / 重试、提示词、任务副作用 | 11、16、18 |
+| 20 | M5 | `add-daemon-runner` | 架构 | 守护进程：登录、连接、CLI 检测、RunWorker、崩溃对账、假 CLI、临时目录 | 16；端到端需 19 |
+| 21 | M5 | `add-claude-adapter` | 架构 | Claude Code 适配器 | 20 |
+| 22 | M5 | Agent 与运行页 | 前端 | Agent / 运行时 / 设备码页、运行卡片、执行记录、停止 / 重试、指派确认；M5 端到端验收 | 10、17、19；验收需 21 |
+| 23 | M6 | `add-github-app` | 架构 | App / manifest、安装令牌、webhook、仓库同步、项目绑定与合并设置 | 8 |
+| 24 | M6 | `add-daemon-git-workspace` | 架构 | bare 缓存、任务 worktree、推送与救援分支、`git_token`、`task_branches` | 19、20、23 |
+| 25 | M6 | `add-continuation-triggers` | 架构 | 打回 / 重开 / 重新提交 / 回答 / 回调提出方 / 提及（reply）与授权继承；CI 失败、合并冲突自动重开后的修复运行也由它入队 | 11、18 |
+| 26 | M6 | `add-pr-reconcile-merge` | 架构 | ReconcilePR、合并策略 / 独立性 / `verified_sha`、等运行收尾再合并、CI 失败 / 冲突自动重开 | 24、25 |
+| 27 | M6 | GitHub 界面 | 前端 | GitHub 设置页、项目绑定仓库、PR 卡片、重新验收 / 立即合并 | 22、26 |
+| 28 | M7 | `add-run-steering` | 架构 | 插话、回执、兜底触发 | 19、21、25 |
+| 29 | M7 | `add-codex-adapter`、`add-copilot-adapter`、`add-cursor-adapter` | 架构 | 三个独立变更，先实测再实现，做不到隔离就不启用 | 20；Codex 插话需 28 |
+| 30 | M8 | `add-epics` | 架构 | Epic 校验、进度、自动级联 | 9 |
+| 31 | M8 | `add-task-links` | 架构 | 替代 / 依赖、成环检测、`blocked`（只看状态） | 9 |
+| 32 | M8 | `add-dependency-dispatch` | 架构 | `deferred` 运行、依赖满足触发、`satisfied?` 的 PR 规则、领取时复查 | 18、26、31 |
+| 33 | M8 | 关联与协作界面 | 前端 | Epic 进度 / 步骤、关联与阻塞标记、插话勾选框、提及置灰说明 | 13、22、25、28、30、31 |
+| 34 | M9 | `add-squads` | 架构 | 小队 actor、leader 运行、`delegate` / `delegate_done`、独立性扩展 | 25、26 |
+| 35 | M9 | `add-autopilots` | 架构 | 定时 / 手动 / webhook、两种模式、`overlap`、失败停用 | 18、24 |
+| 36 | M9 | 小队与自动化界面 | 前端 | 小队页、自动化页 | 22、34、35 |
+| 37 | M10 | `add-fulltext-search` | 架构 | 分词、检索列同事务写入、reindex、片段 | 11 |
+| 38 | M10 | `add-bql-filters` | 架构 | BQL 解析 / 编译、bosun 兼容用例、保存的筛选器、MCP 查询工具 | 37；`run` / `pr` / `squad` 字段需 19、26、34 |
+| 39 | M10 | 检索与查询界面 | 前端 | 命令面板的任务检索、列表搜索框、BQL 页、侧栏筛选器 | 3、38 |
+| 40 | M11 | `add-rest-api` | 架构 | `/api/v1`、ErrorMapper、OpenAPI、限流 | 19、31、38 |
+| 41 | M11 | `add-export-import` | 架构 | 快照导出、merge / replace 导入、actor 映射与认领、bosun 导入 | 31、38 |
+| 42 | M11 | 数据设置页 | 前端 | 导出 / 导入页、认领导入的身份 | 7、41 |
+| 43 | M11 | `add-release-distribution` | 架构 | release + Docker、健康检查、LiveDashboard、清理任务、守护进程多平台构建与安装脚本 | 20；放最后 |
+
+### 9.2 可以并行的部分
+
+- 16、20、21 只依赖协议，可以和 M1–M4 同时做；17 只依赖 4，可以和 M2–M4 并行。
+- 5、6、8 在 4 之后并行；9 与 12 并行；23 在 8 之后即可开工，可与 M3–M5 并行。
+- 25 只依赖 11、18，可在 M5 之后与 23、24 并行；30、31、37 在 M3 之后就能开工，不必等 M7；29 的三个适配器互相并行。
+- 前端变更与同里程碑的后端变更并行开发：前端先按后端变更的规格（领域函数签名、PubSub 消息）用桩数据写页面，后端合并后再接上。
+
+### 9.3 里程碑完成标准
+
+| 里程碑 | 完成标准 |
+|---|---|
+| M3 | 浏览器里能建项目 / 任务、走完整个状态机、写和修订 Feedback，两个浏览器窗口互相实时刷新 |
+| M4 | 外接 Agent 用 Claude Code 手工跑通「建单 → 领取 → 提问 → 人在浏览器里回答 → 完成 → 人验收」（08 §6） |
+| M5 | 网页上指派 → 本机 Claude Code 自动开工 → 写反馈 → DONE，浏览器全程实时 |
+| M6 | 「指派 → 运行 → 推送 → 开 PR → DONE → VERIFIED → CI 通过 → 自动合并」端到端跑通（15 §7）；CI 失败或合并冲突时任务自动重开，并以原指派的授权来源排队一次修复运行；评审 Agent 在自己的运行里验收后，要等该运行收尾才合并 |
+
+自举（后续开发的工单放在 Helmsman 自己的项目里、由托管 Agent 执行）需要代码仓库，所以最早在 M6 之后；是否在 M5 先加一种不依赖 GitHub 的仓库模式，待产品决定。
+
+### 9.4 约定
+
+- **MCP 工具随领域分批交付**：M4 只交付领域已经存在的工具（身份 3 个、项目 4 个、任务 `list_tasks` / `get_task` / `create_task` / `update_task` / `list_my_tasks`、`transition_task`、反馈 3 个）；`link_tasks` / `unlink_tasks` 随 31，`search_tasks` 随 37，`query_tasks` 与筛选器工具随 38，`run_agent` / `list_runs` / `cancel_run` / `list_agents` 随 18–19，`delegate` 随 34。`list_tasks` 的 `query` 参数随 37 加入。
+- **数据库迁移**：每张表在第一个用到它的变更里建、只建用到的列，后续用新 migration 加列（01 §5）。
+- **后端与界面分开**：后端变更交付领域函数、PubSub 消息与必要的路由 / on_mount；页面、组件和交互在前端变更里。
+
+### 9.5 已知问题与归属
+
+开工前评审发现、尚未在设计里解决的问题，在对应变更的 design.md 里处理：
+
+| 问题 | 归属 |
+|---|---|
+| 多条触发并入同一排队运行时，授权来源、`causal_agent_ids`、能力怎么合并；指派不进历史，`start: false` 之后的延续触发无处继承授权 | 18 `add-run-dispatch` |
+| `run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建 | 19 `add-run-lifecycle` |
+| 插话的兜底触发在 13 §2 里没有对应的触发类型 | 28 `add-run-steering` |
+| 运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas` | 24 `add-daemon-git-workspace` |
+| 公开运行时的隔离不成立：`isolation = user` 只有一个执行用户，不同用户的运行能互读 worktree 和 CLI 登录文件 | 待产品决定是否推迟公开运行时；决定前 17 只实现私有运行时 |
 
 ## 10. 扩展点（不在本期）
 

@@ -70,7 +70,7 @@ op     := = | != | ~ | !~ | > | >= | < | <=
 
 字段沿用 bosun：`project` `id` `status` `priority` `labels` `created_by` `assignee` `kind` `epic` `blocked`
 `depends_on` `blocks` `replaces` `replaced_by` `title` `description` `text` `feedback` `created` `updated`
-`question` `feedback_count`（别名、可用运算、值的写法见 bosun 的 `docs/BQL.md`，M6 时搬过来改写成 `docs/BQL.md`）。
+`question` `feedback_count`（别名、可用运算、值的写法见 bosun 的 `docs/BQL.md`，实现 BQL 时（`add-bql-filters`）搬过来改写成 `docs/BQL.md`）。
 
 新增：
 
@@ -79,7 +79,7 @@ op     := = | != | ~ | !~ | > | >= | < | <=
 | `assignee_kind` `created_by_kind` | `= !=` | `human` / `agent` |
 | `owner` | `= != IN` | Agent 的所属用户（`owner = alice` 找 alice 本人和她所有 Agent 的任务） |
 | 值 `currentUser()` | 用于 `assignee` `created_by` `owner` | 当前用户本人的 human actor；对 `owner` 是当前用户 |
-| `run` | `= != IN` | 最近一次运行的状态：`queued` `running` `succeeded` `failed` `cancelled`；`run IS EMPTY` = 从没跑过 |
+| `run` | `= != IN` | 最近一次运行的状态：`deferred` `queued` `claimed` `running` `cancelling` `succeeded` `failed` `cancelled`；`run IS EMPTY` = 从没跑过 |
 | `pr` | `= != IN IS EMPTY` | PR 状态：`draft` `open` `merged` `closed` |
 | `ci` | `= !=` | PR 的检查状态：`pending` `success` `failure` |
 | `merge` | `= !=` | 合并进度：`waiting` `stale` `merged` `blocked` `failed` |

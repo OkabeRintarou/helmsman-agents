@@ -30,7 +30,7 @@
 
 ## 2. 布局
 
-- 左侧栏：工作区切换、项目列表、保存的筛选器、设置；顶栏：全局搜索（下拉显示命中的任务与 Feedback 片段）、当前用户。
+- 左侧栏：工作区切换、搜索入口（打开命令面板）、新建任务、项目列表、保存的筛选器、设置，底部是当前用户菜单；不设全局顶栏，每页用页头（标题 + 页面操作）。全局搜索由命令面板承担：按 `KEY-N` 直接跳转，M10 起显示命中的任务与 Feedback 片段（`add-web-ui-foundation` DR-3）。
 - 组件放在 `HelmsmanWeb.Components.*`：`status_badge`、`actor_chip`、`task_id_link`、`relative_time`、`markdown`、`side_panel`、`confirm_dialog`。
 - 沿用 bosun 的界面约定：**需要输入的弹出层一律用右侧面板**（新建任务 / 项目、写 / 修订 Feedback、打回 / 拒绝 / 撤销填原因、筛选器）；纯确认用确认对话框；不用浏览器原生 `confirm`。
 
@@ -84,4 +84,4 @@
 
 - `Phoenix.LiveViewTest`：每个页面的渲染、表单校验、迁移按钮按权限显示。
 - 实时：一个测试里开两个 LiveView（或一个 LiveView + 直接调领域函数模拟 Agent），断言另一端收到更新；执行记录用假守护进程推事件验证。
-- JS hook 只有 Mermaid、编辑器（含 @ 补全）两个，手工验收即可。
+- JS hook 只有这几个：Mermaid、编辑器（含 @ 补全）、执行记录滚动，以及外壳用的 `Hotkeys`、`Copy`、`LocalTime`（`add-web-ui-foundation` DR-4）；每个约 100 行以内，只属于单个组件的用 colocated hook。外壳与通用 hook 不引入 npm 包；**Mermaid 是唯一例外**：使用 npm 包 `mermaid`（在 `assets/package.json` 固定版本），由构建打包进本站静态资源并按需懒加载——不进主 bundle、不走 CDN，符合 11 §3 只放行自身的 CSP；具体打包方式由 Feedback 界面变更决定。手工验收即可。
