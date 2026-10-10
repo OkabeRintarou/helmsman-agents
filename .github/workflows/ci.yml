@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: protocol
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            protocol/deps
+            protocol/_build
+          key: protocol-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'protocol/mix.lock') }}
+      - run: mix deps.get
+      - run: mix precommit
+
+  server:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            server/deps
+            server/_build
+          key: server-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'server/mix.lock') }}
+      - run: mix deps.get
+      - run: mix precommit
+      - name: Roll back all migrations and migrate again
+        env:
+          MIX_ENV: test
+        run: mix ecto.rollback --all && mix ecto.migrate
+
+  daemon:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: daemon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            daemon/deps
+            daemon/_build
+          key: daemon-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'daemon/mix.lock') }}
+      - run: mix deps.get
+      - run: mix precommit
+
+  dialyzer:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [protocol, server, daemon]
+    defaults:
+      run:
+        working-directory: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ matrix.project }}/deps
+            ${{ matrix.project }}/_build
+          key: ${{ matrix.project }}-dialyzer-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', format('{0}/mix.lock', matrix.project)) }}
+      - uses: actions/cache@v4
+        with:
+          path: ${{ matrix.project }}/priv/plts
+          key: ${{ matrix.project }}-plt-${{ runner.os }}-${{ hashFiles('.tool-versions', format('{0}/mix.lock', matrix.project)) }}
+      - run: mix deps.get
+      - run: mix dialyzer --format github
