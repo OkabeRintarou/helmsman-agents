@@ -8,6 +8,7 @@ defmodule Helmsman.WorkspacesFixtures do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors
+  alias Helmsman.Invitations
   alias Helmsman.Repo
   alias Helmsman.Tx
   alias Helmsman.Workspaces
@@ -42,5 +43,17 @@ defmodule Helmsman.WorkspacesFixtures do
       Workspaces.fetch_for_user(user, workspace.slug)
 
     %{Scope.put_workspace(Scope.for_user(user), ws, m, a) | via: :web}
+  end
+
+  @doc "The invitation link the tests pass to `Helmsman.Invitations.create/3`."
+  def invite_url(token), do: "http://localhost/invite/#{token}"
+
+  @doc """
+  Creates an invitation as `scope` (a member invitation by default) and
+  returns `%{invitation: invitation, token: token}`.
+  """
+  def invitation_fixture(scope, attrs \\ %{}) do
+    {:ok, created} = Invitations.create(scope, Enum.into(attrs, %{role: :member}), &invite_url/1)
+    created
   end
 end

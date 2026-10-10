@@ -16,10 +16,12 @@ defmodule Helmsman.CommittedData do
   @doc """
   Deletes, children first, the committed rows of the given users: the
   workspaces they own (including a first user's `default` workspace), their
-  memberships and identities elsewhere, their tokens and the users. Every
-  other row is left alone.
+  invitations, memberships and identities elsewhere, their tokens and the
+  users. `extra_workspace_ids` are deleted too, whoever owns them (for tests
+  whose outcome may leave a workspace without an owner). Every other row is
+  left alone.
   """
-  def delete_user_data!(user_ids) do
+  def delete_user_data!(user_ids, extra_workspace_ids \\ []) do
     unboxed(fn ->
       %{rows: rows} =
         Repo.query!(
@@ -27,7 +29,13 @@ defmodule Helmsman.CommittedData do
           [user_ids]
         )
 
-      workspace_ids = List.flatten(rows)
+      workspace_ids = Enum.uniq(List.flatten(rows) ++ extra_workspace_ids)
+
+      Repo.query!(
+        "DELETE FROM invitations WHERE workspace_id = ANY($1) OR invited_by_id = ANY($2) " <>
+          "OR accepted_by_id = ANY($2) OR revoked_by_id = ANY($2)",
+        [workspace_ids, user_ids]
+      )
 
       Repo.query!(
         "DELETE FROM actors WHERE workspace_id = ANY($1) OR user_id = ANY($2) OR owner_id = ANY($2)",
@@ -45,5 +53,44 @@ defmodule Helmsman.CommittedData do
     end)
 
     :ok
+  end
+
+  @doc "Returns the backend pid of the caller's current connection."
+  def backend_pid do
+    %{rows: [[pid]]} = Repo.query!("SELECT pg_backend_pid()")
+    pid
+  end
+
+  @doc "Returns true if the database backend `pid` is waiting for a lock."
+  def lock_waiting?(pid) do
+    %{rows: rows} =
+      unboxed(fn ->
+        Repo.query!("SELECT wait_event_type FROM pg_stat_activity WHERE pid = $1", [pid])
+      end)
+
+    rows == [["Lock"]]
+  end
+
+  @doc """
+  Waits until the database backend `pid` is blocked waiting for a lock;
+  raises after `timeout` milliseconds.
+  """
+  def await_lock_wait(pid, timeout \\ 5_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+    poll_lock_wait(pid, deadline)
+  end
+
+  defp poll_lock_wait(pid, deadline) do
+    cond do
+      lock_waiting?(pid) ->
+        :ok
+
+      System.monotonic_time(:millisecond) > deadline ->
+        raise "backend #{pid} is not waiting for a lock"
+
+      true ->
+        Process.sleep(10)
+        poll_lock_wait(pid, deadline)
+    end
   end
 end

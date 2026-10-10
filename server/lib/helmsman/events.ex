@@ -13,8 +13,9 @@ defmodule Helmsman.Events do
   @pubsub Helmsman.PubSub
 
   @doc "Returns the PubSub topic of a resource, e.g. `\"workspace:1\"`."
-  @spec topic(:workspace, pos_integer()) :: String.t()
+  @spec topic(:workspace | :user, pos_integer()) :: String.t()
   def topic(:workspace, id) when is_integer(id), do: "workspace:#{id}"
+  def topic(:user, id) when is_integer(id), do: "user:#{id}"
 
   @doc "Subscribes the caller to `topic`."
   @spec subscribe(String.t()) :: :ok | {:error, term()}

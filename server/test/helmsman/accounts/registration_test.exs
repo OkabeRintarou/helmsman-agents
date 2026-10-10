@@ -4,10 +4,12 @@ defmodule Helmsman.Accounts.RegistrationTest do
 
   alias Helmsman.Accounts
   alias Helmsman.Actors.Actor
+  alias Helmsman.Invitations.Invitation
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Workspace
 
   import Helmsman.AccountsFixtures
+  import Helmsman.WorkspacesFixtures
 
   defp put_signup_mode(mode) do
     previous = Application.fetch_env!(:helmsman, :signup_mode)
@@ -37,6 +39,68 @@ defmodule Helmsman.Accounts.RegistrationTest do
                Accounts.register_user(valid_user_attributes(email: email))
 
       refute Accounts.get_user_by_email(email)
+    end
+  end
+
+  describe "invite mode with an invitation" do
+    setup do
+      put_signup_mode(:invite)
+      {:ok, first} = Accounts.register_user(valid_user_attributes())
+      scope = workspace_scope_fixture(first, Workspaces.get_by_slug("default"))
+      %{scope: scope}
+    end
+
+    test "a generic invitation lets a visitor register without consuming it", %{scope: scope} do
+      %{token: token, invitation: invitation} = invitation_fixture(scope)
+
+      assert {:ok, user} =
+               Accounts.register_user(valid_user_attributes(), invitation_token: token)
+
+      refute user.instance_admin
+      assert Workspaces.list_for_user(user) == []
+      refute Repo.reload!(invitation).accepted_at
+    end
+
+    test "an expired invitation is refused", %{scope: scope} do
+      %{token: token, invitation: invitation} = invitation_fixture(scope)
+
+      Repo.update_all(from(i in Invitation, where: i.id == ^invitation.id),
+        set: [expires_at: DateTime.add(DateTime.utc_now(:second), -1, :second)]
+      )
+
+      email = unique_user_email()
+
+      assert {:error, :signup_closed} =
+               Accounts.register_user(valid_user_attributes(email: email),
+                 invitation_token: token
+               )
+
+      refute Accounts.get_user_by_email(email)
+    end
+
+    test "a bound invitation only admits its own email", %{scope: scope} do
+      bob = unique_user_email()
+      %{token: token, invitation: invitation} = invitation_fixture(scope, email: bob)
+      eve = unique_user_email()
+
+      assert {:error, :signup_closed} =
+               Accounts.register_user(valid_user_attributes(email: eve), invitation_token: token)
+
+      refute Accounts.get_user_by_email(eve)
+
+      # A caller-supplied :email cannot stand in for the registration email.
+      assert {:error, :signup_closed} =
+               Accounts.register_user(valid_user_attributes(email: eve),
+                 invitation_token: token,
+                 email: bob
+               )
+
+      assert {:ok, _user} =
+               Accounts.register_user(valid_user_attributes(email: String.upcase(bob)),
+                 invitation_token: token
+               )
+
+      refute Repo.reload!(invitation).accepted_at
     end
   end
 

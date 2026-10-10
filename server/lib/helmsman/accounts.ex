@@ -116,7 +116,9 @@ defmodule Helmsman.Accounts do
     * `:skip_default_workspace` - do not create the `default` workspace for
       the first user (command-line bootstrap).
 
-  Other options are passed to `Helmsman.Accounts.SignupGate.allow?/1`.
+  Other options, such as `:invitation_token`, are passed to
+  `Helmsman.Accounts.SignupGate.allow?/1` together with `:email`, the
+  normalized registration email (a caller's `:email` is overwritten).
 
   ## Examples
 
@@ -145,10 +147,13 @@ defmodule Helmsman.Accounts do
     user_count = Repo.aggregate(User, :count)
     race_delay()
 
+    changeset = User.registration_changeset(%User{}, attrs)
+    opts = Keyword.put(opts, :email, normalized_email(changeset))
+
     with {:ok, instance_admin?} <- signup_decision(user_count, opts),
          {:ok, user} <-
-           %User{instance_admin: instance_admin?}
-           |> User.registration_changeset(attrs)
+           changeset
+           |> Ecto.Changeset.put_change(:instance_admin, instance_admin?)
            |> Repo.insert(),
          {:ok, _workspace} <- maybe_create_default_workspace(user, opts) do
       {:ok, user}
@@ -178,17 +183,15 @@ defmodule Helmsman.Accounts do
     cond do
       Keyword.get(opts, :skip_signup_gate, false) -> {:ok, false}
       signup_mode() == :open -> {:ok, false}
-      true -> invited_signup(SignupGate.allow?(opts))
+      true -> with :ok <- SignupGate.allow?(opts), do: {:ok, false}
     end
   end
 
-  # SignupGate.allow?/1 always refuses until invitations exist, which both
-  # the compiler's type checker and Dialyzer can prove. Compare instead of
-  # pattern matching and silence Dialyzer so the :ok path can stay in place;
-  # drop both when the gate gains a real :ok result.
-  @dialyzer {:nowarn_function, invited_signup: 1}
-  defp invited_signup(result) do
-    if result == :ok, do: {:ok, false}, else: result
+  defp normalized_email(changeset) do
+    case Ecto.Changeset.get_field(changeset, :email) do
+      email when is_binary(email) -> email |> String.trim() |> String.downcase()
+      _ -> nil
+    end
   end
 
   # Test-only hook that widens the window between counting users and

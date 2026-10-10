@@ -3,6 +3,7 @@ defmodule HelmsmanWeb.UserLive.Registration do
 
   alias Helmsman.Accounts
   alias Helmsman.Accounts.User
+  alias Helmsman.Invitations
   alias HelmsmanWeb.UserAuth
 
   @impl true
@@ -21,6 +22,10 @@ defmodule HelmsmanWeb.UserLive.Registration do
               to your account now.
             </:subtitle>
           </.header>
+        </div>
+
+        <div :if={@invitation} id="invitation_summary" class="alert alert-info">
+          你被邀请加入 {@invitation.workspace_name}
         </div>
 
         <div :if={!@registration_open?} id="signup_closed" class="alert alert-info">
@@ -65,13 +70,15 @@ defmodule HelmsmanWeb.UserLive.Registration do
     {:ok, redirect(socket, to: HelmsmanWeb.UserAuth.signed_in_path(socket))}
   end
 
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     changeset = Accounts.change_user_registration(%User{}, %{}, validate_unique: false)
+    invitation = invitation(params["invitation"])
 
     socket =
       socket
       |> assign(
-        registration_open?: Accounts.registration_open?(),
+        invitation: invitation,
+        registration_open?: invitation != nil or Accounts.registration_open?(),
         client_ip: UserAuth.client_ip(socket)
       )
       |> assign_form(changeset)
@@ -81,7 +88,9 @@ defmodule HelmsmanWeb.UserLive.Registration do
 
   @impl true
   def handle_event("save", %{"user" => user_params}, socket) do
-    case Accounts.register_user(user_params, ip: socket.assigns.client_ip) do
+    opts = [ip: socket.assigns.client_ip] ++ invitation_opts(socket.assigns.invitation)
+
+    case Accounts.register_user(user_params, opts) do
       {:ok, user} ->
         {:ok, _} =
           Accounts.deliver_login_instructions(
@@ -103,7 +112,7 @@ defmodule HelmsmanWeb.UserLive.Registration do
       {:error, :signup_closed} ->
         {:noreply,
          socket
-         |> assign(registration_open?: false)
+         |> assign(registration_open?: false, invitation: nil)
          |> put_flash(:error, "注册仅限受邀")}
 
       {:error, :rate_limited} ->
@@ -120,6 +129,20 @@ defmodule HelmsmanWeb.UserLive.Registration do
     changeset = Accounts.change_user_registration(%User{}, user_params, validate_unique: false)
     {:noreply, assign_form(socket, Map.put(changeset, :action, :validate))}
   end
+
+  # A valid invitation token lets the visitor register in invite mode; an
+  # invalid one is ignored.
+  defp invitation(token) when is_binary(token) do
+    case Invitations.preview(token) do
+      {:ok, preview} -> %{token: token, workspace_name: preview.workspace_name}
+      {:error, :invalid_invitation} -> nil
+    end
+  end
+
+  defp invitation(_token), do: nil
+
+  defp invitation_opts(%{token: token}), do: [invitation_token: token]
+  defp invitation_opts(nil), do: []
 
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     form = to_form(changeset, as: "user")
