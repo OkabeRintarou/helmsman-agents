@@ -1,0 +1,161 @@
+# 01 · 数据模型
+
+> 全部表集中在这里，各功能文档只引用。主键一律 `bigserial`；对外 ID 是项目 Key + 序号（`BOS-12`）、Feedback 是 `BOS-12#3`，不暴露自增主键。
+
+## 1. ER 图
+
+```mermaid
+erDiagram
+    users ||--o{ memberships : ""
+    workspaces ||--o{ memberships : ""
+    workspaces ||--o{ invitations : ""
+    workspaces ||--o{ actors : ""
+    users ||--o| actors : "human"
+    users ||--o{ actors : "owns agents"
+    users ||--o{ api_tokens : ""
+    workspaces ||--o{ projects : ""
+    projects ||--o{ tasks : ""
+    tasks ||--o{ tasks : "epic"
+    tasks ||--o{ task_events : ""
+    tasks ||--o{ feedback : ""
+    tasks ||--o{ task_links : "from / to"
+    actors ||--o{ task_events : ""
+    actors ||--o{ feedback : "author"
+    workspaces ||--o{ saved_filters : ""
+    workspaces ||--o{ imports : ""
+    actors ||--o| agent_profiles : "managed agent"
+    users ||--o{ daemons : ""
+    daemons ||--o{ runtimes : ""
+    runtimes ||--o{ agent_profiles : "binds"
+    tasks ||--o{ runs : ""
+    actors ||--o{ runs : "agent"
+    runs ||--o{ run_events : ""
+    actors ||--o| squads : "kind = squad"
+    squads ||--o{ squad_members : ""
+    workspaces ||--o{ autopilots : ""
+    autopilots ||--o{ autopilot_runs : ""
+    workspaces ||--o{ github_installations : ""
+    github_installations ||--o{ repositories : ""
+    repositories ||--o{ projects : ""
+    tasks ||--o{ task_pull_requests : ""
+```
+
+## 2. 表
+
+### 账号与工作区（02）
+
+| 表 | 列 | 约束 / 索引 |
+|---|---|---|
+| `users` | `email citext`、`hashed_password`、`confirmed_at`、`display_name`、`instance_admin bool`、时间戳 | phx.gen.auth 生成；`email` 唯一；`instance_admin` 只用于 LiveDashboard 等实例级运维（11 §3），与工作区角色无关 |
+| `users_tokens` | phx.gen.auth 生成（会话、magic link、改邮箱） | |
+| `workspaces` | `slug citext`、`name`、时间戳 | `slug` 唯一，`^[a-z0-9][a-z0-9-]{1,38}$` |
+| `memberships` | `workspace_id`、`user_id`、`role`、时间戳 | 唯一 `(workspace_id, user_id)`；`role IN (owner, admin, member, viewer)` |
+| `invitations` | `workspace_id`、`email`（可空 = 通用链接）、`role`、`token_hash`、`invited_by_id`、`expires_at`、`accepted_at`、`accepted_by_id` | `token_hash` 唯一 |
+
+### 身份（03）
+
+| 表 | 列 | 约束 / 索引 |
+|---|---|---|
+| `actors` | `workspace_id`、`kind`（human \| agent \| squad \| system）、`name citext`、`user_id`（human：对应用户）、`owner_id`（agent：所属用户）、`project_key`、`worktree`、`disabled_at`、`last_seen_at`、时间戳 | 唯一 `(workspace_id, name)`；部分唯一 `(workspace_id, user_id) WHERE kind = 'human'`；部分唯一 `(workspace_id) WHERE kind = 'system'`；CHECK：agent 必有 `owner_id` 且 `user_id` 为空。human 的 `user_id` 可以为空——导入时产生的「未认领」身份，不能登录也不能写入（11 §1.2） |
+| `api_tokens` | `workspace_id`、`user_id`、`name`、`token_hash`、`prefix`、`scopes text[]`、`default_agent_id`、`last_used_at`、`expires_at`、`revoked_at`、时间戳 | `token_hash` 唯一 |
+
+### Agent 执行（12–16）
+
+| 表 | 列 | 约束 / 索引 |
+|---|---|---|
+| `agent_profiles` | `workspace_id`、`actor_id`、`mode`、`provider`、`runtime_id`、`model`、`effort`、`instructions`、`description`、`access`、`access_member_ids bigint[]`、`capabilities text[]`、`max_concurrency`、`timeout_minutes`、`idle_timeout_minutes`、`custom_args text[]`、`env`（加密）、`extra_mcp_servers`（加密）、`wake_on_requested`、`archived_at`、时间戳 | 唯一 `actor_id`；详见 12 §2 |
+| `daemons` | `user_id`、`machine_id`、`name`、`os`、`arch`、`version`、`isolation`、`token_hash`、`max_concurrency`、`last_seen_at`、`revoked_at`、时间戳 | 唯一 `(user_id, machine_id)`、`token_hash`；不属于某个工作区 |
+| `daemon_workspaces` | `daemon_id`、`workspace_id` | 主键 `(daemon_id, workspace_id)`；登录时勾选的工作区（12 §3.1），领取只能领这些工作区的运行 |
+| `device_codes` | `device_code_hash`、`user_code`、`machine_info jsonb`、`user_id`（确认后填）、`workspace_ids bigint[]`、`status`（pending \| approved \| denied \| used）、`expires_at` | 设备码登录（12 §3.1），10 分钟过期；`user_code` 在未过期的记录中唯一 |
+| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`visibility`、`status`、`disabled_at`、时间戳 | 唯一 `(workspace_id, daemon_id, provider)` |
+| `runs` | 见 13 §1 | 部分唯一 `(task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`；唯一 `retry_of_id`；索引 `(runtime_id, status, priority DESC, inserted_at, id)`、`(task_id, inserted_at DESC)`、`(agent_id, status)`、`(daemon_id, status)` |
+| `run_tokens` | `run_id`、`token_hash`、`expires_at`、`revoked_at` | `token_hash` 唯一；运行进入终态时吊销 |
+| `run_events` | `run_id`、`seq`、`type`、`data jsonb`、`at` | 主键 `(run_id, seq)`；按月分区，便于整块清理 |
+| `steer_receipts` | `feedback_id`、`run_id`、`acked_at` | 主键 `(feedback_id, run_id)`（13 §8） |
+| `squads` / `squad_members` | 见 16 §1.1 | `squads.actor_id` 唯一；`squad_members` 主键 `(squad_id, actor_id)` |
+| `autopilots` / `autopilot_runs` | 见 16 §2.1 | `autopilot_runs` 部分唯一 `(autopilot_id) WHERE status = 'started'`、`(autopilot_id) WHERE status = 'pending'`；唯一 `(autopilot_id, delivery_id)` |
+| `github_installations` | `workspace_id`、`installation_id`、`account_login`、`suspended_at`、时间戳 | 唯一 `installation_id`（一个安装只属于一个工作区） |
+| `repositories` | `workspace_id`、`installation_id`、`github_id`、`owner`、`name`、`default_branch`、`archived` | 唯一 `(workspace_id, github_id)` |
+| `task_pull_requests` | 见 15 §3 | 唯一 `(repository_id, number)`、`task_id`；索引 `(merge_status)` |
+| `task_branches` | `task_id`、`repository_id`、`branch`、`rescue_branches text[]`、`pushed_shas`（每次推送的 `run_id`、`head_sha`） | 唯一 `task_id`；15 §4.1 判断出处与「验收的是否是推送过的版本」 |
+| `github_deliveries` | `delivery_id`、`received_at` | 主键 `delivery_id`；webhook 去重，保留 7 天 |
+
+`projects` 增加：`repository_id`、`base_branch`、`merge_policy`、`merge_method`、`require_ci`、`delete_branch_after_merge`（15 §4）。
+
+### 任务域（04–07）
+
+| 表 | 列 | 约束 / 索引 |
+|---|---|---|
+| `projects` | `workspace_id`、`key`、`name`、`description`、`task_seq int`、`archived_at`、时间戳 | 唯一 `(workspace_id, key)`；`key ~ '^[A-Z][A-Z0-9]{1,9}$'` |
+| `tasks` | `workspace_id`、`project_id`、`seq`、`ident`（`BOS-12`，冗余）、`title`、`description`、`status`、`priority`、`kind`、`labels text[]`、`epic_id`、`created_by_id`、`assignee_id`、`feedback_seq int`、`feedback_count int`、`open_question bool`、`lock_version int`、`search tsvector`、时间戳 | 唯一 `(project_id, seq)`、`(workspace_id, ident)`；GIN `labels`、GIN `search`、GIN trigram（`gin_trgm_ops`）`title` 与 `ident`；索引 `(workspace_id, status)`、`(workspace_id, updated_at DESC)`、`epic_id`、`assignee_id`；CHECK `kind = 'epic' → epic_id IS NULL` |
+| `task_events` | `workspace_id`、`task_id`、`from_status`（创建时为空）、`to_status`、`actor_id`、`comment`、`commits text[]`、`tests jsonb`、`auto bool`、`feedback_id`、`source_run_id`、`verified_sha`、`inserted_at` | 索引 `(task_id, inserted_at)`；只插入，不更新；部分唯一 `(source_run_id) WHERE auto`（运行触发的自动迁移幂等，13 §4.4） |
+| `feedback` | `workspace_id`、`task_id`、`seq`、`thread_seq`、`author_id`、`kind`、`content`、`mentions bigint[]`、`status`（active \| superseded）、`supersedes_id`、`superseded_by_id`、`source_run_id`、`search tsvector`、`inserted_at` | 唯一 `(task_id, seq)`；GIN `search`；`thread_seq` 见 06 §3，`mentions` 见 06 §3a；部分唯一 `(source_run_id) WHERE source_run_id IS NOT NULL AND kind = 'comment'` 只用于兜底回帖（13 §7） |
+| `task_links` | `workspace_id`、`from_task_id`、`to_task_id`、`type`（replaces \| depends_on）、`actor_id`、`inserted_at` | 主键 `(from_task_id, to_task_id, type)`；CHECK `from <> to`；索引 `to_task_id` |
+| `saved_filters` | `workspace_id`、`owner_id`（user）、`name`、`bql`、`visibility`（private \| workspace）、时间戳 | 唯一 `(workspace_id, owner_id, name)` |
+| `imports` | `workspace_id`、`user_id`、`mode`、`source`（helmsman \| bosun）、`file_sha256`、`counts jsonb`、`inserted_at` | 每次导入一条审计记录（11 §1.2） |
+
+说明：
+
+- **`tasks.ident` 冗余存储**：项目 Key 不可改，所以 `KEY-N` 是稳定的；按 ID 查找、BQL `id ~`、导出都不用 join。
+- **`feedback_count` / `open_question` 冗余存储**：在写 Feedback 的同一事务里维护，BQL 可以直接按列过滤和排序。
+- **`progress`、`blocked`、`links` 不落库**，查询时派生（04、07）。
+- 枚举列（`status` `priority` `kind` `role` …）是 `text` + CHECK，Elixir 侧 `Ecto.Enum`。
+- `labels` 的 BQL 条件编译成 `labels @> ARRAY[$1]`（能用上 GIN），不用 `$1 = ANY(labels)`。
+
+## 3. 租户隔离：数据库层保证
+
+只靠「每个查询都带 `workspace_id`」不够：漏一个条件或导入一条坏数据就会串数据。所以引用关系在**数据库里**就限定在同一工作区：
+
+- **每张带 `workspace_id` 的表**都加唯一约束 `(workspace_id, id)`，作为复合外键的目标（PostgreSQL 要求被引用的列组合有唯一约束）；
+- 所有跨表引用用**复合外键**，例如：
+
+| 引用 | 复合外键 |
+|---|---|
+| 任务 → 项目 / Epic / 提出方 / 执行方 | `(workspace_id, project_id)`、`(workspace_id, epic_id)`、`(workspace_id, created_by_id)`、`(workspace_id, assignee_id)` |
+| 事件 → 任务 / actor / Feedback | `(workspace_id, task_id)`、`(workspace_id, actor_id)`、`(workspace_id, feedback_id)` |
+| Feedback → 任务 / 作者 / 修订链 | `(workspace_id, task_id)`、`(workspace_id, author_id)`、`(workspace_id, supersedes_id)` … |
+| 链 → 两端任务 / actor | `(workspace_id, from_task_id)`、`(workspace_id, to_task_id)`、`(workspace_id, actor_id)` |
+| Token → 默认 Agent | `(workspace_id, default_agent_id)` |
+| 运行 → 任务 / Agent / 运行时；Agent 配置 → 运行时；PR / 分支 → 任务 / 仓库；仓库 → 安装 | `(workspace_id, task_id)`、`(workspace_id, agent_id)`、`(workspace_id, runtime_id)`、`(workspace_id, repository_id)`、`(workspace_id, installation_id)` |
+
+这样即使应用层漏了条件，也写不出跨工作区的引用。数据库表达不了的规则（Token 的默认 Agent 必须属于 Token 的用户、Agent 未停用、`epic_id` 指向的是 `kind = epic`、Agent 只能绑定自己的或公开的运行时）在写入事务里校验。
+
+## 4. 事务与加锁
+
+多用户之后会出现并发写（bosun 单人没有这个问题）。用两把工作区级的 advisory lock 加上行锁：
+
+| 锁 | 谁拿 | 作用 |
+|---|---|---|
+| **维护锁** `pg_advisory_xact_lock_shared(k_maint(ws))` | 所有写事务（共享） | 导入时拿排他锁（11 §1.2），保证导入期间没有别的写入 |
+| **图锁** `pg_advisory_xact_lock(k_graph(ws))` | 会同时改多张任务的操作（排他）：状态迁移、改 `epic_id`、建单时带 `epic`、建 / 删链 | 同一工作区里这类操作串行执行。Epic 级联、被替代自动撤销、成环检测都在它保护下进行，行锁顺序不会交叉，也就不会死锁 |
+| 行锁 `SELECT … FOR UPDATE` | 见下表 | |
+
+加锁顺序固定为：**维护锁 → 图锁 → 项目行 → 任务行（按主键升序）**；涉及运行时见下表最后三行。
+
+| 操作 | 做法 |
+|---|---|
+| 建任务 | 维护锁；带 `epic` 时加图锁；`UPDATE projects SET task_seq = task_seq + 1 WHERE id = $1 AND archived_at IS NULL RETURNING task_seq` 分配序号（行锁天然串行，拿不到行 = 已归档）；带 `epic` 时再锁 Epic 并重算其状态 |
+| 状态迁移 | 维护锁 + 图锁；锁本任务，必要时锁 Epic（05 §6） |
+| 建 / 删链 | 维护锁 + 图锁；两端按主键升序锁；`depends_on` 在锁内做成环检测（07） |
+| 写 / 修订 Feedback | 维护锁；锁任务行，`feedback_seq + 1`，同时更新 `feedback_count` / `open_question` / `updated_at` / `search` |
+| 编辑字段 | 维护锁；锁任务行后比较版本（下文）；改了 `epic_id` 时先拿图锁，两端 Epic 都重算 |
+| 触发派发（13 §2） | 不单独加锁：在引起它的写事务里、已持有的锁之下执行，`INSERT … ON CONFLICT (task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued') DO UPDATE SET triggers = runs.triggers \|\| EXCLUDED.triggers` 合并到已有的排队运行 |
+| 领取运行（13 §4.1） | 先 `FOR UPDATE SKIP LOCKED` 锁运行行，之后对其余锁**只用 try**：工作区维护锁（`pg_try_advisory_xact_lock_shared`，导入期间拿不到 → 不派发该工作区）、任务锁 `k_task`、Agent 配置行 `FOR UPDATE SKIP LOCKED`。拿不到就跳过这条，不等待，所以不会和任务写操作形成等待环 |
+| 运行状态变化（13 §4.4） | 先在**只锁运行行**的事务里做条件更新（`WHERE daemon_id = $d AND status = $expected`），提交；任务侧的副作用（NEW → IN_PROGRESS、兜底回帖等）再在之后的事务里按任务写的锁顺序执行，按 `source_run_id` 幂等 |
+
+完整顺序：**维护锁 → 图锁 → 项目行 → 任务行（按主键升序）→ 运行行**。领取是唯一先锁运行行、再碰其他锁的路径，所以它对其余锁只用 `try`；运行状态变化只锁运行行。
+
+**字段编辑的版本检查**不用 Ecto 的 `optimistic_lock`，而是在行锁里自己比：
+
+- 界面每次都带 `lock_version`，与当前值不等 → `{:error, :stale}`，界面提示「已被他人修改」并重新加载；
+- MCP / REST 可以不带：行锁内读最新值再改，即「后写覆盖」，不会报 stale；
+- 两种情况成功后都 `lock_version + 1`。
+
+单任务写（字段编辑、Feedback）只持有一张任务行锁，不会和图操作形成死锁环。仍然对 `deadlock_detected` / `serialization_failure` 做一次自动重试，作为兜底。
+
+`search` 列在同一事务里由 Elixir 侧分词后写入（10），所以检索永远和数据一致，不需要异步索引或重建。
+
+## 5. 迁移约定
+
+- 一张表一个 migration，按里程碑顺序；`citext`、`pg_trgm` 扩展在 M0 的第一个 migration 里开启。
+- 不用数据库触发器：所有派生字段在 Elixir 里维护，便于测试和阅读。
