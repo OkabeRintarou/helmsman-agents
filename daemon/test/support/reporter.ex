@@ -34,5 +34,13 @@ defmodule HelmsmanDaemon.TestReporter do
   def default(%Report.Events{events: events}),
     do: {:ok, %Reply.Events{acked_seq: List.last(events).seq}}
 
+  def default(%Report.GitToken{}),
+    do:
+      {:ok,
+       %Reply.GitToken{
+         token: "ghs_RENEWED_TOKEN",
+         expires_at: DateTime.add(DateTime.utc_now(), 3600)
+       }}
+
   def default(_), do: {:ok, %Reply.Empty{}}
 end

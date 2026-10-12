@@ -30,6 +30,11 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
     await_stdin_eof) cat > /dev/null ;;
     dump_env) env ;;
     dump_argv) printf '%s\n' "$all_args" ;;
+    dump_pwd) pwd ;;
+    dump_server_url) printf '%s\n' "$HELMSMAN_SERVER_URL" ;;
+    write) printf '%s\n' "$value" > hello.txt ;;
+    git_commit) git -c core.hooksPath=/dev/null -c credential.helper= add -A && git -c core.hooksPath=/dev/null -c credential.helper= commit -m "$value" ;;
+    barrier) printf ready > "$value.ready"; while [ ! -f "$value.release" ]; do sleep 0.01; done ;;
     exit) exit "$value" ;;
     ''|'#'*) ;;
     *) printf 'unknown instruction: %s\n' "$command" >&2; exit 2 ;;

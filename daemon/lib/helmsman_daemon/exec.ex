@@ -4,6 +4,95 @@ defmodule HelmsmanDaemon.Exec do
   require Logger
   alias HelmsmanDaemon.{ProcGroup, RepoCache}
 
+  @doc "Launch a CLI with a lock pin retained until its process group is empty."
+  def start_cli(argv, options, opts \\ []) do
+    caller = self()
+    ref = make_ref()
+    locks = RepoCache.command_locks()
+
+    {guardian, monitor} =
+      spawn_monitor(fn -> cli_owner(caller, ref, locks, argv, options, opts) end)
+
+    receive do
+      {^ref, {:ok, exec_pid, os_pid}} ->
+        Process.demonitor(monitor, [:flush])
+        {:ok, exec_pid, os_pid, guardian}
+
+      {^ref, error} ->
+        Process.demonitor(monitor, [:flush])
+        error
+
+      {:DOWN, ^monitor, :process, ^guardian, _} ->
+        {:error, :cli_guardian_exited}
+    end
+  end
+
+  def release_cli(nil), do: :ok
+
+  def release_cli(guardian) do
+    monitor = Process.monitor(guardian)
+    send(guardian, :release_cli)
+
+    receive do
+      {:DOWN, ^monitor, :process, ^guardian, _} -> :ok
+    end
+  end
+
+  defp cli_owner(caller, ref, locks, argv, options, opts) do
+    owner = Process.monitor(caller)
+    if callback = Keyword.get(opts, :before_cli_lock), do: callback.()
+
+    result =
+      RepoCache.with_command_locks(locks, fn ->
+        if Process.alive?(caller),
+          do: launch_cli(caller, ref, owner, argv, options, opts),
+          else: {:error, :owner_down}
+      end)
+
+    send(caller, {ref, result})
+  end
+
+  defp launch_cli(caller, ref, owner, argv, options, opts) do
+    case :exec.run(argv, options) do
+      {:ok, exec_pid, os_pid} ->
+        {:ok, members} = ProcGroup.snapshot(os_pid)
+
+        try do
+          send(caller, {ref, {:ok, exec_pid, os_pid}})
+          await_cli(caller, owner, exec_pid, os_pid, members, opts)
+        after
+          cleanup_command(os_pid, Process.get({__MODULE__, :cli_members}, members))
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp await_cli(caller, owner, exec_pid, os_pid, members, opts) do
+    receive do
+      {:DOWN, _, :process, ^exec_pid, _} = message ->
+        members = final_cli_members(os_pid, members)
+        Process.put({__MODULE__, :cli_members}, members)
+        send(caller, message)
+        await_cli(caller, owner, exec_pid, os_pid, members, opts)
+
+      {:DOWN, ^owner, :process, _, _} ->
+        if callback = Keyword.get(opts, :before_cli_cleanup), do: callback.()
+        :ok
+
+      :release_cli ->
+        :ok
+    end
+  end
+
+  defp final_cli_members(os_pid, members) do
+    case ProcGroup.snapshot(os_pid) do
+      {:ok, current} -> ProcGroup.merge(members, current)
+      _ -> members
+    end
+  end
+
   @doc "Run a bounded command in its own group, tied to the caller's lifetime."
   def command(argv, opts \\ []) do
     caller = self()
@@ -72,6 +161,12 @@ defmodule HelmsmanDaemon.Exec do
   end
 
   defp cleanup_command(os_pid, members, warn_at) do
+    members =
+      case ProcGroup.step(os_pid, members, 9) do
+        {:ok, group} -> group.members
+        _ -> members
+      end
+
     case ProcGroup.live_snapshot(os_pid) do
       {:ok, []} ->
         :ok

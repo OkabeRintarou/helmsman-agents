@@ -7,9 +7,13 @@ defmodule HelmsmanDaemon.RunWorker do
     Adapter,
     EventBuffer,
     Exec,
+    Git,
+    GitFinalizer,
+    GitWorkspace,
     LineBuffer,
     Paths,
     ProcGroup,
+    RepoCache,
     StateStore,
     Workspace
   }
@@ -38,6 +42,7 @@ defmodule HelmsmanDaemon.RunWorker do
       launch: nil,
       pgid: nil,
       exec_pid: nil,
+      cli_guardian: nil,
       buffer: EventBuffer.new(),
       streams: %{stdout: "", stderr: ""},
       stdout_buffer: LineBuffer.new(),
@@ -56,7 +61,11 @@ defmodule HelmsmanDaemon.RunWorker do
       group_kill_at: nil,
       group_deadline: nil,
       preserve_record?: false,
-      retries: 0
+      retries: 0,
+      git_workspace: nil,
+      worktree_lock: nil,
+      finalized?: false,
+      prepare_events: []
     }
 
     Process.send_after(self(), :tick, 100)
@@ -78,8 +87,10 @@ defmodule HelmsmanDaemon.RunWorker do
     run_dir = Paths.private_dir!(Paths.run(id))
     Paths.private_dir!(Path.join(run_dir, "tmp"))
 
+    {workspace, state} = prepare_workspace(state, run_dir)
+
     result =
-      with {:ok, work_dir} <- Workspace.prepare(state.spec, run_dir),
+      with {:ok, work_dir} <- workspace,
            {:ok, adapter} <- require_adapter(state.adapter),
            {:ok, launch} <- adapter.prepare(state.spec, run_dir, work_dir) do
         {:ok, adapter, launch, work_dir}
@@ -108,6 +119,28 @@ defmodule HelmsmanDaemon.RunWorker do
     end
   end
 
+  def handle_continue(:finalize, state) do
+    {result, events} =
+      GitFinalizer.finish(
+        state.git_workspace,
+        state.spec,
+        state.reporter,
+        state.result,
+        state.opts
+      )
+
+    RepoCache.release(state.worktree_lock)
+    state = %{state | result: result, finalized?: true, worktree_lock: nil}
+
+    state =
+      if Process.get({GitFinalizer, :terminated}, false),
+        do: stop_cli(state, :terminate),
+        else: state
+
+    state = if state.stop_reason == :terminate, do: state, else: enqueue(state, events)
+    {:noreply, state}
+  end
+
   @impl true
   def terminate(reason, state) when reason in [:shutdown, :normal] do
     if reason == :shutdown and not is_nil(state.pgid) and not state.preserve_record? do
@@ -118,11 +151,39 @@ defmodule HelmsmanDaemon.RunWorker do
     end
 
     Workspace.cleanup(state.spec.run_id)
+    if state.worktree_lock, do: RepoCache.release(state.worktree_lock)
     unless state.preserve_record?, do: StateStore.delete(state.spec.run_id)
     :ok
   end
 
   def terminate(_reason, _state), do: :ok
+
+  defp prepare_workspace(%{spec: %{repo: nil}} = state, run_dir),
+    do: {Workspace.prepare(state.spec, run_dir), state}
+
+  defp prepare_workspace(state, run_dir) do
+    lock = RepoCache.acquire_worktree(GitWorkspace.worktree_path(state.spec))
+    state = %{state | worktree_lock: lock}
+
+    opts =
+      Keyword.merge(state.opts,
+        worktree_locked?: true,
+        server_url: server_url(state),
+        renew_token: fn id -> GitFinalizer.renew(id, state.reporter, 30_000) end,
+        after_fetch: fn workspace ->
+          GitFinalizer.prepare(workspace, state.spec, state.reporter)
+        end
+      )
+
+    case Workspace.prepare_git(state.spec, run_dir, opts) do
+      {:ok, workspace} ->
+        {{:ok, workspace.path},
+         %{state | git_workspace: workspace, prepare_events: workspace.events}}
+
+      error ->
+        {error, state}
+    end
+  end
 
   defp require_adapter(nil), do: {:error, {:cli_missing, "No adapter for requested provider"}}
   defp require_adapter(adapter), do: {:ok, adapter}
@@ -233,8 +294,8 @@ defmodule HelmsmanDaemon.RunWorker do
       :monitor
     ]
 
-    case :exec.run(state.launch.argv, options) do
-      {:ok, exec_pid, pid} ->
+    case launch_cli(state, options) do
+      {:ok, exec_pid, pid, guardian} ->
         start =
           case Exec.proc_start(pid) do
             {:ok, value} -> value
@@ -256,6 +317,7 @@ defmodule HelmsmanDaemon.RunWorker do
           state
           | pgid: pid,
             exec_pid: exec_pid,
+            cli_guardian: guardian,
             members: members,
             snapshot_at: System.monotonic_time(:millisecond),
             phase: :running,
@@ -263,7 +325,10 @@ defmodule HelmsmanDaemon.RunWorker do
         }
 
         state =
-          state |> persist_members() |> reset_idle() |> enqueue(warnings ++ state.launch.events)
+          state
+          |> persist_members()
+          |> reset_idle()
+          |> enqueue(state.prepare_events ++ warnings ++ state.launch.events)
 
         state =
           report(state, :started, %Report.Started{
@@ -279,6 +344,15 @@ defmodule HelmsmanDaemon.RunWorker do
         finish_failure(state, :cli_error, "CLI launch failed: #{inspect(error)}")
     end
   end
+
+  defp launch_cli(%{git_workspace: nil} = state, options) do
+    case :exec.run(state.launch.argv, options) do
+      {:ok, exec_pid, pid} -> {:ok, exec_pid, pid, nil}
+      error -> error
+    end
+  end
+
+  defp launch_cli(state, options), do: Exec.start_cli(state.launch.argv, options, state.opts)
 
   defp environment(state) do
     {reserved, allowed} =
@@ -304,6 +378,10 @@ defmodule HelmsmanDaemon.RunWorker do
       |> Map.merge(Map.new(allowed))
       |> Map.merge(own)
       |> Map.merge(Map.new(state.launch.env))
+      |> Map.merge(
+        if(state.spec.repo, do: Git.identity(state.spec.agent.name, server_url(state)), else: %{})
+      )
+      |> Map.delete("HELMSMAN_GIT_TOKEN")
 
     {Enum.to_list(env), warnings}
   end
@@ -597,7 +675,8 @@ defmodule HelmsmanDaemon.RunWorker do
     case state.proc_group.step(state.pgid, state.members, signal) do
       {:ok, %{empty?: true}} ->
         cancel_timer(state.kill_timer)
-        tick(%{state | phase: :draining, kill_timer: nil})
+        Exec.release_cli(state.cli_guardian)
+        tick(%{state | phase: :draining, kill_timer: nil, cli_guardian: nil})
 
       {:ok, group} ->
         state = %{state | members: group.members} |> persist_members()
@@ -607,6 +686,19 @@ defmodule HelmsmanDaemon.RunWorker do
         if now >= state.group_deadline, do: group_cleanup_failed(state), else: {:noreply, state}
     end
   end
+
+  defp tick(
+         %{
+           phase: :draining,
+           git_workspace: workspace,
+           pgid: pgid,
+           finalized?: false,
+           preserve_record?: false
+         } =
+           state
+       )
+       when not is_nil(workspace) and not is_nil(pgid),
+       do: {:noreply, state, {:continue, :finalize}}
 
   defp tick(%{phase: :draining, stop_reason: :terminate} = state), do: cleanup(state)
   defp tick(%{phase: :finished, stop_reason: :terminate} = state), do: cleanup(state)

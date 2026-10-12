@@ -1,10 +1,13 @@
 defmodule HelmsmanDaemon.Workspace do
-  @moduledoc "Scratch working directories; git preparation is a later capability."
+  @moduledoc "Persistent scratch directories, repository worktrees and private run cleanup."
   alias HelmsmanDaemon.Paths
 
-  def prepare(%{repo: repo}, _run_dir) when not is_nil(repo),
-    do:
-      {:error, {:workspace_prepare, "git repositories are not supported by this daemon version"}}
+  def prepare(%{repo: repo} = spec, run_dir) when not is_nil(repo) do
+    case prepare_git(spec, run_dir) do
+      {:ok, workspace} -> {:ok, workspace.path}
+      error -> error
+    end
+  end
 
   def prepare(%{task: nil}, run_dir), do: {:ok, Paths.private_dir!(Path.join(run_dir, "scratch"))}
 
@@ -22,7 +25,7 @@ defmodule HelmsmanDaemon.Workspace do
     _ -> {:error, {:workspace_prepare, "Invalid scratch workspace path"}}
   end
 
-  @doc "Prepare a repository context; RunWorker integration follows the run lifecycle change."
+  @doc "Prepare a repository context, including events and the remote push baseline."
   defdelegate prepare_git(spec, run_dir, opts \\ []),
     to: HelmsmanDaemon.GitWorkspace,
     as: :prepare

@@ -203,6 +203,47 @@ defmodule HelmsmanDaemon.ConnectionTest do
     Runs.terminate(1)
   end
 
+  test "claim passes explicit worker options and the authenticated server URL", %{tmp_dir: dir} do
+    fixture = HelmsmanDaemon.GitHelpers.fixture(dir)
+    run = HelmsmanDaemon.GitHelpers.repo_spec(fixture, 803)
+
+    scenario =
+      scenario!(
+        Path.join(dir, "claimed-cli"),
+        "dump_server_url\njson {\"type\":\"result\",\"data\":{\"text\":\"done\",\"success\":true}}\n"
+      )
+
+    run = %{run | agent: %{run.agent | custom_args: [scenario]}}
+
+    client =
+      start_connection(
+        run_worker_opts: [
+          allow_file_urls: true,
+          reporter: TestReporter,
+          server_url: "https://invalid.example"
+        ]
+      )
+
+    accept_connect(client)
+
+    assert_join(
+      "daemon:1",
+      _,
+      {:ok, %{"daemon_id" => 1, "runtimes" => [], "terminate_run_ids" => []}},
+      1_000
+    )
+
+    assert_push("daemon:1", "claim", %{}, ref, 1_000)
+    reply(client, ref, {:ok, %{"runs" => [HelmsmanProtocol.RunSpec.to_wire(run)]}})
+    assert_push("daemon:1", "claim", %{}, next, 1_000)
+    reply(client, next, {:ok, %{"runs" => []}})
+    assert_receive {:report, 803, %Report.Started{}, _, _, _}, 10_000
+    assert_receive {:report, 803, %Report.Finished{status: :succeeded}, _, _, _}, 10_000
+
+    assert File.read!(Path.join(Paths.run(803), "raw.log")) =~ "http://localhost:49999"
+    refute File.read!(Path.join(Paths.run(803), "raw.log")) =~ "invalid.example"
+  end
+
   test "slots full skips claim and finishing run requests one" do
     File.write!(Path.join(Paths.home(), "config.toml"), "max_concurrency = 2\n")
     # Config reads once at start; use two occupied workers plus a runtime override.
@@ -431,5 +472,80 @@ defmodule HelmsmanDaemon.ConnectionTest do
     refute Process.alive?(client)
     Process.sleep(50)
     refute Process.whereis(Connection)
+  end
+
+  test "git_token and pushed business errors keep worker and queued reports alive" do
+    {:ok, worker} =
+      Runs.start_run(spec(70, "stalled"), reporter: TestReporter, kill_timeout_ms: 50)
+
+    assert_receive {:report, 70, %Report.Started{}, _, _, _}, 2_000
+    client = start_connection()
+    join_connection(client)
+
+    for payload <- [
+          %Report.GitToken{run_id: 70},
+          %Report.Pushed{
+            run_id: 70,
+            branch: "hm/1/bos-1",
+            base_sha: String.duplicate("a", 40),
+            head_sha: String.duplicate("b", 40),
+            commits: [],
+            rescue_branch: nil
+          }
+        ],
+        reason <- [:not_found, :wrong_state, :invalid_payload] do
+      report_ref = Connection.report(70, payload)
+      event = if match?(%Report.GitToken{}, payload), do: "git_token", else: "pushed"
+      assert_push("daemon:1", ^event, _, ref, 1_000)
+
+      reply(
+        client,
+        ref,
+        {:error, %{"reason" => Atom.to_string(reason), "message" => "unavailable"}}
+      )
+
+      assert_receive {:report_result, ^report_ref, {:error, %{reason: ^reason}}}, 1_000
+      assert Process.alive?(worker)
+    end
+
+    Runs.cancel(70)
+    assert_receive {:report, 70, %Report.Finished{status: :cancelled}, _, _, _}, 2_000
+  end
+
+  test "heartbeat termination of repo run commits and reports push but no finished", %{
+    tmp_dir: dir
+  } do
+    alias HelmsmanDaemon.GitHelpers
+    fixture = GitHelpers.fixture(dir)
+    run = GitHelpers.repo_spec(fixture, 71)
+    scenario = scenario!(Path.join(dir, "terminate-cli"), "write stopped\nsleep 600\n")
+    run = %{run | agent: %{run.agent | custom_args: [scenario]}}
+
+    {:ok, worker} =
+      Runs.start_run(run, reporter: TestReporter, allow_file_urls: true, kill_timeout_ms: 50)
+
+    assert_receive {:report, 71, %Report.Started{}, _, _, _}, 10_000
+
+    eventually(fn ->
+      File.exists?(Path.join(HelmsmanDaemon.GitWorkspace.worktree_path(run), "hello.txt"))
+    end)
+
+    client = start_connection()
+    join_connection(client)
+    send(client, :periodic)
+    assert_push("daemon:1", "heartbeat", _, ref, 1_000)
+    assert_push("daemon:1", "claim", _, claim_ref, 1_000)
+    reply(client, claim_ref, {:ok, %{"runs" => []}})
+    reply(client, ref, {:ok, %{"terminate_run_ids" => [71]}})
+    assert_receive {:report, 71, %Report.Pushed{} = report, _, _, _}, 6_000
+
+    assert report.head_sha ==
+             GitHelpers.git!(fixture.git, fixture.remote, [
+               "rev-parse",
+               "refs/heads/" <> run.repo.branch
+             ])
+
+    eventually(fn -> not Process.alive?(worker) end)
+    refute_receive {:report, 71, %Report.Finished{}, _, _, _}
   end
 end

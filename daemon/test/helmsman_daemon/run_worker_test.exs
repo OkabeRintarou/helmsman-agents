@@ -45,15 +45,36 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     assert Runs.free_slots() == 4
   end
 
-  test "repo rejection never starts CLI" do
-    {:ok, _} = Runs.start_run(%{spec(2) | repo: %{}}, reporter: TestReporter)
+  test "repository CLI uses worktree and Agent identity without push credentials", %{tmp_dir: dir} do
+    fixture = HelmsmanDaemon.GitHelpers.fixture(dir)
+    run = HelmsmanDaemon.GitHelpers.repo_spec(fixture, 2)
 
-    assert_receive {:report, 2,
-                    %Report.Finished{status: :failed, failure_reason: :workspace_prepare}, _, _,
-                    _},
-                   1_000
+    scenario =
+      scenario!(
+        Path.join(dir, "git-env"),
+        "dump_env\ndump_argv\ndump_pwd\njson {\"type\":\"result\",\"data\":{\"text\":\"done\",\"success\":true}}\n"
+      )
 
-    refute_receive {:report, 2, %Report.Started{}, _, _, _}
+    run = %{run | agent: %{run.agent | name: "keel/dev", custom_args: [scenario]}}
+
+    {:ok, _} =
+      Runs.start_run(run,
+        reporter: TestReporter,
+        allow_file_urls: true,
+        server_url: "https://hm.example.com:8443"
+      )
+
+    assert_receive {:report, 2, %Report.Finished{status: :succeeded}, _, _, _}, 4_000
+    raw = File.read!(Path.join(Paths.run(2), "raw.log"))
+    assert raw =~ HelmsmanDaemon.GitWorkspace.worktree_path(run)
+    for key <- ["GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"], do: assert(raw =~ "#{key}=keel/dev")
+
+    for key <- ["GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"],
+        do: assert(raw =~ "#{key}=keel-dev@agents.hm.example.com")
+
+    refute raw =~ run.repo.git_token
+    refute raw =~ "GIT_ASKPASS="
+    refute raw =~ "HELMSMAN_GIT_TOKEN="
   end
 
   test "abort cleans without starting or finishing" do
@@ -92,6 +113,8 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     assert raw =~ "FOO=1"
     assert raw =~ "TMPDIR=#{Paths.run(4)}/tmp"
     refute raw =~ credentials().token
+    refute raw =~ "GIT_AUTHOR_"
+    refute raw =~ "GIT_COMMITTER_"
     assert_receive {:report, 4, %Report.Events{events: events}, _, _, _}
     assert hd(events).type == :status
     assert hd(events).data.message =~ "HELMSMAN_RUN_TOKEN"

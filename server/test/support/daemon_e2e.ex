@@ -79,15 +79,42 @@ defmodule Helmsman.DaemonE2E do
   exits.
   """
   def start_daemon(home, env \\ []) do
-    {executable, args} =
-      case System.find_executable("mise") do
-        nil ->
-          mix = System.find_executable("mix") || flunk("mix is required for daemon e2e tests")
-          {mix, ["helmsman", "daemon", "start", "--foreground"]}
+    start_daemon_process(home, env, ["helmsman", "daemon", "start", "--foreground"])
+  end
 
-        mise ->
-          {mise, ["exec", "--", "mix", "helmsman", "daemon", "start", "--foreground"]}
-      end
+  @doc """
+  Starts the daemon through `test/support/e2e_bootstrap.exs`, with test-only
+  run options in a JSON file and its file IPC directory shared under `home`.
+  `options` contains `:heartbeat_interval_ms` and `:run_worker_opts`.
+  """
+  def start_e2e_daemon(home, options, env \\ []) do
+    control_dir = Path.join(home, "e2e-control")
+    options_path = Path.join(home, "e2e-options.json")
+    File.mkdir_p!(control_dir)
+
+    File.write!(
+      options_path,
+      Jason.encode!(%{
+        "heartbeat_interval_ms" => Map.get(options, :heartbeat_interval_ms, 30_000),
+        "run_worker_opts" =>
+          options
+          |> Map.get(:run_worker_opts, [])
+          |> Map.new(fn {key, value} -> {to_string(key), value} end)
+      })
+    )
+
+    File.chmod!(options_path, 0o600)
+
+    e2e_env = [
+      {~c"HELMSMAN_E2E_OPTIONS", String.to_charlist(options_path)},
+      {~c"HELMSMAN_E2E_CONTROL_DIR", String.to_charlist(control_dir)}
+    ]
+
+    start_daemon_process(home, env ++ e2e_env, ["run", "test/support/e2e_bootstrap.exs"])
+  end
+
+  defp start_daemon_process(home, env, mix_args) do
+    executable = System.find_executable("mix") || flunk("mix is required for daemon e2e tests")
 
     port =
       Port.open({:spawn_executable, executable}, [
@@ -95,7 +122,7 @@ defmodule Helmsman.DaemonE2E do
         :exit_status,
         :use_stdio,
         :stderr_to_stdout,
-        {:args, Enum.map(args, &String.to_charlist/1)},
+        {:args, Enum.map(mix_args, &String.to_charlist/1)},
         {:cd, String.to_charlist(@daemon_dir)},
         {:env,
          [
@@ -113,14 +140,50 @@ defmodule Helmsman.DaemonE2E do
   def stop_daemon(port) do
     case Port.info(port, :os_pid) do
       {:os_pid, os_pid} ->
-        Port.close(port)
-        System.cmd("kill", ["-TERM", Integer.to_string(os_pid)], stderr_to_stdout: true)
+        signal_group(os_pid, "TERM")
+
+        unless wait_for_port_exit(port, System.monotonic_time(:millisecond) + 5_000) do
+          signal_group(os_pid, "KILL")
+          _ = wait_for_port_exit(port, System.monotonic_time(:millisecond) + 1_000)
+        end
+
+        if Port.info(port, :os_pid), do: Port.close(port)
 
       nil ->
         :ok
     end
   rescue
     ArgumentError -> :ok
+  end
+
+  defp wait_for_port_exit(port, deadline) do
+    cond do
+      is_nil(Port.info(port, :os_pid)) ->
+        true
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        false
+
+      true ->
+        Process.sleep(25)
+        wait_for_port_exit(port, deadline)
+    end
+  rescue
+    ArgumentError -> true
+  end
+
+  defp signal_group(os_pid, signal) do
+    target = if own_process_group?(os_pid), do: "-#{os_pid}", else: Integer.to_string(os_pid)
+    System.cmd("kill", ["-#{signal}", "--", target], stderr_to_stdout: true)
+  end
+
+  defp own_process_group?(os_pid) do
+    case System.cmd("ps", ["-o", "pgid=", "-p", Integer.to_string(os_pid)],
+           stderr_to_stdout: true
+         ) do
+      {group, 0} -> String.trim(group) == Integer.to_string(os_pid)
+      _ -> false
+    end
   end
 
   @doc """

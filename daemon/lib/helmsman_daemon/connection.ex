@@ -243,9 +243,10 @@ defmodule HelmsmanDaemon.Connection do
   def handle_info({:retry, id}, socket), do: {:noreply, pump(socket, id)}
 
   def handle_info({:push_timeout, ref}, socket) do
-    if Map.has_key?(socket.assigns.pending, ref) or Map.has_key?(socket.assigns.control_refs, ref),
-      do: timeout_reply(ref, socket),
-      else: {:noreply, socket}
+    if Map.has_key?(socket.assigns.pending, ref) or
+         Map.has_key?(socket.assigns.control_refs, ref),
+       do: timeout_reply(ref, socket),
+       else: {:noreply, socket}
   end
 
   def handle_info(_, socket), do: {:noreply, socket}
@@ -271,6 +272,10 @@ defmodule HelmsmanDaemon.Connection do
     case decode_reply(entry.event, reply) do
       {:ok, result} ->
         send(entry.caller, {:report_result, entry.ref, {:ok, result}})
+        {:ok, pump(socket, entry.id)}
+
+      {:error, %ErrorReply{} = error} when entry.event in ["git_token", "pushed"] ->
+        send(entry.caller, {:report_result, entry.ref, {:error, error}})
         {:ok, pump(socket, entry.id)}
 
       {:error, %ErrorReply{reason: reason} = error} when reason in [:not_found, :wrong_state] ->
@@ -432,7 +437,12 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   defp apply_control("claim", {:ok, %Reply.Claim{runs: runs}}, socket) do
-    Enum.each(runs, &Runs.start_run(&1, server_url: socket.assigns.credentials.server_url))
+    opts =
+      socket.assigns.opts
+      |> Keyword.get(:run_worker_opts, [])
+      |> Keyword.put(:server_url, socket.assigns.credentials.server_url)
+
+    Enum.each(runs, &Runs.start_run(&1, opts))
     if runs == [], do: socket, else: maybe_claim(socket)
   end
 

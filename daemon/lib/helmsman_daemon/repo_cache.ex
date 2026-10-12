@@ -2,7 +2,46 @@ defmodule HelmsmanDaemon.RepoCache do
   @moduledoc "Caller-owned local locks for shared repositories and task worktrees."
 
   def with_repo_lock(key, fun), do: with_lock({:hm_repo, key}, fun)
+
+  def with_repo_lock_until(key, deadline, fun) do
+    lock = {{:hm_repo, key}, self()}
+
+    cond do
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, :timeout}
+
+      :global.set_lock(lock, [node()], 0) ->
+        previous = command_locks()
+        Process.put({__MODULE__, :locks}, Enum.uniq([lock | previous]))
+
+        try do
+          fun.()
+        after
+          Process.put({__MODULE__, :locks}, previous)
+          :global.del_lock(lock, [node()])
+        end
+
+      true ->
+        Process.sleep(10)
+        with_repo_lock_until(key, deadline, fun)
+    end
+  end
+
   def with_worktree_lock(path, fun), do: with_lock({:hm_worktree, path}, fun)
+
+  def acquire_worktree(path), do: acquire({:hm_worktree, path})
+
+  def release(lock) do
+    Process.put({__MODULE__, :locks}, List.delete(command_locks(), lock))
+    :global.del_lock(lock, [node()])
+  end
+
+  defp acquire(resource) do
+    lock = {resource, self()}
+    true = :global.set_lock(lock, [node()], :infinity)
+    Process.put({__MODULE__, :locks}, Enum.uniq([lock | command_locks()]))
+    lock
+  end
 
   @doc "Locks held by this caller, for command cleanup barriers."
   def command_locks, do: Process.get({__MODULE__, :locks}, [])

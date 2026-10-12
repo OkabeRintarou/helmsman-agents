@@ -250,4 +250,42 @@ defmodule HelmsmanDaemon.RepoCacheTest do
 
   # `true` lives in /bin on Linux but only in /usr/bin on macOS.
   defp true_executable, do: System.find_executable("true") || flunk("true executable not found")
+
+  test "finalization cache lock obeys its deadline without entering held cache" do
+    owner = self()
+    key = make_ref()
+
+    holder =
+      spawn(fn ->
+        RepoCache.with_repo_lock(key, fn ->
+          send(owner, :cache_held)
+
+          receive do
+            :release -> :ok
+          end
+        end)
+      end)
+
+    assert_receive :cache_held
+
+    try do
+      deadline = System.monotonic_time(:millisecond) + 50
+
+      assert {:error, :timeout} =
+               RepoCache.with_repo_lock_until(key, deadline, fn -> flunk("entered held cache") end)
+
+      assert System.monotonic_time(:millisecond) >= deadline
+    after
+      send(holder, :release)
+    end
+
+    assert :entered =
+             RepoCache.with_repo_lock_until(
+               key,
+               System.monotonic_time(:millisecond) + 2_000,
+               fn -> :entered end
+             )
+
+    assert RepoCache.command_locks() == []
+  end
 end

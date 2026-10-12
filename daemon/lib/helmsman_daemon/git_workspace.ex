@@ -2,6 +2,7 @@ defmodule HelmsmanDaemon.GitWorkspace do
   @moduledoc "Repository-cache and task-worktree preparation, without starting an Agent."
   alias HelmsmanDaemon.{Git, Paths, RepoCache}
 
+  @derive {Inspect, only: [:path, :cache, :remote_base, :remote_branch?, :events]}
   defstruct [:path, :cache, :git, :remote_base, :remote_branch?, events: []]
 
   def prepare(spec, run_dir, opts \\ []) do
@@ -16,9 +17,11 @@ defmodule HelmsmanDaemon.GitWorkspace do
     Git.write_askpass(git)
     checked!(Git.check_version(git))
 
-    RepoCache.with_worktree_lock(path, fn ->
-      RepoCache.with_repo_lock(cache, fn -> prepare_locked(state, spec) end)
-    end)
+    prepare = fn -> RepoCache.with_repo_lock(cache, fn -> prepare_locked(state, spec) end) end
+
+    if Keyword.get(opts, :worktree_locked?, false),
+      do: prepare.(),
+      else: RepoCache.with_worktree_lock(path, prepare)
   rescue
     error in [ArgumentError, File.Error] ->
       {:error, {:workspace_prepare, Git.redact(Exception.message(error))}}
@@ -45,7 +48,8 @@ defmodule HelmsmanDaemon.GitWorkspace do
   end
 
   defp repository_host(%URI{scheme: "https", host: host, userinfo: nil}, _opts)
-       when is_binary(host), do: host
+       when is_binary(host),
+       do: host
 
   defp repository_host(%URI{scheme: "file", host: host, path: path}, opts)
        when host in [nil, "", "localhost"] and is_binary(path) do
@@ -72,6 +76,8 @@ defmodule HelmsmanDaemon.GitWorkspace do
       | remote_base: String.trim(run!(state, ["rev-parse", "--verify", base])),
         remote_branch?: remote?
     }
+
+    state = Keyword.get(state.git.opts, :after_fetch, fn current -> current end).(state)
 
     state =
       if dirty?(state) do
@@ -227,7 +233,7 @@ defmodule HelmsmanDaemon.GitWorkspace do
     common = worktree_cache(state)
 
     with true <- common == state.cache,
-         {:ok, actual} <- Git.run(["symbolic-ref", "--quiet", "HEAD"], state.path, state.git),
+         actual <- run!(state, ["symbolic-ref", "--quiet", "HEAD"]),
          true <- String.trim(actual) == "refs/heads/" <> branch do
       :ok
     else
