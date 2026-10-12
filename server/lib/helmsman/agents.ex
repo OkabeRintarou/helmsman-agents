@@ -3,7 +3,7 @@ defmodule Helmsman.Agents do
   import Ecto.Query
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
-  alias Helmsman.Agents.AgentProfile
+  alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.{Daemon, Runtime}
   alias Helmsman.{Events, Policy, Repo, Runs, Workspaces}
   alias Helmsman.Runs.Run
@@ -38,8 +38,9 @@ defmodule Helmsman.Agents do
     end
   end
 
-  # The views carry `active_runs` and `queued_runs`, counted for every
-  # agent at once (`Helmsman.Runs.counts/1`).
+  # The views carry `active_runs`, `queued_runs` and `last_run_at`, read for
+  # every agent at once (`Helmsman.Runs.counts/1`); the number of queries
+  # does not depend on the number of agents.
   def list(scope) do
     with :ok <- Policy.authorize(scope, :view_agents) do
       actors =
@@ -49,15 +50,14 @@ defmodule Helmsman.Agents do
             order_by: a.name
         )
 
-      counts = Runs.counts(Enum.map(actors, & &1.id))
-      {:ok, Enum.map(actors, &view(&1, counts))}
+      {:ok, views(actors)}
     end
   end
 
   def get(scope, name) do
     with :ok <- Policy.authorize(scope, :view_agents),
          %Actor{} = actor <- find_actor(scope, name) do
-      {:ok, view(actor, Runs.counts([actor.id]))}
+      {:ok, hd(views([actor]))}
     else
       nil -> {:error, :not_found}
       error -> error
@@ -78,7 +78,7 @@ defmodule Helmsman.Agents do
                |> AgentProfile.changeset(attrs, actor)
                |> Repo.insert() do
           notify(actor)
-          {:ok, view(actor, %{})}
+          {:ok, hd(views([actor]))}
         end
       end)
 
@@ -176,7 +176,7 @@ defmodule Helmsman.Agents do
 
   defp finish_mutation({:ok, actor}) do
     notify(actor)
-    {:ok, view(actor, Runs.counts([actor.id]))}
+    {:ok, hd(views([actor]))}
   end
 
   defp finish_mutation(error), do: error
@@ -200,18 +200,45 @@ defmodule Helmsman.Agents do
     Repo.one(if row_lock, do: lock(query, "FOR UPDATE"), else: query)
   end
 
-  defp view(actor, counts) do
-    owner = Repo.get!(User, actor.owner_id)
-    profile = Repo.one(from p in AgentProfile, where: p.actor_id == ^actor.id)
+  # Four queries whatever the number of actors: profiles, owners, runtimes
+  # and run counts.
+  defp views(actors) do
+    ids = Enum.map(actors, & &1.id)
 
+    profiles =
+      Map.new(Repo.all(from p in AgentProfile, where: p.actor_id in ^ids), &{&1.actor_id, &1})
+
+    owner_ids = actors |> Enum.map(& &1.owner_id) |> Enum.uniq()
+
+    owners =
+      Map.new(Repo.all(from u in User, where: u.id in ^owner_ids, select: {u.id, u.display_name}))
+
+    runtimes =
+      profiles
+      |> Map.values()
+      |> Enum.map(& &1.runtime_id)
+      |> Enum.reject(&is_nil/1)
+      |> runtime_summaries()
+
+    counts = Runs.counts(ids)
+
+    Enum.map(actors, fn actor ->
+      view(actor, profiles[actor.id], owners, runtimes, counts[actor.id] || %{})
+    end)
+  end
+
+  defp view(actor, profile, owners, runtimes, counts) do
     base = %{
       name: actor.name,
       kind: if(profile, do: "managed", else: "external"),
-      owner: %{id: owner.id, name: owner.display_name},
+      workspace_id: actor.workspace_id,
+      actor_id: actor.id,
+      owner: %{id: actor.owner_id, name: owners[actor.owner_id]},
       disabled: not is_nil(actor.disabled_at),
       archived: (profile && not is_nil(profile.archived_at)) || false,
-      active_runs: get_in(counts, [actor.id, :active]) || 0,
-      queued_runs: get_in(counts, [actor.id, :queued]) || 0
+      active_runs: Map.get(counts, :active, 0),
+      queued_runs: Map.get(counts, :queued, 0),
+      last_run_at: Map.get(counts, :last_run_at)
     }
 
     config =
@@ -219,7 +246,7 @@ defmodule Helmsman.Agents do
 
     Map.merge(base, config)
     |> Map.merge(%{
-      runtime: runtime_summary(profile),
+      runtime: profile && profile.runtime_id && runtimes[profile.runtime_id],
       env_names: names(profile, :env),
       extra_mcp_server_names: names(profile, :extra_mcp_servers)
     })
@@ -228,23 +255,24 @@ defmodule Helmsman.Agents do
   defp names(nil, _field), do: nil
   defp names(profile, field), do: (Map.get(profile, field) || %{}) |> Map.keys() |> Enum.sort()
 
-  defp runtime_summary(%AgentProfile{runtime_id: id}) when not is_nil(id) do
-    Repo.one(
+  defp runtime_summaries(ids) do
+    Repo.all(
       from r in Runtime,
         join: d in Daemon,
         on: r.daemon_id == d.id,
-        where: r.id == ^id,
-        select: %{
-          id: r.id,
-          daemon_name: d.name,
-          provider: r.provider,
-          status: r.status,
-          disabled: not is_nil(r.disabled_at)
-        }
+        where: r.id in ^ids,
+        select:
+          {r.id,
+           %{
+             id: r.id,
+             daemon_name: d.name,
+             provider: r.provider,
+             status: r.status,
+             disabled: not is_nil(r.disabled_at)
+           }}
     )
+    |> Map.new()
   end
-
-  defp runtime_summary(_), do: nil
 
   defp notify(actor),
     do: Events.after_commit(Events.topic(:workspace, actor.workspace_id), {:agents_changed})
@@ -255,29 +283,14 @@ defmodule Helmsman.Agents do
         from p in AgentProfile, where: p.actor_id == ^actor.id and p.workspace_id == ^workspace_id
       )
 
-    member =
-      Repo.exists?(
+    role =
+      Repo.one(
         from m in Helmsman.Workspaces.Membership,
-          where:
-            m.workspace_id == ^workspace_id and m.user_id == ^user_id and
-              m.role in [:owner, :admin, :member]
+          where: m.workspace_id == ^workspace_id and m.user_id == ^user_id,
+          select: m.role
       )
 
-    check_trigger(profile, actor, user_id, member)
-  end
-
-  defp check_trigger(nil, _actor, _user_id, _member), do: {:error, :not_managed}
-
-  defp check_trigger(%{archived_at: archived}, _actor, _user, _member) when not is_nil(archived),
-    do: {:error, :agent_archived}
-
-  defp check_trigger(_profile, %{disabled_at: disabled}, _user, _member)
-       when not is_nil(disabled), do: {:error, :agent_disabled}
-
-  defp check_trigger(_profile, _actor, _user, false), do: {:error, :unauthorized}
-
-  defp check_trigger(profile, actor, user, true) do
-    if access?(profile, actor, user), do: :ok, else: {:error, :unauthorized}
+    TriggerRule.check(profile, actor, {user_id, role})
   end
 
   @doc """
@@ -288,13 +301,24 @@ defmodule Helmsman.Agents do
   """
   @spec may_trigger?(AgentProfile.t() | nil, Actor.t(), pos_integer() | nil, atom() | nil) ::
           boolean()
-  def may_trigger?(nil, _actor, _user_id, _role), do: false
+  defdelegate may_trigger?(profile, actor, user_id, role), to: TriggerRule
 
-  def may_trigger?(profile, actor, user_id, role),
-    do: role in [:owner, :admin, :member] and access?(profile, actor, user_id)
+  @doc """
+  What `scope` may do with the agent of `view` (`list/1`, `get/2`):
+  `configure` (`:configure_agent`) and `administer` (`:administer_agent`),
+  by `Helmsman.Policy.authorize/3` itself on the agent the view describes.
+  A view of another workspace's agent, or a run scope, gets neither. Pure.
+  """
+  @spec permissions(Helmsman.Accounts.Scope.t(), map()) :: %{
+          configure: boolean(),
+          administer: boolean()
+        }
+  def permissions(scope, %{actor_id: actor_id, workspace_id: workspace_id, owner: %{id: owner_id}}) do
+    actor = %Actor{id: actor_id, kind: :agent, workspace_id: workspace_id, owner_id: owner_id}
 
-  defp access?(profile, actor, user) do
-    user == actor.owner_id or profile.access == "workspace" or
-      (profile.access == "members" and user in (profile.access_member_ids || []))
+    %{
+      configure: Policy.authorize(scope, :configure_agent, actor) == :ok,
+      administer: Policy.authorize(scope, :administer_agent, actor) == :ok
+    }
   end
 end

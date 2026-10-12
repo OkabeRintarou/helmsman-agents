@@ -1,7 +1,7 @@
 defmodule Helmsman.Daemons.Workers.MarkOffline do
   @moduledoc """
   Every minute (decision 12): sets the runtimes of revoked daemons and of
-  daemons silent for 2 minutes offline. Candidates are read without locks;
+  daemons silent for `Helmsman.Daemons.online_threshold_seconds/0` offline. Candidates are read without locks;
   each one is then rechecked under `Helmsman.Daemons.locked/3`, so a report
   that arrived meanwhile wins. A candidate whose lock set keeps changing
   (`:busy`) is left to the next run.
@@ -18,11 +18,9 @@ defmodule Helmsman.Daemons.Workers.MarkOffline do
   alias Helmsman.Events
   alias Helmsman.Repo
 
-  @silence_seconds 120
-
   @impl true
   def perform(_job) do
-    cutoff = DateTime.add(Daemons.now(), -@silence_seconds)
+    cutoff = DateTime.add(Daemons.now(), -Daemons.online_threshold_seconds())
     ids = candidates(cutoff)
     Locking.hook(:daemon_offline_candidates)
     Enum.each(ids, &mark(&1, cutoff))

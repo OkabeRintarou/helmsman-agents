@@ -4,9 +4,10 @@ defmodule Helmsman.Runs.Workers.Sweep do
   any more.
 
     * `claimed` for over 10 minutes → `failed` (`lease_expired`);
-    * `claimed` or `running` while the daemon is revoked or silent for 2
-      minutes → `failed` (`runtime_offline`); `cancelling` → `cancelled`
-      (keeping its failure reason).
+    * `claimed` or `running` while the daemon is revoked or silent for
+      `Helmsman.Daemons.online_threshold_seconds/0` → `failed`
+      (`runtime_offline`); `cancelling` → `cancelled` (keeping its failure
+      reason).
 
   A failed run gets its automatic retry job. Candidates are read without
   locks; each one is then judged again in its own transaction, daemon row
@@ -25,7 +26,6 @@ defmodule Helmsman.Runs.Workers.Sweep do
   alias Helmsman.Tx
 
   @lease_seconds 600
-  @silence_seconds 120
 
   @impl true
   def perform(_job) do
@@ -54,7 +54,9 @@ defmodule Helmsman.Runs.Workers.Sweep do
   end
 
   defp lease_cutoff, do: DateTime.add(DateTime.utc_now(), -@lease_seconds, :second)
-  defp silence_cutoff, do: DateTime.add(Daemons.now(), -@silence_seconds, :second)
+
+  defp silence_cutoff,
+    do: DateTime.add(Daemons.now(), -Daemons.online_threshold_seconds(), :second)
 
   defp sweep(run_id) do
     Tx.run(fn ->

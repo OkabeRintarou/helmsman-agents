@@ -13,6 +13,7 @@ defmodule Helmsman.Daemons do
   alias Helmsman.Workspaces.Workspace
 
   @max_concurrency 32
+  @online_threshold_seconds 120
 
   defdelegate start_device_auth(request), to: Helmsman.Daemons.DeviceAuth
   defdelegate get_device_auth(scope, code), to: Helmsman.Daemons.DeviceAuth
@@ -20,6 +21,13 @@ defmodule Helmsman.Daemons do
   defdelegate deny_device(scope, code), to: Helmsman.Daemons.DeviceAuth
   defdelegate exchange_device_code(code), to: Helmsman.Daemons.DeviceAuth
   defdelegate locked(id, opts, fun), to: Locking, as: :run
+
+  @doc """
+  How long a daemon may stay silent and still count as online: the one
+  definition behind `list_own/1` and `Helmsman.Daemons.Workers.MarkOffline`.
+  """
+  @spec online_threshold_seconds() :: pos_integer()
+  def online_threshold_seconds, do: @online_threshold_seconds
 
   def now do
     case Application.get_env(:helmsman, :daemon_clock) do
@@ -255,7 +263,10 @@ defmodule Helmsman.Daemons do
     offline(daemon.id, locked_ids -- ids)
   end
 
+  # `online`: not revoked and seen within `online_threshold_seconds/0`.
   def list_own(scope) do
+    cutoff = DateTime.add(now(), -@online_threshold_seconds)
+
     Repo.all(
       from d in Daemon,
         where: d.user_id == ^scope.user.id,
@@ -272,9 +283,18 @@ defmodule Helmsman.Daemons do
         )
 
       Map.take(d, ~w(id name os arch version max_concurrency last_seen_at)a)
-      |> Map.merge(%{revoked: not is_nil(d.revoked_at), workspaces: workspaces})
+      |> Map.merge(%{
+        revoked: not is_nil(d.revoked_at),
+        online: online?(d, cutoff),
+        workspaces: workspaces
+      })
     end)
   end
+
+  defp online?(%Daemon{revoked_at: nil, last_seen_at: %DateTime{} = seen}, cutoff),
+    do: DateTime.after?(seen, cutoff)
+
+  defp online?(_daemon, _cutoff), do: false
 
   def register(id, epoch, report) do
     locked(id, [members: true], fn daemon, ids ->

@@ -691,11 +691,16 @@ defmodule Helmsman.Runs do
 
   @doc """
   The number of active (`claimed`, `running`, `cancelling`) and pending
-  runs of each agent among `agent_ids`, in one query:
-  `%{agent_id => %{active: n, queued: n}}` (absent: none).
+  runs of each agent among `agent_ids`, and when its latest run was
+  created, in one query: `%{agent_id => %{active: n, queued: n,
+  last_run_at: datetime}}` (absent: no run).
   """
   @spec counts([pos_integer()]) :: %{
-          pos_integer() => %{active: non_neg_integer(), queued: non_neg_integer()}
+          pos_integer() => %{
+            active: non_neg_integer(),
+            queued: non_neg_integer(),
+            last_run_at: DateTime.t()
+          }
         }
   def counts([]), do: %{}
 
@@ -704,15 +709,14 @@ defmodule Helmsman.Runs do
     pending = Enum.map(Run.pending_statuses(), &Atom.to_string/1)
 
     from(r in Run,
-      where:
-        r.agent_id in ^agent_ids and
-          r.status in ^(Run.active_statuses() ++ Run.pending_statuses()),
+      where: r.agent_id in ^agent_ids,
       group_by: r.agent_id,
       select:
         {r.agent_id,
          %{
            active: filter(count(r.id), fragment("? = ANY(?)", r.status, ^active)),
-           queued: filter(count(r.id), fragment("? = ANY(?)", r.status, ^pending))
+           queued: filter(count(r.id), fragment("? = ANY(?)", r.status, ^pending)),
+           last_run_at: max(r.inserted_at)
          }}
     )
     |> Repo.all()
@@ -733,9 +737,14 @@ defmodule Helmsman.Runs do
   @spec summary(Run.t()) :: summary()
   def summary(%Run{} = run), do: hd(summaries([run]))
 
-  defp summaries([]), do: []
+  @doc """
+  The summaries of `runs`, in their order, with a fixed number of queries
+  whatever their number (the batch form of `summary/1`).
+  """
+  @spec summaries([Run.t()]) :: [summary()]
+  def summaries([]), do: []
 
-  defp summaries(runs) do
+  def summaries(runs) do
     runs = Repo.preload(runs, [:agent, :task])
 
     actor_ids =
@@ -846,4 +855,11 @@ defmodule Helmsman.Runs do
   def after_push(%Run{id: id}) do
     :telemetry.execute([:helmsman, :runs, :after_push], %{}, %{run_id: id})
   end
+
+  ## Read models (add-run-read-models)
+
+  defdelegate active_agents(scope, idents), to: Helmsman.Runs.ReadModels
+  defdelegate usage_for_agent(scope, name, opts \\ []), to: Helmsman.Runs.ReadModels
+  defdelegate list_open(scope, target, opts \\ []), to: Helmsman.Runs.ReadModels
+  defdelegate list_finished(scope, target, opts \\ []), to: Helmsman.Runs.ReadModels
 end

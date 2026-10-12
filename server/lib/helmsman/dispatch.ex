@@ -10,13 +10,16 @@ defmodule Helmsman.Dispatch do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
-  alias Helmsman.Agents.AgentProfile
+  alias Helmsman.Agents.{AgentProfile, TriggerRule}
+  alias Helmsman.Daemons.{Daemon, Runtime}
+  alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Origin, Outcome, TaskGrant}
   alias Helmsman.Tasks
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces
+  alias Helmsman.Workspaces.Membership
 
   @max_instructions_bytes 8192
   @open_statuses [:new, :in_progress]
@@ -193,4 +196,89 @@ defmodule Helmsman.Dispatch do
     do: {:error, :task_closed}
 
   defp open_task(_task), do: :ok
+
+  ## Availability
+
+  @typedoc "A managed agent's dispatchability (`availability/1`)."
+  @type availability :: %{
+          result:
+            :ok | {:skipped, :agent_disabled | :unauthorized | :no_runtime | :runtime_disabled},
+          runtime:
+            %{
+              daemon_name: String.t(),
+              provider: String.t(),
+              status: String.t(),
+              disabled: boolean()
+            }
+            | nil
+        }
+
+  @doc """
+  Whether `scope.user` could dispatch each managed, unarchived agent of the
+  workspace now (`:read_tasks`), by name, with the runtime it is bound to.
+  The checks are steps 1–2 of `Helmsman.Runs.enqueue/3`, in order: the
+  agent is disabled or the user may not trigger it
+  (`Helmsman.Agents.TriggerRule`), it has no runtime, its runtime is
+  disabled. An offline runtime is `:ok`. Neither the trigger chain nor the
+  rate is checked: this is a hint, `enqueue/3` checks again. Two queries,
+  whatever the number of agents.
+  """
+  @spec availability(Scope.t()) :: {:ok, %{String.t() => availability()}} | {:error, :forbidden}
+  def availability(%Scope{workspace: %{id: workspace_id}, user: user} = scope) do
+    with :ok <- Policy.authorize(scope, :read_tasks) do
+      user_id = user && user.id
+
+      agents =
+        Repo.all(
+          from(a in Actor,
+            join: p in AgentProfile,
+            on: p.actor_id == a.id and p.workspace_id == a.workspace_id,
+            left_join: r in Runtime,
+            on: r.id == p.runtime_id,
+            left_join: d in Daemon,
+            on: d.id == r.daemon_id,
+            where: a.workspace_id == ^workspace_id and a.kind == :agent and is_nil(p.archived_at),
+            select: {a, p, r, d.name}
+          )
+        )
+
+      role = user_id && member_role(workspace_id, user_id)
+
+      {:ok,
+       Map.new(agents, fn {actor, profile, runtime, daemon_name} ->
+         {actor.name,
+          %{
+            result: dispatchable(profile, actor, {user_id, role}, runtime),
+            runtime: runtime && runtime_view(runtime, daemon_name)
+          }}
+       end)}
+    end
+  end
+
+  defp member_role(workspace_id, user_id),
+    do:
+      Repo.one(
+        from(m in Membership,
+          where: m.workspace_id == ^workspace_id and m.user_id == ^user_id,
+          select: m.role
+        )
+      )
+
+  defp dispatchable(profile, actor, user, runtime) do
+    case TriggerRule.check(profile, actor, user) do
+      :ok when is_nil(runtime) -> {:skipped, :no_runtime}
+      :ok when not is_nil(runtime.disabled_at) -> {:skipped, :runtime_disabled}
+      :ok -> :ok
+      {:error, reason} -> {:skipped, reason}
+    end
+  end
+
+  defp runtime_view(runtime, daemon_name) do
+    %{
+      daemon_name: daemon_name,
+      provider: runtime.provider,
+      status: runtime.status,
+      disabled: not is_nil(runtime.disabled_at)
+    }
+  end
 end
