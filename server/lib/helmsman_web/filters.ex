@@ -82,4 +82,21 @@ defmodule HelmsmanWeb.Filters do
     next = if value in current, do: List.delete(current, value), else: current ++ [value]
     if next == [], do: Map.delete(filters, key), else: Map.put(filters, key, next)
   end
+
+  @doc """
+  Sets the single-value dimension `key` to `value`, or removes it when it already is
+  `value` (choosing the selected option again clears the dimension).
+
+      iex> HelmsmanWeb.Filters.put_single(%{label: "api"}, :label, "ui")
+      %{label: "ui"}
+
+      iex> HelmsmanWeb.Filters.put_single(%{label: "api", status: ["new"]}, :label, "api")
+      %{status: ["new"]}
+  """
+  @spec put_single(t(), atom(), String.t()) :: t()
+  def put_single(filters, key, value) do
+    if Map.get(filters, key) == value,
+      do: Map.delete(filters, key),
+      else: Map.put(filters, key, value)
+  end
 end

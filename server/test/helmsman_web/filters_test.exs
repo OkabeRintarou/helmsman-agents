@@ -4,6 +4,19 @@ defmodule HelmsmanWeb.FiltersTest do
 
   alias HelmsmanWeb.Filters
 
+  doctest Filters, only: [put_single: 3]
+
+  test "put_single/3 replaces, clears on the same value and keeps other keys" do
+    assert Filters.put_single(%{label: "api"}, :label, "ui") == %{label: "ui"}
+    assert Filters.put_single(%{label: "api"}, :label, "api") == %{}
+
+    assert Filters.put_single(%{label: "api", status: ["new"], assignee: "bob"}, :label, "ui") ==
+             %{label: "ui", status: ["new"], assignee: "bob"}
+
+    assert Filters.put_single(%{status: ["new"]}, :assignee, "@none") ==
+             %{status: ["new"], assignee: "@none"}
+  end
+
   @statuses ~w(new in_progress done verified rejected cancelled)
   @schema [status: {:list, @statuses}, label: :list, q: :string]
 

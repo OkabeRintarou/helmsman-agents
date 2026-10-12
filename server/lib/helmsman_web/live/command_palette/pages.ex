@@ -1,5 +1,8 @@
 defmodule HelmsmanWeb.CommandPalette.Pages do
-  @moduledoc "\"页面\": navigation items (from `HelmsmanWeb.Nav`) whose label matches the query."
+  @moduledoc """
+  "页面": navigation items (from `HelmsmanWeb.Nav`) whose label, hint (a project's key)
+  or group label matches the query.
+  """
   @behaviour HelmsmanWeb.CommandPalette.Source
   use Gettext, backend: HelmsmanWeb.Gettext
 
@@ -12,8 +15,10 @@ defmodule HelmsmanWeb.CommandPalette.Pages do
       q ->
         for group <- Map.get(ctx, :nav, []),
             item <- group.items,
-            String.contains?(String.downcase(item.label), q) or
-              String.contains?(String.downcase(group.label), q) do
+            Enum.any?(
+              [item.label, Map.get(item, :hint), group.label],
+              &(is_binary(&1) and String.contains?(String.downcase(&1), q))
+            ) do
           %{
             group: dgettext("ui", "页面"),
             label: item.label,

@@ -54,6 +54,8 @@ defmodule HelmsmanWeb do
     quote do
       use Phoenix.LiveView
 
+      @before_compile HelmsmanWeb.LiveFallback
+
       unquote(html_helpers())
     end
   end

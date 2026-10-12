@@ -98,7 +98,9 @@ defmodule HelmsmanWeb.CommandPaletteTest do
           "ABCDEFGHIJ-3",
           "A1-9",
           "BOS-1000000000",
-          "BOS-2147483647"
+          "BOS-2147483647",
+          # Helmsman.Tasks.Ident only checks the format; such a task page is a 404.
+          "BOS-2147483648"
         ] do
       assert Ident.parse(valid) == String.upcase(valid), valid
     end
@@ -109,7 +111,6 @@ defmodule HelmsmanWeb.CommandPaletteTest do
           "BOS-03",
           "1BOS-1",
           "ABCDEFGHIJK-1",
-          "BOS-2147483648",
           "BOS-",
           "BOS 1",
           "BOS-1x"
@@ -125,5 +126,54 @@ defmodule HelmsmanWeb.CommandPaletteTest do
              Ident.search(scope, "", %{recent_tasks: ["BOS-0", "bos-2", "B-1"]})
 
     assert length(Actions.search(scope, "", %{})) == 5
+  end
+
+  describe "on workspace pages" do
+    import Helmsman.AccountsFixtures
+    import Helmsman.ProjectsFixtures
+    import Helmsman.WorkspacesFixtures
+
+    setup %{conn: conn} do
+      owner = user_fixture()
+      ws = workspace_fixture(owner)
+      project_fixture(workspace_scope_fixture(owner, ws), key: "BOS", name: "Bosun")
+      viewer = user_fixture()
+      member_fixture(ws, viewer, :viewer)
+      %{conn: conn, owner: owner, viewer: viewer, slug: ws.slug}
+    end
+
+    test "projects are found by name or key", %{conn: conn, owner: owner, slug: slug} do
+      {:ok, view, _html} = live(log_in_user(conn, owner), "/w/#{slug}/projects")
+
+      for q <- ["bos", "bosun"] do
+        search(view, q)
+        html = palette(view)
+        assert html =~ "页面"
+        assert html =~ "Bosun"
+      end
+
+      search(view, "bos")
+      palette_event(view, "execute", %{"index" => "0"})
+      assert_redirect(view, "/w/#{slug}/p/BOS")
+    end
+
+    test "task IDs still jump, malformed ones do not", %{conn: conn, owner: owner, slug: slug} do
+      {:ok, view, _html} = live(log_in_user(conn, owner), "/w/#{slug}/projects")
+
+      search(view, "BOS-012")
+      refute palette(view) =~ "跳转到任务"
+
+      search(view, "bos-12")
+      assert palette(view) =~ "跳转到任务"
+      palette_event(view, "execute", %{})
+      assert_redirect(view, "/w/#{slug}/t/BOS-12")
+    end
+
+    test "viewers get no 新建任务 action", %{conn: conn, viewer: viewer, slug: slug} do
+      {:ok, view, _html} = live(log_in_user(conn, viewer), "/w/#{slug}/projects")
+      html = palette(view)
+      assert html =~ "切换主题：暗"
+      refute html =~ "新建任务"
+    end
   end
 end

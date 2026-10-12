@@ -63,8 +63,35 @@ defmodule HelmsmanWeb.NavTest do
     assert %{id: :config, items: [%{current?: true}]} = List.last(admin)
   end
 
-  test "nothing is registered by this change" do
-    assert Nav.items() == []
-    assert Nav.items_for(@scope, "/w/acme") == []
+  test "查看全部 is registered in the 项目 group" do
+    assert [%{id: :projects, items: [all]}] = Nav.items_for(@scope, "/w/acme/projects")
+    assert all.id == :projects
+    assert all.label == "查看全部"
+    assert all.path == "/w/acme/projects"
+    assert all.current?
+  end
+
+  describe "project items" do
+    @projects [%{key: "BOS", name: "Bosun"}, %{key: "BOSX", name: "Bosun X"}]
+
+    defp project_groups(path),
+      do: Nav.items_for(@scope, path, Nav.project_items(@projects) ++ Nav.items())
+
+    defp current(groups),
+      do: for(g <- groups, i <- g.items, i.current?, do: i.id)
+
+    test "projects come before 查看全部 and carry their key as hint" do
+      assert [%{id: :projects, items: items}] = project_groups("/w/acme")
+      assert Enum.map(items, & &1.id) == [{:project, "BOS"}, {:project, "BOSX"}, :projects]
+      assert [%{label: "Bosun", hint: "BOS", path: "/w/acme/p/BOS"} | _] = items
+    end
+
+    test "a project is current on its list and on its tasks' pages" do
+      assert current(project_groups("/w/acme/p/BOS")) == [{:project, "BOS"}]
+      assert current(project_groups("/w/acme/t/BOS-3")) == [{:project, "BOS"}]
+      assert current(project_groups("/w/acme/t/BOSX-1")) == [{:project, "BOSX"}]
+      assert current(project_groups("/w/acme/projects")) == [:projects]
+      assert current(project_groups("/w/acme/t/API-1")) == []
+    end
   end
 end

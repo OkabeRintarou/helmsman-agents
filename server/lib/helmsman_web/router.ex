@@ -95,6 +95,9 @@ defmodule HelmsmanWeb.Router do
         HelmsmanWeb.Shell
       ] do
       live "/w/:slug", WorkspaceLive.Home, :show
+      live "/w/:slug/projects", ProjectLive.Index, :index
+      live "/w/:slug/p/:key", TaskLive.Index, :index
+      live "/w/:slug/t/:ident", TaskLive.Show, :show
     end
   end
 

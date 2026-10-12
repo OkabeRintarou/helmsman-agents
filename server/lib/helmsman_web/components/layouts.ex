@@ -37,7 +37,13 @@ defmodule HelmsmanWeb.Layouts do
   slot :inner_block, required: true
 
   def app(assigns) do
-    shell = assigns.shell || %{nav: [], workspaces: [], recent_tasks: [], path: nil}
+    shell =
+      Map.merge(
+        %{nav: [], workspaces: [], recent_tasks: [], path: nil, projects: []},
+        assigns.shell || %{}
+      )
+
+    shell = Map.put_new(shell, :can_create_task?, true)
     workspace = assigns.current_scope && Map.get(assigns.current_scope, :workspace)
     user = assigns.current_scope && Map.get(assigns.current_scope, :user)
 
@@ -94,6 +100,7 @@ defmodule HelmsmanWeb.Layouts do
           </:kbd>
         </.sidebar_action>
         <.sidebar_action
+          :if={@shell.can_create_task?}
           id="hm-new-task"
           icon="lucide-square-pen"
           label={dgettext("ui", "新建任务")}
@@ -137,6 +144,12 @@ defmodule HelmsmanWeb.Layouts do
     <.live_component
       module={CommandPalette}
       id="command-palette"
+      scope={@current_scope}
+      shell={@shell}
+    />
+    <.live_component
+      module={HelmsmanWeb.NewTaskPanel}
+      id="new-task-panel"
       scope={@current_scope}
       shell={@shell}
     />
@@ -232,11 +245,17 @@ defmodule HelmsmanWeb.Layouts do
   attr :item, :map, required: true
 
   defp nav_link(assigns) do
+    hint = assigns.item[:hint]
+    full = if hint, do: "#{assigns.item.label}（#{hint}）", else: assigns.item.label
+    assigns = assign(assigns, full: full, hint: hint)
+
     ~H"""
     <span class="hm-tooltip-host relative flex">
       <.link
         navigate={@item.path}
         aria-current={@item.current? && "page"}
+        aria-label={@hint && @full}
+        title={@hint && @full}
         phx-click={close_drawer()}
         class={[
           "flex h-8 w-full items-center gap-2 rounded-field px-2 text-body",
@@ -256,7 +275,7 @@ defmodule HelmsmanWeb.Layouts do
         </span>
       </.link>
       <span role="tooltip" class={[tooltip_class(:right), "hidden lg:sidebar-collapsed:block"]}>
-        {@item.label}
+        {@full}
       </span>
     </span>
     """

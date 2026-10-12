@@ -9,6 +9,13 @@ defmodule HelmsmanWeb.Shell do
     `{:membership_changed, workspace_id, :removed | {:role, role}}` — removal from the
     current workspace redirects to `/` with a flash; a role change re-mounts the current
     page; messages about other workspaces are ignored.
+  * Subscribes to `workspace:<id>` (add-workspace-settings-ui D8, the only subscription
+    to that topic for workspace pages): `{:workspace_updated, %{id, name, slug}}` renames
+    the workspace in place or follows a slug change; `{:projects_changed}` reloads
+    `shell.projects` and the navigation. Messages the shell does not consume go on to the
+    page when it exports `handle_info/2` (`HelmsmanWeb.LiveFallback` ignores the rest),
+    otherwise they stop here.
+  * Assigns `shell.projects` (the sidebar's 项目 group) and `shell.can_create_task?`.
   * Handles the `hm:switch-workspace` event from the workspace switcher.
 
   The scope is read from `socket.assigns.current_scope` (`user`, `workspace`). For a
@@ -21,6 +28,9 @@ defmodule HelmsmanWeb.Shell do
   import Phoenix.LiveView
 
   alias Helmsman.Accounts.{Scope, User}
+  alias Helmsman.Events
+  alias Helmsman.Policy
+  alias Helmsman.Projects
   alias Helmsman.Workspaces
   alias HelmsmanWeb.Nav
 
@@ -34,12 +44,16 @@ defmodule HelmsmanWeb.Shell do
     if connected?(socket) && user_id,
       do: Phoenix.PubSub.subscribe(Helmsman.PubSub, topic(user_id))
 
+    if connected?(socket), do: subscribe_workspace(scope)
+
     socket =
       socket
       |> assign(:shell, %{
         nav: [],
         nav_items: socket.assigns[:shell_nav_items] || Nav.items(),
         workspaces: workspaces(scope),
+        projects: projects(scope),
+        can_create_task?: can_create_task?(scope),
         recent_tasks: recent_tasks(socket),
         path: nil,
         uri: nil
@@ -63,11 +77,14 @@ defmodule HelmsmanWeb.Shell do
       shell
       | path: path,
         uri: if(query, do: "#{path}?#{query}", else: path),
-        nav: Nav.items_for(scope, path, shell.nav_items)
+        nav: nav(scope, path, shell)
     }
 
     {:cont, assign(socket, :shell, shell)}
   end
+
+  defp nav(scope, path, shell),
+    do: Nav.items_for(scope, path, Nav.project_items(shell.projects) ++ shell.nav_items)
 
   defp handle_info({:membership_changed, workspace_id, change}, socket) do
     workspace = current_workspace(socket.assigns[:current_scope])
@@ -88,7 +105,51 @@ defmodule HelmsmanWeb.Shell do
     end
   end
 
-  defp handle_info(_message, socket), do: {:cont, socket}
+  defp handle_info({:workspace_updated, %{id: id, name: name, slug: slug}}, socket) do
+    case socket.assigns[:current_scope] do
+      %{workspace: %{id: ^id, slug: ^slug}} = scope ->
+        {:halt, rename_workspace(socket, scope, name)}
+
+      %{workspace: %{id: ^id, slug: old}} ->
+        message = dgettext("ui", "工作区地址已改为 /w/%{slug}", slug: slug)
+        uri = socket.assigns.shell.uri || "/w/#{old}"
+        to = String.replace_prefix(uri, "/w/#{old}", "/w/#{slug}")
+        {:halt, socket |> put_flash(:info, message) |> push_navigate(to: to)}
+
+      _ ->
+        {:halt, socket}
+    end
+  end
+
+  defp handle_info({:projects_changed} = message, socket) do
+    scope = socket.assigns[:current_scope]
+    shell = %{socket.assigns.shell | projects: projects(scope)}
+    shell = %{shell | nav: nav(scope, shell.path, shell)}
+    forward(message, assign(socket, :shell, shell))
+  end
+
+  defp handle_info(message, socket), do: forward(message, socket)
+
+  # Pages without handle_info/2 would log "undefined handle_info" for every broadcast.
+  defp forward(_message, socket) do
+    if function_exported?(socket.view, :handle_info, 2),
+      do: {:cont, socket},
+      else: {:halt, socket}
+  end
+
+  defp rename_workspace(socket, scope, name) do
+    workspace = %{scope.workspace | name: name}
+
+    workspaces =
+      Enum.map(socket.assigns.shell.workspaces, fn
+        %{id: id} = ws when id == workspace.id -> %{ws | name: name}
+        ws -> ws
+      end)
+
+    socket
+    |> assign(:current_scope, %{scope | workspace: workspace})
+    |> assign(:shell, %{socket.assigns.shell | workspaces: workspaces})
+  end
 
   defp handle_event("hm:switch-workspace", %{"slug" => slug}, socket) do
     if Enum.any?(socket.assigns.shell.workspaces, &(&1.slug == slug)) do
@@ -105,6 +166,26 @@ defmodule HelmsmanWeb.Shell do
 
   defp current_workspace(%{workspace: %{} = workspace}), do: workspace
   defp current_workspace(_scope), do: nil
+
+  defp subscribe_workspace(%Scope{workspace: %{id: id}}) when is_integer(id),
+    do: Events.subscribe(Events.topic(:workspace, id))
+
+  defp subscribe_workspace(_scope), do: :ok
+
+  # The /dev/ui demo scope (a plain map) has no projects and may open the new-task panel.
+  defp projects(%Scope{workspace: %{}} = scope) do
+    case Projects.list(scope) do
+      {:ok, projects} -> projects
+      {:error, _} -> []
+    end
+  end
+
+  defp projects(_scope), do: []
+
+  defp can_create_task?(%Scope{workspace: %{}} = scope),
+    do: Policy.authorize(scope, :create_task) == :ok
+
+  defp can_create_task?(_scope), do: true
 
   defp workspaces(nil), do: []
 

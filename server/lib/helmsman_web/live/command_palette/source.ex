@@ -3,7 +3,8 @@ defmodule HelmsmanWeb.CommandPalette.Source do
   A result source of the command palette. Feature changes add a module implementing
   this behaviour to `HelmsmanWeb.CommandPalette.sources/0` (e.g. `TaskSearch`, `Agents`).
 
-  `ctx` carries `:nav` (resolved navigation groups) and `:recent_tasks`.
+  `ctx` carries `:nav` (resolved navigation groups), `:recent_tasks` and
+  `:can_create_task?`.
 
   A result is a map with `:group` (heading), `:label`, optional `:sublabel` and `:icon`,
   and either `:path` (navigate there) or `:action` (`{name, params}` handled on the

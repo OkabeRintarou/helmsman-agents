@@ -25,6 +25,7 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/helmsman"
 import topbar from "../vendor/topbar"
 import Hotkeys from "./hooks/hotkeys"
+import Editor from "./hooks/editor"
 
 const RECENT_TASKS = "hm:recent-tasks"
 const recentTasks = () => {
@@ -35,7 +36,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: () => ({_csrf_token: csrfToken, recent_tasks: recentTasks()}),
-  hooks: {...colocatedHooks, Hotkeys},
+  hooks: {...colocatedHooks, Hotkeys, Editor},
 })
 
 // Focus return for modal layers (design D5c): remember the element focused when a layer

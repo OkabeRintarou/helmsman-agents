@@ -14,9 +14,12 @@ defmodule HelmsmanWeb.Components.FilterBar do
   alias HelmsmanWeb.Filters
 
   @doc """
-  * `dimensions`: `[%{key: :status, label: "状态", options: [{"new", "新建"}, …]}]`
+  * `dimensions`: `[%{key: :status, label: "状态", options: [{"new", "新建"}, …]}]`;
+    `single: true` makes a dimension single-select (choosing an option replaces the
+    current value, choosing it again clears it; see `HelmsmanWeb.Filters.put_single/3`)
   * `filters`: the parsed filter map (see `HelmsmanWeb.Filters.parse/2`)
   * `path`: the list's base path (without query)
+  * `search`: `false` leaves out the search box (and so the `/` shortcut does nothing)
   """
   attr :id, :string, required: true
   attr :path, :string, required: true
@@ -24,6 +27,7 @@ defmodule HelmsmanWeb.Components.FilterBar do
   attr :dimensions, :list, required: true
   attr :search_event, :string, default: "search"
   attr :search_key, :atom, default: :q
+  attr :search, :boolean, default: true
   slot :views, doc: "quick view tabs (left)"
   slot :display, doc: "display options (right)"
 
@@ -55,6 +59,7 @@ defmodule HelmsmanWeb.Components.FilterBar do
         remove={chip.remove}
       />
       <form
+        :if={@search}
         id={"#{@id}-search"}
         role="search"
         phx-change={@search_event}
@@ -131,10 +136,13 @@ defmodule HelmsmanWeb.Components.FilterBar do
         group: label,
         label: name,
         checked: value in List.wrap(Map.get(filters, key)),
-        patch: Filters.path(path, Filters.toggle(filters, key, value))
+        patch: Filters.path(path, select(dim, filters, key, value))
       }
     end
   end
+
+  defp select(%{single: true}, filters, key, value), do: Filters.put_single(filters, key, value)
+  defp select(_dim, filters, key, value), do: Filters.toggle(filters, key, value)
 
   defp option_label(dim, value) do
     case List.keyfind(Map.get(dim, :options, []), value, 0) do

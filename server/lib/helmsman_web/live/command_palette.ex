@@ -73,7 +73,13 @@ defmodule HelmsmanWeb.CommandPalette do
   defp assign_results(socket) do
     scope = socket.assigns[:scope]
     shell = socket.assigns[:shell] || %{}
-    ctx = %{nav: Map.get(shell, :nav, []), recent_tasks: Map.get(shell, :recent_tasks, [])}
+
+    ctx = %{
+      nav: Map.get(shell, :nav, []),
+      recent_tasks: Map.get(shell, :recent_tasks, []),
+      can_create_task?: Map.get(shell, :can_create_task?, true)
+    }
+
     query = socket.assigns.query
     results = Enum.flat_map(sources(), & &1.search(scope, query, ctx))
     selected = min(socket.assigns.selected, max(length(results) - 1, 0))

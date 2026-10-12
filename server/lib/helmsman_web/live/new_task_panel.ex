@@ -1,0 +1,322 @@
+defmodule HelmsmanWeb.NewTaskPanel do
+  @moduledoc """
+  新建任务 side panel (design D3), rendered by `HelmsmanWeb.Layouts.app/1` on every
+  workspace page and opened by `?panel=new` in the current URL (sidebar entry, C,
+  command palette, task list header).
+
+  Not rendered for members without `:create_task` (`shell.can_create_task?`) or for the
+  `/dev/ui` demo scope. The default project is the one of the current task list or task
+  page, otherwise the first unarchived project.
+
+  With 连续创建 on, a successful submit keeps the panel open, clears title and
+  description and shows 已创建 <ID> in a live region inside the panel until a field
+  changes; component flashes are not used because they only reach the page on
+  navigation.
+  """
+  use HelmsmanWeb, :live_component
+
+  alias Ecto.Changeset
+  alias Helmsman.Accounts.Scope
+  alias Helmsman.Tasks
+  alias HelmsmanWeb.{FormErrors, TaskComponents, TaskData, Url}
+
+  @impl true
+  def mount(socket) do
+    {:ok,
+     assign(socket,
+       open?: false,
+       params: %{},
+       errors: %{},
+       top_error: nil,
+       created: nil,
+       continuous: false,
+       assignable: []
+     )}
+  end
+
+  @impl true
+  def update(assigns, socket) do
+    open? = open?(assigns.scope, assigns.shell)
+    socket = assign(socket, id: assigns.id, scope: assigns.scope, shell: assigns.shell)
+    socket = if open? and not socket.assigns.open?, do: reset(socket), else: socket
+    {:ok, assign(socket, :open?, open?)}
+  end
+
+  defp open?(%Scope{workspace: %{}}, %{can_create_task?: true, uri: uri}) when is_binary(uri),
+    do: uri |> URI.parse() |> Map.get(:query) |> panel() == "new"
+
+  defp open?(_scope, _shell), do: false
+
+  defp panel(nil), do: nil
+  defp panel(query), do: query |> URI.decode_query() |> Map.get("panel")
+
+  defp reset(socket) do
+    %{scope: scope, shell: shell} = socket.assigns
+
+    assign(socket,
+      params: %{
+        "project" => default_project(shell),
+        "title" => "",
+        "description" => "",
+        "priority" => "medium",
+        "labels" => "",
+        "assignee" => ""
+      },
+      errors: %{},
+      top_error: nil,
+      created: nil,
+      continuous: false,
+      assignable: TaskData.assignable(scope)
+    )
+  end
+
+  @doc false
+  def default_project(%{projects: projects, path: path}) do
+    keys = Enum.map(projects, & &1.key)
+
+    current =
+      case String.split(path || "", "/", trim: true) do
+        ["w", _slug, "p", key | _] -> String.upcase(key)
+        ["w", _slug, "t", ident | _] -> ident |> String.split("-") |> hd() |> String.upcase()
+        _ -> nil
+      end
+
+    if current in keys, do: current, else: List.first(keys)
+  end
+
+  @impl true
+  def handle_event("change", %{"task" => params}, socket) do
+    {:noreply,
+     assign(socket,
+       params: Map.merge(socket.assigns.params, Map.take(params, fields())),
+       continuous: params["continuous"] == "true",
+       created: nil
+     )}
+  end
+
+  def handle_event("submit", %{"task" => raw}, socket) do
+    continuous = Map.get(raw, "continuous", to_string(socket.assigns.continuous)) == "true"
+    params = Map.merge(socket.assigns.params, Map.take(raw, fields()))
+    socket = assign(socket, params: params, continuous: continuous)
+    %{scope: scope} = socket.assigns
+
+    attrs = %{
+      title: params["title"],
+      description: params["description"],
+      priority: params["priority"],
+      labels: split_labels(params["labels"]),
+      assignee: params["assignee"]
+    }
+
+    case Tasks.create(scope, params["project"] || "", attrs) do
+      {:ok, task} -> {:noreply, created(socket, task)}
+      {:error, reason} -> {:noreply, failed(socket, reason)}
+    end
+  end
+
+  defp fields, do: ~w(project title description priority labels assignee)
+
+  @doc false
+  def split_labels(nil), do: []
+
+  def split_labels(text),
+    do: text |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == ""))
+
+  defp created(socket, task) do
+    path = "/w/#{socket.assigns.scope.workspace.slug}/t/#{task.ident}"
+
+    if socket.assigns.continuous do
+      params = %{socket.assigns.params | "title" => "", "description" => ""}
+
+      assign(socket,
+        params: params,
+        errors: %{},
+        top_error: nil,
+        created: %{ident: task.ident, path: path}
+      )
+    else
+      push_navigate(socket, to: path)
+    end
+  end
+
+  defp failed(socket, %Changeset{} = changeset),
+    do: assign(socket, errors: FormErrors.messages(changeset), top_error: nil, created: nil)
+
+  defp failed(socket, :project_archived),
+    do: field_error(socket, :project, dgettext("ui", "项目已归档，不能新建任务"))
+
+  defp failed(socket, :not_found), do: field_error(socket, :project, dgettext("ui", "项目不存在"))
+
+  defp failed(socket, :forbidden),
+    do: assign(socket, top_error: dgettext("ui", "没有权限执行此操作"), errors: %{}, created: nil)
+
+  defp failed(socket, reason) do
+    require Logger
+    Logger.error("NewTaskPanel: Tasks.create failed: #{inspect(reason)}")
+    assign(socket, top_error: dgettext("ui", "操作失败，请稍后重试"), errors: %{}, created: nil)
+  end
+
+  defp field_error(socket, field, message),
+    do: assign(socket, errors: %{field => [message]}, top_error: nil, created: nil)
+
+  @impl true
+  def render(assigns) do
+    assigns =
+      assign(assigns,
+        close: if(assigns.open?, do: Url.drop_params(assigns.shell.uri, ["panel"])),
+        dirty: dirty?(assigns.params),
+        can_create_project?: can_create_project?(assigns.scope)
+      )
+
+    ~H"""
+    <div id={@id}>
+      <.side_panel
+        id="new-task-dialog"
+        show={@open?}
+        title={dgettext("ui", "新建任务")}
+        dirty={@dirty}
+        patch_on_close={@close}
+      >
+        <:error :if={@top_error}>{@top_error}</:error>
+        <div :if={@shell.projects == []} id="new-task-no-projects">
+          <.empty_state
+            icon="lucide-folder"
+            title={dgettext("ui", "还没有项目")}
+            description={
+              if(@can_create_project?,
+                do: nil,
+                else: dgettext("ui", "请联系管理员创建项目")
+              )
+            }
+          >
+            <:action :if={@can_create_project?}>
+              <.button
+                variant="primary"
+                navigate={"/w/#{@scope.workspace.slug}/projects?panel=new-project"}
+              >
+                {dgettext("ui", "新建项目")}
+              </.button>
+            </:action>
+          </.empty_state>
+        </div>
+        <div
+          :if={@shell.projects != []}
+          id="new-task-created"
+          role="status"
+          aria-live="polite"
+          class="empty:hidden"
+        >
+          <p
+            :if={@created}
+            id={"new-task-created-#{@created.ident}"}
+            class="mb-4 flex items-center gap-2 rounded-field border border-border tint-success px-3 py-2 text-body"
+          >
+            <.icon name="lucide-circle-check" class="size-4 text-success" />
+            {dgettext("ui", "已创建")}
+            <.task_id_link ident={@created.ident} workspace={@scope.workspace.slug} />
+          </p>
+        </div>
+        <.form
+          :if={@shell.projects != []}
+          for={%{}}
+          as={:task}
+          id="new-task-form"
+          phx-change="change"
+          phx-submit="submit"
+          phx-target={@myself}
+          class="flex flex-col gap-4"
+        >
+          <.input
+            type="select"
+            id="new-task-project"
+            name="task[project]"
+            label={dgettext("ui", "项目")}
+            value={@params["project"]}
+            options={Enum.map(@shell.projects, &{"#{&1.name}（#{&1.key}）", &1.key})}
+            errors={Map.get(@errors, :project, [])}
+          />
+          <.input
+            id="new-task-title"
+            name="task[title]"
+            label={dgettext("ui", "标题")}
+            value={@params["title"]}
+            errors={Map.get(@errors, :title, [])}
+            autocomplete="off"
+            phx-debounce="200"
+          />
+          <.input
+            type="textarea"
+            id="new-task-description"
+            name="task[description]"
+            label={dgettext("ui", "描述")}
+            value={@params["description"]}
+            errors={Map.get(@errors, :description, [])}
+            rows="6"
+            phx-debounce="200"
+          />
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <.input
+              type="select"
+              id="new-task-priority"
+              name="task[priority]"
+              label={dgettext("ui", "优先级")}
+              value={@params["priority"]}
+              options={TaskComponents.priority_options()}
+              errors={Map.get(@errors, :priority, [])}
+            />
+            <.input
+              type="select"
+              id="new-task-assignee"
+              name="task[assignee]"
+              label={dgettext("ui", "执行方")}
+              value={@params["assignee"]}
+              options={[{dgettext("ui", "未指派"), ""} | Enum.map(@assignable, &{&1.name, &1.name})]}
+              errors={Map.get(@errors, :assignee, [])}
+            />
+          </div>
+          <.input
+            id="new-task-labels"
+            name="task[labels]"
+            label={dgettext("ui", "标签")}
+            help={dgettext("ui", "多个标签用逗号分隔")}
+            value={@params["labels"]}
+            errors={Map.get(@errors, :labels, [])}
+            autocomplete="off"
+            phx-debounce="200"
+          />
+          <.input
+            type="switch"
+            id="new-task-continuous"
+            name="task[continuous]"
+            label={dgettext("ui", "连续创建")}
+            help={dgettext("ui", "创建后保留面板，继续填写下一个任务")}
+            checked={@continuous}
+          />
+        </.form>
+        <:footer :let={cancel}>
+          <span />
+          <div class="flex items-center gap-2">
+            <.button phx-click={cancel}>{dgettext("ui", "取消")}</.button>
+            <.button
+              :if={@shell.projects != []}
+              type="submit"
+              form="new-task-form"
+              variant="primary"
+            >
+              {dgettext("ui", "创建")}
+            </.button>
+          </div>
+        </:footer>
+      </.side_panel>
+    </div>
+    """
+  end
+
+  defp dirty?(params),
+    do: Enum.any?(~w(title description labels), &(String.trim(params[&1] || "") != ""))
+
+  defp can_create_project?(%Scope{} = scope),
+    do: Helmsman.Policy.authorize(scope, :create_project) == :ok
+
+  defp can_create_project?(_scope), do: false
+end

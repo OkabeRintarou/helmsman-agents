@@ -4,15 +4,12 @@ defmodule HelmsmanWeb.CommandPalette.Ident do
   `/w/<slug>/t/KEY-N` without querying the database (the task page 404s if it does not
   exist). An empty query lists the recently visited tasks.
 
-  The format follows designs/04 (`ident`) and 01 (`projects.key`, `task_seq int`):
-  key `[A-Z][A-Z0-9]{1,9}`, N a positive integer without leading zeros, at most 2^31 - 1.
-  Replace with the domain parser once `add-projects-tasks` provides one.
+  Parsing is `Helmsman.Tasks.Ident.parse/1` (format only, no database lookup).
   """
   @behaviour HelmsmanWeb.CommandPalette.Source
   use Gettext, backend: HelmsmanWeb.Gettext
 
-  @ident ~r/^([A-Za-z][A-Za-z0-9]{1,9})-([1-9][0-9]{0,9})$/
-  @max_seq 2_147_483_647
+  alias Helmsman.Tasks.Ident, as: TaskIdent
 
   @impl true
   def search(scope, query, ctx) do
@@ -37,11 +34,9 @@ defmodule HelmsmanWeb.CommandPalette.Ident do
 
   @doc ~S|Normalizes a `KEY-N` string (`"bos-12"` → `"BOS-12"`); `nil` if it is not a valid ident.|
   def parse(text) when is_binary(text) do
-    with [_, key, n] <- Regex.run(@ident, String.trim(text)),
-         true <- String.to_integer(n) <= @max_seq do
-      "#{String.upcase(key)}-#{n}"
-    else
-      _ -> nil
+    case TaskIdent.parse(String.trim(text)) do
+      {:ok, ident, _key, _seq} -> ident
+      {:error, _} -> nil
     end
   end
 

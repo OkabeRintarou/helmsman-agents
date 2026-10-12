@@ -56,12 +56,15 @@ msgstr ""
 msgid "一句话说明要做什么"
 msgstr ""
 
+#: lib/helmsman_web/form_errors.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/task_evidence.ex
 #, elixir-autogen, elixir-format
 msgid "不能为空"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/task_components.ex
 #, elixir-autogen, elixir-format
 msgid "中"
 msgstr ""
@@ -82,6 +85,9 @@ msgid "亮"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "优先级"
 msgstr ""
@@ -92,6 +98,7 @@ msgid "优先级：%{label}"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/task_components.ex
 #, elixir-autogen, elixir-format
 msgid "低"
 msgstr ""
@@ -173,6 +180,9 @@ msgid "刚刚"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "创建"
 msgstr ""
@@ -199,6 +209,10 @@ msgstr ""
 
 #: lib/helmsman_web/components/overlay.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "取消"
 msgstr ""
@@ -334,6 +348,7 @@ msgid "已撤销"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/live/task_live/filter.ex
 #, elixir-autogen, elixir-format
 msgid "已结束"
 msgstr ""
@@ -359,6 +374,7 @@ msgid "开关"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/task_transitions.ex
 #, elixir-autogen, elixir-format
 msgid "开始"
 msgstr ""
@@ -483,6 +499,8 @@ msgstr ""
 #: lib/helmsman_web/components/layouts.ex
 #: lib/helmsman_web/live/command_palette/actions.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "新建任务"
 msgstr ""
@@ -538,11 +556,15 @@ msgid "未知"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
 msgid "查看全部"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "标签"
 msgstr ""
@@ -553,6 +575,9 @@ msgid "标签页"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "标题"
 msgstr ""
@@ -583,6 +608,8 @@ msgid "清除筛选"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "状态"
 msgstr ""
@@ -802,12 +829,16 @@ msgid "页面"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
 msgid "项目"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/task_components.ex
 #, elixir-autogen, elixir-format
 msgid "高"
 msgstr ""
@@ -848,6 +879,8 @@ msgid "放弃填写？"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "保存"
 msgstr ""
@@ -858,6 +891,8 @@ msgid "只读成员不能保存"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "名称"
 msgstr ""
@@ -1154,4 +1189,507 @@ msgstr ""
 #: lib/helmsman_web/live/user_live/registration.ex
 #, elixir-autogen, elixir-format
 msgid "你被邀请加入 %{workspace}"
+msgstr ""
+
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "%{count} 个任务"
+msgid_plural "%{count} 个任务"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "%{project} 的任务"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "Key 创建后不能修改"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "Key 已被占用"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "Key 须以大写字母开头，由 2–10 位大写字母或数字组成"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不是有效的提交 hash：%{commits}"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能指派给系统身份"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 10000 个字符"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 64 KB"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "不附测试结果"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "任务内容"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "任务回到「新建」，可以重新开始。请说明做了哪些修改。"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "任务回到「进行中」，执行方不变。原因会记入历史，供执行方参考。"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "任务状态已变为%{status}，无法%{action}"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "你是执行方，验收需要通过的测试结果"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "你是执行方：验收需要通过的测试结果。最近一次完成已附带通过的测试："
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "你是执行方：验收需要通过的测试结果。最近一次完成没有附带通过的测试，请在下方填写"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/filter.ex
+#, elixir-autogen, elixir-format
+msgid "全部"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "创建了任务"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "创建后保留面板，继续填写下一个任务"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "历史"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "原因"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "备注无效"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "备注（可选）"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "复制提交 %{hash}"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "多个标签用逗号分隔"
+msgstr ""
+
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "大写字母开头，2–10 位大写字母或数字，创建后不能修改"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "完成"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "属性"
+msgstr ""
+
+#: lib/helmsman_web/shell.ex
+#, elixir-autogen, elixir-format
+msgid "工作区地址已改为 /w/%{slug}"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已停用，不能指派"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "已创建"
+msgstr ""
+
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "已归档"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "已验收的任务重新回到「进行中」。原因会记入历史。"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "归档"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "归档后不能在其中新建任务，已有任务照常可读、可编辑、可迁移。"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "归档项目"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "归档项目 %{key}？"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "恢复"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "恢复项目"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "打回"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "执行方"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "拒绝"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "拒绝后任务结束；之后可以修改并重新提交。原因会记入历史。"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "描述"
+msgstr ""
+
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "描述（可选）"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "提交"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "提出方"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "摘要（可选）"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "撤销"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "撤销后任务结束；之后可以恢复。原因会记入历史。"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "操作失败，请稍后重试"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "新建项目"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "新标签"
+msgstr ""
+
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "显示已归档"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "更多"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "更新"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "最多 20 个标签"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "有更新"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/filter.ex
+#, elixir-autogen, elixir-format
+msgid "未完成"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "未指派"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "未通过"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "此任务已被其他人修改，已加载最新内容"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "此项目已归档"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "每个标签须为 1–32 个字符"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "每行一个提交 hash，也可以用空格或逗号分隔"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "没有描述"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有权限执行此操作"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "测试命令"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "测试未通过"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "测试结果"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "测试结果无效"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "测试通过"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "添加描述…"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "编辑"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "编辑标题：%{title}"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "编辑项目"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "自动"
+msgstr ""
+
+#: lib/helmsman_web/task_evidence.ex
+#, elixir-autogen, elixir-format
+msgid "请填写原因"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "请联系管理员创建项目"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "输入新标签后按 Enter"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "还没有任务"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/project_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "还没有项目"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "连续创建"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "通过"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "重开"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "重新提交"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "长度须为 1–200 个字符"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "长度须为 1–80 个字符"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "项目不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "项目已归档"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "项目已归档，不能新建任务"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "项目已恢复"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "项目菜单"
+msgstr ""
+
+#: lib/helmsman_web/task_transitions.ex
+#, elixir-autogen, elixir-format
+msgid "验收"
 msgstr ""
