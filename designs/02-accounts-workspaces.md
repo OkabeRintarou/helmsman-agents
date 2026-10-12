@@ -54,7 +54,7 @@
 | 导入（merge）、确认认领导入的身份（11 §1.2） | ✓ | ✓ | | |
 | 导入（replace）、改 slug | ✓ | | | |
 
-**Agent 的权限**：继承所属用户在该工作区的角色，但「管理类」动作（成员、Agent 配置、Token、运行时、小队、自动化、GitHub、导入导出、改 slug）只允许人来做。例外：托管 Agent 在运行中触发别的托管 Agent 或小队时，不按所属用户，而按这次运行的授权来源判断（12 §2.1、13 §2.2）。所属用户被降级或移除，Agent 立即跟着变：被移除时，他名下托管 Agent 排队中的运行全部取消，进行中的停止。
+**Agent 的权限**：继承所属用户在该工作区的角色，但「管理类」动作（成员、Agent 配置、Token、运行时、小队、自动化、GitHub、导入导出、改 slug）只允许人来做。例外：托管 Agent 在运行中触发别的托管 Agent 或小队时，不按所属用户，而按这次运行的授权来源判断（12 §2.1、13 §2.2）。所属用户被降级或移除，Agent 立即跟着变：被移除时，他名下托管 Agent 排队中的运行全部取消，进行中的停止；**以他为授权来源**的运行（替他干活的，不论 Agent 属于谁）同样排队的取消、进行中的停止，原因 `unauthorized`（13 §2.2）。
 
 - 移除成员时，他的守护进程令牌对**这个工作区**失效，该机器在本工作区的运行时下线；机器上为其他工作区的工作不受影响。
 
@@ -73,7 +73,7 @@ end
 |---|---|
 | 浏览器 | `on_mount {HelmsmanWeb.UserAuth, :require_workspace}`：从会话取 user，按 `:slug` 取 workspace 与 membership，actor = 该用户在本工作区的 human actor |
 | MCP | `HelmsmanWeb.Plugs.BearerAuth`：Token → user + workspace + role；actor 按 03 §4 解析 |
-| MCP（托管 Agent 运行中） | 同一个 Plug 识别 `hmr_` 令牌：运行仍是 `claimed` / `running` 才有效；user = Agent 所属用户，actor = 该 Agent（固定），`run` = 当前运行，`via: :run` |
+| MCP（托管 Agent 运行中） | 同一个 Plug 识别 `hmr_` 令牌：运行仍是 `claimed` / `running` / `cancelling` 才有效（进入终态即失效）；user = Agent 所属用户，actor = 该 Agent（固定），`run` = 当前运行，`via: :run` |
 | REST | 同 MCP，actor 规则见 03 §4 |
 | 守护进程 Channel | `HelmsmanWeb.DaemonSocket`：`hmd_` 令牌 → user + daemon；不构造工作区 Scope，领取到的每条运行再按运行所属工作区单独构造 |
 

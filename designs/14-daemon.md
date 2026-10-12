@@ -81,7 +81,7 @@
   agent: %{name, provider, model, effort, custom_args, env, extra_mcp_servers},
   prompt,                          # 服务端生成（13 §6）
   resume_session_id,               # 同一运行时上的上一次会话；可空
-  repo: %{clone_url, base_branch, branch, rescue_branches, git_token} | nil,   # 15 §2
+  repo: %{clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at} | nil,   # 15 §2
   mcp: %{url, token},              # https://<server>/mcp + hmr_ 令牌
   limits: %{timeout_ms, idle_timeout_ms}
 }

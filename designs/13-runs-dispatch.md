@@ -12,12 +12,12 @@
 | `squad_id` | 以小队 leader 身份运行时填写（16 §1）；决定提示词里用哪份小队说明、`delegate` 能派给谁 |
 | `lane` | `work`（做任务本身）\| `reply`（回应一条提及），见 §3 |
 | `status` | 见 §4 |
-| `triggers jsonb` | 触发原因列表：`[%{kind, by_actor_id, feedback_id, event_id, at}]`；合并后可能有多条（§3） |
+| `triggers jsonb` | 触发原因列表：`[%{kind, by_actor_id, initiator_user_id, causal_agent_ids, instructions, feedback_id, at}]`；每条记下自己的授权来源与因果链，合并后可能有多条（§3） |
 | `root_initiator_user_id` | 授权来源：这次运行最终是替谁干活。人引起的是这个人；托管 Agent 在运行中引起的，取引起它的那次运行的 `root_initiator_user_id`（不是 Agent 的所属用户）；延续类继承（§2.2）。领取时会重新校验 |
 | `causal_agent_ids bigint[]` | 触发链上经过的所有 Agent（含自己），用于防循环（§7）和自动合并的独立性判断（15 §4） |
-| `capabilities text[]` | 这次运行的 `hmr_` 令牌能做什么（§2.3） |
+| `capabilities text[]` | 这次运行的 `hmr_` 令牌能做什么（§2.3）；入队时按 Agent 配置与运行类型计算，领取时按当时的配置重算，合并时不合并 |
 | `priority smallint` | 取任务优先级（high 3 / medium 2 / low 1）；自动化运行为 1 |
-| `attempt` / `retry_of_id` | 第几次尝试 / 重试自哪条 |
+| `attempt` / `auto_retries` / `retry_of_id` | 第几次尝试 / 自上次人工重试以来的自动重试次数（§5 的上限按它算）/ 重试自哪条 |
 | `not_before` | 重试退避、自动化定时 |
 | `daemon_id` | 领取它的守护进程；之后只接受这个守护进程对它的上报 |
 | `session_id` | CLI 返回的会话 ID，同一运行时上的后续运行用来恢复会话（14 §4） |
@@ -29,7 +29,7 @@
 
 **一条运行只会被领取一次。** 领取后出了任何问题（租约过期、机器离线），这一条就以失败结束，需要的话另建一条新运行（§5）。所以旧守护进程迟到的上报只会撞上一个已结束的运行，直接被拒绝，不需要额外的版本号。
 
-`run_events`：`run_id`、`seq`、`type`（守护进程上报的归一化事件，取值以 `HelmsmanProtocol.Event.types/0` 为准：`text` `thinking` `tool_call` `tool_result` `usage` `session` `result` `error` `status`，14 §4）、`data jsonb`、`at`。主键 `(run_id, seq)`，守护进程重发不会重复。保留 30 天（按月分区整块删除），`runs` 本身永久保留。
+`run_events`：`run_id`、`seq`、`type`（守护进程上报的归一化事件，取值以 `HelmsmanProtocol.Event.types/0` 为准：`text` `thinking` `tool_call` `tool_result` `usage` `session` `result` `error` `status`，14 §4）、`data jsonb`、`at`。主键 `(run_id, seq)`，守护进程重发不会重复。保留到运行结束后 30 天，由每天的清理任务按运行整块删除（`runs.events_pruned_at` 记下已清理）；不分区——PostgreSQL 要求分区表的主键含分区键，而去重必须按 `(run_id, seq)`。`runs` 本身永久保留（`add-run-lifecycle` 决策 1、17）。
 
 ## 2. 触发规则
 
@@ -73,7 +73,9 @@
   - 托管 Agent 在运行中引起的新发起（@提及、委派、在运行里建任务并指派）：**引起它的那次运行的** `root_initiator_user_id`，而不是该 Agent 的所属用户。否则 bob 指派了 alice 的 Agent A，A 再 @alice 的 `owner_only` Agent C，bob 就借道触发了 C。这条只适用于运行能力允许的触发（`write_task`、`delegate`、`create_tasks`，§2.3）；运行令牌调 `run_agent` 一律 `forbidden`，不存在「运行里手动触发」；
   - 延续：继承（§2.1）。
 - 新发起时按这个用户校验能否触发目标：Agent 按 12 §2.1，小队按 16 §1.1。
-- 领取时重新校验：这个用户仍是工作区成员（member 以上）、仍有权触发该 Agent、Agent 未归档。任何一条不成立 → 运行取消，原因 `unauthorized`。以小队 leader 身份的运行只校验 leader；成员在被委派时各自校验（16 §1.2）。
+- 领取时重新校验：这个用户仍是工作区成员（member 以上）、仍有权触发该 Agent、Agent 未归档。合并过的运行逐条复核触发的授权来源，丢弃失效的；最早的那条被丢弃时改用剩下最早的一条的授权来源与因果链；全部失效 → 运行取消，原因 `unauthorized`。以小队 leader 身份的运行只校验 leader；成员在被委派时各自校验（16 §1.2）。
+- 授权来源用户被移出（或退出）工作区时，在同一事务里停止以他为授权来源的全部运行，不论 Agent 属于谁、是否还合并了别人的触发：排队中的取消、已领取或运行中的转为 `cancelling` 走正常停止流程，原因 `unauthorized`，不自动重试；降为 viewer 不在此列（`add-run-lifecycle` 决策 26）。
+- **授权记录**（`task_grants`）：执行方被设为托管 Agent、且授权来源有权触发它时，记下「任务 × Agent」的授权来源与因果链——不论是否勾选了「暂不开始」。延续类触发从这里继承授权；执行方变化时该任务原有的指派授权全部作废，无权的指派不留记录（`add-run-dispatch` 决策 6）。
 
 ### 2.3 运行的能力范围
 
@@ -98,7 +100,8 @@
 
 两条 lane 分开排队：`work` 是做任务本身，`reply` 是回应提及。这样被依赖阻塞的指派不会把一条提及也拖住，反过来提及也不会把被阻塞的指派提前放出来。
 
-- 同一个 `(task, agent, lane, squad_id)` 已有 `deferred` / `queued` 的运行时，新的触发**并进去**（追加到 `triggers`），不新建行。部分唯一索引兜底：`UNIQUE (task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`。
+- 同一个 `(task, agent, lane, squad_id)` 已有 `deferred` / `queued` 的运行时，新的触发**并进去**（追加到 `triggers`），不新建行。部分唯一索引兜底：`UNIQUE (task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`（`squad_id` 随 `add-squads` 加入）。
+- 合并时：运行的 `root_initiator_user_id` 保持最早一条触发的；`causal_agent_ids` 取各触发链的并集（只会让防循环与自动合并的独立性判断更保守）；`priority` 取较高者；能力不合并（§1）。防循环只检查新触发自己的链。
 - 重试同样走合并：已有排队的就把「重试」追加进去，没有才新建（`retry_of_id` 唯一，防止同一条失败被重试两次）。
 - 合并时状态取更「急」的：`deferred` 的行并入一个立即可跑的触发后变为 `queued`（例如被阻塞的指派又收到「手动运行」）。
 - **同一任务同一时刻最多一个运行在执行**（不论哪个 Agent、哪条 lane）：它们共用一个代码分支（15 §2），并发会互相踩。不同任务之间完全并行。
@@ -166,12 +169,15 @@ SELECT r.* FROM runs r
 
 - 通过 → `claimed → running`，回复继续；
 - 不通过（这几分钟里任务被撤销、执行方被换等）→ 运行 `failed(obsolete)`，回复放弃，守护进程不启动 CLI。
+- 复核读到的成员、Agent、配置、任务、运行时行都在这个事务里按 01 §4 的顺序加锁，与修改它们的写入串行；领取时同样复核，但只用 try / `SKIP LOCKED`，正被修改的候选留在队列里（`add-run-lifecycle` 决策 24）。
+- 回复丢失后守护进程会重发 `starting`：服务端按 `started_at` 返回与第一次相同的决定，不重复副作用（`add-run-lifecycle` 决策 23）。
 
 ### 4.3 租约与心跳
 
 - `claimed` 超过 10 分钟没有 `starting` → `failed(lease_expired)`，令牌吊销；原运行的触发并入一条新的 `queued` 运行（不计入重试次数）。
 - `running` / `cancelling` 期间守护进程每 30 秒上报一次心跳；运行时离线超过宽限期（12 §3.4）→ `failed(runtime_offline)` 或 `cancelled`。
-- 守护进程重启后在 `join` 里上报自己认为仍在跑的运行：服务端对不上的（已结束、不是它领的）让它立即终止。
+- 守护进程重启后在 `join` 里上报自己认为仍在跑的运行：服务端对不上的（已结束、不是它领的）让它立即终止；反过来，服务端认为它在跑、它却没有列出的 → `failed(daemon_restart)`（`cancelling` 的 → `cancelled`）。心跳同样对账，但只收回领取超过 60 秒的（心跳可能在领取回复到达前就已组好）。上报中仍在 `cancelling` 的运行再推一次 `cancel`。
+- 领取后被停止（`cancelling`）的运行，`starting` 时直接回复放弃并记为 `cancelled`。
 - 这些检查由 Oban 定时任务做（每分钟一次）。
 
 ### 4.4 任务侧的副作用
@@ -205,11 +211,11 @@ SELECT r.* FROM runs r
 | `obsolete` `unauthorized` | 校验不通过（§3、§2.2） | 否 |
 | `cli_error` / `unknown` | 其他 | 否 |
 
-重试按 §3 合并进排队中的运行，`attempt + 1`；能恢复会话就恢复。人工重试（界面按钮）不受次数限制。
+自动重试在运行结束提交之后由后台任务入队（与 Agent 改绑、运行时禁用串行；Agent 不可用、未绑定或运行时已禁用时不重试，`add-run-lifecycle` 决策 25）。重试按 §3 合并进排队中的运行，`attempt + 1`；沿用原运行的授权来源与触发（领取时复核），排到 Agent 当前绑定的运行时；能恢复会话就恢复。「最多共 N 次」按 `auto_retries` 计；`push_conflict` / `push_failed` 上限 2。人工重试（界面按钮）不受次数限制（`auto_retries` 归零）；同一条运行的重试已结束后不能再对它重试（`retry_of_id` 唯一）。
 
 ## 6. 提示词
 
-提示词由**服务端**生成（守护进程只负责传给 CLI），保证同一版本的服务端行为一致。提示词用**英文**，与 MCP 工具描述、错误文本一致；Agent 的 `instructions` 和 Feedback 原文照原样放入，不翻译。下面的示例为了便于阅读写成中文。结构：
+提示词由**服务端**生成（守护进程只负责传给 CLI），保证同一版本的服务端行为一致。英文模板的定稿见 `add-run-lifecycle` 决策 10。提示词用**英文**，与 MCP 工具描述、错误文本一致；Agent 的 `instructions` 和 Feedback 原文照原样放入，不翻译。下面的示例为了便于阅读写成中文。结构：
 
 ```
 <Agent 的 instructions>
@@ -260,6 +266,7 @@ SELECT r.* FROM runs r
 
 - **停止**：界面按钮、MCP / REST `cancel_run`。`queued` / `deferred` 直接 → `cancelled`；`claimed` / `running` → `cancelling`，通知守护进程中断 CLI（14 §6）。守护进程把已有改动提交并推送后上报，运行 → `cancelled`。守护进程不在线时，宽限期后直接 → `cancelled`。
 - 改执行方、改任务状态**不会**停止正在跑的运行；界面在这些操作旁边提示可以手动停止。
+- 自动停止只发生在：Agent 被停用 / 归档、Agent 所属用户被移出工作区、运行的授权来源用户被移出工作区（§2.2）。
 - **插话**：人在任务上写 Feedback 时，如果有 Agent 正在跑，输入框下方出现「同时发给正在运行的 keel/dev」（缺省勾选）。
   - 这条 Feedback 照常记在任务上，并且照常按 §2 产生一条排队的触发（作为兜底），触发上标记 `steer_pending`；
   - CLI 支持运行中追加输入（Claude Code、Codex）→ 通过守护进程送进当前会话；守护进程确认送达后回执，服务端从排队的运行里**移除**这条触发（没有别的触发了就取消那条排队运行）；

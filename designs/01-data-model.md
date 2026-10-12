@@ -63,14 +63,15 @@ erDiagram
 
 | 表 | 列 | 约束 / 索引 |
 |---|---|---|
-| `agent_profiles` | `workspace_id`、`actor_id`、`mode`、`provider`、`runtime_id`、`model`、`effort`、`instructions`、`description`、`access`、`access_member_ids bigint[]`、`capabilities text[]`、`max_concurrency`、`timeout_minutes`、`idle_timeout_minutes`、`custom_args text[]`、`env`（加密）、`extra_mcp_servers`（加密）、`wake_on_requested`、`archived_at`、时间戳 | 唯一 `actor_id`；详见 12 §2 |
-| `daemons` | `user_id`、`machine_id`、`name`、`os`、`arch`、`version`、`token_hash`、`max_concurrency`、`last_seen_at`、`revoked_at`、时间戳 | 唯一 `(user_id, machine_id)`、`token_hash`；不属于某个工作区 |
+| `agent_profiles` | 只有托管 Agent 有这一行。`workspace_id`、`actor_id`、`provider`、`runtime_id`、`model`、`effort`、`instructions`、`description`、`access`、`access_member_ids bigint[]`、`capabilities text[]`、`max_concurrency`、`timeout_minutes`、`idle_timeout_minutes`、`custom_args text[]`、`env`（加密）、`extra_mcp_servers`（加密）、`wake_on_requested`、`archived_at`、时间戳 | 唯一 `actor_id`；详见 12 §2 |
+| `daemons` | `user_id`、`machine_id`、`name`、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash`、`previous_token_expires_at`、`max_concurrency`、`last_seen_at`、`revoked_at`、时间戳 | 唯一 `(user_id, machine_id)`、`token_hash`、部分唯一 `previous_token_hash`；不属于某个工作区 |
 | `daemon_workspaces` | `daemon_id`、`workspace_id` | 主键 `(daemon_id, workspace_id)`；登录时勾选的工作区（12 §3.1），领取只能领这些工作区的运行 |
-| `device_codes` | `device_code_hash`、`user_code`、`machine_info jsonb`、`user_id`（确认后填）、`workspace_ids bigint[]`、`status`（pending \| approved \| denied \| used）、`expires_at` | 设备码登录（12 §3.1），10 分钟过期；`user_code` 在未过期的记录中唯一 |
-| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`status`、`disabled_at`、时间戳 | 唯一 `(workspace_id, daemon_id, provider)` |
-| `runs` | 见 13 §1 | 部分唯一 `(task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`；唯一 `retry_of_id`；索引 `(runtime_id, status, priority DESC, inserted_at, id)`、`(task_id, inserted_at DESC)`、`(agent_id, status)`、`(daemon_id, status)` |
-| `run_tokens` | `run_id`、`token_hash`、`expires_at`、`revoked_at` | `token_hash` 唯一；运行进入终态时吊销 |
-| `run_events` | `run_id`、`seq`、`type`、`data jsonb`、`at` | 主键 `(run_id, seq)`；按月分区，便于整块清理 |
+| `device_codes` | `device_code_hash`、`user_code`、`machine jsonb`、`protocol_version`、`user_id`（确认后填）、`workspace_ids bigint[]`、`status`（pending \| approved \| denied \| used \| expired）、`interval`、`last_polled_at`、`expires_at` | 设备码登录（12 §3.1），10 分钟过期；部分唯一 `user_code WHERE status IN (pending, approved)`（发码前先把过期的置 `expired`） |
+| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models text[]`、`efforts text[]`、`status`、`unavailable_reason`、`disabled_at`、时间戳 | 唯一 `(workspace_id, daemon_id, provider)` |
+| `runs` | 见 13 §1 | 部分唯一 `(task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`；唯一 `retry_of_id`；索引 `(runtime_id, status, priority DESC, not_before, inserted_at, id)`、`(task_id, inserted_at DESC)`、`(agent_id, status)`、`(daemon_id, status)` |
+| `run_tokens` | `run_id`、`token_hash`、`expires_at`、`revoked_at` | `run_id`、`token_hash` 唯一；运行进入终态时吊销 |
+| `task_grants` | `workspace_id`、`task_id`、`agent_id`、`kind`（assign；小队加 delegate）、`root_initiator_user_id`、`causal_agent_ids`、`granted_by_id`、`inserted_at` | 唯一 `(task_id, agent_id, kind)`；延续触发继承授权的来源（13 §2.2）；执行方变化时作废 |
+| `run_events` | `run_id`、`seq`、`type`、`data jsonb`、`at` | 主键 `(run_id, seq)`；不分区，运行结束 30 天后按运行整块删除（13 §1） |
 | `steer_receipts` | `feedback_id`、`run_id`、`acked_at` | 主键 `(feedback_id, run_id)`（13 §8） |
 | `squads` / `squad_members` | 见 16 §1.1 | `squads.actor_id` 唯一；`squad_members` 主键 `(squad_id, actor_id)` |
 | `autopilots` / `autopilot_runs` | 见 16 §2.1 | `autopilot_runs` 部分唯一 `(autopilot_id) WHERE status = 'started'`、`(autopilot_id) WHERE status = 'pending'`；唯一 `(autopilot_id, delivery_id)` |
@@ -144,7 +145,7 @@ erDiagram
 | 领取运行（13 §4.1） | 先 `FOR UPDATE SKIP LOCKED` 锁运行行，之后对其余锁**只用 try**：工作区维护锁（`pg_try_advisory_xact_lock_shared`，导入期间拿不到 → 不派发该工作区）、任务锁 `k_task`、Agent 配置行 `FOR UPDATE SKIP LOCKED`。拿不到就跳过这条，不等待，所以不会和任务写操作形成等待环 |
 | 运行状态变化（13 §4.4） | 先在**只锁运行行**的事务里做条件更新（`WHERE daemon_id = $d AND status = $expected`），提交；任务侧的副作用（NEW → IN_PROGRESS、兜底回帖等）再在之后的事务里按任务写的锁顺序执行，按 `source_run_id` 幂等 |
 
-完整顺序：**维护锁 → 成员关系行 → 图锁 → 项目行 → 任务行（按主键升序）→ 运行行**。成员关系行：写事务复核授权时对请求方的成员行加 `FOR SHARE`，与改角色、移除成员（对相关成员行按 id 升序 `FOR UPDATE`）串行化（`add-workspaces-actors` 决策 6）。领取是唯一先锁运行行、再碰其他锁的路径，所以它对其余锁只用 `try`；运行状态变化只锁运行行。
+完整顺序：**维护锁 → 成员关系行 → 图锁 → actor 行 → Agent 配置行 → 守护进程行 → `daemon_workspaces` → 项目行 → 任务行（按主键升序）→ 运行时行 → 运行行**；设备码登录先锁设备码行再进入这个顺序（`add-agent-profiles-runtimes` 决策 19）。多个工作区的维护锁、成员行按工作区 id 升序；同一工作区里锁多个成员行时一律按成员行 id 升序（`Members.lock_members/2` 的顺序），不按 `user_id`。成员关系行：写事务复核授权时对请求方的成员行加 `FOR SHARE`，与改角色、移除成员（对相关成员行按 id 升序 `FOR UPDATE`）串行化（`add-workspaces-actors` 决策 6）；守护进程的注册同样在成员行 `FOR SHARE` 之后才锁守护进程行，所以与移除成员串行、不成环。领取是唯一先锁运行行、再碰其他锁的路径，所以它对其余锁只用 `try`；运行状态变化只锁运行行。
 
 **字段编辑的版本检查**不用 Ecto 的 `optimistic_lock`，而是在行锁里自己比：
 

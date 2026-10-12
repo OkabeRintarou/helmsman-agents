@@ -282,8 +282,8 @@ helmsman-agents/
 
 | 问题 | 归属 |
 |---|---|
-| 多条触发并入同一排队运行时，授权来源、`causal_agent_ids`、能力怎么合并；指派不进历史，`start: false` 之后的延续触发无处继承授权 | 18 `add-run-dispatch` |
-| `run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建 | 19 `add-run-lifecycle` |
+| ~~多条触发并入同一排队运行时，授权来源、`causal_agent_ids`、能力怎么合并；指派不进历史，`start: false` 之后的延续触发无处继承授权~~ 已解决：每条触发记自己的授权来源，合并保留最早的、领取时逐条复核；因果链取并集；能力领取时重算；授权记在 `task_grants`（13 §2.2–§3） | 18 `add-run-dispatch` |
+| ~~`run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建~~ 已解决：不分区，按运行整块清理（13 §1） | 19 `add-run-lifecycle` |
 | 插话的兜底触发在 13 §2 里没有对应的触发类型 | 28 `add-run-steering` |
 | 运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas` | 24 `add-daemon-git-workspace` |
 

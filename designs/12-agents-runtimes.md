@@ -17,9 +17,10 @@
 
 ## 2. Agent 配置（`agent_profiles`）
 
+只有托管 Agent 有配置行；没有配置行的 agent actor 就是外接 Agent（`identify` 创建，03 §4），只是一个可署名的身份。
+
 | 字段 | 说明 |
 |---|---|
-| `mode` | `managed` \| `external`。external 没有下面的执行配置，只是一个可署名的身份 |
 | `provider` | `claude` \| `codex` \| `copilot` \| `cursor`（14 §4） |
 | `runtime_id` | 绑定的运行时。运行绑定这个运行时，离线时排队等待，**不会**换到别的机器上跑（会话恢复、本地环境都依赖同一台机器） |
 | `model` / `effort` | 可空 = 用 CLI 的默认值；可选值由运行时上报（14 §2） |
@@ -27,11 +28,11 @@
 | `description` | 只用于展示，以及小队 leader 选择成员时参考（16） |
 | `access` | 谁能触发它：`owner_only`（缺省）\| `workspace` \| `members`（+ `access_member_ids`） |
 | `max_concurrency` | 这个 Agent 同时最多几个运行，缺省 2 |
-| `timeout_minutes` / `idle_timeout_minutes` | 单次运行总时长上限（缺省 120）/ 无输出多久判定卡死（缺省 20） |
+| `timeout_minutes` / `idle_timeout_minutes` | 单次运行总时长上限（缺省 120，最大 1200：`hmr_` 最长 24 小时，要给准备与收尾留余量）/ 无输出多久判定卡死（缺省 20，最大 240） |
 | `custom_args` | 追加给 CLI 的参数；协议相关的参数（输出格式、权限模式、`--resume` 等）会被剔除（14 §4） |
 | `env` | 自定义环境变量。**加密存储**（`cloak_ecto`，密钥来自 `HELMSMAN_VAULT_KEY`），保存后界面上只显示变量名；不能覆盖 `HELMSMAN_*` |
 | `extra_mcp_servers` | 额外的 MCP 服务器（JSON），与 Helmsman 自己的 MCP 一起注入；同样加密 |
-| `wake_on_requested` | 自己提出的任务有进展时是否被唤醒（13 §2.1 的「回调提出方」），缺省 true |
+| `wake_on_requested` | 自己提出的任务有进展时是否被唤醒（13 §2.1 的「回调提出方」），缺省 true；随 `add-continuation-triggers` 加列 |
 | `capabilities` | 运行时额外授予的能力，目前只有 `create_tasks`（13 §2.3）；缺省空，小队 leader 自动具备 |
 | `archived_at` | 归档后不能再被触发，未结束的运行全部取消；历史保留 |
 
@@ -66,8 +67,8 @@
 
 | 表 | 列 |
 |---|---|
-| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改）、`os`、`arch`、`version`、`token_hash`、`max_concurrency`（缺省 4）、`last_seen_at`、`revoked_at` |
-| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models jsonb`、`status`（`online` \| `offline`）、`disabled_at` |
+| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改；重新登录不改名）、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash` / `previous_token_expires_at`（轮换后旧令牌的 24 小时宽限）、`max_concurrency`（守护进程上报，缺省 4）、`last_seen_at`、`revoked_at` |
+| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models text[]`、`efforts text[]`、`status`（`online` \| `offline`）、`unavailable_reason`（CLI 找到了但不可用的原因）、`disabled_at` |
 
 唯一键 `(workspace_id, daemon_id, provider)`。
 
@@ -79,7 +80,7 @@
 
 ### 3.4 在线状态
 
-- 在线 = 守护进程的 Channel 连接在 `Phoenix.Presence` 里。断开后给 2 分钟宽限期（网络抖动、重启）再标记离线，并广播。
+- 在线 = 最近 2 分钟内收到过守护进程的 `join`、`sync` 或心跳（每 30 秒一次）；超过 2 分钟没有上报、或已被吊销，由每分钟一次的定时任务把它的运行时标记离线并广播。断线重连、重启都落在这 2 分钟宽限期里；心跳停了但连接没断（守护进程卡死）同样判离线。不用 Presence：判定不依赖连接进程在哪个节点（`add-agent-profiles-runtimes` 决策 12）。
 - 离线时：排队中的运行继续等；进行中的运行在宽限期后判定失败（`runtime_offline`），按 13 §5 重试。
 - 吊销守护进程（设置页或 `helmsman logout`）：令牌失效、连接被踢掉、它的运行时全部离线。
 
