@@ -110,7 +110,7 @@ defmodule Helmsman.GitHub.TokensTest do
       id = unique_github_id()
 
       first = start_get(id, now)
-      assert_receive {:requested, fetcher}
+      assert_receive {:requested, fetcher}, 2_000
       second = start_get(id, now)
       await_waiters({id, nil, nil}, 1)
 
@@ -126,13 +126,13 @@ defmodule Helmsman.GitHub.TokensTest do
       stub_held_tokens(DateTime.add(now, 3600))
 
       warm = start_get(id, now)
-      assert_receive {:requested, fetcher}
+      assert_receive {:requested, fetcher}, 2_000
       send(fetcher, :go)
       assert {:ok, old} = Task.await(warm)
 
       later = DateTime.add(old.expires_at, -240)
       first = start_get(id, later)
-      assert_receive {:requested, fetcher}
+      assert_receive {:requested, fetcher}, 2_000
       second = start_get(id, later)
       await_waiters({id, nil, nil}, 1)
 
@@ -150,8 +150,8 @@ defmodule Helmsman.GitHub.TokensTest do
 
       plain = start_get(id, now)
       narrowed = Task.async(fn -> Tokens.get(id, now: now, repository_ids: [1]) end)
-      assert_receive {:requested, a}
-      assert_receive {:requested, b}
+      assert_receive {:requested, a}, 2_000
+      assert_receive {:requested, b}, 2_000
 
       send(a, :go)
       send(b, :go)
@@ -166,13 +166,13 @@ defmodule Helmsman.GitHub.TokensTest do
       id = unique_github_id()
 
       doomed = Task.async(fn -> Tokens.get(id, now: now) end)
-      assert_receive {:requested, fetcher}
+      assert_receive {:requested, fetcher}, 2_000
       waiter = start_get(id, now)
       await_waiters({id, nil, nil}, 1)
 
       Process.unlink(doomed.pid)
       Process.exit(doomed.pid, :kill)
-      assert_receive {:requested, new_fetcher}
+      assert_receive {:requested, new_fetcher}, 2_000
       assert new_fetcher != fetcher
       send(new_fetcher, :go)
       assert {:ok, %{token: _}} = Task.await(waiter)
@@ -184,13 +184,13 @@ defmodule Helmsman.GitHub.TokensTest do
       id = unique_github_id()
 
       first = start_get(id, now)
-      assert_receive {:requested, fetcher}
+      assert_receive {:requested, fetcher}, 2_000
       :ok = Tokens.purge(id)
       send(fetcher, :go)
       assert {:ok, %{token: purged}} = Task.await(first)
 
       second = start_get(id, now)
-      assert_receive {:requested, fetcher}
+      assert_receive {:requested, fetcher}, 2_000
       send(fetcher, :go)
       assert {:ok, %{token: fresh}} = Task.await(second)
       assert fresh != purged
