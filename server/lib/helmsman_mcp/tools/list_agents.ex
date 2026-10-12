@@ -6,7 +6,8 @@ defmodule HelmsmanMCP.Tools.ListAgents do
     description:
       "List the agents of this workspace: managed (started by Helmsman on a runtime, see " <>
         "run_agent) or external, owner, CLI, description, whether disabled or archived, " <>
-        "whether running now (busy) and how many runs are queued.",
+        "whether running now (busy), how many runs are queued and whether a managed " <>
+        "agent is woken when a task it created makes progress (wake_on_requested).",
     schema: %{},
     mode: :read
 
@@ -29,7 +30,8 @@ defmodule HelmsmanMCP.Tools.ListAgents do
       disabled: agent.disabled,
       archived: agent.archived,
       busy: agent.active_runs > 0,
-      queued: agent.queued_runs
+      queued: agent.queued_runs,
+      wake_on_requested: agent.wake_on_requested
     }
   end
 end

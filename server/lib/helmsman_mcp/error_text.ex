@@ -75,6 +75,17 @@ defmodule HelmsmanMCP.ErrorText do
     {:ok, "#{you} are the assignee. Pass tests={passed: true, ...} or let the requester verify."}
   end
 
+  def format(:busy, %Context{args: args}) do
+    ident =
+      arg(args, "task_id") ||
+        case arg(args, "feedback_id") do
+          id when is_binary(id) -> id |> String.split("#") |> hd()
+          nil -> "the task"
+        end
+
+    {:ok, "Too many concurrent changes to #{ident}; try again."}
+  end
+
   def format(:stale, %Context{args: args}) do
     {:ok,
      "#{arg(args, "task_id") || "The task"} was changed by someone else since you read it. " <>

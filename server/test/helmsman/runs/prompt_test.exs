@@ -300,3 +300,150 @@ defmodule Helmsman.Runs.PromptTest do
     end
   end
 end
+
+defmodule Helmsman.Runs.ContinuationPromptTest do
+  # add-continuation-triggers 1.6: the trigger lines of decision 9.
+  use Helmsman.DataCase, async: true
+
+  import Helmsman.ProjectsFixtures
+  import Helmsman.RunsFixtures
+
+  alias Helmsman.Actors.Actor
+  alias Helmsman.Feedback
+  alias Helmsman.Runs.Spec
+
+  setup do
+    ctx = dispatch_fixture()
+    task = task_fixture(ctx.alice_scope, ctx.project.key, %{title: "Add login"})
+    alice = human_actor(ctx.workspace, ctx.alice)
+
+    system =
+      Repo.one!(
+        from(a in Actor, where: a.workspace_id == ^ctx.workspace.id and a.kind == :system)
+      )
+
+    Map.merge(ctx, %{task: task, alice_actor: alice, system: system})
+  end
+
+  defp feedback(ctx, content, kind \\ "comment") do
+    {:ok, entry} = Feedback.add(ctx.alice_scope, ctx.task.ident, %{kind: kind, content: content})
+    entry
+  end
+
+  defp t(ctx, kind, extra) do
+    Map.merge(trigger(kind, ctx.workspace, ctx.alice, ctx.agent), extra)
+  end
+
+  # The lines after "Why you were started:".
+  defp why(ctx, triggers) do
+    run = run_fixture(ctx.agent, %{status: :claimed, task_id: ctx.task.id, triggers: triggers})
+    {:ok, spec} = Spec.build(run, "hmr_" <> String.duplicate("a", 52), "https://hm.test")
+    [_, rest] = String.split(spec.prompt, "Why you were started:\n")
+    [why | _] = String.split(rest, "\nWorking directory:")
+    why
+  end
+
+  test "a send-back with a review (scenario)", ctx do
+    review = feedback(ctx, "缺少测试", "review")
+    id = "#{ctx.task.ident}##{review.seq}"
+
+    assert why(ctx, [t(ctx, "reopen", %{"from" => "done", "feedback_id" => review.id})]) ==
+             "- #{ctx.alice_actor.name} sent #{ctx.task.ident} back to in progress.\n" <>
+               "Review #{id}:\n> 缺少测试"
+  end
+
+  test "reopened after verification, without a review", ctx do
+    assert why(ctx, [t(ctx, "reopen", %{"from" => "verified"})]) ==
+             "- #{ctx.alice_actor.name} reopened #{ctx.task.ident} after it was verified."
+  end
+
+  test "CI failed (scenario) and merge conflict, by the system", ctx do
+    note = feedback(ctx, "test (ubuntu) failed\nsee logs", "review")
+    ident = ctx.task.ident
+    by_system = %{"by_actor_id" => ctx.system.id, "feedback_id" => note.id, "from" => "verified"}
+
+    assert why(ctx, [t(ctx, "reopen", Map.put(by_system, "reason", "ci_failed"))]) ==
+             "- CI failed on the pull request for #{ident}, so Helmsman reopened it. " <>
+               "Details in #{ident}##{note.seq}:\n> test (ubuntu) failed\n> see logs"
+
+    assert why(ctx, [t(ctx, "reopen", Map.put(by_system, "reason", "merge_conflict"))]) ==
+             "- The pull request for #{ident} has merge conflicts with its base branch, so " <>
+               "Helmsman reopened it. Details in #{ident}##{note.seq}:\n> test (ubuntu) failed\n> see logs"
+  end
+
+  test "the system identity is written Helmsman", ctx do
+    assert why(ctx, [t(ctx, "reopen", %{"by_actor_id" => ctx.system.id, "from" => "done"})]) ==
+             "- Helmsman sent #{ctx.task.ident} back to in progress."
+  end
+
+  test "resubmit", ctx do
+    assert why(ctx, [t(ctx, "resubmit", %{})]) ==
+             "- #{ctx.alice_actor.name} changed the requirements of #{ctx.task.ident} and " <>
+               "resubmitted it. Read them again with get_task before you continue."
+  end
+
+  test "answer", ctx do
+    q = feedback(ctx, "Which DB?", "question")
+    a = feedback(ctx, "Postgres", "answer")
+    ident = ctx.task.ident
+
+    assert why(ctx, [t(ctx, "answer", %{"question_id" => q.id, "feedback_id" => a.id})]) ==
+             "- #{ctx.alice_actor.name} answered your question #{ident}##{q.seq} in " <>
+               "#{ident}##{a.seq}:\n> Postgres"
+  end
+
+  test "requested: done, rejected with and without a reason, question", ctx do
+    ident = ctx.task.ident
+    name = ctx.alice_actor.name
+
+    assert why(ctx, [t(ctx, "requested", %{"event" => "done"})]) ==
+             "- #{ident}, which you created, is done. Review the work, then verify it " <>
+               "(transition_task to \"verified\") or send it back (transition_task to " <>
+               "\"in_progress\") with a review."
+
+    revise =
+      "Revise the requirements with update_task and resubmit it (transition_task to " <>
+        "\"new\"), or leave it rejected."
+
+    assert why(ctx, [t(ctx, "requested", %{"event" => "rejected"})]) ==
+             "- #{name} rejected #{ident}, which you created.\n" <> revise
+
+    reason = feedback(ctx, "Out of scope")
+
+    assert why(ctx, [t(ctx, "requested", %{"event" => "rejected", "feedback_id" => reason.id})]) ==
+             "- #{name} rejected #{ident}, which you created.\n" <>
+               "Reason #{ident}##{reason.seq}:\n> Out of scope\n" <> revise
+
+    q = feedback(ctx, "Which DB?", "question")
+
+    assert why(ctx, [t(ctx, "requested", %{"event" => "question", "feedback_id" => q.id})]) ==
+             "- #{name} asked a question on #{ident}, which you created, in #{ident}##{q.seq}:\n" <>
+               "> Which DB?\nAnswer it with add_feedback (kind \"answer\")."
+  end
+
+  test "mention (scenario: a reply, not a takeover)", ctx do
+    f = feedback(ctx, "@keel/dev please look")
+    ident = ctx.task.ident
+
+    assert why(ctx, [t(ctx, "mention", %{"feedback_id" => f.id})]) ==
+             "- #{ctx.alice_actor.name} mentioned you in #{ident}##{f.seq}:\n" <>
+               "> @keel/dev please look\n" <>
+               "Reply with add_feedback. You were asked to reply, not to take over #{ident}."
+  end
+
+  test "a revised record is quoted in its current version", ctx do
+    f = feedback(ctx, "first")
+    {:ok, revised} = Feedback.revise(ctx.alice_scope, Feedback.view(f).id, %{content: "second"})
+
+    assert why(ctx, [t(ctx, "mention", %{"feedback_id" => f.id})]) =~
+             "in #{ctx.task.ident}##{revised.seq}:\n> second\n"
+  end
+
+  test "quotes over 8 KB are truncated", ctx do
+    f = feedback(ctx, String.duplicate("é", 5000))
+    lines = why(ctx, [t(ctx, "mention", %{"feedback_id" => f.id})]) |> String.split("\n")
+    quoted = Enum.at(lines, 1)
+    assert byte_size(quoted) == 2 + 8192
+    assert Enum.at(lines, 2) == "> …(truncated; read the full text with get_task)"
+  end
+end

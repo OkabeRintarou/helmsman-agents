@@ -40,12 +40,17 @@ defmodule Helmsman.Feedback.Entry do
     belongs_to :source_run, Helmsman.Runs.Run
     # Written by the system from a run's last output (designs/13 §7).
     field :fallback, :boolean, default: false
+    # The triggers the record caused (`add-continuation-triggers` decision
+    # 10): `%{"agent_id", "trigger", "result", "reason", "run_id"}` each,
+    # written in the transaction that inserts the record, never changed.
+    field :dispatch, {:array, :map}, default: []
 
     # Filled in by `Helmsman.Feedback.load/2` for the external form.
     field :task_ident, :string, virtual: true
     field :mention_names, {:array, :string}, virtual: true, default: []
     field :supersedes_seq, :integer, virtual: true
     field :superseded_by_seq, :integer, virtual: true
+    field :dispatch_view, {:array, :map}, virtual: true, default: []
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end

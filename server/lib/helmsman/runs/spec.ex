@@ -18,6 +18,8 @@ defmodule Helmsman.Runs.Spec do
 
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents
+  alias Helmsman.Feedback.Entry
+  alias Helmsman.Feedback.Id, as: FeedbackId
   alias Helmsman.Repo
   alias Helmsman.Runs.{GitRepo, Prompt, Run}
   alias Helmsman.Tasks.Task
@@ -46,6 +48,7 @@ defmodule Helmsman.Runs.Spec do
         task: task,
         names: trigger_names(run),
         retried: retried(run),
+        feedback: quoted_feedback(run, task),
         resume?: not is_nil(resume_session_id),
         repo: repo
       }
@@ -134,9 +137,64 @@ defmodule Helmsman.Runs.Spec do
     end
   end
 
+  # The system identity is written `Helmsman` (`add-continuation-triggers`
+  # decision 9).
   defp trigger_names(run) do
     ids = run.triggers |> Enum.map(& &1["by_actor_id"]) |> Enum.reject(&is_nil/1) |> Enum.uniq()
-    Map.new(Repo.all(from(a in Actor, where: a.id in ^ids, select: {a.id, a.name})))
+
+    from(a in Actor, where: a.id in ^ids, select: {a.id, a.name, a.kind})
+    |> Repo.all()
+    |> Map.new(fn
+      {id, _name, :system} -> {id, "Helmsman"}
+      {id, name, _kind} -> {id, name}
+    end)
+  end
+
+  # The records the triggers quote or refer to, each as the current record
+  # of its revision chain.
+  defp quoted_feedback(_run, nil), do: %{}
+
+  defp quoted_feedback(run, %Task{} = task) do
+    ids =
+      run.triggers
+      |> Enum.flat_map(&[&1["feedback_id"], &1["question_id"]])
+      |> Enum.filter(&is_integer/1)
+      |> Enum.uniq()
+
+    ids
+    |> current_records(task.id)
+    |> Map.new(fn {id, %Entry{seq: seq, content: content}} ->
+      {id, %{id: FeedbackId.build(task.ident, seq), content: content}}
+    end)
+  end
+
+  # Follows `superseded_by_id` one level per query; chains are short.
+  defp current_records([], _task_id), do: %{}
+
+  defp current_records(ids, task_id) do
+    entries =
+      Map.new(
+        Repo.all(from(f in Entry, where: f.id in ^ids and f.task_id == ^task_id)),
+        &{&1.id, &1}
+      )
+
+    {done, next} =
+      Enum.reduce(ids, {%{}, %{}}, fn id, {done, next} ->
+        case entries[id] do
+          nil -> {done, next}
+          %Entry{superseded_by_id: nil} = entry -> {Map.put(done, id, entry), next}
+          %Entry{superseded_by_id: later} -> {done, Map.put(next, id, later)}
+        end
+      end)
+
+    later = current_records(next |> Map.values() |> Enum.uniq(), task_id)
+
+    Enum.reduce(next, done, fn {id, later_id}, acc ->
+      case later[later_id] do
+        nil -> acc
+        entry -> Map.put(acc, id, entry)
+      end
+    end)
   end
 
   defp retried(run) do

@@ -6,7 +6,7 @@ defmodule Helmsman.Agents.AgentProfile do
   alias Helmsman.Workspaces.Membership
 
   @type t :: %__MODULE__{}
-  @fields ~w(provider runtime_id model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args env extra_mcp_servers)a
+  @fields ~w(provider runtime_id model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args env extra_mcp_servers wake_on_requested)a
   @derive {Inspect, except: [:env, :extra_mcp_servers]}
   schema "agent_profiles" do
     belongs_to :workspace, Helmsman.Workspaces.Workspace
@@ -26,6 +26,7 @@ defmodule Helmsman.Agents.AgentProfile do
     field :custom_args, {:array, :string}, default: []
     field :env, Helmsman.Encrypted.Map, redact: true
     field :extra_mcp_servers, Helmsman.Encrypted.Map, redact: true
+    field :wake_on_requested, :boolean, default: true
     field :archived_at, :utc_datetime
     timestamps(type: :utc_datetime)
   end
@@ -64,9 +65,13 @@ defmodule Helmsman.Agents.AgentProfile do
   end
 
   defp validate_non_null(cs) do
-    Enum.reduce([:instructions, :description, :custom_args, :capabilities], cs, fn field, cs ->
-      if is_nil(get_field(cs, field)), do: add_error(cs, field, "must not be null"), else: cs
-    end)
+    Enum.reduce(
+      [:instructions, :description, :custom_args, :capabilities, :wake_on_requested],
+      cs,
+      fn field, cs ->
+        if is_nil(get_field(cs, field)), do: add_error(cs, field, "must not be null"), else: cs
+      end
+    )
   end
 
   defp normalize_optional(cs) do

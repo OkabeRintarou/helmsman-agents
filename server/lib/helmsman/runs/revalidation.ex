@@ -6,11 +6,9 @@ defmodule Helmsman.Runs.Revalidation do
 
   A run is obsolete when its agent is disabled or archived, its runtime is
   disabled or no longer the agent's, a `work` run's task is `cancelled` or
-  `verified`, or every trigger that says why it runs is an assignment
-  (`assign`, `reopen`, `resubmit`, `unblocked`) and the task's assignee is
-  no longer the agent. Triggers a person started on purpose (`manual`, a
-  manual `retry`) do not look at the assignee; automatic retry markers are
-  neutral.
+  `verified`, or it runs only because of its task's assignee
+  (`Helmsman.Runs.Triggers.assignee_bound?/1`) and the assignee is no
+  longer the agent.
 
   Each trigger with an authorization source (`initiator_user_id`) is
   checked again like `Helmsman.Agents.trigger_check/3`, on the locked
@@ -23,11 +21,9 @@ defmodule Helmsman.Runs.Revalidation do
   alias Helmsman.Agents
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.Runtime
-  alias Helmsman.Runs.Run
+  alias Helmsman.Runs.{Run, Triggers}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Membership
-
-  @assignment_kinds ~w(assign reopen resubmit unblocked)
 
   @type locked :: %{
           required(:members) => %{pos_integer() => Membership.role()},
@@ -99,13 +95,8 @@ defmodule Helmsman.Runs.Revalidation do
 
   defp reassigned?(_run, nil, _agent), do: false
 
-  defp reassigned?(run, %Task{assignee_id: assignee_id}, %Actor{id: agent_id}) do
-    kinds = run.triggers |> Enum.reject(&auto_retry?/1) |> Enum.map(& &1["kind"])
-    kinds != [] and Enum.all?(kinds, &(&1 in @assignment_kinds)) and assignee_id != agent_id
-  end
-
-  defp auto_retry?(%{"kind" => "retry", "auto" => true}), do: true
-  defp auto_retry?(_trigger), do: false
+  defp reassigned?(run, %Task{assignee_id: assignee_id}, %Actor{id: agent_id}),
+    do: assignee_id != agent_id and Triggers.assignee_bound?(run.triggers)
 
   defp authorization(run, locked) do
     sources = Enum.filter(run.triggers, &source?/1)

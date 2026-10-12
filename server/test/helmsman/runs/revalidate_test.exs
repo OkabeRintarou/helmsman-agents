@@ -126,6 +126,24 @@ defmodule Helmsman.Runs.RevalidateTest do
       assert Runs.revalidate(run([trigger("assign", @alice), manual_retry]), locked) == :ok
     end
 
+    test "makes a run of reopen only obsolete (add-continuation-triggers)", %{locked: locked} do
+      assert Runs.revalidate(run([trigger("reopen", @alice)]), locked) == {:obsolete, :reassigned}
+
+      bound = trigger("answer", @alice, %{"assignee_bound" => true})
+      marker = %{"kind" => "retry", "retry_of" => 3, "auto" => true, "by_actor_id" => nil}
+      assert Runs.revalidate(run([bound, marker]), locked) == {:obsolete, :reassigned}
+    end
+
+    test "requested, mention and an unbound answer do not look at the assignee",
+         %{locked: locked} do
+      assert Runs.revalidate(run([trigger("requested", @alice)]), locked) == :ok
+
+      assert Runs.revalidate(run([trigger("mention", @alice)], %{lane: :reply}), locked) == :ok
+
+      unbound = trigger("answer", @alice, %{"assignee_bound" => false})
+      assert Runs.revalidate(run([unbound]), locked) == :ok
+    end
+
     test "is ignored without a task" do
       assert Runs.revalidate(
                run([trigger("manual", @alice)], %{task_id: nil}),
@@ -209,6 +227,108 @@ defmodule Helmsman.Runs.RevalidateTest do
 
       assert Runs.revalidate(run([trigger("manual", @bob)]), locked) ==
                {:obsolete, :runtime_disabled}
+    end
+  end
+end
+
+defmodule Helmsman.Runs.RevalidateAnswerTest do
+  # add-continuation-triggers 1.6: an answer run continues the run the
+  # question was asked in; whether a change of assignee makes it obsolete
+  # when claimed follows that run's triggers (decision 8).
+  use Helmsman.DataCase, async: true
+
+  import Helmsman.ProjectsFixtures
+  import Helmsman.RunsFixtures
+
+  alias Helmsman.{Feedback, Runs, Tasks, Tx}
+  alias Helmsman.Runs.Run
+
+  setup do
+    ctx = dispatch_fixture(%{access: "workspace"})
+    {carol, carol_scope} = member_scope_fixture(ctx.workspace)
+    task = task_fixture(ctx.alice_scope, ctx.project.key, %{assignee: "keel/dev"})
+    cancel_queued(task)
+    Map.merge(ctx, %{carol: carol, carol_scope: carol_scope, task: task})
+  end
+
+  defp cancel_queued(task),
+    do:
+      Tx.run(fn ->
+        {:ok, Runs.cancel_pending(from(r in Run, where: r.task_id == ^task.id), :obsolete)}
+      end)
+
+  defp auto_retry, do: %{"kind" => "retry", "retry_of" => 1, "auto" => true, "by_actor_id" => nil}
+
+  # The agent asks in a run with `triggers`, alice answers, the run ends,
+  # then the task goes to carol (a person) and the daemon claims.
+  defp ask_answer_reassign_claim(ctx, triggers) do
+    run =
+      run_fixture(ctx.agent, %{
+        task_id: ctx.task.id,
+        status: :running,
+        capabilities: ["read", "write_task"],
+        triggers: triggers
+      })
+
+    {scope, _token} = run_scope_fixture(run)
+    {:ok, _q} = Feedback.add(scope, ctx.task.ident, %{kind: "question", content: "?"})
+    {:ok, answer} = Feedback.add(ctx.alice_scope, ctx.task.ident, %{kind: "answer", content: "!"})
+    [%{trigger: "answer", result: "queued", run_id: id}] = Feedback.view(answer).dispatch
+
+    Repo.update_all(from(r in Run, where: r.id == ^run.id),
+      set: [status: :cancelled, finished_at: DateTime.utc_now()]
+    )
+
+    {:ok, _} =
+      Tasks.update(ctx.alice_scope, ctx.task.ident, %{assignee: ctx.carol_scope.actor.name})
+
+    {:ok, specs} = Runs.claim(daemon_ctx(daemon_of(ctx.agent)), "http://localhost")
+    {Repo.get!(Run, id), specs}
+  end
+
+  test "[assign, auto retry]: the answer run is obsolete after a reassignment (scenario)", ctx do
+    triggers = [trigger("assign", ctx.workspace, ctx.alice, ctx.agent), auto_retry()]
+
+    assert {%Run{status: :cancelled, failure_reason: :obsolete}, []} =
+             ask_answer_reassign_claim(ctx, triggers)
+  end
+
+  test "[answer(true), auto retry] asking again: obsolete too", ctx do
+    answer = trigger("answer", ctx.workspace, ctx.alice, ctx.agent, %{"assignee_bound" => true})
+
+    assert {%Run{status: :cancelled, failure_reason: :obsolete}, []} =
+             ask_answer_reassign_claim(ctx, [answer, auto_retry()])
+  end
+
+  test "assigned by reopen only: obsolete after a reassignment", ctx do
+    assert {%Run{status: :cancelled}, []} =
+             ask_answer_reassign_claim(ctx, [
+               trigger("reopen", ctx.workspace, ctx.alice, ctx.agent)
+             ])
+  end
+
+  for {name, kinds} <- [
+        {"[manual] (scenario)", ["manual"]},
+        {"[assign, manual retry]", ["assign", :manual_retry]}
+      ] do
+    @kinds kinds
+    test "#{name}: the answer run is still claimed", ctx do
+      triggers =
+        Enum.map(@kinds, fn
+          :manual_retry ->
+            %{
+              "kind" => "retry",
+              "retry_of" => 1,
+              "auto" => false,
+              "by_actor_id" => ctx.carol_scope.actor.id
+            }
+
+          kind ->
+            trigger(kind, ctx.workspace, ctx.carol, ctx.agent)
+        end)
+
+      assert {%Run{status: :claimed, id: id}, [spec]} = ask_answer_reassign_claim(ctx, triggers)
+      assert spec.run_id == id
     end
   end
 end

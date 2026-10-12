@@ -100,6 +100,19 @@ defmodule HelmsmanMCP.Present do
       superseded_by: view.superseded_by,
       at: time(view.at)
     }
+    |> put_feedback_dispatch(view[:dispatch] || [])
+  end
+
+  # The triggers a record caused (`add-continuation-triggers` decision
+  # 10), when there are any.
+  defp put_feedback_dispatch(result, []), do: result
+
+  defp put_feedback_dispatch(result, dispatch) do
+    Map.put(
+      result,
+      :dispatch,
+      Enum.map(dispatch, &Map.take(&1, [:agent, :trigger, :result, :reason]))
+    )
   end
 
   @doc "A run summary (`Helmsman.Runs.summary/1`)."

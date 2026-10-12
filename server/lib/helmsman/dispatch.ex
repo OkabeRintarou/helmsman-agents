@@ -77,7 +77,7 @@ defmodule Helmsman.Dispatch do
 
       outcome
     else
-      {:skip, reason} -> Outcome.skipped(agent.name, :assign, reason)
+      {:skip, reason} -> Outcome.skipped(agent, :assign, reason)
     end
   end
 

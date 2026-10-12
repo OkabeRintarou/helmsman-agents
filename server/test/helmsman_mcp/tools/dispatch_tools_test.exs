@@ -71,7 +71,10 @@ defmodule HelmsmanMCP.Tools.DispatchToolsTest do
 
     assert {:ok, result} = call(UpdateTask, scope, args)
     assert result.assignee == %{name: "keel/dev", kind: "agent"}
-    assert result.dispatch == [%{agent: "keel/dev", result: "skipped", reason: "unauthorized"}]
+
+    assert result.dispatch == [
+             %{agent: "keel/dev", trigger: "assign", result: "skipped", reason: "unauthorized"}
+           ]
 
     assert {:ok, result} = call(UpdateTask, scope, %{"task_id" => ctx.task.ident, "title" => "T"})
     refute Map.has_key?(result, :dispatch)
@@ -85,10 +88,17 @@ defmodule HelmsmanMCP.Tools.DispatchToolsTest do
     assert {:ok, %{agents: agents}} = call(ListAgents, ctx.alice_scope, %{})
     by_name = Map.new(agents, &{&1.name, &1})
 
-    assert %{kind: "managed", busy: true, queued: 1, provider: "claude", disabled: false} =
-             by_name["keel/dev"]
+    assert %{
+             kind: "managed",
+             busy: true,
+             queued: 1,
+             provider: "claude",
+             disabled: false,
+             wake_on_requested: true
+           } = by_name["keel/dev"]
 
-    assert %{kind: "external", busy: false, queued: 0} = by_name["alice/cli"]
+    assert %{kind: "external", busy: false, queued: 0, wake_on_requested: nil} =
+             by_name["alice/cli"]
   end
 
   test "list_runs", ctx do

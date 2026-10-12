@@ -7,7 +7,8 @@ defmodule HelmsmanWeb.RunComponentsTest do
   alias Helmsman.Runs.Outcome
   alias HelmsmanWeb.RunComponents
 
-  defp skipped(reason), do: Outcome.skipped("keel/dev", :assign, reason)
+  defp skipped(reason),
+    do: Outcome.skipped(%Helmsman.Actors.Actor{name: "keel/dev"}, :assign, reason)
 
   describe "dispatch_message/1" do
     test "every row of D12" do
@@ -47,7 +48,7 @@ defmodule HelmsmanWeb.RunComponentsTest do
 
       outcomes = [
         %Outcome{agent: "keel/dev", trigger: :assign, result: :queued, run_id: 1},
-        Outcome.skipped("keel/qa", :assign, :no_runtime)
+        Outcome.skipped(%Helmsman.Actors.Actor{name: "keel/qa"}, :assign, :no_runtime)
       ]
 
       assert RunComponents.dispatch_flash(outcomes) ==

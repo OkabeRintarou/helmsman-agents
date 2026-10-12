@@ -29,6 +29,8 @@ defmodule Helmsman.Tasks.TaskEvent do
     field :commits, {:array, :string}, default: []
     field :tests, :map
     field :auto, :boolean, default: false
+    # Why the system made an `auto` transition (`Helmsman.Tasks.auto_reopen/2`).
+    field :auto_reason, Ecto.Enum, values: [:ci_failed, :merge_conflict]
     belongs_to :feedback, Entry
     # The run the entry was made in (an `hmr_` token), if any.
     belongs_to :source_run, Helmsman.Runs.Run

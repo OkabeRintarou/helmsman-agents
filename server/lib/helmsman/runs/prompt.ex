@@ -34,14 +34,19 @@ defmodule Helmsman.Runs.Prompt do
           required(:names) => %{pos_integer() => String.t()},
           required(:retried) => %{pos_integer() => atom() | nil},
           required(:resume?) => boolean(),
-          optional(:repo) => GitRepo.t() | nil
+          optional(:repo) => GitRepo.t() | nil,
+          optional(:feedback) => %{pos_integer() => %{id: String.t(), content: String.t()}}
         }
+
+  @max_quote_bytes 8192
 
   @doc """
   The prompt of `run`. `ctx`: the agent, its profile, the workspace, the
   task (nil: none), `names` (actor ID → name, for the triggers), `retried`
   (run ID → failure reason, for retry markers), `resume?` and `repo`
-  (nil or absent: none).
+  (nil or absent: none) and `feedback` (feedback ID → the current record
+  of its revision chain, `%{id: "KEY-N#S", content}`, for the quotes of
+  `add-continuation-triggers` decision 9).
   """
   @spec build(Run.t(), ctx()) :: String.t()
   def build(%Run{} = run, %{resume?: true, task: %Task{}} = ctx) do
@@ -123,8 +128,136 @@ defmodule Helmsman.Runs.Prompt do
   defp trigger_line(%{"kind" => "retry"} = trigger, _run, ctx),
     do: "- #{by(trigger, ctx)} retried run #{trigger["retry_of"]}."
 
+  defp trigger_line(%{"kind" => "reopen", "reason" => "ci_failed"} = trigger, _run, ctx) do
+    ident = ident(ctx)
+
+    quoted(
+      "- CI failed on the pull request for #{ident}, so Helmsman reopened it. Details in",
+      trigger["feedback_id"],
+      ctx
+    )
+  end
+
+  defp trigger_line(%{"kind" => "reopen", "reason" => "merge_conflict"} = trigger, _run, ctx) do
+    ident = ident(ctx)
+
+    quoted(
+      "- The pull request for #{ident} has merge conflicts with its base branch, so " <>
+        "Helmsman reopened it. Details in",
+      trigger["feedback_id"],
+      ctx
+    )
+  end
+
+  defp trigger_line(%{"kind" => "reopen"} = trigger, _run, ctx) do
+    line =
+      case trigger["from"] do
+        "verified" -> "- #{by(trigger, ctx)} reopened #{ident(ctx)} after it was verified."
+        _done -> "- #{by(trigger, ctx)} sent #{ident(ctx)} back to in progress."
+      end
+
+    join([line | quote_lines("Review", trigger["feedback_id"], ctx)])
+  end
+
+  defp trigger_line(%{"kind" => "resubmit"} = trigger, _run, ctx) do
+    "- #{by(trigger, ctx)} changed the requirements of #{ident(ctx)} and resubmitted it. " <>
+      "Read them again with get_task before you continue."
+  end
+
+  defp trigger_line(%{"kind" => "answer"} = trigger, _run, ctx) do
+    question = feedback_id(trigger["question_id"], ctx) || "#{ident(ctx)}#?"
+
+    quoted(
+      "- #{by(trigger, ctx)} answered your question #{question} in",
+      trigger["feedback_id"],
+      ctx
+    )
+  end
+
+  defp trigger_line(%{"kind" => "requested", "event" => "done"}, _run, ctx) do
+    "- #{ident(ctx)}, which you created, is done. Review the work, then verify it " <>
+      "(transition_task to \"verified\") or send it back (transition_task to " <>
+      "\"in_progress\") with a review."
+  end
+
+  defp trigger_line(%{"kind" => "requested", "event" => "rejected"} = trigger, _run, ctx) do
+    join(
+      ["- #{by(trigger, ctx)} rejected #{ident(ctx)}, which you created."] ++
+        quote_lines("Reason", trigger["feedback_id"], ctx) ++
+        [
+          "Revise the requirements with update_task and resubmit it (transition_task to " <>
+            "\"new\"), or leave it rejected."
+        ]
+    )
+  end
+
+  defp trigger_line(%{"kind" => "requested"} = trigger, _run, ctx) do
+    join([
+      quoted(
+        "- #{by(trigger, ctx)} asked a question on #{ident(ctx)}, which you created, in",
+        trigger["feedback_id"],
+        ctx
+      ),
+      "Answer it with add_feedback (kind \"answer\")."
+    ])
+  end
+
+  defp trigger_line(%{"kind" => "mention"} = trigger, _run, ctx) do
+    join([
+      quoted("- #{by(trigger, ctx)} mentioned you in", trigger["feedback_id"], ctx),
+      "Reply with add_feedback. You were asked to reply, not to take over #{ident(ctx)}."
+    ])
+  end
+
   defp trigger_line(%{"kind" => kind} = trigger, _run, ctx),
     do: "- #{by(trigger, ctx)} started you (#{kind})."
+
+  defp ident(ctx), do: ctx.task && ctx.task.ident
+
+  defp feedback_id(id, ctx) do
+    case Map.get(ctx[:feedback] || %{}, id) do
+      %{id: ident} -> ident
+      nil -> nil
+    end
+  end
+
+  # `<text> <IDENT>#<n>:` and the quote (a record is never deleted).
+  defp quoted(text, feedback_id, ctx) do
+    case Map.get(ctx[:feedback] || %{}, feedback_id) do
+      %{id: id, content: content} -> join(["#{text} #{id}:", quote_text(content)])
+      nil -> text <> " a feedback record."
+    end
+  end
+
+  # `<label> <IDENT>#<n>:` and the quote, or nothing.
+  defp quote_lines(label, feedback_id, ctx) do
+    case Map.get(ctx[:feedback] || %{}, feedback_id) do
+      %{id: id, content: content} -> ["#{label} #{id}:", quote_text(content)]
+      nil -> []
+    end
+  end
+
+  defp quote_text(content) do
+    {text, truncated?} = truncate(content)
+    lines = text |> String.split(~r/\r?\n/) |> Enum.map_join("\n", &("> " <> &1))
+    if truncated?, do: lines <> "\n> …(truncated; read the full text with get_task)", else: lines
+  end
+
+  defp truncate(text) when byte_size(text) <= @max_quote_bytes, do: {text, false}
+
+  defp truncate(text) do
+    cut = binary_part(text, 0, @max_quote_bytes)
+    {valid_prefix(cut), true}
+  end
+
+  # Drops a UTF-8 sequence cut in two at the end.
+  defp valid_prefix(binary) do
+    if String.valid?(binary),
+      do: binary,
+      else: valid_prefix(binary_part(binary, 0, byte_size(binary) - 1))
+  end
+
+  defp join(lines), do: Enum.join(lines, "\n")
 
   defp by(trigger, ctx), do: Map.get(ctx.names, trigger["by_actor_id"]) || "Someone"
 

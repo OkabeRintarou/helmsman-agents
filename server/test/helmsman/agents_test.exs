@@ -295,6 +295,47 @@ defmodule Helmsman.AgentsTest do
   defp contains_secret?(value, secret) when is_list(value),
     do: Enum.any?(value, &contains_secret?(&1, secret))
 
+  describe "wake_on_requested (add-continuation-triggers)" do
+    test "defaults to true and is read back (scenario)", ctx do
+      agent = managed_agent_fixture(ctx.scope, %{name: "keel/lead"})
+      assert agent.wake_on_requested == true
+      assert {:ok, %{wake_on_requested: true}} = Agents.get(ctx.scope, "keel/lead")
+      assert {:ok, [%{name: "keel/lead", wake_on_requested: true}]} = Agents.list(ctx.scope)
+    end
+
+    test "can be turned off; a non-boolean is invalid and changes nothing (scenario)", ctx do
+      managed_agent_fixture(ctx.scope, %{name: "keel/lead"})
+
+      assert {:ok, %{wake_on_requested: false}} =
+               Agents.update(ctx.scope, "keel/lead", %{wake_on_requested: false})
+
+      assert {:error, cs} =
+               Agents.update(ctx.scope, "keel/lead", %{wake_on_requested: "sometimes"})
+
+      assert %{wake_on_requested: ["is invalid"]} = errors_on(cs)
+      assert {:error, cs} = Agents.update(ctx.scope, "keel/lead", %{wake_on_requested: nil})
+      assert cs.errors[:wake_on_requested]
+      assert Repo.one!(AgentProfile).wake_on_requested == false
+
+      assert {:error, cs} =
+               Agents.create(ctx.scope, %{
+                 name: "keel/x",
+                 provider: "claude",
+                 wake_on_requested: "x"
+               })
+
+      assert %{wake_on_requested: ["is invalid"]} = errors_on(cs)
+    end
+
+    test "is a configuration field: an admin who does not own the agent may not change it",
+         ctx do
+      managed_agent_fixture(ctx.scope, %{name: "keel/lead"})
+
+      assert {:error, :forbidden} =
+               Agents.update(ctx.admin, "keel/lead", %{wake_on_requested: false})
+    end
+  end
+
   defp contains_secret?(value, secret) when is_tuple(value),
     do: value |> Tuple.to_list() |> contains_secret?(secret)
 

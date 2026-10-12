@@ -6,6 +6,9 @@ defmodule Helmsman.Tasks.TransitionSteps do
   returning `{:error, reason}` rolls the whole transition back.
 
   Steps: the Epic cascade (`Helmsman.Tasks.Epics.after_transition/3`).
+  The triggers of `add-continuation-triggers` run right after the steps
+  (`Helmsman.Tasks.transition/4`), not as a step: they are planned before
+  the task row is locked.
   """
 
   alias Helmsman.Accounts.Scope

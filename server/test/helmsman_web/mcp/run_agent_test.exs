@@ -112,7 +112,12 @@ defmodule HelmsmanWeb.MCP.RunAgentTest do
     assert result["assignee"]["name"] == "keel/dev"
 
     assert result["dispatch"] == [
-             %{"agent" => "keel/dev", "result" => "skipped", "reason" => "loop_detected"}
+             %{
+               "agent" => "keel/dev",
+               "trigger" => "assign",
+               "result" => "skipped",
+               "reason" => "loop_detected"
+             }
            ]
 
     assert [%{"author" => %{"name" => "helmsman"}}] = result["feedback"]

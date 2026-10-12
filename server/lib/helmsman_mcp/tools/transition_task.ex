@@ -37,6 +37,8 @@ defmodule HelmsmanMCP.Tools.TransitionTask do
   @impl HelmsmanMCP.Tool
   def call(%{"task_id" => id, "to" => to} = args, %{scope: scope}) do
     opts = Args.take(args, [:comment, :commits, :tests, :feedback])
-    with {:ok, detail} <- Tasks.transition(scope, id, to, opts), do: {:ok, Present.detail(detail)}
+
+    with {:ok, detail} <- Tasks.transition(scope, id, to, opts),
+         do: {:ok, detail |> Present.detail() |> Present.put_dispatch(detail.dispatch)}
   end
 end

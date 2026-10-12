@@ -24,10 +24,12 @@ defmodule Helmsman.Feedback do
   alias Ecto.Changeset
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
+  alias Helmsman.Dispatch.{Continuation, Targets}
   alias Helmsman.Events
   alias Helmsman.Feedback.{Entry, Id, Mentions}
   alias Helmsman.Policy
   alias Helmsman.Repo
+  alias Helmsman.Runs.Outcome
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Workspaces
@@ -35,6 +37,13 @@ defmodule Helmsman.Feedback do
 
   @type input :: %{kind: Entry.kind() | nil, content: String.t()}
   @type actor_ref :: %{name: String.t(), kind: String.t()}
+  @type dispatch_item :: %{
+          agent: String.t() | nil,
+          trigger: String.t(),
+          result: String.t(),
+          reason: String.t() | nil,
+          run_id: pos_integer() | nil
+        }
   @type view :: %{
           id: String.t(),
           seq: pos_integer(),
@@ -46,6 +55,7 @@ defmodule Helmsman.Feedback do
           status: String.t(),
           supersedes: String.t() | nil,
           superseded_by: String.t() | nil,
+          dispatch: [dispatch_item()],
           at: DateTime.t()
         }
 
@@ -57,7 +67,12 @@ defmodule Helmsman.Feedback do
   `attrs`: `kind` (`comment`, the default, `review`, `question` or
   `answer`) and `content` (Markdown, not blank, at most 64 KB; checked
   before the transaction, so invalid input takes no lock and no number).
-  Returns the new entry (`load/2` done).
+
+  Mentions, answers and the assignee's questions trigger runs
+  (`Helmsman.Dispatch.Continuation`) in the same transaction; their
+  outcomes are kept on the record (`dispatch` in `view/1`). Returns the new
+  entry (`load/2` done); `{:error, :busy}` when the trigger targets kept
+  changing (`Helmsman.Dispatch.Targets`).
   """
   @spec add(Scope.t(), String.t(), map()) ::
           {:ok, Entry.t()} | {:error, Changeset.t() | :forbidden | :not_found | :no_actor}
@@ -71,10 +86,24 @@ defmodule Helmsman.Feedback do
     end
   end
 
+  # Lock order: maintenance lock, membership row (write_transaction),
+  # trigger targets, task row (`Helmsman.Dispatch.Targets`).
   defp add_locked(scope, ident, input) do
-    with {:ok, task} <- lock_task(scope.workspace.id, ident),
-         :ok <- Policy.authorize(scope, :write_task, task),
-         {:ok, {entry, task}} <- insert_locked(task, scope, input) do
+    workspace_id = scope.workspace.id
+
+    with {:ok, task, plan} <-
+           Targets.with_locked(
+             workspace_id,
+             fn -> Continuation.guess(workspace_id, ident, input.content) end,
+             fn -> lock_task(workspace_id, ident) end,
+             &Continuation.plan_feedback(scope, &1, input, nil)
+           ),
+         :ok <- Policy.authorize(scope, :write_task, task) do
+      {:ok, {entry, task}} =
+        insert_locked(task, scope, input, mentions: plan.feedback.mentions, notify: false)
+
+      outcomes = Continuation.run_feedback(scope, plan, task, entry)
+      {entry, task} = finish_locked(task, entry, outcomes)
       notify_task(task)
       {:ok, entry}
     end
@@ -104,10 +133,11 @@ defmodule Helmsman.Feedback do
   inside a transaction, and updates the task's feedback columns. `input`
   comes from `normalize/1` (a `nil` kind is `comment`). No authorization:
   the caller has authorized its own action. Records `scope.run` as the
-  source of a run token's write. Options (`Helmsman.Runs.SideEffects`):
-  `fallback: true` and `source_run_id`. Registers the
-  `{:feedback_added, view}` notification on the task topic only; the
-  caller notifies the project topic.
+  source of a run token's write. Options: `fallback: true` and
+  `source_run_id` (`Helmsman.Runs.SideEffects`), `mentions` (already
+  resolved) and `notify: false` (the caller calls `finish_locked/3`).
+  Registers the `{:feedback_added, view}` notification on the task topic
+  only; the caller notifies the project topic. Triggers nothing.
 
   Returns the new entry and the updated task.
   """
@@ -129,15 +159,38 @@ defmodule Helmsman.Feedback do
         author_id: actor.id,
         kind: input[:kind] || :comment,
         content: content,
-        mentions: resolve_mentions(task.workspace_id, content),
+        mentions:
+          Keyword.get_lazy(opts, :mentions, fn -> resolve_mentions(task.workspace_id, content) end),
         source_run_id: Keyword.get(opts, :source_run_id, source_run_id(scope)),
         fallback: Keyword.get(opts, :fallback, false)
       })
 
     task = refresh_counters(task, seq)
     entry = entry |> load(task.ident) |> hd()
-    notify_entry(task, entry)
+    if Keyword.get(opts, :notify, true), do: notify_entry(task, entry)
     {:ok, {entry, task}}
+  end
+
+  @doc """
+  Writes the trigger outcomes a new record caused onto it, in the
+  transaction that inserted it (`add-continuation-triggers` decision 10),
+  then registers its `{:feedback_added, view}` notification. Returns the
+  entry, loaded, and the task read again when a trigger may have written
+  to it (a refused trigger chain adds a system comment).
+  """
+  @spec finish_locked(Task.t(), Entry.t(), [Outcome.t()]) :: {Entry.t(), Task.t()}
+  def finish_locked(%Task{} = task, %Entry{} = entry, []) do
+    notify_entry(task, entry)
+    {entry, task}
+  end
+
+  def finish_locked(%Task{} = task, %Entry{} = entry, outcomes) do
+    dispatch = Enum.map(outcomes, &Outcome.stored/1)
+    {1, _} = Repo.update_all(where(Entry, id: ^entry.id), set: [dispatch: dispatch])
+    task = Repo.reload!(task)
+    entry = %{entry | dispatch: dispatch} |> load(task.ident) |> hd()
+    notify_entry(task, entry)
+    {entry, task}
   end
 
   ## Revising
@@ -147,10 +200,11 @@ defmodule Helmsman.Feedback do
   a new `kind` (`:revise_feedback`, which checks the author rule).
 
   Appends a record by `scope.actor` in the place of the old one, which
-  becomes superseded and points to it. Returns the new entry.
+  becomes superseded and points to it. Triggers as `add/3`, counting only
+  the mentions the old record did not have. Returns the new entry.
 
   Errors: a changeset for invalid input, `:not_found`, `:forbidden`,
-  `:no_actor` and `{:superseded, latest_id}` when the record was already
+  `:no_actor`, `:busy` and `{:superseded, latest_id}` when the record was already
   revised (`latest_id` being the active record of its chain).
   """
   @spec revise(Scope.t(), String.t(), map()) ::
@@ -175,17 +229,30 @@ defmodule Helmsman.Feedback do
     end
   end
 
-  # Lock order: the task row, then the record.
+  # Lock order: trigger targets, the task row, then the record.
   defp revise_locked(scope, ident, seq, input) do
-    with {:ok, task} <- lock_task(scope.workspace.id, ident),
+    workspace_id = scope.workspace.id
+
+    with {:ok, task, plan} <-
+           Targets.with_locked(
+             workspace_id,
+             fn -> Continuation.guess(workspace_id, ident, input.content) end,
+             fn -> lock_task(workspace_id, ident) end,
+             &Continuation.plan_feedback(scope, &1, input, entry_at(&1, seq))
+           ),
          :ok <- Policy.authorize(scope, :write_task, task),
          {:ok, old} <- lock_entry(task, seq),
          :ok <- check_active(task, old) do
-      {entry, task} = insert_revision(task, old, scope, input)
+      {entry, task} = insert_revision(task, old, scope, input, plan.feedback.mentions)
+      outcomes = Continuation.run_feedback(scope, plan, task, entry)
+      {entry, task} = finish_locked(task, entry, outcomes)
       notify_task(task)
       {:ok, entry}
     end
   end
+
+  # Read under the task row lock, which every revision takes first.
+  defp entry_at(task, seq), do: Repo.get_by(Entry, task_id: task.id, seq: seq)
 
   defp lock_entry(task, seq) do
     query =
@@ -211,7 +278,7 @@ defmodule Helmsman.Feedback do
     end
   end
 
-  defp insert_revision(task, old, scope, input) do
+  defp insert_revision(task, old, scope, input, mentions) do
     seq = task.feedback_seq + 1
 
     entry =
@@ -223,7 +290,7 @@ defmodule Helmsman.Feedback do
         author_id: scope.actor.id,
         kind: input.kind || old.kind,
         content: input.content,
-        mentions: resolve_mentions(task.workspace_id, input.content),
+        mentions: mentions,
         supersedes_id: old.id,
         source_run_id: source_run_id(scope)
       })
@@ -234,9 +301,7 @@ defmodule Helmsman.Feedback do
       )
 
     task = refresh_counters(task, seq)
-    entry = entry |> load(task.ident) |> hd()
-    notify_entry(task, entry)
-    {entry, task}
+    {entry |> load(task.ident) |> hd(), task}
   end
 
   ## Shared write steps
@@ -402,7 +467,7 @@ defmodule Helmsman.Feedback do
     entries = Repo.preload(entries, :author)
 
     names =
-      case entries |> Enum.flat_map(& &1.mentions) |> Enum.uniq() do
+      case entries |> Enum.flat_map(&(&1.mentions ++ dispatch_agents(&1))) |> Enum.uniq() do
         [] -> %{}
         ids -> Map.new(Repo.all(from(a in Actor, where: a.id in ^ids, select: {a.id, a.name})))
       end
@@ -414,10 +479,24 @@ defmodule Helmsman.Feedback do
         entry
         | task_ident: ident,
           mention_names: entry.mentions |> Enum.map(&names[&1]) |> Enum.reject(&is_nil/1),
+          dispatch_view: Enum.map(entry.dispatch, &dispatch_view(&1, names)),
           supersedes_seq: seqs[entry.supersedes_id],
           superseded_by_seq: seqs[entry.superseded_by_id]
       }
     end)
+  end
+
+  defp dispatch_agents(%Entry{dispatch: dispatch}),
+    do: dispatch |> Enum.map(& &1["agent_id"]) |> Enum.reject(&is_nil/1)
+
+  defp dispatch_view(item, names) do
+    %{
+      agent: names[item["agent_id"]],
+      trigger: item["trigger"],
+      result: item["result"],
+      reason: item["reason"],
+      run_id: item["run_id"]
+    }
   end
 
   # Numbers of the records the entries link to; those among the entries
@@ -462,6 +541,7 @@ defmodule Helmsman.Feedback do
       status: Atom.to_string(entry.status),
       supersedes: entry.supersedes_seq && Id.build(ident, entry.supersedes_seq),
       superseded_by: entry.superseded_by_seq && Id.build(ident, entry.superseded_by_seq),
+      dispatch: entry.dispatch_view,
       at: entry.inserted_at
     }
   end

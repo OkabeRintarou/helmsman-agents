@@ -24,6 +24,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Dispatch
+  alias Helmsman.Dispatch.{Continuation, Targets}
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.Locks
@@ -31,6 +32,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Projects
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
+  alias Helmsman.Runs.{Run, TaskGrant}
   alias Helmsman.Tx
 
   alias Helmsman.Tasks.{
@@ -191,12 +193,31 @@ defmodule Helmsman.Tasks do
 
       :ok = recompute_epics(scope, nil, task.epic_id)
 
+      requested_grant(scope, task)
       {task, dispatch} = dispatch(scope, task, nil, start?)
       task = preload_detail(task)
       notify(:task_created, task)
       {:ok, %{task | dispatch: dispatch}}
     end
   end
+
+  # A managed agent creating a task in a run is its requester: the grant
+  # `requested` continuation triggers inherit (`add-continuation-triggers`
+  # decision 5). Never removed: the requester does not change.
+  defp requested_grant(%Scope{via: :run, run: %Run{} = run, actor: %Actor{} = agent}, task) do
+    Repo.insert!(%TaskGrant{
+      workspace_id: task.workspace_id,
+      task_id: task.id,
+      agent_id: agent.id,
+      kind: :requested,
+      root_initiator_user_id: run.root_initiator_user_id,
+      causal_agent_ids: run.causal_agent_ids,
+      granted_by_id: agent.id,
+      inserted_at: DateTime.utc_now()
+    })
+  end
+
+  defp requested_grant(_scope, _task), do: :ok
 
   # Fault injection for the atomicity tests: compiled in the test
   # environment only.
@@ -728,11 +749,15 @@ defmodule Helmsman.Tasks do
   broadcast.
 
   In one transaction, after the maintenance lock and the membership row:
-  the workspace graph lock, the task row `FOR UPDATE`, the check context
+  the workspace graph lock, the trigger targets and the task row
+  `FOR UPDATE` (`Helmsman.Dispatch.Targets.with_locked/4`), the check context
   (`Helmsman.Tasks.TransitionContext`), `Helmsman.Tasks.StateMachine.check/3`,
   the reason feedback, if any (`Helmsman.Feedback.insert_locked/3`), the
   history entry (referring to the reason), the new status and the steps of
-  `Helmsman.Tasks.TransitionSteps`. A failure at any step rolls the reason
+  `Helmsman.Tasks.TransitionSteps`, then the continuation and mention
+  triggers (`Helmsman.Dispatch.Continuation`): the result carries their
+  outcomes in `dispatch`, the transition's own first, then those of the
+  reason (also kept on the reason). A failure at any step rolls the reason
   back with the rest. Concurrent transitions of a task run
   one after the other, each checked against the status the previous one
   committed.
@@ -749,7 +774,8 @@ defmodule Helmsman.Tasks do
   Errors: `{:invalid_status, input, valid}`, `{:invalid_comment, _}`,
   `{:invalid_commits, bad}`, `{:invalid_tests, _}`, a changeset or
   `{:invalid_feedback, :not_an_object}` for the reason, `:forbidden`,
-  `:not_found`, `:no_actor`, `{:status_changed, current}` and the reasons
+  `:not_found`, `:no_actor`, `{:status_changed, current}`, `:busy` (the
+  trigger targets kept changing, `Helmsman.Dispatch.Targets`) and the reasons
   of `StateMachine.check/3`
   (`{:invalid_transition, from, to, allowed}`,
   `{:self_verify_requires_tests, assignee}`, ...).
@@ -790,16 +816,17 @@ defmodule Helmsman.Tasks do
   end
 
   # Lock order: maintenance lock, membership row (write_transaction), graph
-  # lock, task row (designs/01 §4).
+  # lock, trigger targets, task row (designs/01 §4,
+  # `Helmsman.Dispatch.Targets`).
   defp transition_locked(scope, ident, {expected_from, to}, evidence, reason) do
     with {:ok, ident, _key, _seq} <- Ident.parse(ident),
          :ok <- Locks.graph!(scope.workspace.id),
-         {:ok, task} <- lock_task(scope.workspace.id, ident),
+         {:ok, task, plan} <- lock_targets(scope, ident, to, reason),
          :ok <- Policy.authorize(scope, :write_task, task),
          :ok <- check_expected_from(task, expected_from),
          ctx = TransitionContext.build(task, scope, to, evidence),
          :ok <- StateMachine.check(task.status, to, ctx) do
-      {feedback_id, task} = insert_reason(task, scope, reason)
+      {entry, task} = insert_reason(task, scope, reason, plan)
       test_hook(:reason_inserted)
 
       event =
@@ -813,18 +840,38 @@ defmodule Helmsman.Tasks do
           commits: evidence.commits,
           tests: evidence.tests,
           auto: false,
-          feedback_id: feedback_id,
+          feedback_id: entry && entry.id,
           source_run_id: source_run_id(scope)
         })
 
       task = task |> Changeset.change(transition_changes(task, to, scope)) |> Repo.update!()
+      finish_transition(scope, task, event, entry, plan)
+    end
+  end
 
-      with :ok <- TransitionSteps.run(task, event, scope) do
-        task = preload_detail(task)
-        event = Enum.find(task.events, &(&1.id == event.id))
-        notify_transition(task, event)
-        {:ok, detail(task)}
-      end
+  defp lock_targets(scope, ident, to, reason, opts \\ []) do
+    workspace_id = scope.workspace.id
+
+    Targets.with_locked(
+      workspace_id,
+      fn -> Continuation.guess(workspace_id, ident, reason && reason.content) end,
+      fn -> lock_task(workspace_id, ident) end,
+      &Continuation.plan_transition(scope, &1, to, reason, opts)
+    )
+  end
+
+  # After the steps, the triggers (`add-continuation-triggers`): the
+  # transition's own first, then those of its reason, whose outcomes are
+  # written onto it before its notification.
+  defp finish_transition(scope, task, event, entry, plan) do
+    with :ok <- TransitionSteps.run(task, event, scope) do
+      {own, by_reason} = Continuation.run_transition(scope, plan, task, entry)
+      task = if entry, do: elem(Feedback.finish_locked(task, entry, by_reason), 1), else: task
+      task = if own == [], do: task, else: Repo.reload!(task)
+      task = preload_detail(task)
+      event = Enum.find(task.events, &(&1.id == event.id))
+      notify_transition(task, event)
+      {:ok, task |> detail() |> Map.put(:dispatch, own ++ by_reason)}
     end
   end
 
@@ -834,11 +881,13 @@ defmodule Helmsman.Tasks do
   defp check_expected_from(%Task{status: status}, _expected),
     do: {:error, {:status_changed, status}}
 
-  defp insert_reason(task, _scope, nil), do: {nil, task}
+  defp insert_reason(task, _scope, nil, _plan), do: {nil, task}
 
-  defp insert_reason(task, scope, reason) do
-    {:ok, {entry, task}} = Feedback.insert_locked(task, scope, reason)
-    {entry.id, task}
+  defp insert_reason(task, scope, reason, plan) do
+    {:ok, {entry, task}} =
+      Feedback.insert_locked(task, scope, reason, mentions: plan.feedback.mentions, notify: false)
+
+    {entry, task}
   end
 
   # Claiming is the only transition that edits a field, so the only one
@@ -909,6 +958,97 @@ defmodule Helmsman.Tasks do
       end
     else
       {:ok, :skipped}
+    end
+  end
+
+  @doc """
+  Reopens the `verified` task `task_id` as the system
+  (`add-continuation-triggers` decision 11): a server decision for a
+  failed CI run or a merge conflict on its pull request
+  (`add-pr-reconcile-merge`), not authorized by `Helmsman.Policy`.
+
+  `attrs`: `verification_event_id`, the history entry of the verification
+  the caller judged; `reason`, `:ci_failed` or `:merge_conflict`; and
+  `content`, the explanation, written as a `review` by the system
+  identity. In one transaction, in the order of `transition/4`
+  (maintenance lock, graph lock, trigger targets, task row): the task
+  must still be `verified` (else `{:error, {:status_changed, status}}`)
+  and its latest move to `verified` must be `verification_event_id`
+  (else `{:error, :stale}`); nothing is written otherwise. Then the review,
+  the history entry `verified → in_progress` (`auto`, with `auto_reason`
+  and the review), the steps of `Helmsman.Tasks.TransitionSteps`, a
+  `reopen` trigger for the assignee and the notifications of
+  `transition/4`.
+
+  Returns `{:ok, %{task: detail, dispatch: outcomes}}`; `{:error, :busy}`
+  as `transition/4`.
+  """
+  @spec auto_reopen(pos_integer(), %{
+          verification_event_id: pos_integer(),
+          reason: :ci_failed | :merge_conflict,
+          content: String.t()
+        }) :: {:ok, %{task: map(), dispatch: [Helmsman.Runs.Outcome.t()]}} | {:error, term()}
+  def auto_reopen(task_id, %{verification_event_id: event_id, reason: reason, content: content})
+      when is_integer(task_id) and reason in [:ci_failed, :merge_conflict] and
+             is_binary(content) do
+    {:ok, input} = Feedback.normalize(%{kind: :review, content: content})
+    task = Repo.get!(Task, task_id)
+
+    Tx.run(fn ->
+      Locks.maint_shared!(task.workspace_id)
+      :ok = Locks.graph!(task.workspace_id)
+      scope = system_scope(task.workspace_id)
+
+      with {:ok, task, plan} <-
+             lock_targets(scope, task.ident, :in_progress, input, auto_reason: reason),
+           :ok <- check_expected_from(task, :verified),
+           :ok <- check_latest_verification(task, event_id) do
+        auto_reopen_locked(scope, task, input, reason, plan)
+      end
+    end)
+  end
+
+  defp system_scope(workspace_id) do
+    workspace = Repo.get!(Workspace, workspace_id)
+
+    system =
+      Repo.one!(from(a in Actor, where: a.workspace_id == ^workspace_id and a.kind == :system))
+
+    %Scope{workspace: workspace, actor: system}
+  end
+
+  defp check_latest_verification(task, event_id) do
+    latest =
+      Repo.one(
+        from(e in TaskEvent,
+          where: e.task_id == ^task.id and e.to_status == :verified,
+          select: max(e.id)
+        )
+      )
+
+    if latest == event_id, do: :ok, else: {:error, :stale}
+  end
+
+  defp auto_reopen_locked(scope, task, input, reason, plan) do
+    {entry, task} = insert_reason(task, scope, input, plan)
+
+    event =
+      Repo.insert!(%TaskEvent{
+        workspace_id: task.workspace_id,
+        task_id: task.id,
+        from_status: :verified,
+        to_status: :in_progress,
+        actor_id: scope.actor.id,
+        commits: [],
+        auto: true,
+        auto_reason: reason,
+        feedback_id: entry.id
+      })
+
+    task = task |> Changeset.change(status: :in_progress) |> Repo.update!()
+
+    with {:ok, detail} <- finish_transition(scope, task, event, entry, plan) do
+      {:ok, %{task: Map.delete(detail, :dispatch), dispatch: detail.dispatch}}
     end
   end
 

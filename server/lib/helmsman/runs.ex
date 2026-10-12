@@ -40,7 +40,12 @@ defmodule Helmsman.Runs do
           required(:task) => Task.t() | nil,
           optional(:lane) => :work | :reply
         }
-  @type trigger :: %{kind: :assign | :manual, instructions: String.t() | nil}
+  @type trigger :: %{
+          required(:kind) => Outcome.trigger(),
+          required(:instructions) => String.t() | nil,
+          optional(:feedback_id) => pos_integer() | nil,
+          optional(:extra) => %{String.t() => term()}
+        }
   @type actor_ref :: %{name: String.t(), kind: String.t()} | nil
   @type summary :: %{
           required(:id) => pos_integer(),
@@ -109,13 +114,20 @@ defmodule Helmsman.Runs do
 
       case upsert_pending(attrs, rate_limit?: true) do
         {:skipped, reason} ->
-          {:ok, Outcome.skipped(agent.name, kind, reason)}
+          {:ok, Outcome.skipped(agent, kind, reason)}
 
         {result, %Run{} = run} ->
-          {:ok, %Outcome{agent: agent.name, trigger: kind, result: result, run_id: run.id}}
+          {:ok,
+           %Outcome{
+             agent: agent.name,
+             agent_id: agent.id,
+             trigger: kind,
+             result: result,
+             run_id: run.id
+           }}
       end
     else
-      {:skip, reason} -> {:ok, Outcome.skipped(agent.name, kind, reason)}
+      {:skip, reason} -> {:ok, Outcome.skipped(agent, kind, reason)}
     end
   end
 
@@ -211,9 +223,10 @@ defmodule Helmsman.Runs do
       "initiator_user_id" => origin.initiator_user_id,
       "causal_agent_ids" => Enum.uniq(origin.chain ++ [agent.id]),
       "instructions" => trigger[:instructions],
-      "feedback_id" => nil,
+      "feedback_id" => trigger[:feedback_id],
       "at" => DateTime.to_iso8601(DateTime.utc_now())
     }
+    |> Map.merge(trigger[:extra] || %{})
   end
 
   @doc """

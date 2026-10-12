@@ -8,8 +8,8 @@ defmodule Helmsman.Agents do
   alias Helmsman.{Events, Policy, Repo, Runs, Workspaces}
   alias Helmsman.Runs.Run
 
-  @execution_fields ~w(provider runtime_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids)
-  @view_fields ~w(provider model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args inserted_at updated_at)a
+  @execution_fields ~w(provider runtime_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids wake_on_requested)
+  @view_fields ~w(provider model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args wake_on_requested inserted_at updated_at)a
 
   @doc false
   @spec execution_config(pos_integer() | Actor.t()) ::
