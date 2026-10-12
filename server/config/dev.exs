@@ -28,10 +28,24 @@ config :helmsman, Helmsman.Repo,
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
+bind_ip =
+  case System.get_env("PHX_BIND") do
+    nil ->
+      {127, 0, 0, 1}
+
+    ip ->
+      case :inet.parse_address(String.to_charlist(ip)) do
+        {:ok, parsed} -> parsed
+        {:error, _} -> raise "PHX_BIND must be an IP address, got: #{inspect(ip)}"
+      end
+  end
+
+# Loopback by default. To open the dev server to other machines, set
+# PHX_BIND=0.0.0.0 and PHX_HOST to the address they use (generated URLs such
+# as login links and GitHub callbacks are built from PHX_HOST).
 config :helmsman, HelmsmanWeb.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}],
+  url: [host: System.get_env("PHX_HOST", "localhost")],
+  http: [ip: bind_ip],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
