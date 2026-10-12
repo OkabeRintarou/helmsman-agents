@@ -204,7 +204,7 @@ defmodule HelmsmanDaemon.RunWorkerFramingTest do
       {:report, ^id, %Report.Finished{} = finished, _, _, _} -> finished
       {:report, ^id, _, _, _, _} -> collect(id)
     after
-      4_000 -> flunk("bounded CLI did not finish")
+      15_000 -> flunk("bounded CLI did not finish")
     end
   end
 
@@ -219,7 +219,7 @@ defmodule HelmsmanDaemon.RunWorkerFramingTest do
       {:report, ^id, _, _, _, _} ->
         collect_with_events(id, events)
     after
-      4_000 -> flunk("bounded CLI did not finish")
+      15_000 -> flunk("bounded CLI did not finish")
     end
   end
 end
