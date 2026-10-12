@@ -57,7 +57,17 @@ jobs:
           path: |
             server/deps
             server/_build
-          key: server-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'server/mix.lock') }}
+            daemon/deps
+            daemon/_build
+          key: server-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'server/mix.lock', 'daemon/mix.lock') }}
+      - name: Prepare daemon dependencies for server E2E tests
+        working-directory: daemon
+        run: mix deps.get
+      - name: Compile daemon test environment for server E2E tests
+        working-directory: daemon
+        env:
+          MIX_ENV: test
+        run: mix compile
       - run: mix deps.get
       - run: mix precommit
       - name: Roll back all migrations and migrate again

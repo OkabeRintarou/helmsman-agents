@@ -184,20 +184,25 @@ defmodule HelmsmanWeb.DaemonSyncBusyTest do
   end
 
   defp start_daemon(home) do
-    mise =
-      System.find_executable("mise") ||
-        flunk("mise executable is required for the daemon e2e test")
+    {executable, args} =
+      case System.find_executable("mise") do
+        nil ->
+          mix =
+            System.find_executable("mix") ||
+              flunk("mix executable is required for the daemon e2e test")
 
-    Port.open({:spawn_executable, mise}, [
+          {mix, ["helmsman", "daemon", "start", "--foreground"]}
+
+        mise ->
+          {mise, ["exec", "--", "mix", "helmsman", "daemon", "start", "--foreground"]}
+      end
+
+    Port.open({:spawn_executable, executable}, [
       :binary,
       :exit_status,
       :use_stdio,
       :stderr_to_stdout,
-      {:args,
-       Enum.map(
-         ["exec", "--", "mix", "helmsman", "daemon", "start", "--foreground"],
-         &String.to_charlist/1
-       )},
+      {:args, Enum.map(args, &String.to_charlist/1)},
       {:cd, String.to_charlist(@daemon_dir)},
       {:env,
        [
