@@ -39,7 +39,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     assert_receive {:report, 1, %Report.Events{events: events}, _, _, _}, 2_000
     assert Enum.map(events, & &1.seq) == [1, 2]
     assert_receive {:report, 1, %Report.Finished{status: :succeeded}, _, _, _}, 2_000
-    assert_receive {:DOWN, ^ref, _, _, :normal}
+    assert_receive {:DOWN, ^ref, _, _, :normal}, 2_000
     assert File.ls!(Paths.run(1)) == ["raw.log"]
     refute File.exists?(Paths.record(1))
     assert Runs.free_slots() == 4
@@ -185,7 +185,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
                    2_000
 
     assert error =~ "bad event"
-    assert_receive {:DOWN, ^ref, _, _, :normal}
+    assert_receive {:DOWN, ^ref, _, _, :normal}, 2_000
     assert Runs.free_slots() == 4
     refute File.exists?(Paths.record(12))
     refute_receive {:report, 12, %Report.Events{}, _, _, _}
