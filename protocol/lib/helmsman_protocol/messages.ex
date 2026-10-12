@@ -63,42 +63,77 @@ defmodule HelmsmanProtocol.Messages do
   def encode_reply(name, reply, target_version \\ HelmsmanProtocol.version()) do
     if HelmsmanProtocol.compatible?(target_version) do
       with {:ok, module} <- reply_module(name) do
-        encode_reply_payload(module, reply)
+        encode_reply_payload(module, reply, target_version)
       end
     else
       {:error, {:not_in_version, target_version}}
     end
   end
 
-  defp encode_reply_payload(expected, %{__struct__: module} = reply)
+  defp encode_reply_payload(expected, %{__struct__: module} = reply, target_version)
        when module == expected or module == ErrorReply do
     with {:ok, validated} <- module.new(Map.from_struct(reply)) do
-      {:ok, module.to_wire(validated)}
+      encode_versioned(validated, target_version)
     end
   end
 
-  defp encode_reply_payload(_, _), do: Schema.invalid([], :not_allowed)
+  defp encode_reply_payload(_, _, _), do: Schema.invalid([], :not_allowed)
 
   @spec encode(struct(), integer()) :: {:ok, {String.t(), map()}} | {:error, term()}
   def encode(value, target_version \\ HelmsmanProtocol.version()) do
     if HelmsmanProtocol.compatible?(target_version) do
-      encode_message(value)
+      encode_message(value, target_version)
     else
       {:error, {:not_in_version, target_version}}
     end
   end
 
-  defp encode_message(%{__struct__: module} = value) do
+  defp encode_message(%{__struct__: module} = value, target_version) do
     with {:ok, name} <- Map.fetch(@names, module),
-         {:ok, validated} <- module.new(Map.from_struct(value)) do
-      {:ok, {name, module.to_wire(validated)}}
+         {:ok, validated} <- module.new(Map.from_struct(value)),
+         {:ok, wire} <- encode_versioned(validated, target_version) do
+      {:ok, {name, wire}}
     else
       :error -> Schema.invalid(["message"], :not_allowed)
       error -> error
     end
   end
 
-  defp encode_message(_), do: Schema.invalid([], :type)
+  defp encode_message(_, _), do: Schema.invalid([], :type)
+
+  defp encode_versioned(%Reply.Claim{} = reply, target_version) do
+    wire = Reply.Claim.to_wire(reply)
+    runs = wire["runs"]
+
+    if target_version < HelmsmanProtocol.provider_account_version() do
+      with {:ok, encoded} <- encode_runs(runs, target_version) do
+        {:ok, Map.put(wire, "runs", encoded)}
+      end
+    else
+      {:ok, wire}
+    end
+  end
+
+  defp encode_versioned(%{__struct__: module} = value, _target_version),
+    do: {:ok, module.to_wire(value)}
+
+  defp encode_runs(runs, version) do
+    Enum.reduce_while(runs, {:ok, []}, fn run, {:ok, acc} ->
+      case encode_run(run, version) do
+        {:ok, encoded} -> {:cont, {:ok, [encoded | acc]}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, encoded} -> {:ok, Enum.reverse(encoded)}
+      error -> error
+    end
+  end
+
+  defp encode_run(%{"agent" => %{"provider_account" => nil}} = run, _version),
+    do: {:ok, update_in(run, ["agent"], &Map.delete(&1, "provider_account"))}
+
+  defp encode_run(_run, version), do: {:error, {:not_in_version, version}}
 
   defp decode_module(directory, name, payload) do
     case Map.fetch(directory, name) do

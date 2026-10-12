@@ -13,9 +13,14 @@ defmodule HelmsmanProtocol.MessagesTest do
     for {name, payload} <- Map.merge(Fixtures.reports(), Fixtures.pushes()) do
       assert {:ok, value} = Messages.decode(name, payload)
       assert {:ok, {^name, ^payload}} = Messages.encode(value)
+
+      for version <- 1..HelmsmanProtocol.version(),
+          do: assert({:ok, {name, payload}} == Messages.encode(value, version))
+
       assert {:ok, ^value} = Messages.decode(name, payload)
       assert {:error, {:not_in_version, 0}} = Messages.encode(value, 0)
-      assert {:error, {:not_in_version, 2}} = Messages.encode(value, 2)
+      future = HelmsmanProtocol.version() + 1
+      assert {:error, {:not_in_version, ^future}} = Messages.encode(value, future)
     end
 
     assert {:ok, %Report.Starting{run_id: 7}} = Messages.decode("starting", %{"run_id" => 7})

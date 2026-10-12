@@ -71,6 +71,7 @@ defmodule HelmsmanProtocol.Fixtures do
         "effort" => "high",
         "custom_args" => ["--verbose"],
         "env" => %{"API_KEY" => "env-secret"},
+        "provider_account" => nil,
         "extra_mcp_servers" => %{
           "private" => %{"url" => "https://mcp-secret", "headers" => %{"auth" => "mcp-secret"}}
         }

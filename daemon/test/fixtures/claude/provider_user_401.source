@@ -1,0 +1,4 @@
+Source: installed Claude Code 2.1.246, recorded 2026-10-12.
+provider 由本地假服务模拟; fake user configuration; no real credentials.
+Complete CLI stdout/stderr retained; HTTP 401 authentication_error; .exit is the actual CLI process status.
+Paths normalized to /tmp/provider-probe; credential sentinels redacted; IDs and response order preserved.

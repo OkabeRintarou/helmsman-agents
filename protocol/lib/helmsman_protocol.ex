@@ -3,7 +3,7 @@ defmodule HelmsmanProtocol do
   Wire protocol shared by the Helmsman server and the Helmsman daemon.
   """
 
-  @version 1
+  @version 2
   @providers ~w(claude codex copilot cursor)a
 
   @doc """
@@ -14,11 +14,15 @@ defmodule HelmsmanProtocol do
   ## Examples
 
       iex> HelmsmanProtocol.version()
-      1
+      2
 
   """
   @spec version() :: pos_integer()
   def version, do: @version
+  @doc "Protocol version that introduced provider accounts."
+  @spec provider_account_version() :: pos_integer()
+  def provider_account_version, do: 2
+
   @doc "Returns the oldest protocol version accepted by this build."
   @spec min_version() :: pos_integer()
   def min_version, do: 1
@@ -30,7 +34,7 @@ defmodule HelmsmanProtocol do
       true
       iex> HelmsmanProtocol.compatible?(0)
       false
-      iex> HelmsmanProtocol.compatible?(2)
+      iex> HelmsmanProtocol.compatible?(3)
       false
   """
   @spec compatible?(term()) :: boolean()

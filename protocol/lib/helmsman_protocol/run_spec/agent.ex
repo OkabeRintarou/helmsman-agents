@@ -8,5 +8,11 @@ defmodule HelmsmanProtocol.RunSpec.Agent do
   list(:custom_args, :string, max: 64, item_min_bytes: 1, item_max_bytes: 4_096)
   field(:env, :string_map)
   field(:extra_mcp_servers, :json_object)
-  use HelmsmanProtocol.Redacted, [:env, :extra_mcp_servers]
+  embeds(:provider_account, HelmsmanProtocol.ProviderAccount, nullable: true)
+
+  use HelmsmanProtocol.Redacted, [
+    :env,
+    :extra_mcp_servers,
+    {:nested, :provider_account, [:api_key]}
+  ]
 end

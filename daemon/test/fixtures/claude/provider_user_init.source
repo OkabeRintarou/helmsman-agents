@@ -1,0 +1,4 @@
+Source: installed Claude Code 2.1.246, recorded 2026-10-12.
+provider 由本地假服务模拟; fake user configuration; no real credentials.
+Only the initialization / thread-start reply was retained; .exit=0 is replay input, not the complete process outcome.
+Paths normalized to /tmp/provider-probe; credential sentinels redacted; IDs and response order preserved.

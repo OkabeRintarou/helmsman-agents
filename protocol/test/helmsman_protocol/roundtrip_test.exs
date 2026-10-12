@@ -36,10 +36,19 @@ defmodule HelmsmanProtocol.RoundtripTest do
     |> put_in(["agent", "effort"], maybe(text()))
     |> put_in(["agent", "custom_args"], Enum.map(1..:rand.uniform(5), fn _ -> text() end))
     |> put_in(["agent", "env"], %{"KEY" => text()})
+    |> put_in(["agent", "provider_account"], maybe(random_provider_account()))
     |> put_in(["agent", "extra_mcp_servers"], %{"nested" => [nil, true, id(), %{"x" => text()}]})
     |> put_in(["trigger", "kind"], pick(~w(assign manual reopen future_kind)))
     |> put_in(["trigger", "reason"], maybe(text()))
     |> put_in(["trigger", "feedback_id"], maybe(id()))
+  end
+
+  defp random_provider_account do
+    %{
+      "base_url" => "https://api.example.com/#{id()}",
+      "api_key" => "test-key-#{id()}",
+      "models" => if(:rand.uniform(2) == 1, do: %{}, else: %{"default" => text()})
+    }
   end
 
   defp random_usage do
