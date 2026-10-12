@@ -64,6 +64,25 @@ defmodule Helmsman.DaemonsTest do
     assert {:error, :not_found} = Daemons.set_workspaces(scope, daemon.id, [])
   end
 
+  test "rename trims the name and rejects a blank or missing name with a changeset error",
+       %{owner: owner, scope: scope} do
+    {daemon, _token} = daemon_fixture(owner)
+
+    for blank <- ["", "   ", "\t\n", nil] do
+      assert {:error, %Ecto.Changeset{} = changeset} = Daemons.rename(scope, daemon.id, blank)
+      assert %{name: [_ | _]} = errors_on(changeset)
+    end
+
+    assert {:error, %Ecto.Changeset{} = changeset} =
+             Daemons.rename(scope, daemon.id, String.duplicate("x", 65))
+
+    assert %{name: [_ | _]} = errors_on(changeset)
+    assert Repo.get!(Daemons.Daemon, daemon.id).name == daemon.name
+
+    assert {:ok, renamed} = Daemons.rename(scope, daemon.id, "  laptop  ")
+    assert renamed.name == "laptop"
+  end
+
   test "set_workspaces rejects a workspace where the daemon owner is only a viewer",
        %{owner: owner, workspace: workspace, other_workspace: viewer_workspace, scope: scope} do
     member_fixture(viewer_workspace, owner, :viewer)

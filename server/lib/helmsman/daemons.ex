@@ -169,11 +169,15 @@ defmodule Helmsman.Daemons do
   defp name_changeset(daemon, name) do
     daemon
     |> Ecto.Changeset.cast(%{name: name}, [:name])
-    |> Ecto.Changeset.update_change(:name, &String.trim/1)
+    |> Ecto.Changeset.update_change(:name, &trim_name/1)
     |> Ecto.Changeset.validate_required([:name])
     |> Ecto.Changeset.validate_length(:name, min: 1, max: 64)
     |> Ecto.Changeset.check_constraint(:name, name: :daemons_name_length)
   end
+
+  # `cast` turns a blank name into a nil change, which must reach validate_required.
+  defp trim_name(name) when is_binary(name), do: String.trim(name)
+  defp trim_name(name), do: name
 
   defp notify_changed({:ok, daemon} = result) do
     changed(daemon)
