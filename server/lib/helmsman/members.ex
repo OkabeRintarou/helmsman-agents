@@ -119,6 +119,9 @@ defmodule Helmsman.Members do
 
   defp update_role(membership, role) do
     with {:ok, membership} <- membership |> Ecto.Changeset.change(role: role) |> Repo.update() do
+      if role == :viewer,
+        do: Helmsman.Daemons.cascade_member(membership.workspace_id, membership.user_id, false)
+
       notify(membership.workspace_id, membership.user_id, {:role, role})
       {:ok, membership}
     end
@@ -211,6 +214,7 @@ defmodule Helmsman.Members do
       set: [revoked_at: now, updated_at: now]
     )
 
+    Helmsman.Daemons.cascade_member(workspace_id, user_id, true)
     :ok
   end
 

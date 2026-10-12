@@ -13,7 +13,13 @@ defmodule Helmsman.RateLimit do
 
   use Hammer, backend: :ets
 
-  @type bucket :: :magic_link_ip | :magic_link_email | :password_ip | :register_ip
+  @type bucket ::
+          :magic_link_ip
+          | :magic_link_email
+          | :password_ip
+          | :register_ip
+          | :daemon_device_ip
+          | :daemon_device_user
 
   @doc """
   Counts one request against `bucket` for `key`.

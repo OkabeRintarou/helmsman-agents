@@ -39,6 +39,51 @@ defmodule Helmsman.PolicyMatrixTest do
   # a builder `fn scope -> resource end`. Later changes append their rows
   # here.
   @matrix [
+            for action <- [
+                  :view_agents,
+                  :manage_agents,
+                  :configure_agent,
+                  :administer_agent,
+                  :manage_runtimes,
+                  :list_all_runtimes,
+                  :disable_runtime
+                ],
+                role <- @roles,
+                kind <- [:human, :agent],
+                owner_id <- [10, 11] do
+              resource =
+                case action do
+                  action when action in [:configure_agent, :administer_agent] ->
+                    %Actor{workspace_id: 1, kind: :agent, owner_id: owner_id}
+
+                  :disable_runtime ->
+                    %{user_id: owner_id}
+
+                  _ ->
+                    %{user_id: owner_id}
+                end
+
+              allowed =
+                case action do
+                  :view_agents ->
+                    true
+
+                  action when action in [:manage_agents, :manage_runtimes] ->
+                    kind == :human and role != :viewer
+
+                  :list_all_runtimes ->
+                    kind == :human and role in [:owner, :admin]
+
+                  :configure_agent ->
+                    kind == :human and role != :viewer and owner_id == 10
+
+                  action when action in [:administer_agent, :disable_runtime] ->
+                    kind == :human and
+                      (role in [:owner, :admin] or (role == :member and owner_id == 10))
+                end
+
+              {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
+            end,
             # view_workspace: everyone, humans and agents
             for role <- [:owner, :admin, :member, :viewer], kind <- [:human, :agent] do
               {:view_workspace, role, kind, @none, :ok}

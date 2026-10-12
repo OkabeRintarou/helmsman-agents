@@ -26,6 +26,17 @@ defmodule HelmsmanWeb.Router do
     plug :accepts, ["json"]
   end
 
+  pipeline :daemon_api do
+    plug :accepts, ["json"]
+  end
+
+  scope "/daemon", HelmsmanWeb do
+    pipe_through :daemon_api
+    post "/device/code", DaemonDeviceController, :code
+    post "/device/token", DaemonDeviceController, :token
+    post "/logout", DaemonDeviceController, :logout
+  end
+
   scope "/", HelmsmanWeb do
     pipe_through :browser
 

@@ -44,6 +44,9 @@ defmodule Helmsman.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:oban, "~> 2.20"},
+      {:cloak_ecto, "~> 1.3"},
+      {:jose, "~> 1.11"},
       {:bcrypt_elixir, "~> 3.0"},
       {:phoenix, "~> 1.8.15"},
       {:phoenix_ecto, "~> 4.5"},
@@ -74,9 +77,6 @@ defmodule Helmsman.MixProject do
       {:gen_smtp, "~> 1.3"},
       {:hammer, "~> 7.5"},
       {:req, "~> 0.5"},
-      {:oban, "~> 2.20"},
-      {:cloak_ecto, "~> 1.3"},
-      {:jose, "~> 1.11"},
       {:mdex, "~> 0.14"},
       {:lumis, "~> 0.10"},
       {:lumis_wasm_bundle_backend, "~> 0.1"},

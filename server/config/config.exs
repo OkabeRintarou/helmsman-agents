@@ -29,7 +29,9 @@ config :helmsman, Helmsman.RateLimit,
   magic_link_ip: {5, :timer.minutes(1)},
   magic_link_email: {3, :timer.minutes(10)},
   password_ip: {10, :timer.minutes(1)},
-  register_ip: {10, :timer.hours(1)}
+  register_ip: {10, :timer.hours(1)},
+  daemon_device_ip: {10, :timer.minutes(1)},
+  daemon_device_user: {20, :timer.minutes(1)}
 
 # Requests per minute per API token (designs/03 §2).
 config :helmsman, :api_token_rate_limit, 600
@@ -38,13 +40,15 @@ config :helmsman, :api_token_rate_limit, 600
 config :helmsman, Oban,
   engine: Oban.Engines.Basic,
   repo: Helmsman.Repo,
-  queues: [github: 5, github_sync: 1, default: 10],
+  queues: [github: 5, github_sync: 1, default: 10, daemons: 2],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
     {Oban.Plugins.Cron,
      crontab: [
        {"0 4 * * *", Helmsman.GitHub.Workers.SyncAll},
-       {"30 4 * * *", Helmsman.GitHub.Workers.PruneDeliveries}
+       {"30 4 * * *", Helmsman.GitHub.Workers.PruneDeliveries},
+       {"* * * * *", Helmsman.Daemons.Workers.MarkOffline},
+       {"15 3 * * *", Helmsman.Daemons.Workers.PruneDeviceCodes}
      ]}
   ]
 

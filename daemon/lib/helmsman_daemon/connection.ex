@@ -142,6 +142,11 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   @impl true
+  def handle_leave(_topic, %{assigns: %{stopping?: true}} = socket), do: {:ok, socket}
+
+  def handle_leave(topic, socket), do: handle_topic_close(topic, :left, socket)
+
+  @impl true
   def handle_disconnect(reason, socket) do
     if auth_failure?(reason) do
       fatal(socket, 3, "Authentication failed; login again")

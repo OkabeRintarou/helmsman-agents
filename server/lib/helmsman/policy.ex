@@ -34,6 +34,10 @@ defmodule Helmsman.Policy do
     :list_all_tokens,
     :revoke_any_token,
     :manage_runtimes,
+    :configure_agent,
+    :administer_agent,
+    :list_all_runtimes,
+    :disable_runtime,
     # squads and autopilots (automation)
     :manage_squads,
     :manage_autopilots,
@@ -51,6 +55,13 @@ defmodule Helmsman.Policy do
 
   # Actions with an authorization clause below.
   @actions [
+    :view_agents,
+    :manage_agents,
+    :configure_agent,
+    :administer_agent,
+    :manage_runtimes,
+    :list_all_runtimes,
+    :disable_runtime,
     :view_workspace,
     :update_workspace,
     :change_workspace_slug,
@@ -167,6 +178,38 @@ defmodule Helmsman.Policy do
 
   def authorize(%Scope{} = scope, :revoke_any_token, %ApiToken{} = token),
     do: allow_if(role_at_least?(scope, :admin) and in_workspace?(scope, token))
+
+  def authorize(%Scope{} = scope, :view_agents, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
+
+  def authorize(%Scope{} = scope, action, _resource)
+      when action in [:manage_agents, :manage_runtimes],
+      do: allow_if(role_at_least?(scope, :member))
+
+  def authorize(%Scope{} = scope, :list_all_runtimes, _resource),
+    do: allow_if(role_at_least?(scope, :admin))
+
+  def authorize(%Scope{} = scope, :configure_agent, %Actor{kind: :agent} = actor),
+    do:
+      allow_if(
+        in_workspace?(scope, actor) and role_at_least?(scope, :member) and
+          same_user?(scope, actor)
+      )
+
+  def authorize(%Scope{} = scope, :administer_agent, %Actor{kind: :agent} = actor),
+    do:
+      allow_if(
+        in_workspace?(scope, actor) and
+          (role_at_least?(scope, :admin) or
+             (role_at_least?(scope, :member) and same_user?(scope, actor)))
+      )
+
+  def authorize(%Scope{} = scope, :disable_runtime, %{user_id: owner_id}),
+    do:
+      allow_if(
+        role_at_least?(scope, :admin) or
+          (role_at_least?(scope, :member) and scope.user.id == owner_id)
+      )
 
   ## Agent identity
 

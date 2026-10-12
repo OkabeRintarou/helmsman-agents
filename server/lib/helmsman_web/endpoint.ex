@@ -13,6 +13,10 @@ defmodule HelmsmanWeb.Endpoint do
     secure: Application.compile_env(:helmsman, :secure_session_cookie, false)
   ]
 
+  socket "/daemon/socket", HelmsmanWeb.DaemonSocket,
+    websocket: [connect_info: [:x_headers], check_origin: false],
+    longpoll: false
+
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [:peer_data, session: @session_options]],
     longpoll: [connect_info: [:peer_data, session: @session_options]]

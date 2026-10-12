@@ -31,6 +31,33 @@ defmodule Helmsman.CommittedData do
 
       workspace_ids = Enum.uniq(List.flatten(rows) ++ extra_workspace_ids)
 
+      Repo.query!(
+        "DELETE FROM agent_profiles WHERE workspace_id = ANY($1) OR actor_id IN " <>
+          "(SELECT id FROM actors WHERE user_id = ANY($2) OR owner_id = ANY($2)) OR runtime_id IN " <>
+          "(SELECT id FROM runtimes WHERE daemon_id IN " <>
+          "(SELECT id FROM daemons WHERE user_id = ANY($2)))",
+        [workspace_ids, user_ids]
+      )
+
+      Repo.query!(
+        "DELETE FROM runtimes WHERE workspace_id = ANY($1) OR daemon_id IN " <>
+          "(SELECT id FROM daemons WHERE user_id = ANY($2))",
+        [workspace_ids, user_ids]
+      )
+
+      Repo.query!(
+        "DELETE FROM daemon_workspaces WHERE workspace_id = ANY($1) OR daemon_id IN " <>
+          "(SELECT id FROM daemons WHERE user_id = ANY($2))",
+        [workspace_ids, user_ids]
+      )
+
+      Repo.query!(
+        "DELETE FROM device_codes WHERE user_id = ANY($1) OR workspace_ids && $2",
+        [user_ids, workspace_ids]
+      )
+
+      Repo.query!("DELETE FROM daemons WHERE user_id = ANY($1)", [user_ids])
+
       for table <- [
             "task_events",
             "feedback",

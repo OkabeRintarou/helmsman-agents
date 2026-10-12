@@ -106,6 +106,36 @@ defmodule HelmsmanDaemon.ConnectionTest do
     reply(client, ref, {:ok, %{"acked_seq" => 1}})
   end
 
+  test "a normal topic close reconnects and requeues in-flight reports" do
+    client = start_connection(reconnect_after_ms: [10])
+    join_connection(client)
+    report_ref = Connection.report(1, %Report.Events{run_id: 1, events: [event()]})
+    assert_push("daemon:1", "events", first_wire, _, 1_000)
+
+    :erlang.trace(client, true, [:receive])
+    send(client, Slipstream.Signatures.event(%Slipstream.Events.TopicLeft{topic: "daemon:1"}))
+    eventually(fn -> not :sys.get_state(client).assigns.joined? end)
+    assert_disconnect()
+    assert_receive {:trace, ^client, :receive, :reconnect}, 1_000
+    :erlang.trace(client, false, [:receive])
+    join_connection(client)
+
+    assert_push("daemon:1", "events", second_wire, ref, 1_000)
+    assert second_wire == first_wire
+    reply(client, ref, {:ok, %{"acked_seq" => 1}})
+    assert_receive {:report_result, ^report_ref, {:ok, %Reply.Events{acked_seq: 1}}}
+  end
+
+  test "a normal topic close while stopping leaves the connection unchanged" do
+    client = start_connection()
+    join_connection(client)
+    socket = :sys.get_state(client) |> Slipstream.Socket.assign(:stopping?, true)
+
+    assert {:ok, ^socket} = Connection.handle_leave("daemon:1", socket)
+    refute_receive :reconnect, 30
+    refute_disconnect()
+  end
+
   test "invalid payload and local encoding rejection do not retry" do
     client = start_connection(report_backoff_ms: [10])
     join_connection(client)
