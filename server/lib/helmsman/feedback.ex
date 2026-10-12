@@ -301,6 +301,40 @@ defmodule Helmsman.Feedback do
   end
 
   @doc """
+  Returns the IDs (`KEY-N#S`) of the task's active records that `scope`
+  may revise (`:read_tasks` to ask; each record by
+  `Helmsman.Policy.authorize(scope, :revise_feedback, author)`): an
+  empty set for viewers. One query for the task, one for its active
+  records with their authors.
+  """
+  @spec revisable_ids(Scope.t(), String.t()) ::
+          {:ok, MapSet.t(String.t())} | {:error, :forbidden | :not_found}
+  def revisable_ids(%Scope{workspace: %Workspace{id: workspace_id}} = scope, ident)
+      when is_binary(ident) do
+    with :ok <- Policy.authorize(scope, :read_tasks),
+         {:ok, ident, _key, _seq} <- Ident.parse(ident),
+         %Task{} = task <-
+           Repo.one(from(t in Task, where: t.workspace_id == ^workspace_id and t.ident == ^ident)) do
+      ids =
+        from(f in Entry,
+          join: a in assoc(f, :author),
+          where: f.task_id == ^task.id and f.status == :active,
+          select: {f.seq, a}
+        )
+        |> Repo.all()
+        |> Enum.filter(fn {_seq, author} ->
+          Policy.authorize(scope, :revise_feedback, author) == :ok
+        end)
+        |> MapSet.new(fn {seq, _author} -> Id.build(task.ident, seq) end)
+
+      {:ok, ids}
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  @doc """
   Gets one feedback record by ID (`KEY-N#S`, any case) (`:read_tasks`).
   Malformed IDs and records of other workspaces are `:not_found`.
   """
