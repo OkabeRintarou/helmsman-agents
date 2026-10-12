@@ -24,8 +24,18 @@ defmodule HelmsmanWeb.PortalHelpers do
     |> LazyHTML.from_fragment()
   end
 
-  @doc "Whether overlay `id` is rendered (open)."
-  def open?(view, id), do: in_portal?(view, id, "##{id}")
+  @doc """
+  Whether overlay `id` is open: rendered, and neither its root, backdrop nor container is
+  hidden — a server-opened overlay must be visible without client JS.
+  """
+  def open?(view, id) do
+    tree = portal(view, id)
+
+    in_portal?(view, id, "##{id}") and
+      Enum.all?(["##{id}", "##{id}-backdrop", "##{id}-container"], fn selector ->
+        tree |> LazyHTML.query("#{selector}.hidden") |> Enum.empty?()
+      end)
+  end
 
   @doc "Whether the portal of `id` has an element matching `selector` (containing `text`)."
   def in_portal?(view, id, selector, text \\ nil) do

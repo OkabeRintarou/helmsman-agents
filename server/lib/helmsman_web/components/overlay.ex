@@ -17,6 +17,11 @@ defmodule HelmsmanWeb.Components.Overlay do
 
   Overlays are opened by the server (`show={true}`, e.g. driven by a URL parameter) or on
   the client with `open_overlay/2`.
+
+  A server-opened overlay is rendered visible (no `hidden`); its enter transition is
+  CSS-only (`starting:` / `@starting-style`), so it shows even if the `phx-mounted` JS
+  never runs, and the `JS.show/1` steps of `open_overlay/2` are no-ops for it. The root
+  covers the viewport (`fixed inset-0`), so it has a box whenever it is displayed.
   """
   use Phoenix.Component
   use Gettext, backend: HelmsmanWeb.Gettext
@@ -63,13 +68,18 @@ defmodule HelmsmanWeb.Components.Overlay do
 
   def close_overlay(%JS{} = js, id, opts) do
     below = Keyword.get(opts, :stack_on)
+    kind = Keyword.get(opts, :kind, :dialog)
 
     js
     |> JS.remove_attribute("data-open", to: "##{id}")
+    # A server-opened overlay still carries its CSS enter transition; drop it so the
+    # leave transition below gets its own timing.
+    |> JS.remove_class(enter_class(kind), to: "##{id}-container")
+    |> JS.remove_class(backdrop_enter(), to: "##{id}-backdrop")
     |> JS.hide(
       to: "##{id}-container",
       time: 120,
-      transition: transition(Keyword.get(opts, :kind, :dialog), :out)
+      transition: transition(kind, :out)
     )
     |> JS.hide(
       to: "##{id}-backdrop",
@@ -99,13 +109,23 @@ defmodule HelmsmanWeb.Components.Overlay do
   defp transition(_, :out),
     do: {"transition-all ease-in duration-120", "opacity-100 scale-100", "opacity-0 scale-95"}
 
+  # CSS enter transitions of a server-opened overlay (mirror those of `open_overlay/3`).
+  defp backdrop_enter, do: "transition-opacity ease-out duration-150 starting:opacity-0"
+
+  defp enter_class(:panel),
+    do: "transition-transform ease-out duration-150 starting:translate-x-full"
+
+  defp enter_class(_),
+    do: "transition-all ease-out duration-120 starting:opacity-0 starting:scale-95"
+
   @doc """
   Base modal layer. Prefer `side_panel/1`, `confirm_dialog/1` or `modal/1`.
 
   Two modes:
 
-  * **server-controlled** (`show={true | false}`): rendered only while `show` is true; it
-    opens on mount and closes in `phx-remove`. Dismissing runs `on_cancel` only (e.g. a
+  * **server-controlled** (`show={true | false}`): rendered only while `show` is true, and
+    then rendered visible (CSS enter transition); `phx-mounted` makes the layer underneath
+    inert and moves the focus, `phx-remove` closes it. Dismissing runs `on_cancel` only (e.g. a
     `JS.patch/1` removing the URL parameter, or a `JS.push/1`), so `on_cancel` is required.
   * **client-controlled** (`show` omitted): always rendered and hidden; open it with
     `open_overlay/2` (or `JS.exec("data-show", to: "#id")`); dismissing closes it on the
@@ -140,7 +160,8 @@ defmodule HelmsmanWeb.Components.Overlay do
         cancel: cancel,
         close: close,
         open: open_overlay(assigns.id, opts),
-        render?: assigns.show != false
+        render?: assigns.show != false,
+        shown?: assigns.show == true
       )
 
     ~H"""
@@ -157,19 +178,30 @@ defmodule HelmsmanWeb.Components.Overlay do
         aria-modal="true"
         aria-labelledby={@labelledby || "#{@id}-title"}
         aria-describedby={@describedby}
-        class={["relative hidden", if(@stack_on, do: "z-[60]", else: "z-50")]}
+        class={[
+          "fixed inset-0",
+          !@shown? && "hidden",
+          if(@stack_on, do: "z-[60]", else: "z-50")
+        ]}
         {@rest}
       >
         <div
           id={"#{@id}-backdrop"}
-          class="fixed inset-0 bg-scrim hidden"
+          class={[
+            "fixed inset-0 bg-scrim",
+            if(@shown?, do: backdrop_enter(), else: "hidden")
+          ]}
           aria-hidden="true"
           phx-click={if(!@dirty, do: @cancel)}
         />
         <div class={["fixed inset-0 pointer-events-none flex", @position_class]}>
           <.focus_wrap
             id={"#{@id}-container"}
-            class={["pointer-events-auto hidden flex-col bg-raised shadow-overlay", @container_class]}
+            class={[
+              "pointer-events-auto flex-col bg-raised shadow-overlay",
+              if(@shown?, do: ["flex", enter_class(@kind)], else: "hidden"),
+              @container_class
+            ]}
           >
             <div id={"#{@id}-content"} class="contents">
               {render_slot(@inner_block, @cancel)}

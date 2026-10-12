@@ -110,4 +110,81 @@ defmodule HelmsmanWeb.Components.OverlayTest do
 
     refute html =~ ~s(id="ov")
   end
+
+  # Regression (M4 browser acceptance): a server-opened overlay must not depend on the
+  # phx-mounted JS to become visible.
+  test "a server-opened overlay renders visible with a CSS enter transition" do
+    for kind <- [:panel, :dialog] do
+      assigns = %{kind: kind}
+
+      tree =
+        ~H"""
+        <.overlay id="ov" show kind={@kind} on_cancel={Phoenix.LiveView.JS.push("close")}>
+          <p>x</p>
+        </.overlay>
+        """
+        |> overlay_tree()
+
+      for id <- ~w(#ov #ov-backdrop #ov-container) do
+        refute classes(tree, id) |> Enum.member?("hidden"), "#{id} is hidden (#{kind})"
+      end
+
+      assert "fixed" in classes(tree, "#ov")
+      assert "inset-0" in classes(tree, "#ov")
+      assert "flex" in classes(tree, "#ov-container")
+      assert "starting:opacity-0" in classes(tree, "#ov-backdrop")
+
+      starting = if kind == :panel, do: "starting:translate-x-full", else: "starting:scale-95"
+      assert starting in classes(tree, "#ov-container")
+    end
+  end
+
+  test "a client-controlled overlay renders hidden until opened" do
+    assigns = %{}
+
+    tree =
+      ~H"""
+      <.overlay id="ov">
+        <p>x</p>
+      </.overlay>
+      """
+      |> overlay_tree()
+
+    for id <- ~w(#ov #ov-backdrop #ov-container) do
+      assert "hidden" in classes(tree, id), "#{id} is not hidden"
+    end
+
+    refute Enum.any?(classes(tree, "#ov-container"), &String.starts_with?(&1, "starting:"))
+  end
+
+  test "closing drops the CSS enter transition before the leave transition" do
+    ops = close_overlay("ov", kind: :panel) |> Jason.encode!() |> Jason.decode!()
+
+    remove =
+      Enum.find_index(ops, fn
+        ["remove_class", %{"to" => "#ov-container", "names" => names}] ->
+          "starting:translate-x-full" in names
+
+        _ ->
+          false
+      end)
+
+    hide = Enum.find_index(ops, &match?(["hide", %{"to" => "#ov-container"}], &1))
+    assert remove < hide
+  end
+
+  defp overlay_tree(rendered) do
+    rendered
+    |> rendered_to_string()
+    |> String.replace(~r/<template[^>]*>|<\/template>/, "")
+    |> LazyHTML.from_fragment()
+  end
+
+  defp classes(tree, selector) do
+    tree
+    |> LazyHTML.query(selector)
+    |> LazyHTML.attribute("class")
+    |> List.first("")
+    |> String.split()
+  end
 end

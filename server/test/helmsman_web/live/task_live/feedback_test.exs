@@ -200,6 +200,7 @@ defmodule HelmsmanWeb.TaskLive.FeedbackTest do
       assert has_element?(view, "#task-open-question", "待回答")
 
       view |> element("#feedback-#{q}-answer") |> render_click()
+      assert open?(view, @panel)
       assert in_portal?(view, @panel, "#feedback-panel-title", "回答 BOS-1##{q}")
       assert in_portal?(view, @panel, "#feedback-quote", "用方案 A 还是 B？")
       refute in_portal?(view, @panel, ~s(input[name="feedback[kind]"]))

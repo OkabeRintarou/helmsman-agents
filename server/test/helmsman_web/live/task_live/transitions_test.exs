@@ -187,6 +187,7 @@ defmodule HelmsmanWeb.TaskLive.TransitionsTest do
       {:ok, view, _} = live(as(ctx, :alice), ctx.path)
 
       open_panel(view, "verified")
+      assert open?(view, @panel)
       assert in_portal?(view, @panel, "#transition-panel-title", "验收 BOS-1")
 
       assert in_portal?(
