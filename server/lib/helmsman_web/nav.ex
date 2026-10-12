@@ -35,6 +35,14 @@ defmodule HelmsmanWeb.Nav do
         path: &"/w/#{&1.workspace.slug}/projects"
       },
       %{
+        id: :runtimes,
+        group: :config,
+        label: fn -> dgettext("ui", "运行时") end,
+        icon: "lucide-server",
+        path: &"/w/#{&1.workspace.slug}/settings/runtimes",
+        visible?: &member?/1
+      },
+      %{
         id: :settings,
         group: :config,
         label: fn -> dgettext("ui", "设置") end,
@@ -113,6 +121,9 @@ defmodule HelmsmanWeb.Nav do
       }
     end
   end
+
+  defp member?(%{role: role}), do: role in [:owner, :admin, :member]
+  defp member?(_scope), do: false
 
   defp visible?(item, scope) do
     case Map.get(item, :visible?) do

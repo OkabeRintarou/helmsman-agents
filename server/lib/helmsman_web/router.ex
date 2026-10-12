@@ -99,6 +99,7 @@ defmodule HelmsmanWeb.Router do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
       live "/workspaces/new", WorkspaceLive.New, :new
+      live "/device", DeviceLive, :show
     end
 
     post "/users/update-password", UserSessionController, :update_password
@@ -137,6 +138,7 @@ defmodule HelmsmanWeb.Router do
       live "/w/:slug/settings", SettingsLive.General, :show
       live "/w/:slug/settings/members", SettingsLive.Members, :index
       live "/w/:slug/settings/tokens", SettingsLive.Tokens, :index
+      live "/w/:slug/settings/runtimes", SettingsLive.Runtimes, :index
     end
   end
 

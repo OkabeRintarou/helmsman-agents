@@ -27,6 +27,30 @@ defmodule HelmsmanWeb.Url do
   def drop_params(uri, keys),
     do: update(uri, &Map.drop(&1, Enum.map(keys, fn k -> to_string(k) end)))
 
+  @doc """
+  The path of the agent page of `name` in the workspace `slug`. The name's `/` stay path
+  separators (`/w/acme/agents/keel/dev`); a name with an empty segment (`//` or a trailing
+  `/`, which the path would lose) is one segment with `/` encoded as `%2F`.
+
+      iex> HelmsmanWeb.Url.agent_path("acme", "keel/dev")
+      "/w/acme/agents/keel/dev"
+  """
+  @spec agent_path(String.t(), String.t()) :: String.t()
+  def agent_path(slug, name) do
+    encoded =
+      if Enum.any?(String.split(name, "/"), &(&1 == "")),
+        do: URI.encode(name, &URI.char_unreserved?/1),
+        else: name |> String.split("/") |> Enum.map_join("/", &encode_segment/1)
+
+    "/w/#{slug}/agents/#{encoded}"
+  end
+
+  defp encode_segment(segment), do: URI.encode(segment, &URI.char_unreserved?/1)
+
+  @doc "The agent name of the `*name` glob segments of `agent_path/2`."
+  @spec agent_name([String.t()]) :: String.t()
+  def agent_name(segments) when is_list(segments), do: Enum.join(segments, "/")
+
   defp update(uri, fun) do
     %URI{path: path, query: query} = URI.parse(uri)
 

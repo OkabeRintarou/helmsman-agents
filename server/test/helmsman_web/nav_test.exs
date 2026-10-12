@@ -1,6 +1,7 @@
 defmodule HelmsmanWeb.NavTest do
   use ExUnit.Case, async: true
 
+  alias HelmsmanWeb.CommandPalette.Pages
   alias HelmsmanWeb.Nav
 
   @scope %{workspace: %{slug: "acme"}, role: :member}
@@ -74,7 +75,7 @@ defmodule HelmsmanWeb.NavTest do
 
   test "设置 is registered in the 配置 group and current on every settings page" do
     groups = Nav.items_for(@scope, "/w/acme/settings/tokens")
-    assert %{label: "配置", items: [settings]} = Enum.find(groups, &(&1.id == :config))
+    assert %{label: "配置", items: [_runtimes, settings]} = Enum.find(groups, &(&1.id == :config))
     assert settings.id == :settings
     assert settings.label == "设置"
     assert settings.path == "/w/acme/settings"
@@ -102,6 +103,36 @@ defmodule HelmsmanWeb.NavTest do
       assert current(project_groups("/w/acme/t/BOSX-1")) == [{:project, "BOSX"}]
       assert current(project_groups("/w/acme/projects")) == [:projects]
       assert current(project_groups("/w/acme/t/API-1")) == []
+    end
+  end
+
+  describe "运行时" do
+    defp config_items(role, path) do
+      groups = Nav.items_for(%{@scope | role: role}, path)
+      Enum.find(groups, &(&1.id == :config)).items
+    end
+
+    test "a viewer does not see it" do
+      assert [%{id: :settings}] = config_items(:viewer, "/w/acme")
+    end
+
+    test "members see it before 设置, current on its page instead of 设置" do
+      assert [runtimes, settings] = config_items(:member, "/w/acme/settings/runtimes")
+      assert runtimes.id == :runtimes
+      assert runtimes.label == "运行时"
+      assert runtimes.path == "/w/acme/settings/runtimes"
+      assert runtimes.current?
+      refute settings.current?
+
+      assert [%{current?: false}, %{current?: true}] =
+               config_items(:admin, "/w/acme/settings/members")
+    end
+
+    test "the command palette finds it once" do
+      scope = %{@scope | role: :member}
+      ctx = %{nav: Nav.items_for(scope, "/w/acme")}
+      results = Pages.search(scope, "运行时", ctx)
+      assert [%{label: "运行时", path: "/w/acme/settings/runtimes"}] = results
     end
   end
 end

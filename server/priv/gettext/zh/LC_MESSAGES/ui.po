@@ -214,6 +214,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
@@ -238,6 +239,7 @@ msgid "右侧面板（?panel=new）"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "吊销"
@@ -273,6 +275,7 @@ msgstr ""
 msgid "图标"
 msgstr ""
 
+#: lib/helmsman_web/agent_components.ex
 #: lib/helmsman_web/components/actor.ex
 #, elixir-autogen, elixir-format
 msgid "在线"
@@ -480,6 +483,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/command_palette/actions.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #, elixir-autogen, elixir-format
 msgid "操作"
 msgstr ""
@@ -547,6 +551,7 @@ msgstr ""
 #: lib/helmsman_web/feedback_components.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #, elixir-autogen, elixir-format
 msgid "更多操作"
 msgstr ""
@@ -619,6 +624,7 @@ msgid "清除筛选"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
@@ -646,6 +652,7 @@ msgid "示例标签"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #, elixir-autogen, elixir-format
 msgid "禁用"
 msgstr ""
@@ -655,6 +662,7 @@ msgstr ""
 msgid "禁用并说明原因"
 msgstr ""
 
+#: lib/helmsman_web/agent_components.ex
 #: lib/helmsman_web/components/actor.ex
 #, elixir-autogen, elixir-format
 msgid "离线"
@@ -891,6 +899,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
@@ -1297,6 +1306,7 @@ msgstr ""
 msgid "你是执行方：验收需要通过的测试结果。最近一次完成没有附带通过的测试，请在下方填写"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/filter.ex
 #, elixir-autogen, elixir-format
 msgid "全部"
@@ -1428,6 +1438,7 @@ msgstr ""
 msgid "执行方"
 msgstr ""
 
+#: lib/helmsman_web/live/device_live.ex
 #: lib/helmsman_web/task_transitions.ex
 #, elixir-autogen, elixir-format
 msgid "拒绝"
@@ -1572,6 +1583,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/errors.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_errors.ex
@@ -1904,6 +1916,7 @@ msgstr "只读"
 msgid "只读成员不能创建 Token"
 msgstr "只读成员不能创建 Token"
 
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "吊销 %{name}？"
@@ -1966,6 +1979,7 @@ msgstr "已修改 %{name} 的角色"
 msgid "已加入 %{workspace}"
 msgstr "已加入 %{workspace}"
 
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "已吊销"
@@ -2064,6 +2078,7 @@ msgstr "无"
 msgid "最近使用"
 msgstr "最近使用"
 
+#: lib/helmsman_web/live/device_live.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "有效期"
@@ -2573,4 +2588,251 @@ msgstr ""
 #: lib/helmsman_web/markdown_editor.ex
 #, elixir-autogen, elixir-format
 msgid "预览"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "%{workspace} 的运行时"
+msgstr "退出 %{workspace}？"
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "viewer 不能运行 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_components.ex
+#, elixir-autogen, elixir-format
+msgid "不可用"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "你在标出的工作区里不能运行 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "你在标出的工作区里已不能运行 Agent，请取消勾选后重试"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "你在这个工作区已不能运行 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "前有效"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "只有当你自己刚在这台机器上运行了 helmsman login 时才授权：授权后，这台机器可以在所选工作区里以你的身份执行 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "吊销后这台机器立即断开，它的运行时全部离线，需要重新 helmsman login"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "名字"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "启用"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "在你的电脑上安装 Helmsman 守护进程并登录，它会把检测到的 Agent CLI 登记为运行时"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "在这些工作区运行 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "尝试过于频繁，请 1 分钟后再试"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "已吊销 %{name}"
+msgstr "吊销 %{name}？"
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "已拒绝这次登录"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "已授权 %{machine}，回到终端即可，守护进程会自动完成登录"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "已改名"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "已更新服务的工作区"
+msgstr ""
+
+#: lib/helmsman_web/agent_components.ex
+#, elixir-autogen, elixir-format
+msgid "已禁用"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "已绑定的 Agent 不会再被派发运行，排队中的运行会被取消"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "我的"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "我的机器"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "所属用户"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "授权"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "授权设备"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "操作失败，请重试"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "改名"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "最近上报"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "服务的工作区"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "本工作区还没有运行时"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "机器"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "模型"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "没有权限访问运行时"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "版本"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "禁用运行时？"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "系统"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "绑定的 Agent"
+msgstr "缺省 Agent"
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "继续"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "范围"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "设备码"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "设备码无效或已过期，请在终端重新执行 helmsman login"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "请填写名字"
+msgstr ""
+
+#: lib/helmsman_web/live/device_live.ex
+#, elixir-autogen, elixir-format
+msgid "输入终端里 helmsman login 显示的设备码。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "运行时"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "运行时不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "运行时已启用"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "运行时已禁用"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "还没有登录过的机器"
 msgstr ""
