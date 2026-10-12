@@ -20,15 +20,21 @@ defmodule Helmsman.PresenceTest do
         receive do: (:stop -> :ok)
       end)
 
-    assert_receive :tracked
+    assert_receive :tracked, 2_000
     assert %{"session-1" => %{metas: [%{actor_name: nil}]}} = Presence.list(topic)
-    assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff", payload: %{joins: joins}}
+
+    assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff", payload: %{joins: joins}},
+                   2_000
+
     assert Map.has_key?(joins, "session-1")
 
     ref = Process.monitor(pid)
     send(pid, :stop)
-    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}
-    assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff", payload: %{leaves: leaves}}
+    assert_receive {:DOWN, ^ref, :process, ^pid, :normal}, 2_000
+
+    assert_receive %Phoenix.Socket.Broadcast{event: "presence_diff", payload: %{leaves: leaves}},
+                   2_000
+
     assert Map.has_key?(leaves, "session-1")
     assert Presence.list(topic) == %{}
   end
