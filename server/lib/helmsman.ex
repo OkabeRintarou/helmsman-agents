@@ -27,6 +27,7 @@ defmodule Helmsman do
       Feedback.Mentions,
       Policy,
       Events,
+      Presence,
       Bootstrap
     ]
 

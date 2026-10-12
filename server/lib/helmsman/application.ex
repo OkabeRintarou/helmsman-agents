@@ -4,8 +4,9 @@ defmodule Helmsman.Application do
   @moduledoc false
 
   # Top-level boot boundary: the only domain-side module allowed to reach
-  # the web layer, and only its startup exports (Endpoint, Telemetry).
-  use Boundary, top_level?: true, deps: [Helmsman, HelmsmanWeb]
+  # the web and MCP layers, and only their startup exports (Endpoint,
+  # Telemetry, HelmsmanMCP.Supervisor).
+  use Boundary, top_level?: true, deps: [Helmsman, HelmsmanWeb, HelmsmanMCP]
 
   use Application
 
@@ -20,9 +21,11 @@ defmodule Helmsman.Application do
       Helmsman.Repo,
       {DNSCluster, query: Application.get_env(:helmsman, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Helmsman.PubSub},
+      Helmsman.Presence,
       {Helmsman.RateLimit, clean_period: :timer.minutes(1)},
       # Start a worker by calling: Helmsman.Worker.start_link(arg)
       # {Helmsman.Worker, arg},
+      HelmsmanMCP.Supervisor,
       # Start to serve requests, typically the last entry
       HelmsmanWeb.Endpoint
     ]

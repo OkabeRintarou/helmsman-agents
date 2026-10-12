@@ -23,6 +23,19 @@ defmodule HelmsmanWeb.Router do
     get "/", PageController, :home
   end
 
+  # MCP over Streamable HTTP (designs/08 §1): token auth, no session or
+  # CSRF, and no `:accepts` (the SSE GET asks for text/event-stream).
+  pipeline :mcp do
+    plug HelmsmanWeb.Plugs.BearerAuth, scope: "mcp", via: :mcp
+    plug HelmsmanWeb.Plugs.MCPSessionGuard
+  end
+
+  scope "/mcp" do
+    pipe_through :mcp
+
+    forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: HelmsmanMCP.Server
+  end
+
   # Other scopes may use custom stacks.
   # scope "/api", HelmsmanWeb do
   #   pipe_through :api

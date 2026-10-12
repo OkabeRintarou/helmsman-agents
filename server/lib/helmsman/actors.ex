@@ -9,10 +9,12 @@ defmodule Helmsman.Actors do
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Repo
+  alias Helmsman.Tx
   alias Helmsman.Workspaces
-  alias Helmsman.Workspaces.Workspace
+  alias Helmsman.Workspaces.{Membership, Workspace}
 
   @base_max 60
   @name_max 64
@@ -372,22 +374,26 @@ defmodule Helmsman.Actors do
   """
   @spec resolve_writer(Scope.t(), keyword()) :: {:ok, Actor.t()} | {:error, resolve_error()}
   def resolve_writer(%Scope{via: via} = scope, opts) when via in [:api, :mcp] do
+    with {:ok, actor, _source} <- resolve_writer_source(scope, opts), do: {:ok, actor}
+  end
+
+  defp resolve_writer_source(%Scope{via: via} = scope, opts) do
     workspace_id = scope.workspace.id
 
     cond do
       name = opts[:requested] ->
-        own_agent(scope, actor_by_name(workspace_id, name, :share))
+        own_agent(scope, actor_by_name(workspace_id, name, :share), :requested)
 
       id = opts[:session_actor_id] ->
-        own_agent(scope, actor_by_id(workspace_id, id))
+        own_agent(scope, actor_by_id(workspace_id, id), :session)
 
       match?(%ApiToken{default_agent_id: id} when not is_nil(id), scope.token) ->
-        own_agent(scope, actor_by_id(workspace_id, scope.token.default_agent_id))
+        own_agent(scope, actor_by_id(workspace_id, scope.token.default_agent_id), :default)
 
       via == :api ->
         case get_human(workspace_id, scope.user.id) do
           nil -> {:error, :not_found}
-          human -> {:ok, human}
+          human -> {:ok, human, :human}
         end
 
       via == :mcp ->
@@ -395,9 +401,9 @@ defmodule Helmsman.Actors do
     end
   end
 
-  defp own_agent(%Scope{user: %User{id: user_id}}, actor) do
+  defp own_agent(%Scope{user: %User{id: user_id}}, actor, source) do
     case actor do
-      %Actor{kind: :agent, owner_id: ^user_id, disabled_at: nil} -> {:ok, actor}
+      %Actor{kind: :agent, owner_id: ^user_id, disabled_at: nil} -> {:ok, actor, source}
       %Actor{kind: :agent, owner_id: ^user_id, name: name} -> {:error, {:agent_disabled, name}}
       _other -> {:error, :forbidden}
     end
@@ -407,5 +413,197 @@ defmodule Helmsman.Actors do
     Repo.one(
       from(a in Actor, where: a.workspace_id == ^workspace_id and a.id == ^id, lock: "FOR SHARE")
     )
+  end
+
+  @type writer_source :: :requested | :session | :default | :auto | :human
+
+  @doc """
+  Runs the write `fun` as the actor the request is recorded as
+  (designs/03 §4), resolved in the same transaction.
+
+  In one `Helmsman.Tx.run/2` (retried once on a deadlock): the maintenance
+  lock (shared), the requester's membership row `FOR SHARE` (gone →
+  `{:error, :not_found}`; otherwise the scope gets the current role), the
+  writer as `resolve_writer/2` resolves it with `opts`, and then
+  `fun.(scope)` with that actor in `scope.actor`. When the result is
+  `:needs_session_agent` and `opts[:auto_agent]` is true, the session's
+  own agent `<human name>/session-<6 characters>` is created first (the
+  role must allow `:identify`, so viewers get `{:error, :forbidden}`).
+
+  `fun` returns `{:ok, value}` or `{:error, reason}`; an error rolls back
+  everything, the session agent included. Any other result raises
+  `ArgumentError`. Domain writes inside `fun` join the transaction.
+
+  Returns `{:ok, value, %{actor: actor, source: source}}`, `source` being
+  `:requested`, `:session`, `:default`, `:auto` or, for REST, `:human`.
+  """
+  @spec with_writer(Scope.t(), keyword(), (Scope.t() -> Tx.result())) ::
+          {:ok, term(), %{actor: Actor.t(), source: writer_source()}} | {:error, term()}
+  def with_writer(%Scope{via: via} = scope, opts, fun)
+      when via in [:api, :mcp] and is_list(opts) and is_function(fun, 1) do
+    case Tx.run(fn -> with_writer_locked(scope, opts, fun) end, retry: 1) do
+      {:ok, %{value: value, actor: actor, source: source}} ->
+        {:ok, value, %{actor: actor, source: source}}
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp with_writer_locked(%Scope{workspace: workspace, user: user} = scope, opts, fun) do
+    Locks.maint_shared!(workspace.id)
+
+    membership =
+      Repo.one(
+        from(m in Membership,
+          where: m.workspace_id == ^workspace.id and m.user_id == ^user.id,
+          lock: "FOR SHARE"
+        )
+      )
+
+    with %Membership{role: role} <- membership || {:error, :not_found},
+         scope = %{scope | role: role},
+         {:ok, actor, source} <- writer(scope, opts) do
+      case fun.(%{scope | actor: actor}) do
+        {:ok, value} ->
+          {:ok, %{value: value, actor: actor, source: source}}
+
+        {:error, _reason} = error ->
+          error
+
+        other ->
+          raise ArgumentError,
+                "with_writer/3 expects the write to return {:ok, value} or " <>
+                  "{:error, reason}, got: #{inspect(other)}"
+      end
+    end
+  end
+
+  defp writer(scope, opts) do
+    case resolve_writer_source(scope, opts) do
+      {:error, :needs_session_agent} = error ->
+        if opts[:auto_agent], do: auto_writer(scope), else: error
+
+      result ->
+        result
+    end
+  end
+
+  defp auto_writer(scope) do
+    with :ok <- Policy.authorize(scope, :identify),
+         {:ok, actor} <- create_session_agent(scope),
+         do: {:ok, actor, :auto}
+  end
+
+  @session_prefix_max 49
+  @session_attempts 3
+  @suffix_alphabet ~c"abcdefghijklmnopqrstuvwxyz0123456789"
+
+  # The session's own agent: the user's human name (cut to 49 characters,
+  # so the name stays within 64) and a random suffix; a taken name is
+  # retried with another suffix.
+  defp create_session_agent(%Scope{workspace: workspace, user: user}) do
+    case get_human(workspace.id, user.id) do
+      nil ->
+        {:error, :not_found}
+
+      human ->
+        prefix = String.slice(human.name, 0, @session_prefix_max)
+        insert_session_agent(workspace.id, user.id, prefix, @session_attempts)
+    end
+  end
+
+  defp insert_session_agent(_workspace_id, _user_id, _prefix, 0), do: {:error, :name_taken}
+
+  defp insert_session_agent(workspace_id, user_id, prefix, attempts) do
+    row = %{
+      workspace_id: workspace_id,
+      kind: :agent,
+      name: prefix <> "/session-" <> session_suffix(),
+      owner_id: user_id,
+      last_seen_at: DateTime.utc_now()
+    }
+
+    case insert_ignoring_conflicts(row) do
+      {:ok, actor} -> {:ok, actor}
+      :conflict -> insert_session_agent(workspace_id, user_id, prefix, attempts - 1)
+    end
+  end
+
+  defp random_suffix do
+    for <<byte <- :crypto.strong_rand_bytes(6)>>, into: "" do
+      <<Enum.at(@suffix_alphabet, rem(byte, length(@suffix_alphabet)))>>
+    end
+  end
+
+  # Tests fix the suffixes with `Process.put(:helmsman_session_agent_suffixes,
+  # [...])`: compiled in the test environment only.
+  if Mix.env() == :test do
+    defp session_suffix do
+      case Process.get(:helmsman_session_agent_suffixes) do
+        [suffix | rest] ->
+          Process.put(:helmsman_session_agent_suffixes, rest)
+          suffix
+
+        _none ->
+          random_suffix()
+      end
+    end
+  else
+    defp session_suffix, do: random_suffix()
+  end
+
+  @doc """
+  Returns the actor `id` of the workspace, without locking it, or nil.
+  """
+  @spec get(pos_integer(), pos_integer()) :: Actor.t() | nil
+  def get(workspace_id, id) when is_integer(workspace_id) and is_integer(id),
+    do: Repo.one(from(a in Actor, where: a.workspace_id == ^workspace_id and a.id == ^id))
+
+  @type listed :: %{
+          name: String.t(),
+          kind: Actor.kind(),
+          owner: String.t() | nil,
+          disabled: boolean(),
+          project: String.t() | nil,
+          worktree: String.t() | nil,
+          last_seen_at: DateTime.t() | nil
+        }
+
+  @doc """
+  Lists every identity of the workspace (`:view_members`, every role) in
+  one query: humans, agents, squads, then the system identity, each by
+  name. `owner` is the human name of an agent's owner in the workspace.
+  """
+  @spec list(Scope.t()) :: {:ok, [listed()]} | {:error, :forbidden}
+  def list(%Scope{workspace: %Workspace{id: workspace_id}} = scope) do
+    with :ok <- Policy.authorize(scope, :view_members) do
+      actors =
+        from(a in Actor,
+          left_join: h in Actor,
+          on: h.workspace_id == a.workspace_id and h.user_id == a.owner_id and h.kind == :human,
+          where: a.workspace_id == ^workspace_id,
+          order_by: [
+            asc:
+              fragment(
+                "CASE ? WHEN 'human' THEN 0 WHEN 'agent' THEN 1 WHEN 'squad' THEN 2 ELSE 3 END",
+                a.kind
+              ),
+            asc: a.name
+          ],
+          select: %{
+            name: a.name,
+            kind: a.kind,
+            owner: h.name,
+            disabled: not is_nil(a.disabled_at),
+            project: a.project_key,
+            worktree: a.worktree,
+            last_seen_at: a.last_seen_at
+          }
+        )
+        |> Repo.all()
+
+      {:ok, actors}
+    end
   end
 end

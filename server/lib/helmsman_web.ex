@@ -1,5 +1,5 @@
 defmodule HelmsmanWeb do
-  use Boundary, deps: [Helmsman], exports: [Endpoint, Telemetry]
+  use Boundary, deps: [Helmsman, HelmsmanMCP], exports: [Endpoint, Telemetry]
 
   @moduledoc """
   The entrypoint for defining your web interface, such
