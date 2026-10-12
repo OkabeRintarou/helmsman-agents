@@ -270,7 +270,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
 
     File.write!(
       script,
-      "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 1.0.0; exit; fi\nfor n in 1 2 3 4 5 6 7 8 9 10; do printf x; sleep 0.05; done\n"
+      "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 1.0.0; exit; fi\nread input\nwhile IFS= read -r fragment; do printf x; done\n"
     )
 
     File.chmod!(script, 0o700)
@@ -283,8 +283,8 @@ defmodule HelmsmanDaemon.RunWorkerTest do
         else: System.delete_env("HELMSMAN_FAKE_CLI")
     end)
 
-    run = spec(20)
-    run = %{run | limits: %{run.limits | idle_timeout_ms: 150}}
+    run = spec(20, "echo")
+    run = %{run | limits: %{run.limits | idle_timeout_ms: 60_000}}
 
     TestReporter.configure(fn
       %Report.Finished{} -> :hold
@@ -292,6 +292,41 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     end)
 
     {:ok, worker} = Runs.start_run(run, reporter: TestReporter)
+    assert_receive {:report, 20, %Report.Started{}, _, _, _}, 1_000
+    pgid = :sys.get_state(worker).pgid
+
+    for n <- 1..10 do
+      :ok = :sys.suspend(worker)
+
+      try do
+        idle_timer = :sys.get_state(worker).idle_timer
+        Process.cancel_timer(idle_timer)
+        # Reproduce the review's scheduling delay after cancelling the real timer.
+        Process.sleep(170)
+        :ok = :exec.send(pgid, "fragment\n")
+
+        # Establish real stdout before explicitly delivering the expired reference.
+        eventually(fn ->
+          {:messages, messages} = Process.info(worker, :messages)
+          Enum.any?(messages, &match?({:stdout, ^pgid, "x"}, &1))
+        end)
+
+        send(worker, {:timeout, idle_timer, :idle_timeout})
+        {:messages, messages} = Process.info(worker, :messages)
+        stdout_index = Enum.find_index(messages, &match?({:stdout, ^pgid, "x"}, &1))
+        timeout_index = Enum.find_index(messages, &(&1 == {:timeout, idle_timer, :idle_timeout}))
+        assert is_integer(stdout_index)
+        assert is_integer(timeout_index)
+        assert stdout_index < timeout_index
+      after
+        :sys.resume(worker)
+      end
+
+      eventually(fn -> :sys.get_state(worker).streams.stdout == String.duplicate("x", n) end)
+      assert :sys.get_state(worker).stop_reason == nil
+    end
+
+    :ok = :exec.send(pgid, :eof)
     assert_receive {:report, 20, %Report.Events{events: events}, _, _, _}, 2_000
     assert Enum.any?(events, &(&1.type == :text and &1.data.text == "xxxxxxxxxx"))
     assert_receive {:report, 20, %Report.Finished{failure_reason: reason}, ^worker, ref, _}, 2_000

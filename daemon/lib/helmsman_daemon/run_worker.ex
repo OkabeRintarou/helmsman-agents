@@ -115,7 +115,12 @@ defmodule HelmsmanDaemon.RunWorker do
   @impl true
   def handle_info({stream, pid, data}, %{pgid: pid} = state) when stream in [:stdout, :stderr] do
     File.write!(Path.join(Paths.run(state.spec.run_id), "raw.log"), data, [:append])
-    state = if state.phase == :running and data != "", do: reset_idle(state), else: state
+
+    state =
+      if state.phase == :running and is_nil(state.stop_reason) and data != "",
+        do: reset_idle(state),
+        else: state
+
     {:noreply, consume(state, stream, data)}
   end
 
@@ -147,7 +152,12 @@ defmodule HelmsmanDaemon.RunWorker do
   end
 
   def handle_info(:timeout, state), do: {:noreply, stop_cli(state, :timeout)}
-  def handle_info(:idle_timeout, state), do: {:noreply, stop_cli(state, :stalled)}
+
+  def handle_info(
+        {:timeout, timer, :idle_timeout},
+        %{idle_timer: timer, phase: :running, stop_reason: nil} = state
+      ),
+      do: {:noreply, stop_cli(state, :stalled)}
 
   def handle_info(:kill, state) do
     state = if state.pgid, do: signal_cli(state, 9), else: state
@@ -358,7 +368,7 @@ defmodule HelmsmanDaemon.RunWorker do
 
     %{
       state
-      | idle_timer: Process.send_after(self(), :idle_timeout, state.spec.limits.idle_timeout_ms)
+      | idle_timer: :erlang.start_timer(state.spec.limits.idle_timeout_ms, self(), :idle_timeout)
     }
   end
 
@@ -403,6 +413,7 @@ defmodule HelmsmanDaemon.RunWorker do
       %{
         state
         | stop_reason: reason,
+          idle_timer: nil,
           group_kill_at:
             System.monotonic_time(:millisecond) +
               Keyword.get(state.opts, :kill_timeout_ms, 10_000),
