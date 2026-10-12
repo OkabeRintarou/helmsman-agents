@@ -7,6 +7,7 @@
 | 路径 | LiveView | 说明 |
 |---|---|---|
 | `/users/*` | phx.gen.auth 生成 | 登录、注册、设置 |
+| `/users/settings/provider-accounts` | `UserLive.ProviderAccounts` | 个人的供应商账号（12 §2.2）：列表、新建 / 编辑右侧面板（密钥只写、不回填）、删除确认（仍被使用时列出 Agent）；`add-provider-accounts-ui` |
 | `/invite/:token` | `InvitationLive` | 接受邀请 |
 | `/` | — | 跳到最近访问的工作区；没有就进 `/workspaces/new` |
 | `/w/:slug` | `DashboardLive` | 指派给我（含我名下 Agent）的任务、待回答的提问、正在跑的运行、最近合并、在线的机器 |

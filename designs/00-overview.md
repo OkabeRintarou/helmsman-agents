@@ -12,7 +12,7 @@ Helmsman **不直接调用 LLM API，也不保存模型密钥**。干活的是�
 ```
 人在网页上把 BOS-12 指派给 Agent「keel/dev」
   → 服务端建一条「运行」，通知绑定的机器
-  → 那台机器上的 helmsman 守护进程领取，准备好仓库的 worktree（分支 hm/bos-12），调起 claude / codex / …
+  → 那台机器上的 helmsman 守护进程领取，准备好仓库的 worktree（分支 hm/7/bos-12），调起 claude / codex / …
   → Agent 通过 MCP 连回 Helmsman：读需求、领取任务、提问、写反馈，改代码并提交
   → 守护进程推送分支，服务端开 PR；Agent 把任务置为 DONE（附提交与测试结果）
   → 人或评审 Agent 验收（VERIFIED）→ CI 通过后服务端自动合并 PR
@@ -228,18 +228,22 @@ helmsman-agents/
 | 18 | M5 | `add-run-dispatch` | 架构 | 运行与运行令牌、入队合并、指派触发、授权来源 / 能力 / 防循环、`hmr_` Scope | 9、14、17 |
 | 19 | M5 | `add-run-lifecycle` | 架构 | DaemonChannel、领取 / 启动前校验 / 心跳 / 租约 / 结束 / 停止 / 重试、提示词、任务副作用 | 11、16、18 |
 | 20 | M5 | `add-daemon-runner` | 架构 | 守护进程：登录、连接、CLI 检测、RunWorker、崩溃对账、假 CLI、临时目录 | 16；端到端需 19 |
-| 21 | M5 | `add-claude-adapter` | 架构 | Claude Code 适配器 | 20 |
-| 22 | M5 | Agent 与运行页 | 前端 | Agent / 运行时 / 设备码页、运行卡片、执行记录、停止 / 重试、指派确认；M5 端到端验收 | 10、17、19；验收需 21 |
+| 21 | M5 | `add-codex-adapter`、`add-claude-adapter` | 架构 | Codex 与 Claude Code 适配器，两个独立变更，先实测再实现。Codex 从 #29 提前；Claude Code 已改用用户的 z.ai 配置完成实测（`add-claude-adapter` 决策 16），两者都可用于 M5 验收 | 20；Codex 插话需 28 |
+| 22 | M5 | Agent 与运行页 | 前端 | Agent / 运行时 / 设备码页、运行卡片、执行记录、停止 / 重试、指派确认；M5 端到端验收 | 10、17、19、45；验收需 21 中任一适配器（先是 Codex） |
 | 23 | M6 | `add-github-app` | 架构 | App / manifest、安装令牌、webhook、仓库同步、项目绑定与合并设置 | 8 |
-| 24 | M6 | `add-daemon-git-workspace` | 架构 | bare 缓存、任务 worktree、推送与救援分支、`git_token`、`task_branches` | 19、20、23 |
+| 24 | M6 | `add-daemon-git-workspace` | 架构 | bare 缓存、任务 worktree、推送与救援分支、`git_token`、`runs` 上的推送记录（不建 `task_branches`） | 19、20、23 |
 | 25 | M6 | `add-continuation-triggers` | 架构 | 打回 / 重开 / 重新提交 / 回答 / 回调提出方 / 提及（reply）与授权继承；CI 失败、合并冲突自动重开后的修复运行也由它入队 | 11、18 |
-| 26 | M6 | `add-pr-reconcile-merge` | 架构 | ReconcilePR、合并策略 / 独立性 / `verified_sha`、等运行收尾再合并、CI 失败 / 冲突自动重开 | 24、25 |
-| 27 | M6 | GitHub 界面 | 前端 | GitHub 设置页、项目绑定仓库、PR 卡片、重新验收 / 立即合并 | 22、26 |
+| 26 | M6 | `add-pr-reconcile-merge` | 架构 | ReconcilePR、合并策略 / 独立性（含推送链完整，15 §4.1）/ `verified_sha`、等运行收尾再合并、CI 失败 / 冲突自动重开；任务关闭后清理 worktree、本地分支与远端救援分支，本地仓库模式的 worktree 一并清理（需协议补充清理信号） | 24、25 |
+| 44 | M6 | `add-local-repositories` | 架构 | 本地仓库模式：机器侧登记、项目绑定（一个项目一台机器）、只有那台机器能执行、先复制到缓存再把 `hm/<工作区 ID>/<ident>` 交付回用户仓库、合并状态（自动检测 + 人工标记）、协议 3（2 已由 #46 使用） | 17、19、24 |
+| 45 | M5 | `add-run-read-models` | 架构 | #22 界面所需的只读领域函数：Agent 可派发性、任务的运行中 Agent、Agent 用量、Agent 视图的最近运行与权限、守护进程在线（`add-agents-runs-ui` 领域请求 R1、R5–R8） | 17、18、19 |
+| 46 | M5 | `add-provider-accounts` | 架构 | 用户所属的供应商账号（地址、只写的加密密钥、模型映射），托管 Agent 选择其一；RunSpec 带账号、协议升版本、旧守护进程不领取；Claude 用 `--settings` 覆盖 + `apiKeyHelper` 读进程环境、Codex 用保留的 `model_providers.helmsman_account`，密钥不落盘，凭据来源不符即中止。先实测再实现 | 17、19、45；Claude 部分需 21 的 `add-claude-adapter`，Codex 部分需 `add-codex-adapter` |
+| 47 | M5 | `add-provider-accounts-ui` | 前端 | 个人设置页 `/users/settings/provider-accounts`（列表、新建 / 编辑面板、删除确认与使用中的 Agent）；Agent 新建 / 编辑面板的「供应商账号」下拉（空 = CLI 默认登录）、详情页摘要（账号名 + 主机）与 `env` 提示 | 22、46 |
+| 27 | M6 | GitHub 与本地仓库界面 | 前端 | GitHub 设置页、项目绑定仓库（GitHub 或本地）、PR 卡片、重新验收 / 立即合并；本地分支卡片（审查命令、合并状态、标记已合并）、指派到别的机器时的提示 | 22、26、44 |
 | 28 | M7 | `add-run-steering` | 架构 | 插话、回执、兜底触发 | 19、21、25 |
-| 29 | M7 | `add-codex-adapter`、`add-copilot-adapter`、`add-cursor-adapter` | 架构 | 三个独立变更，先实测再实现，做不到隔离就不启用 | 20；Codex 插话需 28 |
+| 29 | M7 | `add-copilot-adapter`、`add-cursor-adapter` | 架构 | 两个独立变更，先实测再实现，做不到隔离就不启用（`add-codex-adapter` 已提前到 21） | 20 |
 | 30 | M8 | `add-epics` | 架构 | Epic 校验、进度、自动级联 | 9 |
 | 31 | M8 | `add-task-links` | 架构 | 替代 / 依赖、成环检测、`blocked`（只看状态） | 9 |
-| 32 | M8 | `add-dependency-dispatch` | 架构 | `deferred` 运行、依赖满足触发、`satisfied?` 的 PR 规则、领取时复查 | 18、26、31 |
+| 32 | M8 | `add-dependency-dispatch` | 架构 | `deferred` 运行、依赖满足触发、`satisfied?` 的 PR 规则与本地分支已合并规则（07 §3）、领取时复查 | 18、26、31、44 |
 | 33 | M8 | 关联与协作界面 | 前端 | Epic 进度 / 步骤、关联与阻塞标记、插话勾选框、提及置灰说明 | 13、22、25、28、30、31 |
 | 34 | M9 | `add-squads` | 架构 | 小队 actor、leader 运行、`delegate` / `delegate_done`、独立性扩展 | 25、26 |
 | 35 | M9 | `add-autopilots` | 架构 | 定时 / 手动 / webhook、两种模式、`overlap`、失败停用 | 18、24 |
@@ -256,7 +260,7 @@ helmsman-agents/
 
 - 16、20、21 只依赖协议，可以和 M1–M4 同时做；17 只依赖 4，可以和 M2–M4 并行。
 - 5、6、8 在 4 之后并行；9 与 12 并行；23 在 8 合并后即开工（已定，缩短到 M6 的时间），与 M3–M5 并行。
-- 25 只依赖 11、18，可在 M5 之后与 23、24 并行；30、31、37 在 M3 之后就能开工，不必等 M7；29 的三个适配器互相并行。
+- 25 只依赖 11、18，可在 M5 之后与 23、24 并行；30、31、37 在 M3 之后就能开工，不必等 M7；21 的两个适配器、29 的两个适配器互相并行。
 - 前端变更与同里程碑的后端变更并行开发：前端先按后端变更的规格（领域函数签名、PubSub 消息）用桩数据写页面，后端合并后再接上。
 
 ### 9.3 里程碑完成标准
@@ -265,7 +269,7 @@ helmsman-agents/
 |---|---|
 | M3 | 浏览器里能建项目 / 任务、走完整个状态机、写和修订 Feedback，两个浏览器窗口互相实时刷新 |
 | M4 | 外接 Agent 用 Claude Code 手工跑通「建单 → 领取 → 提问 → 人在浏览器里回答 → 完成 → 人验收」（08 §6） |
-| M5 | 网页上指派 → 本机 Claude Code 自动开工 → 写反馈 → DONE，浏览器全程实时 |
+| M5 | 网页上指派 → 本机 Agent CLI（Codex 或 Claude Code）自动开工 → 写反馈 → DONE，浏览器全程实时 |
 | M6 | 「指派 → 运行 → 推送 → 开 PR → DONE → VERIFIED → CI 通过 → 自动合并」端到端跑通（15 §7）；CI 失败或合并冲突时任务自动重开，并以原指派的授权来源排队一次修复运行；评审 Agent 在自己的运行里验收后，要等该运行收尾才合并 |
 
 自举（后续开发的工单放在 Helmsman 自己的项目里、由托管 Agent 执行）需要代码仓库，所以在 M6 之后进行；不在 M5 加「任意 git 远端、只推分支」之类不依赖 GitHub 的过渡模式。
@@ -285,7 +289,9 @@ helmsman-agents/
 | ~~多条触发并入同一排队运行时，授权来源、`causal_agent_ids`、能力怎么合并；指派不进历史，`start: false` 之后的延续触发无处继承授权~~ 已解决：每条触发记自己的授权来源，合并保留最早的、领取时逐条复核；因果链取并集；能力领取时重算；授权记在 `task_grants`（13 §2.2–§3） | 18 `add-run-dispatch` |
 | ~~`run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建~~ 已解决：不分区，按运行整块清理（13 §1） | 19 `add-run-lifecycle` |
 | 插话的兜底触发在 13 §2 里没有对应的触发类型 | 28 `add-run-steering` |
-| 运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas` | 24 `add-daemon-git-workspace` |
+| ~~运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas`~~ 已解决：`pushed` 不看运行状态，只看是否领取者当前代次的上报；`git_token` 在运行结束后 30 分钟内仍可续签（`add-daemon-git-workspace` 决策 4、5） | 24 `add-daemon-git-workspace` |
+| 恢复会话失败（CLI 找不到会话）的运行以 `cli_error` 结束且 `session_id` 为空；`add-run-lifecycle` 决策 11 取「最近结束且 `session_id` 非空」的运行，下一次又会恢复同一个失效的会话，持续失败。方向：只看最近一次终态运行，其 `session_id` 为空就开新会话 | 19 `add-run-lifecycle` |
+| 未绑定供应商账号的 Claude Agent，仓库里的 `.claude/settings*.json` 能改 Claude Code 的供应商地址与凭据去向（`-p` 下不询问信任；`add-provider-accounts` 预探查 P6b）。绑定了账号的不受影响。方向待定：未绑定时也只钉住地址（需要读用户配置），或对不可信仓库拒绝运行（类似 Codex 的项目配置检查） | 未分配 |
 
 公开运行时的隔离问题（`isolation = user` 只有一个执行用户，不同用户的运行能互读 worktree 和 CLI 登录文件）已决定：本期不做公开运行时，守护进程只实现 `isolation = none`（12 §3.3、14 §9），两者推迟到扩展点（§10）。
 

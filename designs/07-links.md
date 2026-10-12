@@ -36,6 +36,7 @@ SELECT path FROM reach WHERE id = $a LIMIT 1;
 
 - **依赖满足**（只在一处定义，`Helmsman.Links.satisfied?/1`，`blocked`、迁移检查、BQL、派发都用它）：
   - 前置任务所在项目**绑定了仓库**、且这个任务有 PR → 要求 PR **已合并**。只到 DONE / VERIFIED 不够：后一个任务的分支从基础分支建出，此时还拿不到前一个任务的代码。
+  - 前置任务所在项目绑定了**本地仓库**、且这个任务交付过分支（有 `task_local_branches` 行）→ 要求该分支**已合并**（守护进程检测到它已进入基础分支，或人工标记，15 §8），理由同上。
   - 其他情况（项目没绑仓库、任务没产生代码改动）→ 前置任务在 DONE / VERIFIED。
   - 这与 bosun 的语义（只看 DONE / VERIFIED）在代码任务上有意不同。
 - `blocked`：存在出向 `depends_on` 且对端不满足。列表一次查询用 `EXISTS` 子查询算出，不落库。

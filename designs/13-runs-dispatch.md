@@ -21,7 +21,7 @@
 | `not_before` | 重试退避、自动化定时 |
 | `daemon_id` | 领取它的守护进程；之后只接受这个守护进程对它的上报 |
 | `session_id` | CLI 返回的会话 ID，同一运行时上的后续运行用来恢复会话（14 §4） |
-| `branch` / `base_sha` / `head_sha` / `push_status` | 代码分支、本次产出、推送结果（`none` / `pushed` / `conflict` / `failed`，14 §7） |
+| `repository_id` / `local_repository_id` / `branch` / `base_sha` / `head_sha` / `push_status` / `rescue_branch` / `push_commits` / `pushed_at` | 领取时的仓库与任务分支；本次运行开始前与推送的提交、推送结果（`none` / `pushed` / `conflict` / `failed`，14 §7）、推送冲突时的救援分支、提交列表。出处、`verified_sha` 的依据与待合并的救援分支都由此查出（15 §4.1），不另建 `task_branches`。迟到的推送（运行已被判结束）同样记录 |
 | `summary` | Agent 最后一条输出（截断到 4 KB） |
 | `usage jsonb` | 输入 / 输出 / 缓存 token 数、费用估算（CLI 给了才有） |
 | `failure_reason` / `error` | 失败原因码（§5）与原始错误信息 |
@@ -53,10 +53,12 @@
 |---|---|---|---|
 | **打回 / 重开** `reopen` | 执行方是托管 Agent 或小队，任务 DONE → IN_PROGRESS 或 VERIFIED → IN_PROGRESS（包括 CI 失败、合并冲突导致的自动重开，15 §5） | work | 按评审意见修改 |
 | **重新提交** `resubmit` | 同上，任务 REJECTED → NEW | work | 看改过的需求，重新评估 |
-| **回答** `answer` | 新的 `answer` 让 `open_question` 变为 false，而那条 `question` 是托管 Agent 写的 | 与提问那次运行相同 | 带着答案继续（恢复会话） |
-| **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源 |
+| **回答** `answer` | 新的 `answer` 让 `open_question` 变为 false，而那条 `question` 是托管 Agent 写的 | 与提问那次运行相同 | 带着答案继续（恢复会话）；授权继承**提问所在的运行**（提问的 Agent 不一定是执行方，`add-continuation-triggers` 决策 3） |
+| **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源（建任务时记为 `task_grants` 的 `requested`） |
 | **依赖满足** `unblocked` | 见 §2.4 | work | 同「指派」 |
 | **委派完成** `delegate_done` | 委派出去的运行结束 | work | leader 决定下一步 |
+
+引起延续或提及的身份就是目标 Agent 自己时不触发（例如执行方 Agent 自己把任务改回 IN_PROGRESS）。系统身份写的 Feedback 不引起提及、回答与回调；触发结果保存在引起它的 Feedback 上（`feedback.dispatch`），界面据此把被拒的提及置灰并说明原因。
 
 为什么要继承：否则一个 `owner_only` 的 Agent 做完后，换成验收人打回、或提问被别人回答，都会因为「这个人无权触发它」而卡住；反过来如果直接放开，又会让任何能改任务状态的人借道触发别人的 Agent。
 
@@ -75,7 +77,7 @@
 - 新发起时按这个用户校验能否触发目标：Agent 按 12 §2.1，小队按 16 §1.1。
 - 领取时重新校验：这个用户仍是工作区成员（member 以上）、仍有权触发该 Agent、Agent 未归档。合并过的运行逐条复核触发的授权来源，丢弃失效的；最早的那条被丢弃时改用剩下最早的一条的授权来源与因果链；全部失效 → 运行取消，原因 `unauthorized`。以小队 leader 身份的运行只校验 leader；成员在被委派时各自校验（16 §1.2）。
 - 授权来源用户被移出（或退出）工作区时，在同一事务里停止以他为授权来源的全部运行，不论 Agent 属于谁、是否还合并了别人的触发：排队中的取消、已领取或运行中的转为 `cancelling` 走正常停止流程，原因 `unauthorized`，不自动重试；降为 viewer 不在此列（`add-run-lifecycle` 决策 26）。
-- **授权记录**（`task_grants`）：执行方被设为托管 Agent、且授权来源有权触发它时，记下「任务 × Agent」的授权来源与因果链——不论是否勾选了「暂不开始」。延续类触发从这里继承授权；执行方变化时该任务原有的指派授权全部作废，无权的指派不留记录（`add-run-dispatch` 决策 6）。
+- **授权记录**（`task_grants`）：执行方被设为托管 Agent、且授权来源有权触发它时，记下「任务 × Agent」的授权来源与因果链——不论是否勾选了「暂不开始」。延续类触发从这里继承授权；执行方变化时该任务原有的指派授权全部作废，无权的指派不留记录（`add-run-dispatch` 决策 6）。托管 Agent 在运行中建任务时另记一条 `requested` 授权（授权来源与因果链取自那次运行），供「回调提出方」继承，不随执行方变化作废；回答继承提问所在的运行，不查授权记录（`add-continuation-triggers` 决策 3、5）。
 
 ### 2.3 运行的能力范围
 
@@ -92,7 +94,7 @@
 
 ### 2.4 依赖未满足时
 
-任务有未满足的依赖（07 §3 的定义：有仓库的项目要求前置任务的 PR **已合并**，否则要求 DONE / VERIFIED）时，「指派」类运行建为 `deferred`，`triggers` 里注明 `blocked_by`。前置任务满足条件时（迁移事务里，或 PR 合并的处理里），把不再被阻塞的 `deferred` 运行改为 `queued`。
+任务有未满足的依赖（07 §3 的定义：有仓库的项目要求前置任务的 PR **已合并**，本地仓库模式要求它交付的分支**已合并**，否则要求 DONE / VERIFIED）时，「指派」类运行建为 `deferred`，`triggers` 里注明 `blocked_by`。前置任务满足条件时（迁移事务里，或 PR 合并、本地分支变为已合并的处理里），把不再被阻塞的 `deferred` 运行改为 `queued`。
 
 配合 Epic，这就是一条流水线：把一组步骤分别指派给不同的 Agent，用 `depends_on` 串起来，前一步合并后下一步自动开工，并且基于已经包含前一步代码的基础分支。
 
@@ -190,7 +192,7 @@ SELECT r.* FROM runs r
 | 兜底回帖（§7） | `succeeded` 之后 | `feedback` 部分唯一 `(source_run_id) WHERE fallback` |
 | 唤醒 leader（`delegate_done`） | 委派运行结束之后 | 触发记录里的 `run_id` |
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
-| 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行进入任一终态之后（任务有分支或 PR 时） | Oban 唯一键 |
+| 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
 
 ## 5. 失败与重试
 
@@ -231,12 +233,13 @@ SELECT r.* FROM runs r
                                            ← 「你在 BOS-12#3 的提问已由 alice 回答：<原文>」
                                            ← 「验收被打回，评审意见 BOS-12#7：<原文>」
                                            ← 「CI 失败：<检查名与摘要>」
-代码：当前目录是仓库 acme/app 的工作区，分支 hm/bos-12（基于 main）。
+代码：当前目录是仓库 acme/app 的工作区，分支 hm/7/bos-12（基于 main）。
   提交你的改动，但不要 push、不要开 PR、不要切换分支——这些由 Helmsman 负责。
 
 开始前先调用 get_task("BOS-12") 读取完整需求、历史和反馈。
 ```
 
+- 各种触发行的英文定稿：指派、手动、重试见 `add-run-lifecycle` 决策 10；打回 / 重开（含 CI 失败、合并冲突）、重新提交、回答、回调提出方、提及见 `add-continuation-triggers` 决策 9。
 - 任务正文、历史、全部反馈**不**塞进提示词，让 Agent 自己用 `get_task` 取：提示词保持短小（Copilot CLI 的提示词走命令行参数），也避免把可能过期的快照当真。触发它的那条 Feedback 例外，原文直接放进去。
 - 恢复会话时省略 instructions 和通用部分，只发「触发原因」那一段。
 - 没有关联仓库的项目：工作目录是一个空的临时目录，「代码」一段改为说明这一点。

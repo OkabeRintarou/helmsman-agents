@@ -49,7 +49,7 @@ stateDiagram-v2
 
 - NEW → IN_PROGRESS：有未满足的依赖时 `{:blocked, [ident]}`（07 §3）。运行开始时的自动领取（§6）不做这项检查——手动、委派等运行本来就不看依赖（13 §4.1），领取时已经决定了要跑；
 - CANCELLED → NEW（恢复）：任务还被别的任务替代着（存在指向它的 `replaces` 链）时 `{:replaced, [ident]}`，要先删链再恢复（07 §1）；
-- DONE → VERIFIED：任务上有**其他**运行在 `claimed` / `running` / `cancelling` 时 `{:run_active, run}`——等那次运行结束、改动推送之后再验收（15 §4.1 前提 2）。发起这次迁移的运行本身（`scope.run`，例如被唤醒来验收的评审 Agent）不算：否则评审 Agent 永远会被自己的运行挡住。合并则要等包括它在内的所有运行都收尾之后才执行；它收尾时如果又推送了提交，PR head 会偏离 `verified_sha`，合并按 `stale` 处理（15 §4.1）。
+- DONE → VERIFIED：任务上有**其他**运行在 `claimed` / `running` / `cancelling` 时 `{:run_active, run}`——等那次运行结束、改动推送之后再验收（15 §4.1 前提 2）。发起这次迁移的运行本身（`scope.run`，例如被唤醒来验收的评审 Agent）不算：否则评审 Agent 永远会被自己的运行挡住。合并则要等包括它在内的所有运行都收尾之后才执行；它收尾时如果又推送了提交，PR head 会偏离 `verified_sha`，合并按 `stale` 处理（15 §4.1）。迁移到 VERIFIED 时历史记下 `verified_sha`（最近一次由运行推送到任务分支的提交，或本地分支最近交付的提交）；「按当前提交重新验收」不改状态，在历史里插入一条 `verified → verified`（`add-pr-reconcile-merge` 决策 10）。
 
 ## 3. 实现结构
 
@@ -124,7 +124,7 @@ Helmsman.Tasks.transition(scope, ident, to, opts)    :: {:ok, task_detail} | {:e
 
 ### CI 失败、合并冲突时自动重开
 
-任务 VERIFIED 后自动合并失败（CI 失败或有冲突）→ 自动 VERIFIED → IN_PROGRESS，actor = 系统身份 `helmsman`，同时写一条 `review` Feedback 说明原因（15 §5）。这是迁移表里已有的「重开」，只是由系统发起。
+任务 VERIFIED 后自动合并失败（CI 失败或有冲突）→ 自动 VERIFIED → IN_PROGRESS，actor = 系统身份 `helmsman`，同时写一条 `review` Feedback 说明原因（15 §5）。这是迁移表里已有的「重开」，只是由系统发起：`Tasks.auto_reopen/2`（`add-continuation-triggers` 决策 11）只在任务仍是 VERIFIED、且最近一次验收仍是触发它的那次时执行，历史记下 `auto_reason`（`ci_failed` / `merge_conflict`），并照常按 13 §2.1 的「打回 / 重开」触发执行方的修复运行。
 
 ## 7. 广播
 

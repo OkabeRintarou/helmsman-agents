@@ -42,11 +42,13 @@ ID 形如 `BOS-12#3`（任务 ident + `#` + 任务内序号）。
 - 内容里的 `@名字`（不在代码块、行内代码、链接文本里）解析为本工作区的 actor；解析在写入时做一次，结果存进 `feedback.mentions bigint[]`，界面渲染成 `ActorChip`。
 - @托管 Agent 或 @小队 → 触发运行（13 §2.1「提及」）；@人 只是标注（以后接收件箱）。外接 Agent 被 @ 不会被唤醒——它不在 Helmsman 的控制之下。
 - 修订时只对**新增**的提及触发，原来就有的不重复触发。
+- 系统身份 `helmsman` 写的 Feedback 与兜底回帖不触发。每条记录引起的触发结果（Agent、种类、结果、原因、运行）保存在 `feedback.dispatch` 上，读取时随记录返回（`add-continuation-triggers` 决策 10）。
 - 触发者无权触发被 @ 的 Agent 或小队时（12 §2.1、16 §1.1；触发者是作者本人，托管 Agent 在运行中写的则是那次运行的授权来源，13 §2.2），Feedback 照常保存，提及显示为灰色并说明原因。
 
 ## 3b. 与运行的联动
 
-- **回答触发**：`answer` 让 `open_question` 变为 false，且那条 `question` 是托管 Agent 写的 → 为它建运行（13 §2.1「回答」）。
+- **回答触发**：`answer` 让 `open_question` 变为 false，且那条 `question` 是托管 Agent 写的 → 为它建运行（13 §2.1「回答」），lane 与授权都接续提问所在的那次运行。
+- **回调提出方**：执行方写了 `question`，而任务的提出方是开启了 `wake_on_requested` 的托管 Agent → 唤醒提出方（13 §2.1「回调提出方」）。
 - **插话**：有 Agent 正在这个任务上运行时，人写的 Feedback 可以同时送进那次运行（13 §8）。
 - **兜底回帖**：托管 Agent 一次运行里一条 Feedback 都没写时，服务端以它的名义把最后输出写成 `comment`（13 §7）。
 - **系统身份**：`helmsman` 写的 Feedback（CI 失败、防循环备注等）在界面上用系统样式显示，不能被修订。

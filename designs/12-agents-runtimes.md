@@ -23,14 +23,15 @@
 |---|---|
 | `provider` | `claude` \| `codex` \| `copilot` \| `cursor`（14 §4） |
 | `runtime_id` | 绑定的运行时。运行绑定这个运行时，离线时排队等待，**不会**换到别的机器上跑（会话恢复、本地环境都依赖同一台机器） |
-| `model` / `effort` | 可空 = 用 CLI 的默认值；可选值由运行时上报（14 §2） |
+| `provider_account_id` | 用哪个供应商账号（§2.2）。可空 = 用 CLI 自己的登录与配置；必须是所属用户自己的、CLI 相同的账号 |
+| `model` / `effort` | 可空 = 用 CLI 的默认值；可选值由运行时上报（14 §2）；绑定了供应商账号时模型名不按运行时列表校验（由供应商决定） |
 | `instructions` | Markdown：这个 Agent 是谁、怎么工作、交付要求。每次运行放在提示词最前面（13 §6） |
 | `description` | 只用于展示，以及小队 leader 选择成员时参考（16） |
 | `access` | 谁能触发它：`owner_only`（缺省）\| `workspace` \| `members`（+ `access_member_ids`） |
 | `max_concurrency` | 这个 Agent 同时最多几个运行，缺省 2 |
 | `timeout_minutes` / `idle_timeout_minutes` | 单次运行总时长上限（缺省 120，最大 1200：`hmr_` 最长 24 小时，要给准备与收尾留余量）/ 无输出多久判定卡死（缺省 20，最大 240） |
 | `custom_args` | 追加给 CLI 的参数；协议相关的参数（输出格式、权限模式、`--resume` 等）会被剔除（14 §4） |
-| `env` | 自定义环境变量。**加密存储**（`cloak_ecto`，密钥来自 `HELMSMAN_VAULT_KEY`），保存后界面上只显示变量名；不能覆盖 `HELMSMAN_*` |
+| `env` | 自定义环境变量。**加密存储**（`cloak_ecto`，密钥来自 `HELMSMAN_VAULT_KEY`），保存后界面上只显示变量名；不能覆盖 `HELMSMAN_*`。切换模型供应商不要用它（CLI 的用户配置会盖过它，§2.2），用 `provider_account_id` |
 | `extra_mcp_servers` | 额外的 MCP 服务器（JSON），与 Helmsman 自己的 MCP 一起注入；同样加密 |
 | `wake_on_requested` | 自己提出的任务有进展时是否被唤醒（13 §2.1 的「回调提出方」），缺省 true；随 `add-continuation-triggers` 加列 |
 | `capabilities` | 运行时额外授予的能力，目前只有 `create_tasks`（13 §2.3）；缺省空，小队 leader 自动具备 |
@@ -38,7 +39,7 @@
 
 - Agent 的 actor 名就是它的名字（03 §1 的命名规则），在 @提及、指派、BQL 里都用这个名字。
 - 托管 Agent 属于创建它的用户（`actors.owner_id`）。
-- **执行相关的字段只有所属用户能改**：`provider` `runtime_id` `model` `effort` `instructions` `custom_args` `env` `extra_mcp_servers` `capabilities` `access`。这些字段决定在**主人的机器上**执行什么，admin 改了就等于能在别人机器上执行任意命令。admin 以上能查看（`env` 只看到变量名）、停用、归档，以及改 `description`、`max_concurrency`、超时。
+- **执行相关的字段只有所属用户能改**：`provider` `runtime_id` `provider_account_id` `model` `effort` `instructions` `custom_args` `env` `extra_mcp_servers` `capabilities` `access`。这些字段决定在**主人的机器上**执行什么，admin 改了就等于能在别人机器上执行任意命令。admin 以上能查看（`env` 只看到变量名）、停用、归档，以及改 `description`、`max_concurrency`、超时。
 - 改模型、改指令不会创建新 Agent，历史记录不受影响；只影响之后的运行。
 
 ### 2.1 谁能触发
@@ -55,6 +56,17 @@
 
 工作区 owner / admin 能看到、能修改所有 Agent，但**不能绕过 `access` 去触发**别人的 `owner_only` Agent——运行用的是别人的机器和 CLI 账号额度。无权触发时：指派照常保存，但不产生运行，界面和 MCP 都会说明原因。
 
+### 2.2 供应商账号（`provider_accounts`）
+
+同一台机器、同一个 CLI，用户可能有多个模型供应商的账号（如 Claude Code 接 z.ai 与火山方舟），希望不同 Agent 各用各的地址、密钥与模型，分别计费（`add-provider-accounts`）。
+
+- **属于用户，不属于工作区**：名称、CLI 类型（`claude` | `codex`，创建后不可改）、base URL（`https`；本机回环地址可 `http`；不含凭据与查询串）、密钥、模型映射（Claude：`default` `opus` `sonnet` `haiku` `fable` `subagent`；Codex：`default`，必填）。在个人设置页增删改，每人最多 32 个。
+- **密钥只写不读**：加密存储，读取只给「已设置」；编辑时留空 = 不变，不能清空；错误与日志里不出现。
+- **只有所属用户能用**：Agent 只能绑定所属用户自己的、CLI 相同的账号；多个 Agent 共用一个账号，换密钥只改一处，之后领取的运行生效。仍被未归档 Agent 绑定的账号不能删除。别人（含 owner / admin、实例管理员）看不到、用不了；工作区成员读取 Agent 时只看到账号名与主机名。账号的增删改查只能在本人的网页会话里做（管理动作 `manage_provider_accounts`）：运行令牌、Agent 身份、`hm_` Token 一律不能读写，即使属于同一个用户；密钥只在领取运行时读出、写进 RunSpec。
+- **为什么不用 `env`**：CLI 的用户配置会盖过进程环境（Claude Code 的 `~/.claude/settings.json` 的 `env`；Codex 配置里选定的 `model_provider`），而且只覆盖地址和令牌不够——用户配置里的 `apiKeyHelper`、模型映射会一起漏到 Agent 的供应商那里。守护进程按账号生成覆盖（Claude 用 `--settings`、Codex 用 `-c model_providers.helmsman_account`，14 §4），密钥只经进程环境 `HELMSMAN_PROVIDER_API_KEY` 交给 CLI，不落盘、不进命令行（没有写进私有文件的退路）；做不到就中止运行。
+- **运行**：领取时把账号放进 RunSpec，运行记下所用账号（可追溯计费到哪个账号）。协议版本低于引入账号的版本的守护进程不领取绑定了账号的运行（排队，可派发性显示 `daemon_outdated`）。
+- 未绑定账号的 Agent 行为不变：用机器上 CLI 自己的登录与配置。
+
 ## 3. 守护进程与运行时
 
 ### 3.1 注册
@@ -67,8 +79,9 @@
 
 | 表 | 列 |
 |---|---|
-| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改；重新登录不改名）、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash` / `previous_token_expires_at`（轮换后旧令牌的 24 小时宽限）、`max_concurrency`（守护进程上报，缺省 4）、`last_seen_at`、`revoked_at` |
+| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改；重新登录不改名）、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash` / `previous_token_expires_at`（轮换后旧令牌的 24 小时宽限）、`auth_epoch`（授权代次，缺省 1：同机重新登录与吊销时加 1，轮换不变；旧代次的连接与令牌不能再写入，`add-agent-profiles-runtimes` 决策 21）、`max_concurrency`（守护进程上报，缺省 4）、`last_seen_at`、`revoked_at` |
 | `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models text[]`、`efforts text[]`、`status`（`online` \| `offline`）、`unavailable_reason`（CLI 找到了但不可用的原因）、`disabled_at` |
+| `local_repositories` | 与运行时一样由守护进程上报、按工作区登记：机器主人在 `config.toml` 里登记的本地仓库（名字、显示用的路径、开放给哪些工作区）。路径只在机器上配置，服务端不下发路径（15 §8） |
 
 唯一键 `(workspace_id, daemon_id, provider)`。
 
@@ -100,4 +113,5 @@
 - `/w/:slug/agents`：Agent 列表（在线 / 忙碌 / 空闲 / 离线、所属用户、CLI、最近运行）；新建、编辑、归档。
 - `/w/:slug/agents/:name`：配置、正在跑和排队的运行、历史运行、用量统计。
 - `/w/:slug/settings/runtimes`：我的机器与运行时（在线状态、CLI 版本、并发上限）；admin 看全部，可以禁用。
-- 新建 Agent 的表单里，运行时下拉只列出自己的运行时（§3.3），模型下拉来自所选运行时上报的列表。
+- 新建 Agent 的表单里，运行时下拉只列出自己的运行时（§3.3），模型下拉来自所选运行时上报的列表；「供应商账号」下拉只列出自己的、与所选 CLI 相同的账号（空 = CLI 默认登录），选了账号后模型改为自由输入。
+- 个人设置页：供应商账号的增删改（§2.2），列出每个账号被哪些 Agent 使用。
