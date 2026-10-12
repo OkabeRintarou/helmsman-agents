@@ -1,0 +1,3 @@
+real CLI against local fake provider (decision 19); redacted paths, URLs, credentials and account metadata; removed {"configWarning": 1}; discarded stderr lines 2
+Provider simulated by local fake service: HTTP 400, OpenAI error body code context_length_exceeded; real Codex stdout unchanged except redaction.
+HTTP 400 response body: {"error": {"message": "Your input exceeds the context window of this model.", "type": "invalid_request_error", "code": "context_length_exceeded"}}

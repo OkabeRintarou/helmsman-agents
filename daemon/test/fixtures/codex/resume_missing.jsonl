@@ -1,0 +1,3 @@
+{"id":1,"result":{"userAgent":"helmsman-daemon/0.162.1 (Ubuntu 24.4.0; x86_64) herdr/0.9.3 (helmsman-daemon; 0.1.0)","codexHome":"/home/user/.codex","platformFamily":"unix","platformOs":"linux"}}
+{"method":"remoteControl/status/changed","params":{"status":"disabled","serverName":"image-update","installationId":"eedc8190-eb14-4858-81e5-00b080d528c1","environmentId":null},"emittedAtMs":1791782156288}
+{"error":{"code":-32600,"message":"no rollout found for thread id 00000000-0000-0000-0000-000000000000"},"id":2}

@@ -61,6 +61,12 @@ defmodule HelmsmanDaemon.CLI do
     Enum.each(Detector.scan(), fn cli ->
       availability = if cli.available, do: "available", else: cli.unavailable_reason
       IO.puts("#{cli.provider}: #{cli.version || "unknown"} #{availability}")
+
+      if cli.provider == :codex do
+        IO.puts(
+          "Configure Codex provider or login in #{Path.join(HelmsmanDaemon.Paths.home(), "codex")}; omit MCP servers from config.toml. Use Agent env for credentials; -c values are visible in process arguments."
+        )
+      end
     end)
   end
 

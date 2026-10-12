@@ -1,0 +1,2 @@
+private empty CODEX_HOME; default OpenAI TLS failure; waited up to 10 minutes for retry outcome (decision 19); redacted paths, URLs, credentials and account metadata; removed {"configWarning": 1}; discarded stderr lines 2
+Default retries: 10 error notifications, all willRetry=true; intervals seconds [15.401, 15.826, 16.654, 173.06, 69.811, 15.447, 25.418, 45.581, 65.453]; no turn/completed after 600 seconds, closed stdin and process exited 0.

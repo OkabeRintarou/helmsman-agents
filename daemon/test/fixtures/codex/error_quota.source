@@ -1,0 +1,3 @@
+real CLI against local fake provider (decision 19); redacted paths, URLs, credentials and account metadata; removed {"configWarning": 1}; discarded stderr lines 2
+Provider simulated by local fake service: HTTP 429, OpenAI error body code insufficient_quota; real Codex stdout unchanged except redaction.
+HTTP 429 response body: {"error": {"message": "You exceeded your current quota", "type": "insufficient_quota", "code": "insufficient_quota"}}

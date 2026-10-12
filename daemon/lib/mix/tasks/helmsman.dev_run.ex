@@ -71,7 +71,7 @@ defmodule Mix.Tasks.Helmsman.DevRun do
       repo: nil,
       mcp: %RunSpec.MCP{
         url: flags[:mcp_url] || "http://localhost:4003/mcp",
-        token: flags[:mcp_token] || ""
+        token: flags[:mcp_token] || System.get_env("HELMSMAN_RUN_TOKEN") || ""
       },
       limits: %RunSpec.Limits{timeout_ms: 600_000, idle_timeout_ms: 600_000},
       trigger: %RunSpec.Trigger{kind: "manual", reason: nil, feedback_id: nil}

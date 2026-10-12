@@ -2,7 +2,18 @@ defmodule HelmsmanDaemon.RunWorker do
   @moduledoc "One temporary worker per run, from workspace preparation to confirmed completion."
   use GenServer, restart: :temporary
   require Logger
-  alias HelmsmanDaemon.{Adapter, EventBuffer, Exec, Paths, ProcGroup, StateStore, Workspace}
+
+  alias HelmsmanDaemon.{
+    Adapter,
+    EventBuffer,
+    Exec,
+    LineBuffer,
+    Paths,
+    ProcGroup,
+    StateStore,
+    Workspace
+  }
+
   alias HelmsmanProtocol.Event
   alias HelmsmanProtocol.Reply
   alias HelmsmanProtocol.Report
@@ -29,6 +40,8 @@ defmodule HelmsmanDaemon.RunWorker do
       exec_pid: nil,
       buffer: EventBuffer.new(),
       streams: %{stdout: "", stderr: ""},
+      stdout_buffer: LineBuffer.new(),
+      max_line_bytes: nil,
       reports: %{},
       phase: :prepare,
       stop_reason: nil,
@@ -79,6 +92,11 @@ defmodule HelmsmanDaemon.RunWorker do
           | adapter: adapter,
             launch: launch,
             adapter_state: adapter.init_state(state.spec),
+            max_line_bytes:
+              if(function_exported?(adapter, :max_line_bytes, 0),
+                do: adapter.max_line_bytes(),
+                else: nil
+              ),
             opts: Keyword.put(state.opts, :work_dir, work_dir),
             phase: :starting
         }
@@ -298,6 +316,16 @@ defmodule HelmsmanDaemon.RunWorker do
         URI.to_string(%{URI.parse(state.spec.mcp.url) | path: nil, query: nil, fragment: nil})
       )
 
+  defp consume(%{max_line_bytes: limit} = state, :stdout, data) when is_integer(limit) do
+    {lines, buffer} = LineBuffer.push(state.stdout_buffer, data, limit)
+    state = %{state | stdout_buffer: buffer}
+
+    Enum.reduce(lines, state, fn
+      :overflow, acc -> output_overflow(acc, limit)
+      line, acc -> deliver(acc, :stdout, line)
+    end)
+  end
+
   defp consume(state, stream, data) do
     joined = state.streams[stream] <> data
     {lines, tail} = split_lines(joined)
@@ -313,22 +341,41 @@ defmodule HelmsmanDaemon.RunWorker do
             ]),
           else: acc
 
-      {events, actions, adapter_state} =
-        acc.adapter.handle_output(stream, line, acc.adapter_state)
-
-      Enum.each(actions, fn
-        :close_stdin -> :exec.send(acc.pgid, :eof)
-        {:write, bytes} -> :exec.send(acc.pgid, IO.iodata_to_binary(bytes))
-      end)
-
-      acc = %{
-        acc
-        | adapter_state: adapter_state,
-          last_error: if(stream == :stderr, do: line, else: acc.last_error)
-      }
-
-      enqueue(acc, events)
+      deliver(acc, stream, line)
     end)
+  end
+
+  defp output_overflow(state, limit) do
+    message =
+      "CLI output message exceeded #{limit / 1_048_576} MB; the turn result could not be read"
+
+    state = enqueue(state, [{:status, %{level: :warning, message: message}}])
+
+    if state.stop_reason do
+      state
+    else
+      state |> stop_cli(:output_overflow) |> Map.put(:result, failed(:cli_error, message))
+    end
+  end
+
+  defp deliver(state, :stdout, _line) when state.stop_reason == :output_overflow, do: state
+
+  defp deliver(state, stream, line) do
+    {events, actions, adapter_state} =
+      state.adapter.handle_output(stream, line, state.adapter_state)
+
+    Enum.each(actions, fn
+      :close_stdin -> :exec.send(state.pgid, :eof)
+      {:write, bytes} -> :exec.send(state.pgid, IO.iodata_to_binary(bytes))
+    end)
+
+    state = %{
+      state
+      | adapter_state: adapter_state,
+        last_error: if(stream == :stderr, do: line, else: state.last_error)
+    }
+
+    enqueue(state, events)
   end
 
   defp split_lines(data), do: split_lines(data, [])
@@ -470,7 +517,9 @@ defmodule HelmsmanDaemon.RunWorker do
 
     state =
       Enum.reduce([:stdout, :stderr], state, fn stream, acc ->
-        if acc.streams[stream] != "", do: consume(acc, stream, "\n"), else: acc
+        pending? = stream_pending?(acc, stream)
+
+        if pending?, do: consume(acc, stream, "\n"), else: acc
       end)
 
     result =
@@ -498,6 +547,11 @@ defmodule HelmsmanDaemon.RunWorker do
         timeout_timer: nil
     }
   end
+
+  defp stream_pending?(%{max_line_bytes: limit} = state, :stdout) when is_integer(limit),
+    do: LineBuffer.pending?(state.stdout_buffer)
+
+  defp stream_pending?(state, stream), do: state.streams[stream] != ""
 
   defp exit_code(:normal), do: 0
 

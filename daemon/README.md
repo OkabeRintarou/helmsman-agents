@@ -48,7 +48,7 @@ MIX_ENV=test HELMSMAN_HOME=/absolute/path/to/test-home mise exec -- mix helmsman
 
 test 环境自动注册 `HelmsmanDaemon.Adapters.Fake`，`HELMSMAN_FAKE_CLI` 可覆盖脚本路径。
 Agent 的 `custom_args` 第一项选择 `test/support/fake_cli/scenarios/` 内的场景名或场景文件绝对路径。
-脚本支持 `out`、`err`、`json`、`sleep`、`spawn_child`、`ignore_term`、`echo_stdin`、`dump_env`、`dump_argv`、`exit`。
+脚本支持 `out`、`err`、`json`、`json_line_bytes`（流式生成指定字节数的 JSON 大行）、`sleep`、`spawn_child`、`ignore_term`、`echo_stdin`、`dump_env`、`dump_argv`、`exit`。
 `spawn_child` 的 PID 写到 `FAKE_CLI_CHILD_PID_FILE`；JSON 形如 `{"type":"text","data":{"text":"hello"}}`。
 测试代码可调用 `HelmsmanDaemon.TestSupport.write_credentials/4` 和 `start/1`。
 `mix` 启动应用只启动依赖与空应用监督树，显式 `HelmsmanDaemon.start_daemon/1` 才连接服务器。
@@ -82,3 +82,30 @@ WantedBy=default.target
 
 进程组成员身份每 10 秒持久化；CLI 退出后清理全部已知组员，完成后才上报结果。
 无法确认身份或清理超时时保留 state 记录并记录日志，供下次启动恢复；不会向身份不明的 PGID 发信号。
+
+Codex uses `codex app-server` (minimum 0.162.0). Its persistent configuration and
+sessions live in `<HELMSMAN_HOME>/codex/`, normally `~/.helmsman/codex/`;
+Helmsman creates that directory with 0700 and only reads its `config.toml`.
+The machine owner configures authentication there once, for example
+`CODEX_HOME=~/.helmsman/codex codex login`, or a custom `model_provider` and
+`model_providers` table. Use `env_key` / `env_http_headers` for secrets from the
+Agent environment. Config override values (`-c`) appear in process arguments.
+Do not define MCP servers or `project_root_markers` in the daemon config.
+Helmsman injects its MCP configuration in thread/start or thread/resume stdin;
+workspaces with project `.codex/config.toml` are rejected before launch.
+The daemon never copies the machine owner's `~/.codex` config or authentication.
+
+For development the owner configures `~/.helmsman-dev/codex/` separately:
+
+```sh
+mise exec -- mix helmsman.dev_run --provider codex --model gpt-6-luna --effort low --task DEV-9 --prompt "Reply exactly OK"
+HELMSMAN_REAL_CLI=1 mise exec -- mix test test/real_cli/codex_smoke_test.exs --only real_cli
+```
+
+`HELMSMAN_REAL_HOME` overrides the smoke test home and `HELMSMAN_REAL_MODEL`
+overrides its model. Optional `HELMSMAN_REAL_MCP_URL` and `HELMSMAN_REAL_MCP_TOKEN`
+add an MCP check. The dev_run command accepts `HELMSMAN_RUN_TOKEN` from its
+process environment so MCP tokens need not appear in shell arguments or URLs.
+Codex startup disables update checking. Stdout messages are buffered intact up
+to 32 MiB; larger messages stop the run with `cli_error`. Session storage remains
+after runs finish so thread/resume works.

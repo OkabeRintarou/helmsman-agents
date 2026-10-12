@@ -1,0 +1,3 @@
+real CLI against local fake provider (decision 19); redacted paths, URLs, credentials and account metadata; removed {"configWarning": 1}; discarded stderr lines 2
+Provider simulated by local fake service: HTTP 401, OpenAI error body code invalid_api_key; real Codex stdout unchanged except redaction.
+HTTP 401 response body: {"error": {"message": "Invalid API key", "type": "invalid_request_error", "code": "invalid_api_key"}}

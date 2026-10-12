@@ -16,6 +16,11 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
   command=${line%% *}
   value=${line#* }
   case "$command" in
+    json_line_bytes)
+      printf '{"method":"unknown","params":{"text":"'
+      head -c "$value" /dev/zero | tr '\000' x
+      printf '"}}\n'
+      ;;
     out|json) printf '%s\n' "$value" ;;
     err) printf '%s\n' "$value" >&2 ;;
     sleep) sleep "$value" ;;

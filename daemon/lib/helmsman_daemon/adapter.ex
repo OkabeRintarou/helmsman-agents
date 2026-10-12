@@ -20,6 +20,8 @@ defmodule HelmsmanDaemon.Adapter do
   @callback finish(non_neg_integer(), term()) ::
               {:succeeded | {:failed, atom(), String.t()}, map()}
   @callback interrupt(term()) :: {:write, iodata()} | :signal
+  @callback max_line_bytes() :: pos_integer()
+  @optional_callbacks max_line_bytes: 0
   @callback steer(String.t(), term()) :: {:ok, iodata(), term()} | :unsupported
 
   @adapters Application.compile_env(:helmsman_daemon, :adapters, [])
