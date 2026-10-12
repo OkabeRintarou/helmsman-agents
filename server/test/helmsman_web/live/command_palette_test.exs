@@ -169,6 +169,23 @@ defmodule HelmsmanWeb.CommandPaletteTest do
       assert_redirect(view, "/w/#{slug}/t/BOS-12")
     end
 
+    test "settings tabs are found as pages", %{conn: conn, viewer: viewer, slug: slug} do
+      {:ok, view, _html} = live(log_in_user(conn, viewer), "/w/#{slug}/projects")
+
+      search(view, "成员")
+      html = palette(view)
+      assert html =~ "页面"
+      assert html =~ "设置"
+      palette_event(view, "execute", %{})
+      assert_redirect(view, "/w/#{slug}/settings/members")
+
+      {:ok, view, _html} = live(log_in_user(conn, viewer), "/w/#{slug}/projects")
+      search(view, "token")
+      assert palette(view) =~ "API Token"
+      search(view, "常规")
+      assert palette(view) =~ "常规设置"
+    end
+
     test "viewers get no 新建任务 action", %{conn: conn, viewer: viewer, slug: slug} do
       {:ok, view, _html} = live(log_in_user(conn, viewer), "/w/#{slug}/projects")
       html = palette(view)

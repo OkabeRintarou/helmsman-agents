@@ -79,9 +79,18 @@ defmodule HelmsmanWeb.UserSessionController do
     end
   end
 
-  def delete(conn, _params) do
+  # Only the invitation page may be returned to (「换个账号」), never an arbitrary URL.
+  @return_to ~r{\A/invite/[A-Za-z0-9_-]+\z}
+
+  def delete(conn, params) do
+    to =
+      case params["return_to"] do
+        path when is_binary(path) -> if path =~ @return_to, do: path, else: ~p"/"
+        _ -> ~p"/"
+      end
+
     conn
     |> put_flash(:info, dgettext("ui", "已退出登录。"))
-    |> UserAuth.log_out_user()
+    |> UserAuth.log_out_user(to)
   end
 end

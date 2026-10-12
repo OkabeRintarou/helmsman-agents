@@ -13,6 +13,15 @@ defmodule HelmsmanWeb.Router do
     plug :fetch_current_scope_for_user
   end
 
+  # add-workspace-settings-ui D2 / D4
+  pipeline :workspace_page do
+    plug :remember_workspace
+  end
+
+  pipeline :invitation_page do
+    plug :store_invitation_return_to
+  end
+
   pipeline :api do
     plug :accepts, ["json"]
   end
@@ -78,6 +87,7 @@ defmodule HelmsmanWeb.Router do
       on_mount: [{HelmsmanWeb.UserAuth, :require_authenticated}] do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+      live "/workspaces/new", WorkspaceLive.New, :new
     end
 
     post "/users/update-password", UserSessionController, :update_password
@@ -86,7 +96,7 @@ defmodule HelmsmanWeb.Router do
   ## Workspace routes
 
   scope "/", HelmsmanWeb do
-    pipe_through [:browser, :require_authenticated_user]
+    pipe_through [:browser, :require_authenticated_user, :workspace_page]
 
     live_session :workspace,
       on_mount: [
@@ -98,6 +108,19 @@ defmodule HelmsmanWeb.Router do
       live "/w/:slug/projects", ProjectLive.Index, :index
       live "/w/:slug/p/:key", TaskLive.Index, :index
       live "/w/:slug/t/:ident", TaskLive.Show, :show
+      live "/w/:slug/settings", SettingsLive.General, :show
+      live "/w/:slug/settings/members", SettingsLive.Members, :index
+      live "/w/:slug/settings/tokens", SettingsLive.Tokens, :index
+    end
+  end
+
+  # A separate live_session: moving between it and the login page is a full page
+  # load, so :store_invitation_return_to always runs (design D4).
+  scope "/", HelmsmanWeb do
+    pipe_through [:browser, :invitation_page]
+
+    live_session :invitation, on_mount: [{HelmsmanWeb.UserAuth, :mount_current_scope}] do
+      live "/invite/:token", InvitationLive, :show
     end
   end
 

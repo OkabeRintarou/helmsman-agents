@@ -80,6 +80,16 @@ window.addEventListener("phx:hm:visit-task", ({detail}) => {
   localStorage.setItem(RECENT_TASKS, JSON.stringify(list))
 })
 
+// The shell pushes this when the current workspace is renamed: the title suffix is part
+// of the static root layout (<.live_title suffix>), so update it here.
+window.addEventListener("phx:hm:title-suffix", ({detail}) => {
+  const title = document.querySelector("title")
+  if (!title || typeof detail?.suffix !== "string") return
+  const old = title.dataset.suffix || ""
+  title.dataset.suffix = detail.suffix
+  if (document.title.endsWith(old)) document.title = document.title.slice(0, document.title.length - old.length) + detail.suffix
+})
+
 // Command palette actions that run on the client.
 window.addEventListener("phx:hm:palette-action", ({detail}) => {
   const dialog = document.getElementById("command-palette-dialog")

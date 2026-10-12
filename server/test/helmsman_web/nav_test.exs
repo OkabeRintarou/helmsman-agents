@@ -64,11 +64,21 @@ defmodule HelmsmanWeb.NavTest do
   end
 
   test "查看全部 is registered in the 项目 group" do
-    assert [%{id: :projects, items: [all]}] = Nav.items_for(@scope, "/w/acme/projects")
+    groups = Nav.items_for(@scope, "/w/acme/projects")
+    assert %{items: [all]} = Enum.find(groups, &(&1.id == :projects))
     assert all.id == :projects
     assert all.label == "查看全部"
     assert all.path == "/w/acme/projects"
     assert all.current?
+  end
+
+  test "设置 is registered in the 配置 group and current on every settings page" do
+    groups = Nav.items_for(@scope, "/w/acme/settings/tokens")
+    assert %{label: "配置", items: [settings]} = Enum.find(groups, &(&1.id == :config))
+    assert settings.id == :settings
+    assert settings.label == "设置"
+    assert settings.path == "/w/acme/settings"
+    assert settings.current?
   end
 
   describe "project items" do
@@ -81,7 +91,7 @@ defmodule HelmsmanWeb.NavTest do
       do: for(g <- groups, i <- g.items, i.current?, do: i.id)
 
     test "projects come before 查看全部 and carry their key as hint" do
-      assert [%{id: :projects, items: items}] = project_groups("/w/acme")
+      assert [%{id: :projects, items: items} | _] = project_groups("/w/acme")
       assert Enum.map(items, & &1.id) == [{:project, "BOS"}, {:project, "BOSX"}, :projects]
       assert [%{label: "Bosun", hint: "BOS", path: "/w/acme/p/BOS"} | _] = items
     end

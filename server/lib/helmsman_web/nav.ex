@@ -33,6 +33,13 @@ defmodule HelmsmanWeb.Nav do
         label: fn -> dgettext("ui", "查看全部") end,
         icon: "lucide-layout-grid",
         path: &"/w/#{&1.workspace.slug}/projects"
+      },
+      %{
+        id: :settings,
+        group: :config,
+        label: fn -> dgettext("ui", "设置") end,
+        icon: "lucide-settings",
+        path: &"/w/#{&1.workspace.slug}/settings"
       }
     ]
   end

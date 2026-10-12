@@ -26,6 +26,18 @@ defmodule HelmsmanWeb.FormErrors do
   defp text(:key, {"must be 2-10 characters of A-Z and 0-9, starting with a letter", _}),
     do: dgettext("ui", "Key 须以大写字母开头，由 2–10 位大写字母或数字组成")
 
+  defp text(
+         :slug,
+         {"must be 2-39 characters of a-z, 0-9 and -, starting with a letter or digit", _}
+       ),
+       do: dgettext("ui", "须为 2–39 位小写字母、数字或 -，以字母或数字开头")
+
+  defp text(:scopes, {"must be one or more of: " <> _, _}),
+    do: dgettext("ui", "至少选择一项")
+
+  defp text(:default_agent_id, {"must be an active agent of your own", _}),
+    do: dgettext("ui", "须为你名下未停用的 Agent")
+
   defp text(_field, {"should be at least %{count} character(s)", opts} = error) do
     if opts[:count] == 1,
       do: dgettext("ui", "不能为空"),
@@ -34,6 +46,7 @@ defmodule HelmsmanWeb.FormErrors do
 
   defp text(_field, {"must be 1-200 characters", _}), do: dgettext("ui", "长度须为 1–200 个字符")
   defp text(_field, {"must be 1-80 characters", _}), do: dgettext("ui", "长度须为 1–80 个字符")
+  defp text(_field, {"must be 1-64 characters", _}), do: dgettext("ui", "长度须为 1–64 个字符")
   defp text(_field, {"must be at most 64 KB", _}), do: dgettext("ui", "不能超过 64 KB")
   defp text(_field, {"must be at most 20 labels", _}), do: dgettext("ui", "最多 20 个标签")
 

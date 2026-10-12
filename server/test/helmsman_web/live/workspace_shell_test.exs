@@ -50,6 +50,7 @@ defmodule HelmsmanWeb.WorkspaceShellTest do
     assert has_element?(view, ~s(#hm-ws-beta[aria-checked="false"]), "Beta")
     refute has_element?(view, "#hm-ws-hidden")
     assert has_element?(view, "#hm-ws-new", "新建工作区")
+    assert has_element?(view, ~s(#hm-ws-new[href="/workspaces/new"]))
   end
 
   test "choosing another workspace goes to its home page", %{conn: conn} do

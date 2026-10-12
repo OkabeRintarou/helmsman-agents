@@ -103,8 +103,36 @@ defmodule HelmsmanWeb.ShellProjectsTest do
       broadcast(ws, {:workspace_updated, %{id: ws.id, name: "Acme 中国", slug: slug}})
 
       assert has_element?(view, "#hm-workspace-switcher-trigger", "Acme 中国")
+      assert has_element?(view, "#hm-ws-#{slug}", "Acme 中国")
+      # The title suffix is in the root layout; app.js swaps it on this event.
+      assert_push_event(view, "hm:title-suffix", %{suffix: " · Acme 中国"})
       assert view.pid == pid
       refute_redirected(view)
+    end
+
+    test "a rename on a settings page (spec web-app-shell 工作区改名)",
+         %{conn: conn, ws: ws, slug: slug} do
+      {:ok, view, _html} = live(conn, "/w/#{slug}/settings/members")
+      assert page_title(view) == "成员 · Acme"
+      pid = view.pid
+
+      broadcast(ws, {:workspace_updated, %{id: ws.id, name: "Acme 中国", slug: slug}})
+
+      assert has_element?(view, "#hm-workspace-switcher-trigger", "Acme 中国")
+      assert_push_event(view, "hm:title-suffix", %{suffix: " · Acme 中国"})
+      assert view.pid == pid
+      refute_redirected(view)
+    end
+
+    test "a slug change keeps the settings page and its query",
+         %{conn: conn, ws: ws, slug: slug} do
+      {:ok, view, _html} = live(conn, "/w/#{slug}/settings/tokens?panel=new-token")
+
+      broadcast(ws, {:workspace_updated, %{id: ws.id, name: "Acme", slug: "acme-cn"}})
+
+      {path, flash} = assert_redirect(view)
+      assert path == "/w/acme-cn/settings/tokens?panel=new-token"
+      assert flash["info"] == "工作区地址已改为 /w/acme-cn"
     end
 
     test "a slug change moves to the same page under the new slug",

@@ -417,4 +417,45 @@ defmodule HelmsmanWeb.UserAuthTest do
       }
     end
   end
+
+  describe "workspace and invitation plugs (add-workspace-settings-ui D2/D4)" do
+    import Helmsman.WorkspacesFixtures
+
+    test "a workspace page loaded over HTTP is remembered", %{conn: conn, user: user} do
+      workspace_fixture(user, %{slug: "acme", name: "Acme"})
+      conn = conn |> log_in_user(user) |> get(~p"/w/acme")
+      assert get_session(conn, :last_workspace_slug) == "acme"
+    end
+
+    test "visitors are not remembered", %{conn: conn} do
+      conn = get(conn, "/w/acme")
+      assert redirected_to(conn) == ~p"/users/log-in"
+      refute get_session(conn, :last_workspace_slug)
+    end
+
+    test "visitors of an invitation come back to it after logging in",
+         %{conn: conn, user: user} do
+      ws = workspace_fixture(user)
+      %{token: token} = invitation_fixture(workspace_scope_fixture(user, ws))
+
+      visitor = get(conn, "/invite/#{token}")
+      assert get_session(visitor, :user_return_to) == "/invite/#{token}"
+
+      logged_in = conn |> log_in_user(user) |> get("/invite/#{token}")
+      refute get_session(logged_in, :user_return_to)
+    end
+
+    test "log out returns only to an invitation page", %{conn: conn, user: user} do
+      conn = log_in_user(conn, user)
+
+      conn_out = delete(conn, ~p"/users/log-out?#{[return_to: "/invite/abc_-1"]}")
+      assert redirected_to(conn_out) == "/invite/abc_-1"
+      refute get_session(conn_out, :user_token)
+
+      for bad <- ["//evil.com", "/invite/a/../x", "/w/acme", "https://x"] do
+        conn_out = delete(conn, ~p"/users/log-out?#{[return_to: bad]}")
+        assert redirected_to(conn_out) == ~p"/", "return_to #{bad}"
+      end
+    end
+  end
 end

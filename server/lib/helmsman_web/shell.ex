@@ -11,7 +11,8 @@ defmodule HelmsmanWeb.Shell do
     page; messages about other workspaces are ignored.
   * Subscribes to `workspace:<id>` (add-workspace-settings-ui D8, the only subscription
     to that topic for workspace pages): `{:workspace_updated, %{id, name, slug}}` renames
-    the workspace in place or follows a slug change; `{:projects_changed}` reloads
+    the workspace in place (the title suffix lives in the root layout, so it is updated
+    by the `hm:title-suffix` event in `app.js`) or follows a slug change; `{:projects_changed}` reloads
     `shell.projects` and the navigation. Messages the shell does not consume go on to the
     page when it exports `handle_info/2` (`HelmsmanWeb.LiveFallback` ignores the rest),
     otherwise they stop here.
@@ -149,6 +150,7 @@ defmodule HelmsmanWeb.Shell do
     socket
     |> assign(:current_scope, %{scope | workspace: workspace})
     |> assign(:shell, %{socket.assigns.shell | workspaces: workspaces})
+    |> push_event("hm:title-suffix", %{suffix: " · #{name}"})
   end
 
   defp handle_event("hm:switch-workspace", %{"slug" => slug}, socket) do

@@ -49,11 +49,11 @@ defmodule HelmsmanWeb.UserAuth do
   end
 
   @doc """
-  Logs the user out.
+  Logs the user out and redirects to `to` (default `/`).
 
   It clears all session data for safety. See renew_session.
   """
-  def log_out_user(conn) do
+  def log_out_user(conn, to \\ ~p"/") do
     user_token = get_session(conn, :user_token)
     user_token && Accounts.delete_user_session_token(user_token)
 
@@ -64,7 +64,7 @@ defmodule HelmsmanWeb.UserAuth do
     conn
     |> renew_session(nil)
     |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
-    |> redirect(to: ~p"/")
+    |> redirect(to: to)
   end
 
   @doc """
@@ -316,6 +316,30 @@ defmodule HelmsmanWeb.UserAuth do
       |> halt()
     end
   end
+
+  @doc """
+  Plug for workspace pages: remembers the slug of a workspace page loaded over
+  HTTP by a logged-in user as the most recently visited workspace (`/` goes
+  back there). The session is cleared on log in and log out.
+  """
+  def remember_workspace(%{method: "GET", path_params: %{"slug" => slug}} = conn, _opts)
+      when is_binary(slug) do
+    if logged_in?(conn), do: put_session(conn, :last_workspace_slug, slug), else: conn
+  end
+
+  def remember_workspace(conn, _opts), do: conn
+
+  @doc """
+  Plug for the invitation page: a visitor who is not logged in comes back to it
+  after logging in or registering (`log_in_user/3` reads `:user_return_to`).
+  """
+  def store_invitation_return_to(%{method: "GET"} = conn, _opts) do
+    if logged_in?(conn), do: conn, else: put_session(conn, :user_return_to, conn.request_path)
+  end
+
+  def store_invitation_return_to(conn, _opts), do: conn
+
+  defp logged_in?(conn), do: match?(%Scope{user: %Accounts.User{}}, conn.assigns[:current_scope])
 
   defp maybe_store_return_to(%{method: "GET"} = conn) do
     put_session(conn, :user_return_to, current_path(conn))

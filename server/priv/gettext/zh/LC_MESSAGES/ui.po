@@ -47,6 +47,7 @@ msgid "Agent 团队"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "Token"
 msgstr ""
@@ -58,6 +59,7 @@ msgstr ""
 
 #: lib/helmsman_web/form_errors.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/task_evidence.ex
 #, elixir-autogen, elixir-format
 msgid "不能为空"
@@ -211,8 +213,11 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "取消"
 msgstr ""
@@ -233,6 +238,7 @@ msgid "右侧面板（?panel=new）"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "吊销"
 msgstr ""
@@ -323,6 +329,7 @@ msgid "展开侧栏"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/general.ex
 #, elixir-autogen, elixir-format
 msgid "已保存"
 msgstr ""
@@ -506,6 +513,7 @@ msgid "新建任务"
 msgstr ""
 
 #: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "新建工作区"
 msgstr ""
@@ -536,6 +544,7 @@ msgid "暗"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/members.ex
 #, elixir-autogen, elixir-format
 msgid "更多操作"
 msgstr ""
@@ -740,8 +749,8 @@ msgid "负责人（12 项）"
 msgstr ""
 
 #: lib/helmsman_web/components/layouts.ex
-#: lib/helmsman_web/controllers/page_html/home.html.heex
 #: lib/helmsman_web/live/user_live/settings.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "账号设置"
 msgstr ""
@@ -792,7 +801,7 @@ msgid "进行中"
 msgstr ""
 
 #: lib/helmsman_web/components/layouts.ex
-#: lib/helmsman_web/controllers/page_html/home.html.heex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "退出登录"
 msgstr ""
@@ -879,6 +888,7 @@ msgid "放弃填写？"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
@@ -892,7 +902,10 @@ msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "名称"
 msgstr ""
@@ -1023,12 +1036,16 @@ msgstr ""
 msgid "欢迎，%{email}"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/user_live/settings.ex
 #, elixir-autogen, elixir-format
 msgid "正在保存…"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/user_live/registration.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "正在创建…"
 msgstr ""
@@ -1063,7 +1080,6 @@ msgstr ""
 msgid "注册账号"
 msgstr ""
 
-#: lib/helmsman_web/controllers/page_html/home.html.heex
 #: lib/helmsman_web/live/user_live/confirmation.ex
 #: lib/helmsman_web/live/user_live/login.ex
 #: lib/helmsman_web/live/user_live/registration.ex
@@ -1126,11 +1142,6 @@ msgstr ""
 #: lib/helmsman_web/user_auth.ex
 #, elixir-autogen, elixir-format
 msgid "请重新登录以验证身份。"
-msgstr ""
-
-#: lib/helmsman_web/controllers/page_html/home.html.heex
-#, elixir-autogen, elixir-format
-msgid "账号"
 msgstr ""
 
 #: lib/helmsman_web/controllers/user_session_controller.ex
@@ -1333,6 +1344,8 @@ msgstr ""
 msgid "大写字母开头，2–10 位大写字母或数字，创建后不能修改"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/task_transitions.ex
 #, elixir-autogen, elixir-format
@@ -1344,6 +1357,7 @@ msgstr ""
 msgid "属性"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/shell.ex
 #, elixir-autogen, elixir-format
 msgid "工作区地址已改为 /w/%{slug}"
@@ -1449,6 +1463,7 @@ msgstr ""
 msgid "摘要（可选）"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/task_transitions.ex
 #, elixir-autogen, elixir-format
 msgid "撤销"
@@ -1461,9 +1476,11 @@ msgstr ""
 
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/errors.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_errors.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
 #, elixir-autogen, elixir-format
 msgid "操作失败，请稍后重试"
 msgstr ""
@@ -1549,6 +1566,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/errors.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_errors.ex
@@ -1692,3 +1710,577 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "验收"
 msgstr ""
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "%{inviter} 邀请你以「%{role}」身份加入 %{workspace}"
+msgstr "%{inviter} 邀请你以「%{role}」身份加入 %{workspace}"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 天后"
+msgstr "%{n} 天后"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 小时后"
+msgstr "%{n} 小时后"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "1 年"
+msgstr "1 年"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
+#, elixir-autogen, elixir-format
+msgid "2–39 位小写字母、数字或 -，以字母或数字开头"
+msgstr "2–39 位小写字母、数字或 -，以字母或数字开头"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "30 天"
+msgstr "30 天"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "90 天"
+msgstr "90 天"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#: lib/helmsman_web/settings.ex
+#, elixir-autogen, elixir-format
+msgid "API Token"
+msgstr "API Token"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "Token 已吊销"
+msgstr "Token 已吊销"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "Token 让外接 Agent、脚本和 CI 以你的身份访问本工作区"
+msgstr "Token 让外接 Agent、脚本和 CI 以你的身份访问本工作区"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "不过期"
+msgstr "不过期"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "之后需要重新被邀请才能加入"
+msgstr "之后需要重新被邀请才能加入"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "之后需要重新被邀请才能加入；你在本工作区的 Token 将被吊销，名下 Agent 将被停用。"
+msgstr "之后需要重新被邀请才能加入；你在本工作区的 Token 将被吊销，名下 Agent 将被停用。"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "从未使用"
+msgstr "从未使用"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "你"
+msgstr "你"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "你已经是 %{workspace} 的成员"
+msgstr "你已经是 %{workspace} 的成员"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "你已退出 %{workspace}"
+msgstr "你已退出 %{workspace}"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "你是唯一的所有者，请先把其他成员设为所有者"
+msgstr "你是唯一的所有者，请先把其他成员设为所有者"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "使用它的 Agent 和脚本将立即无法访问。"
+msgstr "使用它的 Agent 和脚本将立即无法访问。"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "例如 laptop、ci，用于区分不同的使用场景"
+msgstr "例如 laptop、ci，用于区分不同的使用场景"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "修改后 /w/%{slug} 的所有链接将失效。"
+msgstr "修改后 /w/%{slug} 的所有链接将失效。"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "修改地址"
+msgstr "修改地址"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "修改工作区地址？"
+msgstr "修改工作区地址？"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "修改角色"
+msgstr "修改角色"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "创建 Token"
+msgstr "创建 Token"
+
+#: lib/helmsman_web/live/workspace_live/new.ex
+#, elixir-autogen, elixir-format
+msgid "创建你的第一个工作区；收到邀请的话，直接打开邀请链接即可加入"
+msgstr "创建你的第一个工作区；收到邀请的话，直接打开邀请链接即可加入"
+
+#: lib/helmsman_web/live/workspace_live/new.ex
+#, elixir-autogen, elixir-format
+msgid "创建工作区"
+msgstr "创建工作区"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "创建邀请"
+msgstr "创建邀请"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "到期"
+msgstr "到期"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "前缀"
+msgstr "前缀"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "加入失败，请稍后重试"
+msgstr "加入失败，请稍后重试"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "加入时间"
+msgstr "加入时间"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "危险操作"
+msgstr "危险操作"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "即将过期"
+msgstr "即将过期"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "只有所有者能修改地址"
+msgstr "只有所有者能修改地址"
+
+#: lib/helmsman_web/roles.ex
+#, elixir-autogen, elixir-format
+msgid "只读"
+msgstr "只读"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "只读成员不能创建 Token"
+msgstr "只读成员不能创建 Token"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "吊销 %{name}？"
+msgstr "吊销 %{name}？"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "在 Claude Code 中添加 Helmsman："
+msgstr "在 Claude Code 中添加 Helmsman："
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/workspace_live/new.ex
+#, elixir-autogen, elixir-format
+msgid "地址"
+msgstr "地址"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "外接 Agent 第一次连接时会自动创建身份"
+msgstr "外接 Agent 第一次连接时会自动创建身份"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "外接 Agent 通过 MCP 读写任务"
+msgstr "外接 Agent 通过 MCP 读写任务"
+
+#: lib/helmsman_web/live/settings_live/errors.ex
+#, elixir-autogen, elixir-format
+msgid "对象已不存在，列表已刷新"
+msgstr "对象已不存在，列表已刷新"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "工作区"
+msgstr "工作区"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "工作区全部 Token"
+msgstr "工作区全部 Token"
+
+#: lib/helmsman_web/live/workspace_live/new.ex
+#, elixir-autogen, elixir-format
+msgid "工作区已创建"
+msgstr "工作区已创建"
+
+#: lib/helmsman_web/live/settings_live/errors.ex
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "工作区至少需要一个所有者"
+msgstr "工作区至少需要一个所有者"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "已修改 %{name} 的角色"
+msgstr "已修改 %{name} 的角色"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "已加入 %{workspace}"
+msgstr "已加入 %{workspace}"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "已吊销"
+msgstr "已吊销"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "已向 %{email} 发送邀请邮件"
+msgstr "已向 %{email} 发送邀请邮件"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "已移除 %{name}"
+msgstr "已移除 %{name}"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "已过期"
+msgstr "已过期"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/settings.ex
+#, elixir-autogen, elixir-format
+msgid "常规"
+msgstr "常规"
+
+#: lib/helmsman_web/settings.ex
+#, elixir-autogen, elixir-format
+msgid "常规设置"
+msgstr "常规设置"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "当前账号：%{email}"
+msgstr "当前账号：%{email}"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "待接受的邀请"
+msgstr "待接受的邀请"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/roles.ex
+#: lib/helmsman_web/settings.ex
+#, elixir-autogen, elixir-format
+msgid "成员"
+msgstr "成员"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "我的 Token"
+msgstr "我的 Token"
+
+#: lib/helmsman_web/roles.ex
+#, elixir-autogen, elixir-format
+msgid "所有者"
+msgstr "所有者"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "换个账号"
+msgstr "换个账号"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "接受并加入"
+msgstr "接受并加入"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "接受邀请"
+msgstr "接受邀请"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "撤销后该邀请链接立即失效。"
+msgstr "撤销后该邀请链接立即失效。"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "撤销邀请？"
+msgstr "撤销邀请？"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "新建 Token"
+msgstr "新建 Token"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "无"
+msgstr "无"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "最近使用"
+msgstr "最近使用"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "有效期"
+msgstr "有效期"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "未填写邮箱将生成通用链接：任何拿到链接的人都能以该角色加入，请只通过可信渠道发送"
+msgstr "未填写邮箱将生成通用链接：任何拿到链接的人都能以该角色加入，请只通过可信渠道发送"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "权限范围"
+msgstr "权限范围"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "正在加入…"
+msgstr "正在加入…"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "此邀请只能由受邀邮箱的账号接受"
+msgstr "此邀请只能由受邀邮箱的账号接受"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "此邀请属于另一个邮箱，请用受邀邮箱的账号登录"
+msgstr "此邀请属于另一个邮箱，请用受邀邮箱的账号登录"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "没有待接受的邀请"
+msgstr "没有待接受的邀请"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "注册新账号"
+msgstr "注册新账号"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "用户"
+msgstr "用户"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "登录后接受"
+msgstr "登录后接受"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "确认修改"
+msgstr "确认修改"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "移除"
+msgstr "移除"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "移除 %{name}？"
+msgstr "移除 %{name}？"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "移除 %{name}？他在本工作区的 Token 将被吊销，名下 Agent 将被停用。"
+msgstr "移除 %{name}？他在本工作区的 Token 将被吊销，名下 Agent 将被停用。"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "移除成员"
+msgstr "移除成员"
+
+#: lib/helmsman_web/roles.ex
+#, elixir-autogen, elixir-format
+msgid "管理员"
+msgstr "管理员"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "缺省 Agent"
+msgstr "缺省 Agent"
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "至少选择一项"
+msgstr "至少选择一项"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "角色"
+msgstr "角色"
+
+#: lib/helmsman_web/live/command_palette/pages.ex
+#: lib/helmsman_web/nav.ex
+#: lib/helmsman_web/settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "设置"
+msgstr "设置"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "请修正下列错误"
+msgstr "请修正下列错误"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "请先确认邮箱后再接受邀请"
+msgstr "请先确认邮箱后再接受邀请"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "身份名"
+msgstr "身份名"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "过期"
+msgstr "过期"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "返回首页"
+msgstr "返回首页"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "还没有 Token"
+msgstr "还没有 Token"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "进入工作区"
+msgstr "进入工作区"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "退出 %{workspace}？"
+msgstr "退出 %{workspace}？"
+
+#: lib/helmsman_web/live/settings_live/general.ex
+#, elixir-autogen, elixir-format
+msgid "退出工作区"
+msgstr "退出工作区"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "通用链接"
+msgstr "通用链接"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "通过 REST API 写入数据"
+msgstr "通过 REST API 写入数据"
+
+#: lib/helmsman_web/live/settings_live/tokens.ex
+#, elixir-autogen, elixir-format
+msgid "通过 REST API 读取数据"
+msgstr "通过 REST API 读取数据"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "邀请人"
+msgstr "邀请人"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "邀请对象"
+msgstr "邀请对象"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "邀请将于 %{time} 过期"
+msgstr "邀请将于 %{time} 过期"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "邀请已撤销"
+msgstr "邀请已撤销"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "邀请成员"
+msgstr "邀请成员"
+
+#: lib/helmsman_web/live/invitation_live.ex
+#, elixir-autogen, elixir-format
+msgid "邀请无效或已过期"
+msgstr "邀请无效或已过期"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "邀请链接："
+msgstr "邀请链接："
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "邮箱（可选）"
+msgstr "邮箱（可选）"
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "长度须为 1–64 个字符"
+msgstr "长度须为 1–64 个字符"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "降低自己的角色后无法自行恢复。"
+msgstr "降低自己的角色后无法自行恢复。"
+
+#: lib/helmsman_web/live/settings_live/members.ex
+#, elixir-autogen, elixir-format
+msgid "降低自己的角色？"
+msgstr "降低自己的角色？"
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "须为 2–39 位小写字母、数字或 -，以字母或数字开头"
+msgstr "须为 2–39 位小写字母、数字或 -，以字母或数字开头"
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "须为你名下未停用的 Agent"
+msgstr "须为你名下未停用的 Agent"
