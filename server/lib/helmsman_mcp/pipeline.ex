@@ -53,6 +53,44 @@ defmodule HelmsmanMCP.Pipeline do
     run(module, ctx)
   end
 
+  @doc """
+  Runs `fun` on the read path of tools, for resources and prompts: the
+  context of `name` and `args`, with the current identity in
+  `scope.actor`. Returns `{:ok, value}`, or the reason and its text
+  (`:internal` for an unexpected failure, logged with a reference).
+  """
+  @spec read(String.t(), map(), Scope.t(), String.t() | nil, (Context.t() -> term())) ::
+          {:ok, term()} | {:error, term(), String.t()}
+  def read(name, args, %Scope{} = scope, session_id, fun)
+      when is_map(args) and is_function(fun, 1) do
+    ctx = %Context{
+      tool: name,
+      args: stringify_keys(args),
+      scope: scope,
+      session: session(session_id)
+    }
+
+    try do
+      case fun.(%{ctx | scope: %{scope | actor: Identity.current(scope, ctx.session)}}) do
+        {:ok, value} ->
+          {:ok, value}
+
+        {:error, reason} ->
+          case ErrorText.format(reason, ctx) do
+            {:ok, text} -> {:error, reason, text}
+            :error -> read_failure(ctx, "unexpected error: " <> inspect(reason))
+          end
+      end
+    catch
+      kind, reason -> read_failure(ctx, Exception.format(kind, reason, __STACKTRACE__))
+    end
+  end
+
+  defp read_failure(ctx, details) do
+    {:error, text} = internal_error(ctx, details)
+    {:error, :internal, text}
+  end
+
   defp run(module, ctx) do
     module.mode()
     |> execute(module, ctx)

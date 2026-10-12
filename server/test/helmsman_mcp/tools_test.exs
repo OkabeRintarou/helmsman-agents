@@ -25,7 +25,11 @@ defmodule HelmsmanMCP.ToolsTest do
     tools = Tools.all()
     names = Enum.map(tools, & &1.name())
 
-    assert Enum.sort(names) == ["identify", "list_actors", "whoami"]
+    assert Enum.sort(names) ==
+             Enum.sort(~w(identify whoami list_actors list_projects get_project create_project
+                 update_project list_tasks get_task create_task update_task list_my_tasks
+                 transition_task add_feedback update_feedback list_feedback))
+
     assert names == Enum.uniq(names)
 
     for tool <- [WriteTool | tools] do
@@ -38,6 +42,27 @@ defmodule HelmsmanMCP.ToolsTest do
         assert {:string, opts} = tool.input_schema().actor
         assert opts[:description]
       end
+    end
+  end
+
+  test "the feedback write tools also take author" do
+    for name <- ["add_feedback", "update_feedback"] do
+      {:ok, tool} = Tools.fetch(name)
+      assert tool.mode() == :write
+      assert {:string, opts} = tool.input_schema().author
+      assert opts[:description] =~ ~r/\A[\x20-\x7e]+\z/
+    end
+
+    write_tools = Enum.filter(Tools.all(), &(&1.mode() == :write))
+
+    assert write_tools |> Enum.map(& &1.name()) |> Enum.sort() ==
+             ~w(add_feedback create_project create_task transition_task update_feedback
+                update_project update_task)
+  end
+
+  test "every schema converts to JSON Schema" do
+    for tool <- Tools.all() do
+      assert %{"type" => "object"} = Schema.to_json_schema(tool.input_schema()), tool.name()
     end
   end
 

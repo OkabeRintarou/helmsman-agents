@@ -33,6 +33,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
 
     %{
       workspace: workspace,
+      owner: owner,
       alice: alice,
       token: token,
       api_token: api_token,
@@ -127,6 +128,20 @@ defmodule HelmsmanWeb.MCPEndpointTest do
 
   defp topic(workspace), do: Presence.agents_topic(workspace.id)
 
+  defp result!(conn) do
+    assert conn.status == 200
+    assert %{"result" => result} = Jason.decode!(conn.resp_body)
+    result
+  end
+
+  # An mcp token of the workspace owner (an admin and above).
+  defp owner_token(%{workspace: workspace, owner: owner}) do
+    %{token: token} =
+      api_token_fixture(workspace_scope_fixture(owner, workspace), %{scopes: ["mcp"]})
+
+    token
+  end
+
   ## Tests
 
   test "the whole handshake and the identity tools", %{token: token} = ctx do
@@ -135,6 +150,9 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     assert result["protocolVersion"] == @version
     assert result["serverInfo"]["name"] == "helmsman"
     assert result["instructions"] =~ "identify"
+    assert result["instructions"] =~ "helmsman://workflow"
+    assert result["instructions"] =~ "work_on_task"
+    assert %{"tools" => _, "resources" => _, "prompts" => _} = result["capabilities"]
     assert %{token_id: token_id, pid: pid} = Sessions.lookup(sid)
     assert token_id == ctx.api_token.id
     assert session_pid(sid) == {:ok, pid}
@@ -144,7 +162,10 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     conn = rpc(token, sid, "tools/list")
     assert conn.status == 200
     tools = Jason.decode!(conn.resp_body)["result"]["tools"]
-    assert Enum.map(tools, & &1["name"]) |> Enum.sort() == ["identify", "list_actors", "whoami"]
+    assert length(tools) == 16
+
+    assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
+             Enum.sort(Enum.map(HelmsmanMCP.Tools.all(), & &1.name()))
 
     assert %{"actor" => nil, "source" => "none"} = tool_json(token, sid, "whoami")
 
@@ -157,6 +178,110 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     actors = tool_json(token, sid, "list_actors")
     human = Helmsman.Actors.get_human(ctx.workspace.id, ctx.alice.id).name
     assert %{"owner" => ^human} = Enum.find(actors, &(&1["name"] == "keel/dev"))
+  end
+
+  @tag :capture_log
+  test "the M4 flow: project, task, claim, question, resources and prompts",
+       %{token: token} = ctx do
+    owner_token = owner_token(ctx)
+    owner_sid = handshake(owner_token)
+
+    assert %{"key" => "DEMO", "archived" => false} =
+             tool_json(owner_token, owner_sid, "create_project", %{key: "DEMO", name: "Demo"})
+
+    sid = handshake(token)
+    tool_json(token, sid, "identify", %{name: "demo/dev", project: "DEMO"})
+
+    assert %{"id" => "DEMO-1", "status" => "NEW", "created_by" => %{"name" => "demo/dev"}} =
+             tool_json(token, sid, "create_task", %{project_key: "DEMO", title: "Fix login"})
+
+    assert %{"status" => "IN_PROGRESS", "assignee" => %{"name" => "demo/dev"}} =
+             tool_json(token, sid, "transition_task", %{task_id: "DEMO-1", to: "in progress"})
+
+    assert %{"id" => "DEMO-1#1", "kind" => "question"} =
+             tool_json(token, sid, "add_feedback", %{
+               task_id: "DEMO-1",
+               content: "Minimum prefix length?",
+               kind: "question"
+             })
+
+    assert [%{"id" => "DEMO-1", "open_question" => true}] =
+             tool_json(token, sid, "list_my_tasks")
+
+    # A domain error is a tool error with its text.
+    assert %{"result" => %{"isError" => true, "content" => [%{"text" => text}]}} =
+             call_tool(token, sid, "transition_task", %{task_id: "DEMO-1", to: "VERIFIED"})
+
+    assert text ==
+             "Cannot move DEMO-1 from IN_PROGRESS to VERIFIED. Allowed: DONE, REJECTED, CANCELLED."
+
+    # Resources.
+    assert %{"resources" => resources} = result!(rpc(token, sid, "resources/list"))
+
+    assert Enum.map(resources, & &1["uri"]) |> Enum.sort() == [
+             "helmsman://projects",
+             "helmsman://workflow"
+           ]
+
+    assert %{"resourceTemplates" => [%{"uriTemplate" => "helmsman://tasks/{id}"}]} =
+             result!(rpc(token, sid, "resources/templates/list"))
+
+    assert %{"contents" => [%{"mimeType" => "text/markdown", "text" => markdown}]} =
+             result!(rpc(token, sid, "resources/read", %{uri: "helmsman://tasks/demo-1"}))
+
+    assert markdown =~ ~r/\A# DEMO-1: Fix login\n/
+    assert markdown =~ "- Status: IN_PROGRESS"
+    assert markdown =~ "Minimum prefix length?"
+
+    assert %{"contents" => [%{"text" => workflow}]} =
+             result!(rpc(token, sid, "resources/read", %{uri: "helmsman://workflow"}))
+
+    assert workflow == HelmsmanMCP.Resources.workflow()
+
+    assert %{"contents" => [%{"mimeType" => "application/json", "text" => projects}]} =
+             result!(rpc(token, sid, "resources/read", %{uri: "helmsman://projects"}))
+
+    assert Jason.decode!(projects) == tool_json(token, sid, "list_projects")
+
+    conn = rpc(token, sid, "resources/read", %{uri: "helmsman://tasks/DEMO-9"})
+    assert %{"error" => %{"code" => -32_002}} = Jason.decode!(conn.resp_body)
+
+    # Prompts.
+    assert %{"prompts" => [%{"name" => "work_on_task", "arguments" => [%{"name" => "task_id"}]}]} =
+             result!(rpc(token, sid, "prompts/list"))
+
+    assert %{
+             "messages" => [
+               %{"role" => "user", "content" => %{"type" => "text", "text" => prompt}}
+             ]
+           } =
+             result!(
+               rpc(token, sid, "prompts/get", %{
+                 name: "work_on_task",
+                 arguments: %{task_id: "DEMO-1"}
+               })
+             )
+
+    assert prompt =~ "Fix login"
+    assert prompt =~ ~s<transition_task(DEMO-1, "IN_PROGRESS")>
+
+    conn =
+      rpc(token, sid, "prompts/get", %{name: "work_on_task", arguments: %{task_id: "DEMO-9"}})
+
+    assert %{"error" => %{"message" => _}} = Jason.decode!(conn.resp_body)
+  end
+
+  @tag :capture_log
+  test "resources follow the token's workspace", %{token: token} do
+    other_owner = user_fixture()
+    other = workspace_fixture(other_owner)
+    other_scope = workspace_scope_fixture(other_owner, other)
+    Helmsman.ProjectsFixtures.project_fixture(other_scope, key: "OTHER")
+    Helmsman.ProjectsFixtures.task_fixture(other_scope, "OTHER")
+
+    sid = handshake(token)
+    conn = rpc(token, sid, "resources/read", %{uri: "helmsman://tasks/OTHER-1"})
+    assert %{"error" => %{"code" => -32_002}} = Jason.decode!(conn.resp_body)
   end
 
   @tag :capture_log

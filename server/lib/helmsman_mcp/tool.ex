@@ -10,8 +10,8 @@ defmodule HelmsmanMCP.Tool do
 
   `schema` uses the anubis notation (`%{name: {:required, :string,
   description: "..."}}`). A `:write` tool gets an optional `actor`
-  argument; the pipeline resolves the writer from it and removes it before
-  `call/2`. `:read` tools run with the current session identity in
+  argument (the feedback tools also declare `author`, its alias); the
+  pipeline resolves the writer from it and removes it before `call/2`. `:read` tools run with the current session identity in
   `scope.actor`.
   """
 
@@ -29,8 +29,16 @@ defmodule HelmsmanMCP.Tool do
                   "Write as this agent of yours instead of the session identity " <>
                     "(e.g. keel/dev)."}
 
+  @author_field {:string,
+                 description:
+                   "Write as this agent of yours instead of the session identity " <>
+                     "(e.g. keel/dev). Same as actor."}
+
   @doc false
   def actor_field, do: @actor_field
+
+  @doc "The `author` argument of the feedback tools: an alias of `actor`."
+  def author_field, do: @author_field
 
   defmacro __using__(opts) do
     name = Keyword.fetch!(opts, :name)

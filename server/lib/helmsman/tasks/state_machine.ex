@@ -92,6 +92,30 @@ defmodule Helmsman.Tasks.StateMachine do
   defp invalid_status(input), do: {:error, {:invalid_status, input, Task.statuses()}}
 
   @doc """
+  Parses a status or a list of statuses with `normalize/1`, duplicates
+  removed (first occurrence kept). The first unknown name is the error.
+
+      iex> Helmsman.Tasks.StateMachine.normalize_all(["DONE", "in progress", "done"])
+      {:ok, [:done, :in_progress]}
+  """
+  @spec normalize_all(term()) ::
+          {:ok, [status()]} | {:error, {:invalid_status, term(), [status()]}}
+  def normalize_all(input) do
+    input
+    |> List.wrap()
+    |> Enum.reduce_while([], fn item, acc ->
+      case normalize(item) do
+        {:ok, status} -> {:cont, [status | acc]}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:error, _} = error -> error
+      statuses -> {:ok, statuses |> Enum.reverse() |> Enum.uniq()}
+    end
+  end
+
+  @doc """
   Checks the transition `from → to` in `ctx`, in this order: the
   transition table, unmet dependencies (`new → in_progress`), replacement
   (`cancelled → new`), another active run (`done → verified`) and the

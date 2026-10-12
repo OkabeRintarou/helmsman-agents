@@ -1,0 +1,27 @@
+defmodule HelmsmanMCP.Tools.AddFeedback do
+  @moduledoc "`add_feedback`: adds a feedback record to a task."
+
+  use HelmsmanMCP.Tool,
+    name: "add_feedback",
+    description:
+      "Add feedback to a task: comment (default), review, question or answer. Records " <>
+        "are immutable; use update_feedback to revise. After a question, stop and wait " <>
+        "for the answer.",
+    schema: %{
+      task_id: {:required, :string, description: "Task ID (e.g. BOS-12)."},
+      content: {:required, :string, description: "Markdown, at most 64 KB."},
+      kind: {:string, description: "comment (default), review, question or answer."},
+      author: HelmsmanMCP.Tool.author_field()
+    },
+    mode: :write
+
+  alias Helmsman.Feedback
+  alias HelmsmanMCP.{Args, Present}
+
+  @impl HelmsmanMCP.Tool
+  def call(%{"task_id" => id} = args, %{scope: scope}) do
+    with {:ok, entry} <- Feedback.add(scope, id, Args.take(args, [:kind, :content])) do
+      {:ok, Present.feedback(Feedback.view(entry))}
+    end
+  end
+end

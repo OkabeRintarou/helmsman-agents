@@ -276,6 +276,46 @@ defmodule Helmsman.Tasks do
     do: where(query, [t], fragment("(?, ?) < (?, ?)", t.updated_at, t.id, ^updated_at, ^id))
 
   @doc """
+  Lists the tasks of the scope's workspace, in every project, whose
+  assignee is `scope.actor` (`:read_tasks`), most recently updated first,
+  at most #{@max_limit}.
+
+  ## Options
+
+    * `:status` - a status or a list of statuses, read by
+      `Helmsman.Tasks.StateMachine.normalize/1` (default `new` and
+      `in_progress`)
+
+  Returns `{:error, :no_identity}` without a current identity and
+  `{:error, {:invalid_status, input, valid}}` for an unknown status.
+  """
+  @spec list_assigned(Scope.t(), keyword()) ::
+          {:ok, [summary()]}
+          | {:error, :forbidden | :no_identity | {:invalid_status, term(), [Task.status()]}}
+  def list_assigned(%Scope{workspace: %Workspace{id: workspace_id}} = scope, opts \\ []) do
+    with :ok <- Policy.authorize(scope, :read_tasks),
+         %Actor{id: actor_id} <- scope.actor || {:error, :no_identity},
+         {:ok, statuses} <-
+           StateMachine.normalize_all(opts[:status] || [:new, :in_progress]) do
+      statuses = Enum.map(statuses, &Atom.to_string/1)
+
+      tasks =
+        from(t in Task,
+          where:
+            t.workspace_id == ^workspace_id and t.assignee_id == ^actor_id and
+              fragment("? = ANY(?)", t.status, ^statuses),
+          order_by: [desc: t.updated_at, desc: t.id],
+          limit: @max_limit,
+          preload: [:created_by, :assignee]
+        )
+        |> Repo.all()
+        |> put_commits()
+
+      {:ok, Enum.map(tasks, &summary/1)}
+    end
+  end
+
+  @doc """
   Lists the distinct labels of the tasks of the project with
   `project_key`, sorted (`:read_tasks`). Returns `{:error, :not_found}` for
   an unknown project.

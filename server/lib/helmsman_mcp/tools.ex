@@ -1,9 +1,43 @@
 defmodule HelmsmanMCP.Tools do
   @moduledoc "The registry of MCP tools."
 
-  alias HelmsmanMCP.Tools.{Identify, ListActors, Whoami}
+  alias HelmsmanMCP.Tools.{
+    AddFeedback,
+    CreateProject,
+    CreateTask,
+    GetProject,
+    GetTask,
+    Identify,
+    ListActors,
+    ListFeedback,
+    ListMyTasks,
+    ListProjects,
+    ListTasks,
+    TransitionTask,
+    UpdateFeedback,
+    UpdateProject,
+    UpdateTask,
+    Whoami
+  }
 
-  @tools [Identify, Whoami, ListActors]
+  @tools [
+    Identify,
+    Whoami,
+    ListActors,
+    ListProjects,
+    GetProject,
+    CreateProject,
+    UpdateProject,
+    ListTasks,
+    GetTask,
+    CreateTask,
+    UpdateTask,
+    ListMyTasks,
+    TransitionTask,
+    AddFeedback,
+    UpdateFeedback,
+    ListFeedback
+  ]
 
   @doc "Every tool module."
   @spec all() :: [module()]

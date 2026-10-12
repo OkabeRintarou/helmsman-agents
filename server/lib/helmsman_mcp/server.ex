@@ -16,7 +16,10 @@ defmodule HelmsmanMCP.Server do
   carries the session ID and would be refused by
   `HelmsmanWeb.Plugs.MCPSessionGuard`; `server_instructions/1` runs in the
   session process while it answers `initialize`. For the same reason the
-  tools come from `server_tools/2`. Before upgrading anubis, run
+  tools come from `server_tools/2`. Resources and prompts have no such
+  callback: `init/2` registers them (`HelmsmanMCP.Resources`,
+  `HelmsmanMCP.Prompts`), and reading them takes the read path of tools
+  (`HelmsmanMCP.Pipeline.read/5`). Before upgrading anubis, run
   `test/helmsman_web/mcp_endpoint_test.exs`, which covers the whole
   handshake over HTTP.
   """
@@ -26,24 +29,37 @@ defmodule HelmsmanMCP.Server do
   use Anubis.Server,
     name: "helmsman",
     version: @version,
-    capabilities: [:tools],
+    capabilities: [:tools, :resources, :prompts],
     protocol_versions: ~w(2025-11-25 2025-06-18 2025-03-26)
 
   require Logger
 
+  alias Anubis.MCP.Error
   alias Anubis.Server.Frame
   alias Anubis.Server.Registry
   alias Anubis.Server.Response
   alias Anubis.Server.Supervisor, as: AnubisSupervisor
   alias Helmsman.Accounts.Scope
-  alias HelmsmanMCP.{ErrorText, Online, Pipeline, RequestScope, Sessions, Tools}
+
+  alias HelmsmanMCP.{
+    ErrorText,
+    Online,
+    Pipeline,
+    Prompts,
+    RequestScope,
+    Resources,
+    Sessions,
+    Tools
+  }
 
   @instructions """
   Helmsman tracks tasks for humans and agents. Before writing anything, call \
   identify(name, project, worktree) to set the agent identity your writes are \
   recorded as (a team/role name such as keel/dev); if the API token has a \
   default agent you may skip it, and whoami shows the current identity. \
-  Sessions do not survive a server restart: after reconnecting, call identify again.\
+  Sessions do not survive a server restart: after reconnecting, call identify again. \
+  Rules: read the resource helmsman://workflow. To start on a task, use the prompt \
+  work_on_task.\
   """
 
   @impl Anubis.Server
@@ -56,7 +72,30 @@ defmodule HelmsmanMCP.Server do
   end
 
   @impl Anubis.Server
-  def init(_client_info, frame), do: {:ok, frame}
+  def init(_client_info, frame), do: {:ok, register_components(frame)}
+
+  defp register_components(frame) do
+    frame =
+      Enum.reduce(Resources.list(), frame, fn resource, frame ->
+        Frame.register_resource(frame, resource.uri, component_opts(resource))
+      end)
+
+    frame =
+      Enum.reduce(Resources.templates(), frame, fn template, frame ->
+        Frame.register_resource_template(frame, template.uri_template, component_opts(template))
+      end)
+
+    Enum.reduce(Prompts.list(), frame, fn prompt, frame ->
+      Frame.register_prompt(frame, prompt.name,
+        title: prompt.title,
+        description: prompt.description,
+        arguments: prompt.arguments
+      )
+    end)
+  end
+
+  defp component_opts(component),
+    do: Map.to_list(Map.take(component, [:name, :title, :description, :mime_type]))
 
   @impl Anubis.Server
   def server_tools(tools, _frame) do
@@ -89,6 +128,47 @@ defmodule HelmsmanMCP.Server do
     {:reply, response, frame}
   end
 
+  @impl Anubis.Server
+  def handle_resource_read(uri, %Frame{context: context} = frame) do
+    case read(context, uri, Resources.args(uri), &Resources.read(uri, &1)) do
+      {:ok, text} ->
+        {:reply, Response.text(Response.resource(), text), frame}
+
+      {:error, :not_found, text} ->
+        {:error, Error.resource(:not_found, %{uri: uri, message: text}), frame}
+
+      {:error, _reason, text} ->
+        {:error, Error.execution(text), frame}
+    end
+  end
+
+  @impl Anubis.Server
+  def handle_prompt_get(name, args, %Frame{context: context} = frame) do
+    case read(context, name, args, &Prompts.get(name, &1)) do
+      {:ok, text} ->
+        {:reply, Response.user_message(Response.prompt(), text), frame}
+
+      {:error, :not_found, text} ->
+        {:error, Error.protocol(:invalid_params, %{message: text}), frame}
+
+      {:error, _reason, text} ->
+        {:error, Error.execution(text), frame}
+    end
+  end
+
+  defp read(context, name, args, fun) do
+    case request_scope(context) do
+      {:ok, scope} ->
+        Pipeline.read(name, args, scope, context.session_id, fun)
+
+      {:error, :unauthorized} ->
+        {:error, :unauthorized, ErrorText.unauthorized()}
+
+      {:error, {:internal, error, stacktrace}} ->
+        {:error, :internal, log_failure(name, error, stacktrace)}
+    end
+  end
+
   # The headers carry the token (decision 16): a failure is logged without
   # the arguments of the stack frames, and never reaches anubis's logging.
   defp request_scope(context) do
@@ -101,7 +181,7 @@ defmodule HelmsmanMCP.Server do
     ref = 4 |> :crypto.strong_rand_bytes() |> Base.encode16(case: :lower)
 
     Logger.error(
-      "MCP tool #{tool} failed to authenticate (ref #{ref}): " <>
+      "MCP request #{tool} failed to authenticate (ref #{ref}): " <>
         Exception.format(:error, error, stacktrace)
     )
 
