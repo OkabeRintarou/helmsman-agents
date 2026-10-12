@@ -137,7 +137,7 @@ defmodule HelmsmanDaemon.RepoCacheTest do
 
     try do
       assert {:error, {:owner_down, _}} =
-               HelmsmanDaemon.Exec.command(["/bin/true"], cd: root, on_start: started)
+               HelmsmanDaemon.Exec.command([true_executable()], cd: root, on_start: started)
 
       refute_receive :started
 
@@ -159,7 +159,7 @@ defmodule HelmsmanDaemon.RepoCacheTest do
     holder =
       spawn(fn ->
         RepoCache.with_repo_lock(key, fn ->
-          HelmsmanDaemon.Exec.command(["/bin/true"],
+          HelmsmanDaemon.Exec.command([true_executable()],
             cd: root,
             before_lock: fn ->
               send(owner, {:before_lock, self()})
@@ -189,7 +189,7 @@ defmodule HelmsmanDaemon.RepoCacheTest do
 
     assert {:ok, ""} =
              RepoCache.with_repo_lock(key, fn ->
-               HelmsmanDaemon.Exec.command(["/bin/true"], cd: root)
+               HelmsmanDaemon.Exec.command([true_executable()], cd: root)
              end)
 
     owner = self()
@@ -247,4 +247,7 @@ defmodule HelmsmanDaemon.RepoCacheTest do
     send(holder, :release)
     assert_receive :entered, 5000
   end
+
+  # `true` lives in /bin on Linux but only in /usr/bin on macOS.
+  defp true_executable, do: System.find_executable("true") || flunk("true executable not found")
 end
