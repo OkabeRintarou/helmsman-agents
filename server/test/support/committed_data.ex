@@ -85,6 +85,9 @@ defmodule Helmsman.CommittedData do
 
       Repo.query!("DELETE FROM daemons WHERE user_id = ANY($1)", [user_ids])
 
+      # Steps refer to their epics in the same table.
+      Repo.query!("UPDATE tasks SET epic_id = NULL WHERE workspace_id = ANY($1)", [workspace_ids])
+
       for table <- [
             "task_events",
             "feedback",

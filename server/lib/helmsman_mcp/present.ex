@@ -42,6 +42,9 @@ defmodule HelmsmanMCP.Present do
       feedback_count: summary.feedback_count,
       open_question: summary.open_question,
       lock_version: summary.lock_version,
+      kind: summary.kind,
+      epic: summary.epic,
+      progress: progress(summary.progress),
       created_at: time(summary.created_at),
       updated_at: time(summary.updated_at)
     }
@@ -49,7 +52,8 @@ defmodule HelmsmanMCP.Present do
 
   @doc """
   A task detail (`Helmsman.Tasks.detail/1`): the summary, the
-  description, the history (oldest first) and every feedback record.
+  description, the history (oldest first), every feedback record, an
+  epic's steps (`children`, summaries) and a step's `epic_title`.
   """
   @spec detail(map()) :: map()
   def detail(%{} = detail) do
@@ -58,7 +62,9 @@ defmodule HelmsmanMCP.Present do
     |> Map.merge(%{
       description: detail.description,
       history: Enum.map(detail.history, &event/1),
-      feedback: Enum.map(detail.feedback, &feedback/1)
+      feedback: Enum.map(detail.feedback, &feedback/1),
+      children: detail.children && Enum.map(detail.children, &summary/1),
+      epic_title: detail.epic_title
     })
   end
 
@@ -144,6 +150,16 @@ defmodule HelmsmanMCP.Present do
 
   defp tests(%{} = tests),
     do: %{command: tests.command, passed: tests.passed, summary: tests.summary}
+
+  defp progress(nil), do: nil
+
+  defp progress(%{} = progress) do
+    %{
+      total: progress.total,
+      done: progress.done,
+      by_status: Map.new(progress.by_status, fn {name, count} -> {status(name), count} end)
+    }
+  end
 
   defp time(nil), do: nil
   defp time(%DateTime{} = time), do: DateTime.to_iso8601(time)

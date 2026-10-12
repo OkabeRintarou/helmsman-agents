@@ -177,6 +177,10 @@ defmodule HelmsmanMCP.ErrorText do
        "running on it (run #{id}). Wait until the run ends and its changes are pushed."}
   end
 
+  def format({:invalid, :kind}, %Context{args: args}) do
+    {:ok, "Unknown kind #{inspect(args["kind"])}. Use task or epic."}
+  end
+
   def format(%Ecto.Changeset{} = changeset, _ctx) do
     text =
       changeset

@@ -16,11 +16,13 @@ defmodule Helmsman.Tasks.Task do
   alias Helmsman.Workspaces.Workspace
 
   @type status :: :new | :in_progress | :done | :verified | :rejected | :cancelled
+  @type kind :: :task | :epic
   @type priority :: :low | :medium | :high
   @type t :: %__MODULE__{}
 
   @statuses [:new, :in_progress, :done, :verified, :rejected, :cancelled]
   @priorities [:low, :medium, :high]
+  @kinds [:task, :epic]
   @max_description_bytes 65_536
   @max_labels 20
   @max_label_length 32
@@ -38,6 +40,10 @@ defmodule Helmsman.Tasks.Task do
     belongs_to :created_by, Actor
     belongs_to :assignee, Actor
     field :lock_version, :integer, default: 1
+    # Set at creation, never changed. A task (never an epic) may belong to
+    # an epic of its workspace, in any project (designs/04 §3).
+    field :kind, Ecto.Enum, values: @kinds, default: :task
+    belongs_to :epic, __MODULE__
     # Kept by `Helmsman.Feedback` under the task row lock: the last feedback
     # number given out, the active records and whether a question waits
     # for an answer.
@@ -54,6 +60,15 @@ defmodule Helmsman.Tasks.Task do
     # The dispatch outcomes (`Helmsman.Runs.Outcome`) of the `create/3` or
     # `update/4` call that returned the task.
     field :dispatch, {:array, :any}, virtual: true, default: []
+    # Filled in by `Helmsman.Tasks` with `commits`: the ID of the epic the
+    # task belongs to and, for an epic, its progress
+    # (`Helmsman.Tasks.Epics.progress/2`).
+    field :epic_ident, :string, virtual: true
+    field :progress, :map, virtual: true
+    # Filled in for the detail: an epic's steps (by ID) and a step's epic
+    # title.
+    field :children, {:array, :any}, virtual: true
+    field :epic_title, :string, virtual: true
 
     has_many :events, TaskEvent
 
@@ -63,6 +78,10 @@ defmodule Helmsman.Tasks.Task do
   @doc "All statuses."
   @spec statuses() :: [status()]
   def statuses, do: @statuses
+
+  @doc "All kinds."
+  @spec kinds() :: [kind()]
+  def kinds, do: @kinds
 
   @doc "All priorities."
   @spec priorities() :: [priority()]
@@ -94,6 +113,13 @@ defmodule Helmsman.Tasks.Task do
     |> unique_constraint(:ident, name: :tasks_workspace_id_ident_index)
     |> unique_constraint(:seq, name: :tasks_project_id_seq_index)
     |> foreign_key_constraint(:assignee_id, name: :tasks_assignee_id_fkey)
+    |> foreign_key_constraint(:epic, name: :tasks_epic_id_fkey, message: "not found")
+    |> check_constraint(:kind, name: :tasks_kind_check, message: "is invalid")
+    |> check_constraint(:epic,
+      name: :tasks_epic_not_nested,
+      message: "an epic cannot belong to another epic"
+    )
+    |> check_constraint(:epic, name: :tasks_epic_not_self, message: "is not an epic")
   end
 
   @doc """

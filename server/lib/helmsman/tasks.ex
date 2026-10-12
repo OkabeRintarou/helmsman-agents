@@ -34,6 +34,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Tx
 
   alias Helmsman.Tasks.{
+    Epics,
     Evidence,
     Ident,
     StateMachine,
@@ -58,6 +59,9 @@ defmodule Helmsman.Tasks do
           created_by: actor_ref(),
           assignee: actor_ref(),
           lock_version: pos_integer(),
+          kind: String.t(),
+          epic: String.t() | nil,
+          progress: Epics.progress() | nil,
           commits: [String.t()],
           feedback_count: non_neg_integer(),
           open_question: boolean(),
@@ -84,9 +88,17 @@ defmodule Helmsman.Tasks do
   @doc """
   Creates a task in the project with `project_key` (`:create_task`).
 
-  `attrs`: `title`, `description`, `priority`, `labels` and `assignee` (an
-  identity name; `nil` or `""` for none). The task starts as `new`, created
-  by `scope.actor`, with a creation entry in its history.
+  `attrs`: `title`, `description`, `priority`, `labels`, `assignee` (an
+  identity name; `nil` or `""` for none), `kind` (`"task"`, the default,
+  or `"epic"`; never changed later) and `epic` (the ID of an epic of the
+  workspace, any case, any project; `nil` or `""` for none). The task
+  starts as `new`, created by `scope.actor`, with a creation entry in its
+  history.
+
+  With `epic` the workspace graph lock is taken first and the epic is
+  recomputed as `:step_added` after the insert
+  (`Helmsman.Tasks.Epics.recompute/3`). An unknown epic, a task that is
+  not an epic or an epic given for an epic is a changeset error on `epic`.
 
   Assigned to a managed agent, the task is dispatched in the same
   transaction (`Helmsman.Dispatch.on_assignee_change/4`) unless `start` is
@@ -102,6 +114,8 @@ defmodule Helmsman.Tasks do
   def create(%Scope{workspace: %Workspace{}} = scope, project_key, attrs)
       when is_binary(project_key) and is_map(attrs) do
     Workspaces.write_transaction(scope, :create_task, fn scope ->
+      epic_input = fetch_epic(attrs)
+      :ok = lock_graph_for_epic(scope.workspace.id, epic_input)
       assignee = lock_assignee(scope.workspace.id, attrs)
       test_hook(:assignee_locked)
 
@@ -110,8 +124,15 @@ defmodule Helmsman.Tasks do
       changeset =
         %Task{workspace_id: scope.workspace.id, created_by_id: scope.actor.id}
         |> Task.changeset(attrs)
+        |> put_kind(attrs)
         |> put_assignee(assignee)
         |> put_start_error(start_error)
+
+      changeset =
+        put_epic(
+          changeset,
+          resolve_epic(scope.workspace.id, epic_input, Changeset.get_field(changeset, :kind))
+        )
 
       with {:ok, project} <- fetch_project(scope, project_key),
            :ok <- validate(changeset),
@@ -167,6 +188,8 @@ defmodule Helmsman.Tasks do
         actor_id: scope.actor.id,
         source_run_id: source_run_id(scope)
       })
+
+      :ok = recompute_epics(scope, nil, task.epic_id)
 
       {task, dispatch} = dispatch(scope, task, nil, start?)
       task = preload_detail(task)
@@ -247,19 +270,24 @@ defmodule Helmsman.Tasks do
     * `:status` - a status or a list of statuses
     * `:label` - only tasks with this label
     * `:assignee` - an identity name; `""` for unassigned tasks
+    * `:kind` - `:task` or `:epic` (strings in any case too)
+    * `:epic` - the ID of an epic (any case): only its steps; `""` for
+      the tasks that belong to no epic
     * `:limit` - at most this many tasks (default 50, at most 200)
     * `:offset` - skip this many tasks (default 0)
     * `:before` - `{updated_at, id}` of the last task of the previous page:
       only the tasks after it in this order (keyset pagination; `:offset`
       is then ignored)
 
-  Returns `{:error, :not_found}` for an unknown project.
+  Returns `{:error, :not_found}` for an unknown project and
+  `{:error, {:invalid, :kind}}` for an unknown kind.
   """
   @spec list(Scope.t(), String.t(), keyword()) ::
-          {:ok, [Task.t()]} | {:error, :forbidden | :not_found}
+          {:ok, [Task.t()]} | {:error, :forbidden | :not_found | {:invalid, :kind}}
   def list(%Scope{workspace: %Workspace{id: workspace_id}} = scope, project_key, opts \\ [])
       when is_binary(project_key) do
     with :ok <- Policy.authorize(scope, :read_tasks),
+         {:ok, kind} <- kind_filter(opts[:kind]),
          {:ok, project} <- fetch_project(scope, project_key) do
       tasks =
         from(t in Task,
@@ -272,8 +300,10 @@ defmodule Helmsman.Tasks do
         |> filter_status(opts[:status])
         |> filter_label(opts[:label])
         |> filter_assignee(workspace_id, opts[:assignee])
+        |> filter_kind(kind)
+        |> filter_epic(workspace_id, opts[:epic])
         |> Repo.all()
-        |> put_commits()
+        |> put_derived()
 
       {:ok, tasks}
     end
@@ -322,7 +352,7 @@ defmodule Helmsman.Tasks do
           preload: [:created_by, :assignee]
         )
         |> Repo.all()
-        |> put_commits()
+        |> put_derived()
 
       {:ok, Enum.map(tasks, &summary/1)}
     end
@@ -375,11 +405,45 @@ defmodule Helmsman.Tasks do
     where(query, [t], t.assignee_id in subquery(ids))
   end
 
+  defp kind_filter(nil), do: {:ok, nil}
+
+  defp kind_filter(kind) do
+    case normalize_kind(kind) do
+      {:ok, kind} -> {:ok, kind}
+      :error -> {:error, {:invalid, :kind}}
+    end
+  end
+
+  defp filter_kind(query, nil), do: query
+  defp filter_kind(query, kind), do: where(query, [t], t.kind == ^kind)
+
+  defp filter_epic(query, _workspace_id, nil), do: query
+  defp filter_epic(query, _workspace_id, ""), do: where(query, [t], is_nil(t.epic_id))
+
+  # An unknown or malformed ID matches nothing.
+  defp filter_epic(query, workspace_id, ident) when is_binary(ident) do
+    case Ident.parse(String.trim(ident)) do
+      {:ok, ident, _key, _seq} ->
+        ids =
+          from(e in Task,
+            where: e.workspace_id == ^workspace_id and e.ident == ^ident,
+            select: e.id
+          )
+
+        where(query, [t], t.epic_id in subquery(ids))
+
+      {:error, :not_found} ->
+        where(query, [t], false)
+    end
+  end
+
   ## Editing
 
   @doc """
-  Edits a task's title, description, priority, labels and assignee
+  Edits a task's title, description, priority, labels, assignee and epic
   (`:update_task`); `status` and every other field in `attrs` are ignored.
+  A `kind` equal to the current one is ignored too; a different one is a
+  changeset error on `kind` (it is never changed).
 
   With a `lock_version` that is not the current one the result is
   `{:error, :stale}`, checked before anything else. Without one the edit
@@ -390,6 +454,14 @@ defmodule Helmsman.Tasks do
   A run scope may only edit its own task (`:write_task`). A new assignee
   is dispatched as in `create/3` (`start` included, which is not a field:
   an edit that only gives `start` changes nothing).
+
+  `epic` is read as in `create/3` (`""` detaches the task). With an `epic`
+  key the workspace graph lock is taken before the task row; after the
+  version check the old and the new epic rows are locked `FOR UPDATE` in
+  ascending ID order. A change of epic bumps the task's `lock_version`
+  and recomputes the old epic as `:step_removed` and the new one as
+  `:step_added`; the epics' `lock_version` does not change. Without an
+  `epic` key no graph lock is taken.
   """
   @spec update(Scope.t(), String.t(), map(), pos_integer() | nil) ::
           {:ok, Task.t()} | {:error, error()}
@@ -402,17 +474,23 @@ defmodule Helmsman.Tasks do
              (is_nil(lock_version) or is_integer(lock_version)) do
     Workspaces.write_transaction(scope, :update_task, fn scope ->
       with {:ok, ident, _key, _seq} <- Ident.parse(ident),
+           epic_input = fetch_epic(attrs),
+           :ok <- lock_graph_for_epic(scope.workspace.id, epic_input),
            assignee = lock_assignee(scope.workspace.id, attrs),
            _ = test_hook(:assignee_locked),
            {:ok, task} <- lock_task(scope.workspace.id, ident),
            :ok <- Policy.authorize(scope, :write_task, task),
            :ok <- check_version(task, lock_version) do
+        test_hook(:version_checked)
+        epic = lock_epics(task, epic_input)
         {start?, start_error} = fetch_start(attrs)
 
         task
         |> Task.changeset(attrs)
+        |> check_kind_unchanged(attrs)
         |> put_assignee(assignee)
         |> put_start_error(start_error)
+        |> put_epic(epic)
         |> save(scope, start?)
       end
     end)
@@ -455,6 +533,8 @@ defmodule Helmsman.Tasks do
     changeset = Changeset.change(changeset, lock_version: changeset.data.lock_version + 1)
 
     with {:ok, task} <- Repo.update(changeset) do
+      :ok = recompute_epics(scope, changeset.data.epic_id, task.epic_id)
+
       {task, dispatch} =
         if task.assignee_id != prev_assignee_id,
           do: dispatch(scope, task, prev_assignee_id, start?),
@@ -492,6 +572,142 @@ defmodule Helmsman.Tasks do
 
   defp source_run_id(%Scope{via: :run, run: %{id: id}}), do: id
   defp source_run_id(_scope), do: nil
+
+  ## Kind and epic
+
+  defp normalize_kind(kind) when kind in [:task, :epic], do: {:ok, kind}
+
+  defp normalize_kind(kind) when is_binary(kind) do
+    case kind |> String.trim() |> String.downcase() do
+      "task" -> {:ok, :task}
+      "epic" -> {:ok, :epic}
+      _other -> :error
+    end
+  end
+
+  defp normalize_kind(_kind), do: :error
+
+  defp put_kind(changeset, attrs) do
+    case fetch_attr(attrs, :kind) do
+      {:ok, kind} when not is_nil(kind) ->
+        case normalize_kind(kind) do
+          {:ok, kind} -> Changeset.put_change(changeset, :kind, kind)
+          :error -> Changeset.add_error(changeset, :kind, "is invalid")
+        end
+
+      _absent ->
+        changeset
+    end
+  end
+
+  # Changing the kind is a clear intent: an error, not silently ignored as
+  # `status` is.
+  defp check_kind_unchanged(%Changeset{data: %Task{kind: current}} = changeset, attrs) do
+    with {:ok, kind} when not is_nil(kind) <- fetch_attr(attrs, :kind),
+         false <- normalize_kind(kind) == {:ok, current} do
+      Changeset.add_error(changeset, :kind, "cannot be changed")
+    else
+      _same_or_absent -> changeset
+    end
+  end
+
+  # `epic`: an epic's ID (any case); nil or "" for none; a missing key
+  # keeps the current one.
+  defp fetch_epic(attrs) do
+    case fetch_attr(attrs, :epic) do
+      :error -> :keep
+      {:ok, nil} -> {:set, nil}
+      {:ok, ident} when is_binary(ident) -> parse_epic(String.trim(ident))
+      {:ok, _other} -> {:invalid, "is invalid"}
+    end
+  end
+
+  defp parse_epic(""), do: {:set, nil}
+
+  defp parse_epic(ident) do
+    case Ident.parse(ident) do
+      {:ok, ident, _key, _seq} -> {:ident, ident}
+      {:error, :not_found} -> {:invalid, "not found"}
+    end
+  end
+
+  # Taken whenever `epic` is given, before anything is known about a
+  # change: never after a task row lock (designs/01 §4).
+  defp lock_graph_for_epic(_workspace_id, :keep), do: :ok
+  defp lock_graph_for_epic(workspace_id, _epic_input), do: Locks.graph!(workspace_id)
+
+  # For a new task. A task's kind never changes and tasks are never
+  # deleted, so the check needs no lock; `Epics.recompute/3` locks the
+  # epic row after the insert.
+  defp resolve_epic(_workspace_id, {:ident, _ident}, :epic),
+    do: {:invalid, "an epic cannot belong to another epic"}
+
+  defp resolve_epic(workspace_id, {:ident, ident}, _kind) do
+    query =
+      from(t in Task,
+        where: t.workspace_id == ^workspace_id and t.ident == ^ident,
+        select: {t.id, t.kind}
+      )
+
+    check_epic(Repo.one(query))
+  end
+
+  defp resolve_epic(_workspace_id, epic_input, _kind), do: epic_input
+
+  # For an edit, after the version check: the old and the new epic rows
+  # `FOR UPDATE`, in ascending ID order.
+  defp lock_epics(%Task{kind: :epic}, {:ident, _ident}),
+    do: {:invalid, "an epic cannot belong to another epic"}
+
+  defp lock_epics(%Task{} = task, {:ident, ident}) do
+    rows =
+      from(t in Task,
+        where:
+          t.workspace_id == ^task.workspace_id and
+            (t.ident == ^ident or t.id == ^(task.epic_id || 0)),
+        order_by: t.id,
+        lock: "FOR UPDATE",
+        select: {t.id, t.kind, t.ident}
+      )
+      |> Repo.all()
+
+    rows
+    |> Enum.find_value(fn {id, kind, row_ident} -> row_ident == ident && {id, kind} end)
+    |> check_epic()
+  end
+
+  defp lock_epics(%Task{epic_id: epic_id} = task, {:set, nil}) when is_integer(epic_id) do
+    Repo.one!(
+      from(t in Task,
+        where: t.workspace_id == ^task.workspace_id and t.id == ^epic_id,
+        lock: "FOR UPDATE",
+        select: t.id
+      )
+    )
+
+    {:set, nil}
+  end
+
+  defp lock_epics(_task, epic_input), do: epic_input
+
+  defp check_epic(nil), do: {:invalid, "not found"}
+  defp check_epic({id, :epic}), do: {:set, id}
+  defp check_epic({_id, _kind}), do: {:invalid, "is not an epic"}
+
+  defp put_epic(changeset, :keep), do: changeset
+  defp put_epic(changeset, {:set, id}), do: Changeset.put_change(changeset, :epic_id, id)
+
+  defp put_epic(changeset, {:invalid, message}),
+    do: Changeset.add_error(changeset, :epic, message)
+
+  defp recompute_epics(_scope, same, same), do: :ok
+
+  defp recompute_epics(scope, old_epic_id, new_epic_id) do
+    attrs = %{actor_id: scope.actor.id, source_run_id: source_run_id(scope)}
+    if old_epic_id, do: :ok = Epics.recompute(old_epic_id, :step_removed, attrs)
+    if new_epic_id, do: :ok = Epics.recompute(new_epic_id, :step_added, attrs)
+    :ok
+  end
 
   ## Transitions
 
@@ -802,6 +1018,9 @@ defmodule Helmsman.Tasks do
       created_by: actor_ref(task.created_by),
       assignee: actor_ref(task.assignee),
       lock_version: task.lock_version,
+      kind: Atom.to_string(task.kind),
+      epic: task.epic_ident,
+      progress: task.progress,
       commits: task.commits,
       feedback_count: task.feedback_count,
       open_question: task.open_question,
@@ -812,8 +1031,11 @@ defmodule Helmsman.Tasks do
 
   @doc """
   The detail map of a task: the summary plus `description`, `history`
-  (oldest first) and `feedback` (every record, superseded ones included,
-  by number; `Helmsman.Feedback.view/1`). Needs the preloads of `get/2`.
+  (oldest first), `feedback` (every record, superseded ones included,
+  by number; `Helmsman.Feedback.view/1`), `children` (an epic's steps'
+  summaries in creation order, in every project; `nil` for a task) and
+  `epic_title` (the title of a task's epic; `nil` without one and for an
+  epic). Needs the preloads of `get/2`.
   """
   @spec detail(Task.t()) :: map()
   def detail(%Task{} = task) do
@@ -822,7 +1044,9 @@ defmodule Helmsman.Tasks do
     |> Map.merge(%{
       description: task.description,
       history: Enum.map(task.events, &event_view/1),
-      feedback: Enum.map(task.feedback, &Feedback.view/1)
+      feedback: Enum.map(task.feedback, &Feedback.view/1),
+      children: task.children && Enum.map(task.children, &summary/1),
+      epic_title: task.epic_title
     })
   end
 
@@ -859,12 +1083,13 @@ defmodule Helmsman.Tasks do
   defp actor_ref(%Actor{name: name, kind: kind}), do: %{name: name, kind: Atom.to_string(kind)}
 
   @doc """
-  Loads what `summary/1` needs into `task` (creator, assignee, commits).
+  Loads what `summary/1` needs into `task` (creator, assignee, commits,
+  epic, progress).
   """
   @spec load_summary(Task.t()) :: Task.t()
   def load_summary(%Task{} = task) do
     task = Repo.preload(task, [:created_by, :assignee], force: true)
-    hd(put_commits([task]))
+    hd(put_derived([task]))
   end
 
   defp preload_detail(task) do
@@ -874,12 +1099,57 @@ defmodule Helmsman.Tasks do
     ids = Map.new(feedback, &{&1.id, Feedback.Id.build(task.ident, &1.seq)})
     events = Enum.map(task.events, &%{&1 | feedback_ident: ids[&1.feedback_id]})
 
-    %{
+    task = %{
       task
       | events: events,
         feedback: feedback,
         commits: events |> Enum.flat_map(& &1.commits) |> Enum.uniq()
     }
+
+    [task] = put_epic_fields([task])
+    put_family(task)
+  end
+
+  defp put_family(%Task{kind: :epic} = epic) do
+    children =
+      from(t in Task,
+        where: t.workspace_id == ^epic.workspace_id and t.epic_id == ^epic.id,
+        order_by: [asc: t.id],
+        preload: [:created_by, :assignee]
+      )
+      |> Repo.all()
+      |> put_commits()
+      |> Enum.map(&%{&1 | epic_ident: epic.ident})
+
+    %{epic | children: children, epic_title: nil}
+  end
+
+  defp put_family(%Task{epic_id: nil} = task), do: %{task | children: nil, epic_title: nil}
+
+  defp put_family(%Task{epic_id: epic_id} = task) do
+    title = Repo.one!(from(t in Task, where: t.id == ^epic_id, select: t.title))
+    %{task | children: nil, epic_title: title}
+  end
+
+  defp put_derived(tasks), do: tasks |> put_commits() |> put_epic_fields()
+
+  # At most two queries for all `tasks`: the IDs of their epics (only when
+  # some belong to one) and the progress of the epics among them (only
+  # when there are some).
+  defp put_epic_fields([]), do: []
+
+  defp put_epic_fields([%Task{workspace_id: workspace_id} | _] = tasks) do
+    epic_ids = tasks |> Enum.map(& &1.epic_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    idents =
+      if epic_ids == [],
+        do: %{},
+        else:
+          Map.new(Repo.all(from(t in Task, where: t.id in ^epic_ids, select: {t.id, t.ident})))
+
+    progress = Epics.progress(workspace_id, for(%Task{kind: :epic, id: id} <- tasks, do: id))
+
+    Enum.map(tasks, &%{&1 | epic_ident: idents[&1.epic_id], progress: progress[&1.id]})
   end
 
   # One query for the commits of all `tasks`, whatever their number.

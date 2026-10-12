@@ -5,7 +5,7 @@ defmodule Helmsman.Tasks.TransitionSteps do
   reconciliation. Each later change appends its step to `@steps`; a step
   returning `{:error, reason}` rolls the whole transition back.
 
-  This change has no steps yet.
+  Steps: the Epic cascade (`Helmsman.Tasks.Epics.after_transition/3`).
   """
 
   alias Helmsman.Accounts.Scope
@@ -13,7 +13,7 @@ defmodule Helmsman.Tasks.TransitionSteps do
 
   @type step :: (Task.t(), TaskEvent.t(), Scope.t() -> :ok | {:error, term()})
 
-  @steps []
+  @steps [&Helmsman.Tasks.Epics.after_transition/3]
 
   @doc "Runs every step in order; stops at the first error."
   @spec run(Task.t(), TaskEvent.t(), Scope.t()) :: :ok | {:error, term()}

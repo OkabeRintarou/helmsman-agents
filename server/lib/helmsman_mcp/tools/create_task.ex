@@ -5,7 +5,8 @@ defmodule HelmsmanMCP.Tools.CreateTask do
     name: "create_task",
     description:
       "Create a task in a project. It starts as NEW, created by your identity. Returns " <>
-        "the task with its ID.",
+        "the task with its ID. kind: \"epic\" creates an epic (a goal whose steps are " <>
+        "tasks); epic puts the new task under an epic as one of its steps.",
     schema: %{
       project_key: {:required, :string, description: "Project key (e.g. BOS)."},
       title: {:required, :string, description: "Title, 1-200 characters."},
@@ -17,14 +18,24 @@ defmodule HelmsmanMCP.Tools.CreateTask do
          description:
            "With an assignee that is a managed agent: false records the assignment " <>
              "without starting the agent (default true)."},
-      assignee: {:string, description: "Identity name to assign the task to."}
+      assignee: {:string, description: "Identity name to assign the task to."},
+      kind:
+        {:string,
+         description:
+           "task (default) or epic. Cannot be changed later; an epic cannot belong to " <>
+             "another epic."},
+      epic:
+        {:string,
+         description:
+           "ID of an epic (any project of the workspace, e.g. BOS-1) the task is a step of; " <>
+             "\"\" for none."}
     },
     mode: :write
 
   alias Helmsman.Tasks
   alias HelmsmanMCP.{Args, Present}
 
-  @fields [:title, :description, :priority, :labels, :assignee, :start]
+  @fields [:title, :description, :priority, :labels, :assignee, :start, :kind, :epic]
 
   @impl HelmsmanMCP.Tool
   def call(%{"project_key" => key} = args, %{scope: scope}) do

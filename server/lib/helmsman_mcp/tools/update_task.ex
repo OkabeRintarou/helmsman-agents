@@ -4,7 +4,7 @@ defmodule HelmsmanMCP.Tools.UpdateTask do
   use HelmsmanMCP.Tool,
     name: "update_task",
     description:
-      "Edit a task's title, description, priority, labels or assignee. The status cannot " <>
+      "Edit a task's title, description, priority, labels, assignee or epic. The status cannot " <>
         "be changed here: use transition_task. With lock_version, the edit fails if " <>
         "someone changed the task since you read it; without it, the latest version is edited.",
     schema: %{
@@ -19,6 +19,10 @@ defmodule HelmsmanMCP.Tools.UpdateTask do
            "With an assignee that is a managed agent: false records the assignment " <>
              "without starting the agent (default true)."},
       assignee: {:string, description: "Identity name; \"\" to unassign."},
+      epic:
+        {:string,
+         description:
+           "ID of the epic the task is a step of (e.g. BOS-1); \"\" to take it out of its epic."},
       lock_version: {:integer, description: "The lock_version you read (get_task)."}
     },
     mode: :write
@@ -26,7 +30,7 @@ defmodule HelmsmanMCP.Tools.UpdateTask do
   alias Helmsman.Tasks
   alias HelmsmanMCP.{Args, Present}
 
-  @fields [:title, :description, :priority, :labels, :assignee, :start]
+  @fields [:title, :description, :priority, :labels, :assignee, :start, :epic]
 
   @impl HelmsmanMCP.Tool
   def call(%{"task_id" => id} = args, %{scope: scope}) do

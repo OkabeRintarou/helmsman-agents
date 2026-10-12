@@ -17,6 +17,10 @@ defmodule HelmsmanMCP.Tools.ListTasks do
          ]},
       label: {:string, description: "Only tasks with this label."},
       assignee: {:string, description: "Only tasks of this identity; \"\" for unassigned."},
+      kind: {:string, description: "Only tasks of this kind: task or epic."},
+      epic:
+        {:string,
+         description: "Only the steps of this epic (e.g. BOS-1); \"\" for tasks in no epic."},
       limit: {:integer, description: "At most this many tasks (default 50, at most 200)."},
       offset: {:integer, description: "Skip this many tasks (default 0)."}
     },
@@ -30,7 +34,7 @@ defmodule HelmsmanMCP.Tools.ListTasks do
     with {:ok, statuses} <- Args.statuses(args["status"]) do
       opts =
         args
-        |> Args.take([:label, :assignee, :limit, :offset])
+        |> Args.take([:label, :assignee, :kind, :epic, :limit, :offset])
         |> Map.put(:status, statuses)
         |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
