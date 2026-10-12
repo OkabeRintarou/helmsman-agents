@@ -9,12 +9,16 @@ defmodule HelmsmanMCP.RequestScope do
   is the queued request's own. So the token is checked again here: revoked,
   expired or no longer a member gives `{:error, :unauthorized}`, as do a
   token without the `mcp` scope or other than the one the session is bound
-  to. The rate limit and the last use were already handled by
-  `HelmsmanWeb.Plugs.BearerAuth` for the request.
+  to. Run tokens (`hmr_`) are checked the same way
+  (`Helmsman.Runs.RunTokens.scope/2`): a run that ended while the call
+  was queued gives `{:error, :unauthorized}`. The rate limit and the last
+  use were already handled by `HelmsmanWeb.Plugs.BearerAuth` for the
+  request.
   """
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.ApiTokens
+  alias Helmsman.Runs.RunTokens
   alias HelmsmanMCP.Sessions
 
   @doc """
@@ -25,9 +29,20 @@ defmodule HelmsmanMCP.RequestScope do
           {:ok, Scope.t()} | {:error, :unauthorized}
   def fetch(headers, session_id) when is_map(headers) do
     with {:ok, token} <- bearer(headers["authorization"]),
-         {:ok, found} <- authenticate(token),
-         %{token_id: token_id} <- Sessions.lookup(session_id),
-         true <- token_id == found.token.id do
+         {:ok, scope} <- authenticate(token),
+         %{credential: credential} <- Sessions.lookup(session_id),
+         true <- credential == Scope.credential(scope) do
+      {:ok, scope}
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  # An `hm_` token needs the `mcp` scope; a run token (`hmr_`) its run.
+  defp authenticate("hmr_" <> _ = token), do: RunTokens.scope(token)
+
+  defp authenticate("hm_" <> _ = token) do
+    with {:ok, found} <- ApiTokens.authenticate(token, "mcp") do
       {:ok,
        %Scope{
          user: found.user,
@@ -38,10 +53,10 @@ defmodule HelmsmanMCP.RequestScope do
          run: nil,
          token: found.token
        }}
-    else
-      _ -> {:error, :unauthorized}
     end
   end
+
+  defp authenticate(_token), do: {:error, :unauthorized}
 
   defp bearer(header) when is_binary(header) do
     case String.split(header, " ", parts: 2) do
@@ -51,7 +66,4 @@ defmodule HelmsmanMCP.RequestScope do
   end
 
   defp bearer(_header), do: nil
-
-  defp authenticate("hm_" <> _ = token), do: ApiTokens.authenticate(token, "mcp")
-  defp authenticate(_token), do: {:error, :unauthorized}
 end

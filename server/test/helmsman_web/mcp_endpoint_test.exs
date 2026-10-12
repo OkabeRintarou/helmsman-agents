@@ -153,8 +153,8 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     assert result["instructions"] =~ "helmsman://workflow"
     assert result["instructions"] =~ "work_on_task"
     assert %{"tools" => _, "resources" => _, "prompts" => _} = result["capabilities"]
-    assert %{token_id: token_id, pid: pid} = Sessions.lookup(sid)
-    assert token_id == ctx.api_token.id
+    assert %{credential: credential, pid: pid} = Sessions.lookup(sid)
+    assert credential == {:api_token, ctx.api_token.id}
     assert session_pid(sid) == {:ok, pid}
 
     assert notify(token, sid, "notifications/initialized").status == 202
@@ -162,7 +162,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     conn = rpc(token, sid, "tools/list")
     assert conn.status == 200
     tools = Jason.decode!(conn.resp_body)["result"]["tools"]
-    assert length(tools) == 16
+    assert length(tools) == 19
 
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
              Enum.sort(Enum.map(HelmsmanMCP.Tools.all(), & &1.name()))

@@ -1,11 +1,13 @@
 defmodule HelmsmanWeb.Plugs.MCPSessionGuard do
   @moduledoc """
-  Binds MCP sessions to the token that opened them (designs/08 §1).
+  Binds MCP sessions to the credential that opened them (designs/08 §1):
+  the API token, or the run of a run token.
 
   Runs after `HelmsmanWeb.Plugs.BearerAuth`. A request without an
   `Mcp-Session-Id` header passes (anubis opens a session on `initialize`
   and refuses anything else). With the header, the session must be
-  registered in `HelmsmanMCP.Sessions` for the very token of this request,
+  registered in `HelmsmanMCP.Sessions` for the very credential of this
+  request,
   `initialize` included; otherwise the answer is 404, as for an unknown
   session, and the request never reaches it.
   """
@@ -14,6 +16,7 @@ defmodule HelmsmanWeb.Plugs.MCPSessionGuard do
 
   import Plug.Conn
 
+  alias Helmsman.Accounts.Scope
   alias HelmsmanMCP.Sessions
 
   @impl true
@@ -26,10 +29,10 @@ defmodule HelmsmanWeb.Plugs.MCPSessionGuard do
         conn
 
       [session_id] ->
-        token_id = conn.assigns.current_scope.token.id
+        credential = Scope.credential(conn.assigns.current_scope)
 
         case Sessions.lookup(session_id) do
-          %{token_id: ^token_id} ->
+          %{credential: ^credential} when not is_nil(credential) ->
             :ok = Sessions.touch(session_id)
             conn
 

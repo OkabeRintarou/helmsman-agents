@@ -5,7 +5,8 @@ defmodule Helmsman.Agents do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.{Daemon, Runtime}
-  alias Helmsman.{Events, Policy, Repo, Workspaces}
+  alias Helmsman.{Events, Policy, Repo, Runs, Workspaces}
+  alias Helmsman.Runs.Run
 
   @execution_fields ~w(provider runtime_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids)
   @view_fields ~w(provider model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args inserted_at updated_at)a
@@ -37,22 +38,26 @@ defmodule Helmsman.Agents do
     end
   end
 
+  # The views carry `active_runs` and `queued_runs`, counted for every
+  # agent at once (`Helmsman.Runs.counts/1`).
   def list(scope) do
     with :ok <- Policy.authorize(scope, :view_agents) do
-      {:ok,
-       Repo.all(
-         from a in Actor,
-           where: a.workspace_id == ^scope.workspace.id and a.kind == :agent,
-           order_by: a.name
-       )
-       |> Enum.map(&view/1)}
+      actors =
+        Repo.all(
+          from a in Actor,
+            where: a.workspace_id == ^scope.workspace.id and a.kind == :agent,
+            order_by: a.name
+        )
+
+      counts = Runs.counts(Enum.map(actors, & &1.id))
+      {:ok, Enum.map(actors, &view(&1, counts))}
     end
   end
 
   def get(scope, name) do
     with :ok <- Policy.authorize(scope, :view_agents),
          %Actor{} = actor <- find_actor(scope, name) do
-      {:ok, view(actor)}
+      {:ok, view(actor, Runs.counts([actor.id]))}
     else
       nil -> {:error, :not_found}
       error -> error
@@ -73,7 +78,7 @@ defmodule Helmsman.Agents do
                |> AgentProfile.changeset(attrs, actor)
                |> Repo.insert() do
           notify(actor)
-          {:ok, view(actor)}
+          {:ok, view(actor, %{})}
         end
       end)
 
@@ -89,11 +94,21 @@ defmodule Helmsman.Agents do
     mutate(scope, name, action, fn actor, profile ->
       with :ok <- managed(profile),
            :ok <- active(profile),
-           {:ok, _profile} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update() do
+           {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update() do
+        move_pending_runs(actor, profile.runtime_id, updated.runtime_id)
         {:ok, actor}
       end
     end)
   end
+
+  # Rebinding moves the agent's queued runs to the new runtime (bound and
+  # locked FOR SHARE by the changeset); unbinding cancels them.
+  defp move_pending_runs(_actor, same, same), do: :ok
+
+  defp move_pending_runs(actor, _old, nil),
+    do: Runs.cancel_pending(from(r in Run, where: r.agent_id == ^actor.id), :obsolete)
+
+  defp move_pending_runs(actor, _old, runtime_id), do: Runs.rebind_pending(actor.id, runtime_id)
 
   def disable(scope, name), do: set_disabled(scope, name, true)
   def enable(scope, name), do: set_disabled(scope, name, false)
@@ -102,12 +117,18 @@ defmodule Helmsman.Agents do
     action = if disabled, do: :administer_agent, else: :configure_agent
 
     mutate(scope, name, action, fn actor, profile ->
-      with :ok <- active(profile) do
-        actor
-        |> Ecto.Changeset.change(disabled_at: if(disabled, do: DateTime.utc_now(:second)))
-        |> Repo.update()
-      end
+      with :ok <- active(profile), do: update_disabled(actor, disabled)
     end)
+  end
+
+  defp update_disabled(actor, disabled) do
+    with {:ok, actor} <-
+           actor
+           |> Ecto.Changeset.change(disabled_at: if(disabled, do: DateTime.utc_now(:second)))
+           |> Repo.update() do
+      if disabled, do: cancel_pending_runs(actor)
+      {:ok, actor}
+    end
   end
 
   def archive(scope, name) do
@@ -117,13 +138,20 @@ defmodule Helmsman.Agents do
            {:ok, _} <-
              profile
              |> Ecto.Changeset.change(archived_at: DateTime.utc_now(:second))
+             |> Repo.update(),
+           {:ok, actor} <-
+             actor
+             |> Ecto.Changeset.change(disabled_at: actor.disabled_at || DateTime.utc_now(:second))
              |> Repo.update() do
-        actor
-        |> Ecto.Changeset.change(disabled_at: actor.disabled_at || DateTime.utc_now(:second))
-        |> Repo.update()
+        cancel_pending_runs(actor)
+        {:ok, actor}
       end
     end)
   end
+
+  # Lock order: actor, profile (`mutate/4`), runs (designs/01 §4).
+  defp cancel_pending_runs(actor),
+    do: Runs.cancel_pending(from(r in Run, where: r.agent_id == ^actor.id), :obsolete)
 
   defp mutate(scope, name, action, fun) do
     Workspaces.write_transaction(scope, :view_agents, nil, fn scope ->
@@ -144,7 +172,7 @@ defmodule Helmsman.Agents do
 
   defp finish_mutation({:ok, actor}) do
     notify(actor)
-    {:ok, view(actor)}
+    {:ok, view(actor, Runs.counts([actor.id]))}
   end
 
   defp finish_mutation(error), do: error
@@ -168,7 +196,7 @@ defmodule Helmsman.Agents do
     Repo.one(if row_lock, do: lock(query, "FOR UPDATE"), else: query)
   end
 
-  defp view(actor) do
+  defp view(actor, counts) do
     owner = Repo.get!(User, actor.owner_id)
     profile = Repo.one(from p in AgentProfile, where: p.actor_id == ^actor.id)
 
@@ -177,7 +205,9 @@ defmodule Helmsman.Agents do
       kind: if(profile, do: "managed", else: "external"),
       owner: %{id: owner.id, name: owner.display_name},
       disabled: not is_nil(actor.disabled_at),
-      archived: (profile && not is_nil(profile.archived_at)) || false
+      archived: (profile && not is_nil(profile.archived_at)) || false,
+      active_runs: get_in(counts, [actor.id, :active]) || 0,
+      queued_runs: get_in(counts, [actor.id, :queued]) || 0
     }
 
     config =

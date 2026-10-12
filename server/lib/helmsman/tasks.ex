@@ -22,6 +22,8 @@ defmodule Helmsman.Tasks do
   alias Ecto.Changeset
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
+  alias Helmsman.Agents.AgentProfile
+  alias Helmsman.Dispatch
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.Locks
@@ -85,6 +87,11 @@ defmodule Helmsman.Tasks do
   identity name; `nil` or `""` for none). The task starts as `new`, created
   by `scope.actor`, with a creation entry in its history.
 
+  Assigned to a managed agent, the task is dispatched in the same
+  transaction (`Helmsman.Dispatch.on_assignee_change/4`) unless `start` is
+  `false` (`true`, `false` or `nil`; anything else is a changeset error on
+  `start`); the returned task carries the outcomes in `dispatch`.
+
   Returns `{:error, :not_found}` for an unknown project and
   `{:error, :project_archived}` for an archived one.
   """
@@ -97,16 +104,19 @@ defmodule Helmsman.Tasks do
       assignee = lock_assignee(scope.workspace.id, attrs)
       test_hook(:assignee_locked)
 
+      {start?, start_error} = fetch_start(attrs)
+
       changeset =
         %Task{workspace_id: scope.workspace.id, created_by_id: scope.actor.id}
         |> Task.changeset(attrs)
         |> put_assignee(assignee)
+        |> put_start_error(start_error)
 
       with {:ok, project} <- fetch_project(scope, project_key),
            :ok <- validate(changeset),
            {:ok, seq} <- allocate_seq(project) do
         test_hook(:seq_allocated)
-        insert_task(scope, changeset, project, seq)
+        insert_task(scope, changeset, project, seq, start?)
       end
     end)
   end
@@ -139,7 +149,7 @@ defmodule Helmsman.Tasks do
     end
   end
 
-  defp insert_task(scope, changeset, project, seq) do
+  defp insert_task(scope, changeset, project, seq, start?) do
     changeset =
       Changeset.change(changeset,
         project_id: project.id,
@@ -153,12 +163,14 @@ defmodule Helmsman.Tasks do
         task_id: task.id,
         from_status: nil,
         to_status: :new,
-        actor_id: scope.actor.id
+        actor_id: scope.actor.id,
+        source_run_id: source_run_id(scope)
       })
 
+      {task, dispatch} = dispatch(scope, task, nil, start?)
       task = preload_detail(task)
       notify(:task_created, task)
-      {:ok, task}
+      {:ok, %{task | dispatch: dispatch}}
     end
   end
 
@@ -373,6 +385,10 @@ defmodule Helmsman.Tasks do
   applies to the latest version (last write wins). An edit that changes
   something bumps `lock_version` and notifies; one that changes nothing
   returns the task as it is.
+
+  A run scope may only edit its own task (`:write_task`). A new assignee
+  is dispatched as in `create/3` (`start` included, which is not a field:
+  an edit that only gives `start` changes nothing).
   """
   @spec update(Scope.t(), String.t(), map(), pos_integer() | nil) ::
           {:ok, Task.t()} | {:error, error()}
@@ -388,13 +404,27 @@ defmodule Helmsman.Tasks do
            assignee = lock_assignee(scope.workspace.id, attrs),
            _ = test_hook(:assignee_locked),
            {:ok, task} <- lock_task(scope.workspace.id, ident),
+           :ok <- Policy.authorize(scope, :write_task, task),
            :ok <- check_version(task, lock_version) do
+        {start?, start_error} = fetch_start(attrs)
+
         task
         |> Task.changeset(attrs)
         |> put_assignee(assignee)
-        |> save()
+        |> put_start_error(start_error)
+        |> save(scope, start?)
       end
     end)
+  end
+
+  @doc """
+  Locks the task `ident` (any case) of the scope's workspace `FOR UPDATE`
+  inside the caller's write transaction, without authorization: for
+  domain writes that act on a task (`Helmsman.Dispatch.run_agent/4`).
+  """
+  @spec lock(Scope.t(), String.t()) :: {:ok, Task.t()} | {:error, :not_found}
+  def lock(%Scope{workspace: %Workspace{id: workspace_id}}, ident) when is_binary(ident) do
+    with {:ok, ident, _key, _seq} <- Ident.parse(ident), do: lock_task(workspace_id, ident)
   end
 
   defp lock_task(workspace_id, ident) do
@@ -414,20 +444,53 @@ defmodule Helmsman.Tasks do
   defp check_version(%Task{lock_version: version}, version), do: :ok
   defp check_version(_task, _version), do: {:error, :stale}
 
-  defp save(%Changeset{valid?: false} = changeset), do: {:error, changeset}
+  defp save(%Changeset{valid?: false} = changeset, _scope, _start?), do: {:error, changeset}
 
-  defp save(%Changeset{changes: changes} = changeset) when changes == %{},
+  defp save(%Changeset{changes: changes} = changeset, _scope, _start?) when changes == %{},
     do: {:ok, preload_detail(changeset.data)}
 
-  defp save(changeset) do
+  defp save(changeset, scope, start?) do
+    prev_assignee_id = changeset.data.assignee_id
     changeset = Changeset.change(changeset, lock_version: changeset.data.lock_version + 1)
 
     with {:ok, task} <- Repo.update(changeset) do
+      {task, dispatch} =
+        if task.assignee_id != prev_assignee_id,
+          do: dispatch(scope, task, prev_assignee_id, start?),
+          else: {task, []}
+
       task = preload_detail(task)
       notify(:task_updated, task)
-      {:ok, task}
+      {:ok, %{task | dispatch: dispatch}}
     end
   end
+
+  # The task is read again after a dispatch: a refused trigger chain adds
+  # a system comment to it.
+  defp dispatch(_scope, %Task{assignee_id: nil} = task, nil, _start?), do: {task, []}
+
+  defp dispatch(scope, task, prev_assignee_id, start?) do
+    case Dispatch.on_assignee_change(scope, task, prev_assignee_id, start?) do
+      {:ok, []} -> {task, []}
+      {:ok, outcomes} -> {Repo.reload!(task), outcomes}
+    end
+  end
+
+  # `start` is not a task field: `true`, `false` or `nil` (`true`).
+  defp fetch_start(attrs) do
+    case fetch_attr(attrs, :start) do
+      {:ok, value} when is_boolean(value) -> {value, nil}
+      {:ok, nil} -> {true, nil}
+      :error -> {true, nil}
+      {:ok, _other} -> {true, "is invalid"}
+    end
+  end
+
+  defp put_start_error(changeset, nil), do: changeset
+  defp put_start_error(changeset, message), do: Changeset.add_error(changeset, :start, message)
+
+  defp source_run_id(%Scope{via: :run, run: %{id: id}}), do: id
+  defp source_run_id(_scope), do: nil
 
   ## Transitions
 
@@ -515,6 +578,7 @@ defmodule Helmsman.Tasks do
     with {:ok, ident, _key, _seq} <- Ident.parse(ident),
          :ok <- Locks.graph!(scope.workspace.id),
          {:ok, task} <- lock_task(scope.workspace.id, ident),
+         :ok <- Policy.authorize(scope, :write_task, task),
          :ok <- check_expected_from(task, expected_from),
          ctx = TransitionContext.build(task, scope, to, evidence),
          :ok <- StateMachine.check(task.status, to, ctx) do
@@ -532,7 +596,8 @@ defmodule Helmsman.Tasks do
           commits: evidence.commits,
           tests: evidence.tests,
           auto: false,
-          feedback_id: feedback_id
+          feedback_id: feedback_id,
+          source_run_id: source_run_id(scope)
         })
 
       task = task |> Changeset.change(transition_changes(task, to, scope)) |> Repo.update!()
@@ -575,9 +640,12 @@ defmodule Helmsman.Tasks do
   # The named actor's row is locked `FOR SHARE` until the commit, as
   # `Helmsman.Actors.resolve_writer/2` does for the writer: disabling it
   # (removing its owner) waits for the assignment, or the assignment sees
-  # it disabled. Actor rows are locked after the membership row and before
-  # the project and task rows. The result is applied (and its error
-  # reported) after the version check.
+  # it disabled. A managed agent's profile row is locked `FOR SHARE` next,
+  # so archiving or rebinding it (profile `FOR UPDATE`) and dispatching
+  # run one after the other. Actor and profile rows are locked after the
+  # membership row and before the project and task rows (designs/01 §4).
+  # The result is applied (and its error reported) after the version
+  # check.
   defp lock_assignee(workspace_id, attrs) do
     case fetch_attr(attrs, :assignee) do
       :error -> :keep
@@ -598,8 +666,15 @@ defmodule Helmsman.Tasks do
       nil -> {:invalid, "does not exist"}
       %Actor{kind: :system} -> {:invalid, "cannot be the system identity"}
       %Actor{disabled_at: %DateTime{}} -> {:invalid, "is disabled"}
+      %Actor{kind: :agent, id: id} -> lock_profile(id)
       %Actor{id: id} -> {:set, id}
     end
+  end
+
+  # An archived profile has a disabled actor: never reached for one.
+  defp lock_profile(actor_id) do
+    Repo.one(from(p in AgentProfile, where: p.actor_id == ^actor_id, lock: "FOR SHARE"))
+    {:set, actor_id}
   end
 
   defp put_assignee(changeset, :keep), do: changeset
@@ -620,6 +695,19 @@ defmodule Helmsman.Tasks do
   defp notify(event, %Task{} = task) do
     Events.after_commit(Events.topic(:project, task.project_id), {event, summary(task)})
     Events.after_commit(Events.topic(:task, task.id), {:task_updated, task.ident})
+  end
+
+  @doc """
+  Registers `{:task_updated, summary}` on the project topic for after the
+  commit, for a write to `task` made by another module (a system comment
+  of `Helmsman.Runs`).
+  """
+  @spec notify_summary(Task.t()) :: :ok
+  def notify_summary(%Task{} = task) do
+    Events.after_commit(
+      Events.topic(:project, task.project_id),
+      {:task_updated, summary(load_summary(task))}
+    )
   end
 
   defp notify_transition(%Task{} = task, %TaskEvent{} = event) do

@@ -4,7 +4,8 @@ defmodule Helmsman.Runtimes do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.{Daemon, Runtime}
-  alias Helmsman.{Events, Policy, Repo, Workspaces}
+  alias Helmsman.{Events, Policy, Repo, Runs, Workspaces}
+  alias Helmsman.Runs.Run
 
   def list(scope, opts \\ []) do
     all = Keyword.get(opts, :all, false)
@@ -70,6 +71,11 @@ defmodule Helmsman.Runtimes do
            runtime
            |> Ecto.Changeset.change(disabled_at: if(disabled, do: DateTime.utc_now(:second)))
            |> Repo.update() do
+      # Lock order: runtime row, runs (designs/01 §4). A disabled runtime is
+      # never claimed from: its queued runs would wait for ever.
+      if disabled,
+        do: Runs.cancel_pending(from(r in Run, where: r.runtime_id == ^runtime.id), :obsolete)
+
       Events.after_commit(Events.topic(:workspace, runtime.workspace_id), {:runtimes_changed})
       Events.after_commit(Events.topic(:daemon, runtime.daemon_id), {:daemon_config_changed})
       {:ok, runtime}

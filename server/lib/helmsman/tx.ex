@@ -82,6 +82,8 @@ defmodule Helmsman.Tx do
 
   # The transaction has committed: a failing side effect is logged and must
   # neither stop the remaining callbacks nor turn the result into an error.
+  defp run_callback({:once, _key, callback}), do: run_callback(callback)
+
   defp run_callback(callback) do
     callback.()
   catch
@@ -111,4 +113,31 @@ defmodule Helmsman.Tx do
                 "started by Helmsman.Tx.run/2"
     end
   end
+
+  @doc """
+  Like `after_commit/1`, but at most one callback per `key` runs for the
+  transaction: registering `key` again replaces the earlier callback, which
+  keeps its place in the queue.
+  """
+  @spec after_commit_once(term(), (-> any())) :: :ok
+  def after_commit_once(key, fun) when is_function(fun, 0) do
+    case Process.get(@queue) do
+      queue when is_list(queue) ->
+        Process.put(@queue, put_once(queue, key, {:once, key, fun}))
+        :ok
+
+      nil ->
+        raise "Helmsman.Tx.after_commit_once/2 must be called inside a transaction " <>
+                "started by Helmsman.Tx.run/2"
+    end
+  end
+
+  defp put_once(queue, key, entry) do
+    if Enum.any?(queue, &once?(&1, key)),
+      do: Enum.map(queue, &if(once?(&1, key), do: entry, else: &1)),
+      else: [entry | queue]
+  end
+
+  defp once?({:once, key, _fun}, key), do: true
+  defp once?(_entry, _key), do: false
 end

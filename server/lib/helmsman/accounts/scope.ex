@@ -7,6 +7,8 @@ defmodule Helmsman.Accounts.Scope do
   (the user's human identity, or an agent). `via` tells the entry point
   (`:web`, `:mcp`, `:api` or `:run`), `run` the agent run, if any, and
   `token` the API token a `:mcp` / `:api` request authenticated with.
+  A `:run` scope (an `hmr_` run token) has the run's agent as `actor`, its
+  owner as `user` and no `token`.
 
   Domain functions take the scope as their first argument and authorize
   with `Helmsman.Policy`.
@@ -15,6 +17,7 @@ defmodule Helmsman.Accounts.Scope do
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Runs.Run
   alias Helmsman.Workspaces.{Membership, Workspace}
 
   @type via :: :web | :mcp | :api | :run
@@ -25,7 +28,7 @@ defmodule Helmsman.Accounts.Scope do
           role: Membership.role() | nil,
           actor: Actor.t() | nil,
           via: via() | nil,
-          run: term(),
+          run: Run.t() | nil,
           token: ApiToken.t() | nil
         }
 
@@ -56,4 +59,13 @@ defmodule Helmsman.Accounts.Scope do
       ) do
     %{scope | workspace: workspace, role: membership.role, actor: actor}
   end
+
+  @doc """
+  The credential a token-authenticated scope stands for: the API token or
+  the run. MCP sessions are bound to it.
+  """
+  @spec credential(t()) :: {:api_token, pos_integer()} | {:run, pos_integer()} | nil
+  def credential(%__MODULE__{via: :run, run: %Run{id: id}}), do: {:run, id}
+  def credential(%__MODULE__{token: %ApiToken{id: id}}), do: {:api_token, id}
+  def credential(%__MODULE__{}), do: nil
 end

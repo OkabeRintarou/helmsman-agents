@@ -16,7 +16,7 @@ defmodule Helmsman.CommittedData do
   @doc """
   Deletes, children first, the committed rows of the given users: the
   workspaces they own (including a first user's `default` workspace) with
-  their projects, tasks and GitHub installations and repositories, their invitations, API tokens, memberships and identities elsewhere, their
+  their runs, projects, tasks and GitHub installations and repositories, their invitations, API tokens, memberships and identities elsewhere, their
   session tokens and the users. `extra_workspace_ids` are deleted too,
   whoever owns them (for tests whose outcome may leave a workspace without
   an owner). Every other row is left alone.
@@ -30,6 +30,27 @@ defmodule Helmsman.CommittedData do
         )
 
       workspace_ids = Enum.uniq(List.flatten(rows) ++ extra_workspace_ids)
+
+      # Runs first: they refer to runtimes, actors and tasks.
+      run_ids =
+        "SELECT id FROM runs WHERE workspace_id = ANY($1) OR runtime_id IN " <>
+          "(SELECT id FROM runtimes WHERE daemon_id IN " <>
+          "(SELECT id FROM daemons WHERE user_id = ANY($2)))"
+
+      for table <- ["task_events", "feedback"] do
+        Repo.query!(
+          "UPDATE #{table} SET source_run_id = NULL WHERE source_run_id IN (#{run_ids})",
+          [workspace_ids, user_ids]
+        )
+      end
+
+      Repo.query!("DELETE FROM run_tokens WHERE run_id IN (#{run_ids})", [
+        workspace_ids,
+        user_ids
+      ])
+
+      Repo.query!("DELETE FROM task_grants WHERE workspace_id = ANY($1)", [workspace_ids])
+      Repo.query!("DELETE FROM runs WHERE id IN (#{run_ids})", [workspace_ids, user_ids])
 
       Repo.query!(
         "DELETE FROM agent_profiles WHERE workspace_id = ANY($1) OR actor_id IN " <>

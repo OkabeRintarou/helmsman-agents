@@ -9,6 +9,7 @@ defmodule HelmsmanMCP.Present do
   """
 
   alias Helmsman.Projects.Project
+  alias Helmsman.Runs.Outcome
 
   @doc "A project."
   @spec project(Project.t()) :: map()
@@ -94,6 +95,41 @@ defmodule HelmsmanMCP.Present do
       at: time(view.at)
     }
   end
+
+  @doc "A run summary (`Helmsman.Runs.summary/1`)."
+  @spec run(map()) :: map()
+  def run(%{} = run) do
+    %{
+      id: run.id,
+      task: run.task,
+      agent: run.agent,
+      lane: run.lane,
+      status: status(run.status),
+      triggers:
+        Enum.map(run.triggers, fn trigger ->
+          %{
+            kind: trigger.kind,
+            by: actor(trigger.by),
+            at: time(trigger.at),
+            instructions: trigger.instructions
+          }
+        end),
+      failure_reason: run.failure_reason,
+      priority: run.priority,
+      created_at: time(run.inserted_at),
+      updated_at: time(run.updated_at)
+    }
+  end
+
+  @doc """
+  Puts the dispatch outcomes of a task write (`Helmsman.Runs.Outcome`) in
+  `result` as `dispatch`, when there are any.
+  """
+  @spec put_dispatch(map(), [Outcome.t()]) :: map()
+  def put_dispatch(result, []), do: result
+
+  def put_dispatch(result, outcomes),
+    do: Map.put(result, :dispatch, Enum.map(outcomes, &Outcome.view/1))
 
   @doc "A status name in upper case (`in_progress` → `IN_PROGRESS`)."
   @spec status(atom() | String.t() | nil) :: String.t() | nil

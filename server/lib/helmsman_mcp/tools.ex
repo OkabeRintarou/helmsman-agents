@@ -9,10 +9,13 @@ defmodule HelmsmanMCP.Tools do
     GetTask,
     Identify,
     ListActors,
+    ListAgents,
     ListFeedback,
     ListMyTasks,
     ListProjects,
+    ListRuns,
     ListTasks,
+    RunAgent,
     TransitionTask,
     UpdateFeedback,
     UpdateProject,
@@ -36,7 +39,10 @@ defmodule HelmsmanMCP.Tools do
     TransitionTask,
     AddFeedback,
     UpdateFeedback,
-    ListFeedback
+    ListFeedback,
+    ListAgents,
+    RunAgent,
+    ListRuns
   ]
 
   @doc "Every tool module."

@@ -13,8 +13,10 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   the current role, `via` and the token; the actor is resolved per write
   with `Helmsman.Actors.resolve_writer/2`.
 
-  Only `hm_` tokens are accepted for now; run tokens (`hmr_`) are added by
-  the run dispatch change.
+  Run tokens (`hmr_`, `Helmsman.Runs.RunTokens`) are accepted on `/mcp`
+  only (`via: :mcp`; elsewhere 401): the scope is the run's
+  (`via: :run`), the rate limit is the run's own with the same budget,
+  and there is no last use to record.
   """
 
   @behaviour Plug
@@ -24,6 +26,7 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   alias Helmsman.Accounts.Scope
   alias Helmsman.ApiTokens
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Runs.RunTokens
 
   @impl true
   def init(opts) do
@@ -44,19 +47,8 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   @impl true
   def call(conn, %{scope: required_scope, via: via}) do
     with {:ok, token} <- bearer_token(conn),
-         {:ok, found} <- authenticate(token, required_scope),
-         :ok <- ApiTokens.check_rate_limit(found.token) do
-      :ok = ApiTokens.touch_last_used(found.token)
-
-      assign(conn, :current_scope, %Scope{
-        user: found.user,
-        workspace: found.workspace,
-        role: found.role,
-        actor: nil,
-        via: via,
-        run: nil,
-        token: found.token
-      })
+         {:ok, scope} <- authenticate(token, required_scope, via) do
+      assign(conn, :current_scope, scope)
     else
       {:error, :unauthorized} ->
         conn
@@ -83,10 +75,31 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
     end
   end
 
-  defp authenticate("hm_" <> _ = token, required_scope),
-    do: ApiTokens.authenticate(token, required_scope)
+  defp authenticate("hmr_" <> _ = token, _required_scope, :mcp) do
+    with {:ok, scope} <- RunTokens.scope(token),
+         :ok <- RunTokens.check_rate_limit(scope.run),
+         do: {:ok, scope}
+  end
 
-  defp authenticate(_token, _required_scope), do: {:error, :unauthorized}
+  defp authenticate("hm_" <> _ = token, required_scope, via) do
+    with {:ok, found} <- ApiTokens.authenticate(token, required_scope),
+         :ok <- ApiTokens.check_rate_limit(found.token) do
+      :ok = ApiTokens.touch_last_used(found.token)
+
+      {:ok,
+       %Scope{
+         user: found.user,
+         workspace: found.workspace,
+         role: found.role,
+         actor: nil,
+         via: via,
+         run: nil,
+         token: found.token
+       }}
+    end
+  end
+
+  defp authenticate(_token, _required_scope, _via), do: {:error, :unauthorized}
 
   defp halt_with(conn, status, error) do
     conn

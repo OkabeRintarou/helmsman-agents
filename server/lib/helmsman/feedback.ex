@@ -73,6 +73,7 @@ defmodule Helmsman.Feedback do
 
   defp add_locked(scope, ident, input) do
     with {:ok, task} <- lock_task(scope.workspace.id, ident),
+         :ok <- Policy.authorize(scope, :write_task, task),
          {:ok, {entry, task}} <- insert_locked(task, scope, input) do
       notify_task(task)
       {:ok, entry}
@@ -102,14 +103,19 @@ defmodule Helmsman.Feedback do
   Inserts feedback in `task`, whose row the caller has locked `FOR UPDATE`
   inside a transaction, and updates the task's feedback columns. `input`
   comes from `normalize/1` (a `nil` kind is `comment`). No authorization:
-  the caller has authorized its own action. Registers the
+  the caller has authorized its own action. Records `scope.run` as the
+  source of a run token's write. Registers the
   `{:feedback_added, view}` notification on the task topic only; the
   caller notifies the project topic.
 
   Returns the new entry and the updated task.
   """
   @spec insert_locked(Task.t(), Scope.t(), input()) :: {:ok, {Entry.t(), Task.t()}}
-  def insert_locked(%Task{} = task, %Scope{actor: %Actor{} = actor}, %{content: content} = input) do
+  def insert_locked(
+        %Task{} = task,
+        %Scope{actor: %Actor{} = actor} = scope,
+        %{content: content} = input
+      ) do
     seq = task.feedback_seq + 1
 
     entry =
@@ -121,7 +127,8 @@ defmodule Helmsman.Feedback do
         author_id: actor.id,
         kind: input[:kind] || :comment,
         content: content,
-        mentions: resolve_mentions(task.workspace_id, content)
+        mentions: resolve_mentions(task.workspace_id, content),
+        source_run_id: source_run_id(scope)
       })
 
     task = refresh_counters(task, seq)
@@ -168,6 +175,7 @@ defmodule Helmsman.Feedback do
   # Lock order: the task row, then the record.
   defp revise_locked(scope, ident, seq, input) do
     with {:ok, task} <- lock_task(scope.workspace.id, ident),
+         :ok <- Policy.authorize(scope, :write_task, task),
          {:ok, old} <- lock_entry(task, seq),
          :ok <- check_active(task, old) do
       {entry, task} = insert_revision(task, old, scope, input)
@@ -213,7 +221,8 @@ defmodule Helmsman.Feedback do
         kind: input.kind || old.kind,
         content: input.content,
         mentions: resolve_mentions(task.workspace_id, input.content),
-        supersedes_id: old.id
+        supersedes_id: old.id,
+        source_run_id: source_run_id(scope)
       })
 
     {1, _} =
@@ -243,6 +252,10 @@ defmodule Helmsman.Feedback do
       task -> {:ok, task}
     end
   end
+
+  # The run of a run token's write (designs/13, decision 12).
+  defp source_run_id(%Scope{via: :run, run: %{id: id}}), do: id
+  defp source_run_id(_scope), do: nil
 
   defp resolve_mentions(workspace_id, content),
     do: Mentions.resolve(workspace_id, Mentions.extract(content))

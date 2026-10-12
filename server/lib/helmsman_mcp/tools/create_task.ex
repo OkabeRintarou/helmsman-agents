@@ -12,6 +12,11 @@ defmodule HelmsmanMCP.Tools.CreateTask do
       description: {:string, description: "Markdown description."},
       priority: {:string, description: "low, medium (default) or high."},
       labels: {:list, :string, description: "Labels (lower-cased), at most 20."},
+      start:
+        {:boolean,
+         description:
+           "With an assignee that is a managed agent: false records the assignment " <>
+             "without starting the agent (default true)."},
       assignee: {:string, description: "Identity name to assign the task to."}
     },
     mode: :write
@@ -19,12 +24,12 @@ defmodule HelmsmanMCP.Tools.CreateTask do
   alias Helmsman.Tasks
   alias HelmsmanMCP.{Args, Present}
 
-  @fields [:title, :description, :priority, :labels, :assignee]
+  @fields [:title, :description, :priority, :labels, :assignee, :start]
 
   @impl HelmsmanMCP.Tool
   def call(%{"project_key" => key} = args, %{scope: scope}) do
     with {:ok, task} <- Tasks.create(scope, key, Args.take(args, @fields)) do
-      {:ok, Present.detail(Tasks.detail(task))}
+      {:ok, task |> Tasks.detail() |> Present.detail() |> Present.put_dispatch(task.dispatch)}
     end
   end
 end

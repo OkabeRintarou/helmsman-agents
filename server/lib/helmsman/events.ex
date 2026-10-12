@@ -13,12 +13,25 @@ defmodule Helmsman.Events do
   @pubsub Helmsman.PubSub
 
   @doc "Returns the PubSub topic of a resource, e.g. `\"workspace:1\"`."
-  @spec topic(:workspace | :user | :project | :task | :daemon, pos_integer()) :: String.t()
+  @spec topic(
+          :workspace | :user | :project | :task | :daemon | :run | :workspace_runs,
+          pos_integer()
+        ) :: String.t()
   def topic(:workspace, id) when is_integer(id), do: "workspace:#{id}"
   def topic(:user, id) when is_integer(id), do: "user:#{id}"
   def topic(:project, id) when is_integer(id), do: "project:#{id}"
   def topic(:daemon, id) when is_integer(id), do: "daemon:#{id}"
   def topic(:task, id) when is_integer(id), do: "task:#{id}"
+  def topic(:run, id) when is_integer(id), do: "run:#{id}"
+  def topic(:workspace_runs, id) when is_integer(id), do: "workspace:#{id}:runs"
+
+  @doc """
+  Like `after_commit/2`, but `message` is broadcast on `topic` once per
+  transaction for `key`: a later registration replaces the message.
+  """
+  @spec after_commit_once(term(), String.t(), term()) :: :ok
+  def after_commit_once(key, topic, message),
+    do: Tx.after_commit_once({topic, key}, fn -> broadcast(topic, message) end)
 
   @doc "Subscribes the caller to `topic`."
   @spec subscribe(String.t()) :: :ok | {:error, term()}

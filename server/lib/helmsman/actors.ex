@@ -12,6 +12,7 @@ defmodule Helmsman.Actors do
   alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Repo
+  alias Helmsman.Runs.RunTokens
   alias Helmsman.Tx
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.{Membership, Workspace}
@@ -415,7 +416,7 @@ defmodule Helmsman.Actors do
     )
   end
 
-  @type writer_source :: :requested | :session | :default | :auto | :human
+  @type writer_source :: :requested | :session | :default | :auto | :human | :run
 
   @doc """
   Runs the write `fun` as the actor the request is recorded as
@@ -436,11 +437,18 @@ defmodule Helmsman.Actors do
 
   Returns `{:ok, value, %{actor: actor, source: source}}`, `source` being
   `:requested`, `:session`, `:default`, `:auto` or, for REST, `:human`.
+
+  A run scope (`via: :run`) always writes as its agent, `scope.actor`
+  (source `:run`): `opts` are ignored, no session agent is ever created,
+  and the agent's row is read again `FOR SHARE`; disabled →
+  `{:error, {:agent_disabled, name}}`; after `fun` the run is checked
+  again (`Helmsman.Runs.RunTokens.lock_active/1`): ended →
+  `{:error, :run_ended}`, everything rolled back.
   """
   @spec with_writer(Scope.t(), keyword(), (Scope.t() -> Tx.result())) ::
           {:ok, term(), %{actor: Actor.t(), source: writer_source()}} | {:error, term()}
   def with_writer(%Scope{via: via} = scope, opts, fun)
-      when via in [:api, :mcp] and is_list(opts) and is_function(fun, 1) do
+      when via in [:api, :mcp, :run] and is_list(opts) and is_function(fun, 1) do
     case Tx.run(fn -> with_writer_locked(scope, opts, fun) end, retry: 1) do
       {:ok, %{value: value, actor: actor, source: source}} ->
         {:ok, value, %{actor: actor, source: source}}
@@ -465,17 +473,28 @@ defmodule Helmsman.Actors do
          scope = %{scope | role: role},
          {:ok, actor, source} <- writer(scope, opts) do
       case fun.(%{scope | actor: actor}) do
-        {:ok, value} ->
-          {:ok, %{value: value, actor: actor, source: source}}
-
-        {:error, _reason} = error ->
-          error
-
-        other ->
-          raise ArgumentError,
-                "with_writer/3 expects the write to return {:ok, value} or " <>
-                  "{:error, reason}, got: #{inspect(other)}"
+        {:ok, value} -> finish_write(scope, %{value: value, actor: actor, source: source})
+        {:error, _reason} = error -> error
+        other -> raise ArgumentError, bad_write_result(other)
       end
+    end
+  end
+
+  # The run is checked again last, after every lock of the write.
+  defp finish_write(scope, written) do
+    with :ok <- RunTokens.lock_active(scope), do: {:ok, written}
+  end
+
+  defp bad_write_result(other),
+    do:
+      "with_writer/3 expects the write to return {:ok, value} or " <>
+        "{:error, reason}, got: #{inspect(other)}"
+
+  defp writer(%Scope{via: :run, actor: %Actor{id: id}} = scope, _opts) do
+    case actor_by_id(scope.workspace.id, id) do
+      %Actor{kind: :agent, disabled_at: nil} = actor -> {:ok, actor, :run}
+      %Actor{name: name} -> {:error, {:agent_disabled, name}}
+      nil -> {:error, :not_found}
     end
   end
 

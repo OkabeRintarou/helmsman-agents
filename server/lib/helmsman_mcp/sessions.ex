@@ -1,7 +1,8 @@
 defmodule HelmsmanMCP.Sessions do
   @moduledoc """
-  The MCP sessions of this node (designs/08 §1): session ID → the token
-  that opened it, its user and workspace, the session process and the
+  The MCP sessions of this node (designs/08 §1): session ID → the
+  credential that opened it (`Helmsman.Accounts.Scope.credential/1`: an
+  API token or a run), its user and workspace, the session process and the
   session identity.
 
   A named `:protected` ETS table: `lookup/1` reads it directly, every write
@@ -21,7 +22,7 @@ defmodule HelmsmanMCP.Sessions do
 
   @type source :: :identify | :auto | nil
   @type entry :: %{
-          token_id: pos_integer(),
+          credential: {:api_token, pos_integer()} | {:run, pos_integer()},
           user_id: pos_integer(),
           workspace_id: pos_integer(),
           pid: pid(),
@@ -35,7 +36,7 @@ defmodule HelmsmanMCP.Sessions do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @doc """
-  Registers `session_id` for the token of `scope`, served by `pid`, with no
+  Registers `session_id` for the credential of `scope`, served by `pid`, with no
   session identity. A previous entry of the ID is replaced.
   """
   @spec register(String.t(), Scope.t(), pid()) :: :ok
@@ -100,7 +101,7 @@ defmodule HelmsmanMCP.Sessions do
     ref = Process.monitor(pid)
 
     entry = %{
-      token_id: scope.token.id,
+      credential: Scope.credential(scope),
       user_id: scope.user.id,
       workspace_id: scope.workspace.id,
       pid: pid,

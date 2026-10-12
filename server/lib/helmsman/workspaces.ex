@@ -13,6 +13,7 @@ defmodule Helmsman.Workspaces do
   alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Repo
+  alias Helmsman.Runs.RunTokens
   alias Helmsman.Tx
   alias Helmsman.Workspaces.{Membership, Workspace}
 
@@ -167,7 +168,10 @@ defmodule Helmsman.Workspaces do
   re-reads the requester's membership `FOR SHARE` (gone →
   `{:error, :not_found}`; otherwise the scope gets the current role),
   authorizes `action` on `resource` with `Helmsman.Policy` and calls
-  `fun.(scope)`, which returns `{:ok, value}` or `{:error, reason}`.
+  `fun.(scope)`, which returns `{:ok, value}` or `{:error, reason}`. For a
+  run scope, the run is checked again last
+  (`Helmsman.Runs.RunTokens.lock_active/1`): ended → `{:error, :run_ended}`
+  and the write rolls back.
 
   The shared row lock serializes the write with role changes and member
   removals, which lock the membership row `FOR UPDATE`.
@@ -214,8 +218,10 @@ defmodule Helmsman.Workspaces do
       %Membership{role: role} ->
         scope = %{scope | role: role}
 
-        with :ok <- Policy.authorize(scope, action, resource) do
-          fun.(scope)
+        with :ok <- Policy.authorize(scope, action, resource),
+             {:ok, _value} = result <- fun.(scope),
+             :ok <- RunTokens.lock_active(scope) do
+          result
         end
     end
   end

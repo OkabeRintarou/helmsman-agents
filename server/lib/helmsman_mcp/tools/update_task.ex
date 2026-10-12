@@ -13,6 +13,11 @@ defmodule HelmsmanMCP.Tools.UpdateTask do
       description: {:string, description: "New Markdown description."},
       priority: {:string, description: "low, medium or high."},
       labels: {:list, :string, description: "New labels (replace the old ones)."},
+      start:
+        {:boolean,
+         description:
+           "With an assignee that is a managed agent: false records the assignment " <>
+             "without starting the agent (default true)."},
       assignee: {:string, description: "Identity name; \"\" to unassign."},
       lock_version: {:integer, description: "The lock_version you read (get_task)."}
     },
@@ -21,12 +26,12 @@ defmodule HelmsmanMCP.Tools.UpdateTask do
   alias Helmsman.Tasks
   alias HelmsmanMCP.{Args, Present}
 
-  @fields [:title, :description, :priority, :labels, :assignee]
+  @fields [:title, :description, :priority, :labels, :assignee, :start]
 
   @impl HelmsmanMCP.Tool
   def call(%{"task_id" => id} = args, %{scope: scope}) do
     with {:ok, task} <- Tasks.update(scope, id, Args.take(args, @fields), args["lock_version"]) do
-      {:ok, Present.detail(Tasks.detail(task))}
+      {:ok, task |> Tasks.detail() |> Present.detail() |> Present.put_dispatch(task.dispatch)}
     end
   end
 end

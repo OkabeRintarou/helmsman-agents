@@ -51,6 +51,9 @@ defmodule Helmsman.Tasks.Task do
     # Every feedback record by number, filled in by `Helmsman.Tasks` for
     # the task detail.
     field :feedback, {:array, :any}, virtual: true, default: []
+    # The dispatch outcomes (`Helmsman.Runs.Outcome`) of the `create/3` or
+    # `update/4` call that returned the task.
+    field :dispatch, {:array, :any}, virtual: true, default: []
 
     has_many :events, TaskEvent
 

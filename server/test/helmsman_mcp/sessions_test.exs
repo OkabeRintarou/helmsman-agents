@@ -36,7 +36,7 @@ defmodule HelmsmanMCP.SessionsTest do
     assert :ok = Sessions.register(id, scope, self())
 
     assert %{
-             token_id: token_id,
+             credential: credential,
              user_id: user_id,
              workspace_id: workspace_id,
              pid: pid,
@@ -44,8 +44,8 @@ defmodule HelmsmanMCP.SessionsTest do
              source: nil
            } = Sessions.lookup(id)
 
-    assert {token_id, user_id, workspace_id, pid} ==
-             {scope.token.id, scope.user.id, scope.workspace.id, self()}
+    assert {credential, user_id, workspace_id, pid} ==
+             {{:api_token, scope.token.id}, scope.user.id, scope.workspace.id, self()}
 
     assert :ok = Sessions.put_identity(id, 42, :identify)
     assert %{actor_id: 42, source: :identify} = Sessions.lookup(id)

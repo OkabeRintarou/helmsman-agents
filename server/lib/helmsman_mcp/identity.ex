@@ -15,9 +15,11 @@ defmodule HelmsmanMCP.Identity do
 
   @doc """
   Returns where the current identity comes from: `"identify"`, `"auto"`,
-  `"default"` or `"none"`.
+  `"default"`, `"run"` (a run token: always its agent) or `"none"`.
   """
   @spec source(Scope.t(), Context.session() | nil) :: source()
+  def source(%Scope{via: :run}, _session), do: "run"
+
   def source(_scope, %{actor_id: id, source: source}) when is_integer(id),
     do: Atom.to_string(source)
 
@@ -30,6 +32,8 @@ defmodule HelmsmanMCP.Identity do
   Returns the current identity, read without a lock; it may be disabled.
   """
   @spec current(Scope.t(), Context.session() | nil) :: Actor.t() | nil
+  def current(%Scope{via: :run, actor: actor}, _session), do: actor
+
   def current(%Scope{workspace: workspace}, %{actor_id: id}) when is_integer(id),
     do: Actors.get(workspace.id, id)
 

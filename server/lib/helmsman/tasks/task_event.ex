@@ -30,6 +30,8 @@ defmodule Helmsman.Tasks.TaskEvent do
     field :tests, :map
     field :auto, :boolean, default: false
     belongs_to :feedback, Entry
+    # The run the entry was made in (an `hmr_` token), if any.
+    belongs_to :source_run, Helmsman.Runs.Run
     # The ID of `feedback` (`KEY-N#S`), filled in by `Helmsman.Tasks`.
     field :feedback_ident, :string, virtual: true
 

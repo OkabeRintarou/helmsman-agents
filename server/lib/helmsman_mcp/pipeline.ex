@@ -9,7 +9,12 @@ defmodule HelmsmanMCP.Pipeline do
     * `:write` tools run inside `Helmsman.Actors.with_writer/3`, as the
       `actor` / `author` argument, the session identity, the token's
       default agent or, on the session's first write, a new session agent,
-      which then becomes the session identity.
+      which then becomes the session identity. With a run token both run
+      as the run's agent, whatever the arguments.
+
+  A write tool may return `{:ok, %HelmsmanMCP.Rejected{reason: reason}}`:
+  the write commits (and a new session agent is registered), then the
+  call answers with the error text of `reason`.
 
   Success is the JSON of the value; a domain error is the text of
   `HelmsmanMCP.ErrorText`; anything unexpected is a generic text with a
@@ -20,7 +25,7 @@ defmodule HelmsmanMCP.Pipeline do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors
-  alias HelmsmanMCP.{Context, ErrorText, Identity, Sessions, Tools}
+  alias HelmsmanMCP.{Context, ErrorText, Identity, Rejected, Sessions, Tools}
 
   @writer_keys ["actor", "author"]
 
@@ -116,15 +121,19 @@ defmodule HelmsmanMCP.Pipeline do
     case Actors.with_writer(ctx.scope, opts, &module.call(args, %{ctx | scope: &1})) do
       {:ok, value, %{actor: actor, source: :auto}} ->
         Identity.put(ctx.session, actor, :auto)
-        {:ok, value}
+        committed(value)
 
       {:ok, value, _writer} ->
-        {:ok, value}
+        committed(value)
 
       {:error, _reason} = error ->
         error
     end
   end
+
+  # After the commit: a business refusal is shown as an error.
+  defp committed(%Rejected{reason: reason}), do: {:error, reason}
+  defp committed(value), do: {:ok, value}
 
   defp pop_writer(args) do
     requested = Enum.find_value(@writer_keys, &args[&1])

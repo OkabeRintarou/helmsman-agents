@@ -4,13 +4,17 @@ defmodule Helmsman.Policy do
 
   Every domain function checks `authorize/3` before any side effect. Each
   action has its own clause; unknown actions are refused. Agents inherit
-  their owner's role but can never perform management actions.
+  their owner's role but can never perform management actions. A run
+  scope (`via: :run`) is further limited by its run's capabilities, and
+  `:write_task` limits its writes to the run's own task.
   """
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Runs.Run
+  alias Helmsman.Tasks.Task
 
   @type action :: atom()
 
@@ -90,8 +94,28 @@ defmodule Helmsman.Policy do
     :add_feedback,
     :revise_feedback,
     :manage_github,
-    :manage_github_app
+    :manage_github_app,
+    :run_agent,
+    :view_runs,
+    :write_task
   ]
+
+  # The capability a run token needs for each action it may attempt; any
+  # other action is refused (designs/13 §2.3).
+  @run_capability %{
+    view_workspace: "read",
+    view_members: "read",
+    read_tasks: "read",
+    view_agents: "read",
+    view_runs: "read",
+    identify: "read",
+    create_task: "create_tasks",
+    update_task: "write_task",
+    transition_task: "write_task",
+    add_feedback: "write_task",
+    revise_feedback: "write_task",
+    write_task: "write_task"
+  }
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
 
@@ -113,39 +137,53 @@ defmodule Helmsman.Policy do
       when action in @management_actions,
       do: {:error, :forbidden}
 
-  def authorize(%Scope{} = scope, :view_workspace, _resource),
+  # A run token can only do what its run's capabilities allow (designs/13
+  # §2.3); then the owner's role decides, as for any agent.
+  def authorize(%Scope{via: :run} = scope, action, resource) do
+    with :ok <- run_gate(scope, action), do: check(scope, action, resource)
+  end
+
+  def authorize(scope, action, resource), do: check(scope, action, resource)
+
+  defp run_gate(%Scope{run: %Run{capabilities: caps}}, action) do
+    allow_if(Map.has_key?(@run_capability, action) and @run_capability[action] in caps)
+  end
+
+  defp run_gate(_scope, _action), do: {:error, :forbidden}
+
+  defp check(%Scope{} = scope, :view_workspace, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
-  def authorize(%Scope{} = scope, :update_workspace, _resource),
+  defp check(%Scope{} = scope, :update_workspace, _resource),
     do: allow_if(role_at_least?(scope, :admin))
 
-  def authorize(%Scope{} = scope, :change_workspace_slug, _resource),
+  defp check(%Scope{} = scope, :change_workspace_slug, _resource),
     do: allow_if(role_at_least?(scope, :owner))
 
   # Viewers too may rename their own human identity.
-  def authorize(%Scope{} = scope, :rename_own_actor, %Actor{} = actor),
+  defp check(%Scope{} = scope, :rename_own_actor, %Actor{} = actor),
     do: allow_if(role_at_least?(scope, :viewer) and own_human?(scope, actor))
 
   ## Members and invitations
 
-  def authorize(%Scope{} = scope, :view_members, _resource),
+  defp check(%Scope{} = scope, :view_members, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
   # Coarse checks before the rows a member operation depends on are locked;
   # the operation then authorizes the precise action below.
-  def authorize(%Scope{} = scope, action, _resource)
-      when action in [:manage_members, :manage_invitations],
-      do: allow_if(role_at_least?(scope, :admin))
+  defp check(%Scope{} = scope, action, _resource)
+       when action in [:manage_members, :manage_invitations],
+       do: allow_if(role_at_least?(scope, :admin))
 
   # `role`: the role the invitation grants. Never above the inviter's own.
-  def authorize(%Scope{} = scope, action, role)
-      when action in [:create_invitation, :revoke_invitation],
-      do: allow_if(role_at_least?(scope, :admin) and not_above_own?(scope, role))
+  defp check(%Scope{} = scope, action, role)
+       when action in [:create_invitation, :revoke_invitation],
+       do: allow_if(role_at_least?(scope, :admin) and not_above_own?(scope, role))
 
   # Only owners touch the owner role; changing one's own role may only
   # lower it.
-  def authorize(%Scope{} = scope, :change_member_role, %{from: from, to: to, self?: self?})
-      when is_map_key(@role_rank, from) and is_map_key(@role_rank, to) and is_boolean(self?) do
+  defp check(%Scope{} = scope, :change_member_role, %{from: from, to: to, self?: self?})
+       when is_map_key(@role_rank, from) and is_map_key(@role_rank, to) and is_boolean(self?) do
     allow_if(
       role_at_least?(scope, :admin) and
         (scope.role == :owner or (from != :owner and to != :owner)) and
@@ -154,49 +192,49 @@ defmodule Helmsman.Policy do
   end
 
   # `role`: the target's current role. Leaving is `:leave_workspace`.
-  def authorize(%Scope{} = scope, :remove_member, role) when is_map_key(@role_rank, role),
+  defp check(%Scope{} = scope, :remove_member, role) when is_map_key(@role_rank, role),
     do: allow_if(role_at_least?(scope, :admin) and (scope.role == :owner or role != :owner))
 
-  def authorize(%Scope{} = scope, :leave_workspace, _resource),
+  defp check(%Scope{} = scope, :leave_workspace, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
   ## API tokens (agents never: all are management actions)
 
-  def authorize(%Scope{} = scope, :create_token, _resource),
+  defp check(%Scope{} = scope, :create_token, _resource),
     do: allow_if(role_at_least?(scope, :member))
 
   # Viewers too: a demoted user must still be able to see and revoke the
   # credentials they issued.
-  def authorize(%Scope{} = scope, :list_own_tokens, _resource),
+  defp check(%Scope{} = scope, :list_own_tokens, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
-  def authorize(%Scope{} = scope, :revoke_own_token, %ApiToken{} = token),
+  defp check(%Scope{} = scope, :revoke_own_token, %ApiToken{} = token),
     do: allow_if(role_at_least?(scope, :viewer) and own_token?(scope, token))
 
-  def authorize(%Scope{} = scope, :list_all_tokens, _resource),
+  defp check(%Scope{} = scope, :list_all_tokens, _resource),
     do: allow_if(role_at_least?(scope, :admin))
 
-  def authorize(%Scope{} = scope, :revoke_any_token, %ApiToken{} = token),
+  defp check(%Scope{} = scope, :revoke_any_token, %ApiToken{} = token),
     do: allow_if(role_at_least?(scope, :admin) and in_workspace?(scope, token))
 
-  def authorize(%Scope{} = scope, :view_agents, _resource),
+  defp check(%Scope{} = scope, :view_agents, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
-  def authorize(%Scope{} = scope, action, _resource)
-      when action in [:manage_agents, :manage_runtimes],
-      do: allow_if(role_at_least?(scope, :member))
+  defp check(%Scope{} = scope, action, _resource)
+       when action in [:manage_agents, :manage_runtimes],
+       do: allow_if(role_at_least?(scope, :member))
 
-  def authorize(%Scope{} = scope, :list_all_runtimes, _resource),
+  defp check(%Scope{} = scope, :list_all_runtimes, _resource),
     do: allow_if(role_at_least?(scope, :admin))
 
-  def authorize(%Scope{} = scope, :configure_agent, %Actor{kind: :agent} = actor),
+  defp check(%Scope{} = scope, :configure_agent, %Actor{kind: :agent} = actor),
     do:
       allow_if(
         in_workspace?(scope, actor) and role_at_least?(scope, :member) and
           same_user?(scope, actor)
       )
 
-  def authorize(%Scope{} = scope, :administer_agent, %Actor{kind: :agent} = actor),
+  defp check(%Scope{} = scope, :administer_agent, %Actor{kind: :agent} = actor),
     do:
       allow_if(
         in_workspace?(scope, actor) and
@@ -204,7 +242,7 @@ defmodule Helmsman.Policy do
              (role_at_least?(scope, :member) and same_user?(scope, actor)))
       )
 
-  def authorize(%Scope{} = scope, :disable_runtime, %{user_id: owner_id}),
+  defp check(%Scope{} = scope, :disable_runtime, %{user_id: owner_id}),
     do:
       allow_if(
         role_at_least?(scope, :admin) or
@@ -214,46 +252,61 @@ defmodule Helmsman.Policy do
   ## Agent identity
 
   # Not a management action: the one agents may perform (designs/03 §4).
-  def authorize(%Scope{} = scope, :identify, _resource),
+  defp check(%Scope{} = scope, :identify, _resource),
     do: allow_if(role_at_least?(scope, :member))
 
   ## Projects and tasks (not management actions: agents act with their
   ## owner's role, designs/08 §3)
 
-  def authorize(%Scope{} = scope, :read_tasks, _resource),
+  defp check(%Scope{} = scope, :read_tasks, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
 
-  def authorize(%Scope{} = scope, action, _resource)
-      when action in [:create_project, :update_project, :archive_project],
-      do: allow_if(role_at_least?(scope, :admin))
+  defp check(%Scope{} = scope, action, _resource)
+       when action in [:create_project, :update_project, :archive_project],
+       do: allow_if(role_at_least?(scope, :admin))
 
-  def authorize(%Scope{} = scope, action, _resource)
-      when action in [:create_task, :update_task, :transition_task],
-      do: allow_if(role_at_least?(scope, :member))
+  defp check(%Scope{} = scope, action, _resource)
+       when action in [:create_task, :update_task, :transition_task],
+       do: allow_if(role_at_least?(scope, :member))
 
   ## Feedback (not management actions)
 
-  def authorize(%Scope{} = scope, :add_feedback, _resource),
+  defp check(%Scope{} = scope, :add_feedback, _resource),
     do: allow_if(role_at_least?(scope, :member))
 
   # `author`: the identity that wrote the record. Its author, or another
   # identity of the same user (their human identity, their agents); never
   # a record the system wrote (designs/06).
-  def authorize(%Scope{} = scope, :revise_feedback, %Actor{} = author),
+  defp check(%Scope{} = scope, :revise_feedback, %Actor{} = author),
     do: allow_if(role_at_least?(scope, :member) and may_revise?(scope, author))
 
   ## GitHub (management actions: agents never)
 
   # Connecting / disconnecting the installation, binding projects to
   # repositories and their merge settings (designs/15 §6).
-  def authorize(%Scope{} = scope, :manage_github, _resource),
+  defp check(%Scope{} = scope, :manage_github, _resource),
     do: allow_if(role_at_least?(scope, :admin))
 
   # Instance-wide: the GitHub App itself. Needs no workspace.
-  def authorize(%Scope{user: %User{instance_admin: true}}, :manage_github_app, _resource),
+  defp check(%Scope{user: %User{instance_admin: true}}, :manage_github_app, _resource),
     do: :ok
 
-  def authorize(_scope, _action, _resource), do: {:error, :forbidden}
+  ## Runs (not management actions)
+
+  defp check(%Scope{} = scope, :run_agent, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
+  defp check(%Scope{} = scope, :view_runs, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
+
+  # The coarse action (`:update_task`, ...) checked the role already; a run
+  # may only write its own task.
+  defp check(%Scope{via: :run, run: %Run{} = run}, :write_task, %Task{id: id}),
+    do: allow_if("write_task" in run.capabilities and run.task_id == id)
+
+  defp check(%Scope{}, :write_task, %Task{}), do: :ok
+
+  defp check(_scope, _action, _resource), do: {:error, :forbidden}
 
   defp may_revise?(_scope, %Actor{kind: :system}), do: false
 

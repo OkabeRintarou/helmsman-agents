@@ -27,6 +27,18 @@ defmodule HelmsmanMCP.Tools.Identify do
   def call(%{"kind" => kind}, _ctx) when kind not in [nil, "agent"],
     do: {:error, {:invalid_kind, kind}}
 
+  # A run token is always its run's agent: nothing changes.
+  def call(_args, %{scope: %{via: :run, actor: actor}}) do
+    {:ok,
+     %{
+       name: actor.name,
+       kind: actor.kind,
+       project: actor.project_key,
+       worktree: actor.worktree,
+       source: "run"
+     }}
+  end
+
   def call(args, ctx) do
     attrs = %{name: args["name"], project: args["project"], worktree: args["worktree"]}
 

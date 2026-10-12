@@ -5,6 +5,8 @@ defmodule Helmsman.PolicyMatrixTest do
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Policy
+  alias Helmsman.Runs.Run
+  alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
   @workspace %Workspace{id: 1, slug: "acme", name: "Acme"}
@@ -20,6 +22,8 @@ defmodule Helmsman.PolicyMatrixTest do
   @own_token %ApiToken{id: 300, workspace_id: 1, user_id: 10}
   @other_token %ApiToken{id: 301, workspace_id: 1, user_id: 11}
   @foreign_token %ApiToken{id: 302, workspace_id: 2, user_id: 10}
+  @task %Task{id: 500, workspace_id: 1}
+  @other_task %Task{id: 501, workspace_id: 1}
 
   def no_resource(_scope), do: nil
   def own_actor(scope), do: scope.actor
@@ -275,6 +279,20 @@ defmodule Helmsman.PolicyMatrixTest do
             # workspace role (see the test below); the matrix user is not one
             for role <- @roles, kind <- [:human, :agent] do
               {:manage_github_app, role, kind, @none, :forbidden}
+            end,
+            # run_agent: member and above, agents too (an external agent
+            # with an hm_ token; run tokens are refused by Dispatch and by
+            # the run gate below)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:run_agent, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
+            # view_runs: everyone
+            for role <- @roles, kind <- [:human, :agent] do
+              {:view_runs, role, kind, @none, :ok}
+            end,
+            # write_task outside runs: the coarse action checked the role
+            for role <- @roles, kind <- [:human, :agent] do
+              {:write_task, role, kind, @task, :ok}
             end
           ]
           |> List.flatten()
@@ -398,5 +416,77 @@ defmodule Helmsman.PolicyMatrixTest do
   test "unknown actions and scopes without a role are refused" do
     assert Policy.authorize(scope(:owner, :human), :launch_rockets) == {:error, :forbidden}
     assert Policy.authorize(%Scope{user: @user}, :view_workspace) == {:error, :forbidden}
+  end
+
+  describe "run scopes (designs/13 §2.3)" do
+    @read_actions [:view_workspace, :view_members, :read_tasks, :view_agents, :view_runs]
+    @write_actions [:update_task, :transition_task, :add_feedback]
+    @refused [
+      :run_agent,
+      :create_project,
+      :update_project,
+      :archive_project,
+      :rename_own_actor,
+      :leave_workspace,
+      :create_token,
+      :manage_agents,
+      :manage_github
+    ]
+
+    defp run_scope(role, caps, task_id) do
+      %Scope{
+        user: @user,
+        workspace: @workspace,
+        role: role,
+        actor: @agent,
+        via: :run,
+        run: %Run{id: 900, task_id: task_id, capabilities: caps}
+      }
+    end
+
+    test "capabilities × own task / other task / no task, then the owner's role" do
+      for role <- [:owner, :member, :viewer],
+          caps <- [
+            ["read"],
+            ["read", "write_task"],
+            ["read", "create_tasks"],
+            ["read", "write_task", "create_tasks"]
+          ],
+          task_id <- [500, nil] do
+        scope = run_scope(role, caps, task_id)
+        member? = role != :viewer
+        expect = fn allowed -> if allowed, do: :ok, else: {:error, :forbidden} end
+
+        for action <- @read_actions do
+          assert Policy.authorize(scope, action) == :ok, "#{action} #{inspect(caps)}"
+        end
+
+        assert Policy.authorize(scope, :identify) == expect.(member?)
+
+        for action <- @write_actions do
+          assert Policy.authorize(scope, action) == expect.(member? and "write_task" in caps),
+                 "#{action} #{role} #{inspect(caps)}"
+        end
+
+        assert Policy.authorize(scope, :revise_feedback, @agent) ==
+                 expect.(member? and "write_task" in caps)
+
+        assert Policy.authorize(scope, :create_task) ==
+                 expect.(member? and "create_tasks" in caps)
+
+        own = "write_task" in caps and task_id == 500
+        assert Policy.authorize(scope, :write_task, @task) == expect.(own)
+        assert Policy.authorize(scope, :write_task, @other_task) == {:error, :forbidden}
+
+        for action <- @refused do
+          assert Policy.authorize(scope, action) == {:error, :forbidden}, "#{action}"
+        end
+      end
+    end
+
+    test "a run scope without a run is refused everything" do
+      scope = %{run_scope(:owner, ["read"], nil) | run: nil}
+      assert Policy.authorize(scope, :read_tasks) == {:error, :forbidden}
+    end
   end
 end

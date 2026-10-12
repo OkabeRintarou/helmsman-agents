@@ -12,6 +12,20 @@ defmodule HelmsmanMCP.ErrorText do
   clause (the pipeline then answers with `internal/1`).
   """
   @spec format(term(), Context.t()) :: {:ok, String.t()} | :error
+  def format(:forbidden, %Context{scope: %{via: :run, run: run}}) do
+    caps = Enum.join(run.capabilities, ", ")
+
+    change =
+      case run.task do
+        %{ident: ident} -> " and change #{ident}"
+        _none -> ""
+      end
+
+    {:ok,
+     "This run can only read the workspace#{change} (capabilities: #{caps}). " <>
+       "Ask a human to do anything else."}
+  end
+
   def format(:forbidden, %Context{tool: "update_feedback", scope: %{role: role}} = ctx)
       when role not in [nil, :viewer] do
     {:ok,
@@ -120,6 +134,40 @@ defmodule HelmsmanMCP.ErrorText do
 
   def format({:invalid_kind, _kind}, _ctx), do: {:ok, "Only kind=agent is supported."}
 
+  def format(:run_ended, _ctx),
+    do: {:ok, "This run has ended; its token is no longer valid. Nothing was written."}
+
+  def format(:not_managed, %Context{args: args}) do
+    {:ok,
+     "#{args["agent"] || "This agent"} is an external agent: only managed agents can be " <>
+       "started. Pick a managed agent from list_agents."}
+  end
+
+  def format(:instructions_required, _ctx) do
+    {:ok, "Give instructions when you start an agent without a task (task_id)."}
+  end
+
+  def format({:invalid_instructions, :too_long}, _ctx),
+    do: {:ok, "instructions are too long (max 8 KB). Put details in the task instead."}
+
+  def format({:invalid_instructions, _reason}, _ctx), do: {:ok, "instructions must be a string."}
+
+  def format(:task_closed, %Context{args: args}) do
+    {:ok,
+     "#{arg(args, "task_id") || "The task"} is verified or cancelled: no agent can be " <>
+       "started on it. Reopen it first, or create a new task."}
+  end
+
+  def format({:not_dispatched, reason}, %Context{args: args}) do
+    {:ok, "#{args["agent"] || "The agent"} was not started: #{not_dispatched(reason)}."}
+  end
+
+  def format({:run_active, %{id: id, agent: agent}}, %Context{args: args}) do
+    {:ok,
+     "#{arg(args, "task_id") || "The task"} cannot be verified while #{agent} is still " <>
+       "running on it (run #{id}). Wait until the run ends and its changes are pushed."}
+  end
+
   def format(%Ecto.Changeset{} = changeset, _ctx) do
     text =
       changeset
@@ -165,6 +213,31 @@ defmodule HelmsmanMCP.ErrorText do
 
   defp value(value) when is_binary(value), do: value
   defp value(value), do: inspect(value)
+
+  defp not_dispatched(:unauthorized),
+    do:
+      "you are unauthorized to trigger it (its owner limits who can run it); ask its owner, " <>
+        "or pick another agent from list_agents"
+
+  defp not_dispatched(:agent_disabled), do: "it is disabled; ask its owner to enable it"
+  defp not_dispatched(:agent_archived), do: "it is archived"
+
+  defp not_dispatched(:no_runtime),
+    do: "it is not bound to a runtime; its owner must bind one in its settings"
+
+  defp not_dispatched(:runtime_disabled), do: "its runtime is disabled"
+  defp not_dispatched(:task_closed), do: "the task is closed"
+  defp not_dispatched(:not_started), do: "the request asked not to start it"
+
+  defp not_dispatched(:loop_detected),
+    do: "it is already in the trigger chain (agents may not trigger each other in a loop)"
+
+  defp not_dispatched(:chain_too_long), do: "the trigger chain is longer than 5 agents"
+
+  defp not_dispatched(:rate_limited),
+    do: "too many runs were started on this task in the last hour; try again later"
+
+  defp not_dispatched(reason), do: to_string(reason)
 
   defp tests_reason(:not_an_object), do: "tests must be an object"
   defp tests_reason({:passed, _}), do: "passed must be true or false"

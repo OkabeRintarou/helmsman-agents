@@ -36,6 +36,8 @@ defmodule Helmsman.Feedback.Entry do
     field :status, Ecto.Enum, values: @statuses, default: :active
     belongs_to :supersedes, __MODULE__
     belongs_to :superseded_by, __MODULE__
+    # The run the record was written in (an `hmr_` token), if any.
+    belongs_to :source_run, Helmsman.Runs.Run
 
     # Filled in by `Helmsman.Feedback.load/2` for the external form.
     field :task_ident, :string, virtual: true
