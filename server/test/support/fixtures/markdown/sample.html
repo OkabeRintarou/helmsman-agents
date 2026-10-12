@@ -1,0 +1,61 @@
+<h1>样例文档</h1>
+<p>一段<strong>粗体</strong>、<em>斜体</em>、<del>删除线</del>与 <code>行内代码 #BOS-1 @keel/dev</code>。参见 <a class="hm-ref" href="/w/snapshot/t/BOS-1" rel="noopener noreferrer nofollow">BOS-1</a>、<a class="hm-ref" href="/w/snapshot/t/BOS-2#feedback-3" rel="noopener noreferrer nofollow">BOS-2#3</a>、#BOS-999 与 x#BOS-1。</p>
+<p><span class="hm-mention" data-actor="keel/dev">@keel/dev</span>. 请看；@alice 不在名单里。自动链接 <a href="http://www.example.com" rel="noopener noreferrer nofollow">www.example.com</a> 与 <a href="https://example.com/a?b=1&amp;c=2" rel="noopener noreferrer nofollow">https://example.com/a?b=1&amp;c=2</a>，邮件 <a href="mailto:bob@example.com" rel="noopener noreferrer nofollow">bob@example.com</a>。</p>
+<blockquote>
+<p>引用里的 <a class="hm-ref" href="/w/snapshot/t/BOS-2" rel="noopener noreferrer nofollow">BOS-2</a> 与 <span class="hm-mention" data-actor="keel/dev">@keel/dev</span></p>
+<ul>
+<li>嵌套列表</li>
+</ul>
+</blockquote>
+<ol>
+<li>第一</li>
+<li>第二
+<ul>
+<li><input type="checkbox" checked="" disabled=""> 已完成</li>
+<li><input type="checkbox" disabled=""> 待办</li>
+</ul>
+</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th align="left">列 A</th>
+<th align="right">列 B</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left"><a class="hm-ref" href="/w/snapshot/t/BOS-1" rel="noopener noreferrer nofollow">BOS-1</a></td>
+<td align="right"><code>#BOS-1</code></td>
+</tr>
+<tr>
+<td align="left"><a href="https://example.com/doc" title="标题" rel="noopener noreferrer nofollow">链接 #BOS-1</a></td>
+<td align="right"><a href="https://example.com/i.png" rel="noopener noreferrer nofollow">图</a></td>
+</tr>
+</tbody>
+</table>
+<p>脚注一<sup><a href="#fn-desc_1" id="fnref-desc_1" rel="noopener noreferrer nofollow">1</a></sup>，脚注二<sup><a href="#fn-desc_2" id="fnref-desc_2" rel="noopener noreferrer nofollow">2</a></sup>，再次<sup><a href="#fn-desc_1" id="fnref-desc_1-2" rel="noopener noreferrer nofollow">1</a></sup>，脚注三<sup><a href="#fn-desc_3" id="fnref-desc_3" rel="noopener noreferrer nofollow">3</a></sup>。</p>
+<p><a href="https://example.com/page" rel="noopener noreferrer nofollow">架构图 #BOS-1</a> <a href="https://example.com/arch.png" rel="noopener noreferrer nofollow">https://example.com/arch.png</a> 与 <a href="https://example.com/ci" rel="noopener noreferrer nofollow">https://example.com/ci</a> <a href="https://example.com/badge.svg" rel="noopener noreferrer nofollow">https://example.com/badge.svg</a></p>
+<pre class="lumis"><code class="language-elixir" translate="no" tabindex="0"><span class="l-line" data-line="1"><span class="l-keyword-function">defmodule</span> <span class="l-module">Sample</span> <span class="l-keyword-function">do</span></span>
+<span class="l-line" data-line="2">  <span class="l-keyword-function">def</span> <span class="l-function">hello</span><span class="l-punctuation-bracket">(</span><span class="l-variable">name</span><span class="l-punctuation-bracket">)</span><span class="l-punctuation-delimiter">,</span> <span class="l-string-special-symbol">do: </span><span class="l-string">"hi </span><span class="l-string-special">#{</span><span class="l-variable">name</span><span class="l-string-special">}</span><span class="l-string">"</span></span>
+<span class="l-line" data-line="3"><span class="l-keyword">end</span></span></code></pre>
+<pre class="hm-mermaid" data-mermaid="true"><code>graph TD; A--&gt;B["&lt;b&gt;粗&lt;/b&gt;"]
+</code></pre>
+<pre class="lumis"><code class="language-plaintext" translate="no" tabindex="0"><span class="l-line" data-line="1">x &lt;y&gt; &amp; z</span></code></pre>
+&lt;script&gt;alert(1)&lt;/script&gt;
+&lt;div style="color:red" onclick="x()"&gt;原始 HTML&lt;/div&gt;
+<p><a href="" rel="noopener noreferrer nofollow">危险</a> <a rel="noopener noreferrer nofollow">data:image/png;base64,AAAA</a> &lt;!-- 注释 --&gt;</p>
+<hr>
+<section>
+<ol>
+<li id="fn-desc_1">
+<p>说明里提到 <a class="hm-ref" href="/w/snapshot/t/BOS-2" rel="noopener noreferrer nofollow">BOS-2</a>。 <a href="#fnref-desc_1" class="footnote-backref" rel="noopener noreferrer nofollow">↩</a> <a href="#fnref-desc_1-2" class="footnote-backref" rel="noopener noreferrer nofollow">↩<sup>2</sup></a></p>
+</li>
+<li id="fn-desc_2">
+<p>第二条说明。 <a href="#fnref-desc_2" class="footnote-backref" rel="noopener noreferrer nofollow">↩</a></p>
+</li>
+<li id="fn-desc_3">
+<p>名称像重复引用的脚注。 <a href="#fnref-desc_3" class="footnote-backref" rel="noopener noreferrer nofollow">↩</a></p>
+</li>
+</ol>
+</section>

@@ -93,7 +93,7 @@ defmodule Helmsman.Feedback.Mentions do
   """
   @spec resolve(pos_integer(), [String.t()]) :: [pos_integer()]
   def resolve(workspace_id, candidates) when is_integer(workspace_id) and is_list(candidates) do
-    variants = Enum.map(candidates, &variants/1)
+    variants = Enum.map(candidates, &names/1)
 
     case variants |> List.flatten() |> Enum.uniq() do
       [] ->
@@ -115,9 +115,29 @@ defmodule Helmsman.Feedback.Mentions do
     end
   end
 
-  # The candidate and the names left by dropping its trailing '.', '-' and
-  # '/' one at a time, downcased, longest first; only valid identity names.
-  defp variants(candidate) do
+  @doc """
+  The mentioning `@` runs in a piece of prose: the byte offset of each `@`
+  and the full run of identity characters after it, in order.
+
+      iex> Helmsman.Feedback.Mentions.scan("cc @alice. and a@b")
+      [{3, "alice."}]
+  """
+  @spec scan(String.t()) :: [{non_neg_integer(), String.t()}]
+  def scan(text) when is_binary(text) do
+    for [{at, _}, {start, length}] <- Regex.scan(@mention, text, return: :index),
+        do: {at, binary_part(text, start, length)}
+  end
+
+  @doc """
+  The identity names a candidate can mention, downcased, longest first: the
+  candidate and the names left by dropping its trailing `.`, `-` and `/`
+  one at a time; only valid identity names.
+
+      iex> Helmsman.Feedback.Mentions.names("Keel/Dev./")
+      ["keel/dev./", "keel/dev.", "keel/dev"]
+  """
+  @spec names(String.t()) :: [String.t()]
+  def names(candidate) when is_binary(candidate) do
     candidate
     |> String.downcase()
     |> Stream.unfold(fn

@@ -98,6 +98,10 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Markdown code blocks are highlighted by Lumis (CSS classes, no inline
+# styles); the languages are the `lumis_wasm_*` dependencies.
+config :mdex_native, syntax_highlighter: :lumis
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

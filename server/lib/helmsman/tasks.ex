@@ -194,6 +194,38 @@ defmodule Helmsman.Tasks do
   end
 
   @doc """
+  The canonical IDs among `idents` (any case) of the tasks that exist in the
+  scope's workspace, for turning references in Markdown into links.
+
+  Malformed IDs are ignored. One query, none when no ID is well formed; an
+  empty set for a scope that may not read tasks.
+  """
+  @spec existing_idents(Scope.t(), Enumerable.t()) :: MapSet.t(String.t())
+  def existing_idents(%Scope{workspace: %Workspace{id: workspace_id}} = scope, idents) do
+    canonical =
+      idents
+      |> Enum.flat_map(fn ident ->
+        case Ident.parse(ident) do
+          {:ok, canonical, _key, _seq} -> [canonical]
+          {:error, :not_found} -> []
+        end
+      end)
+      |> Enum.uniq()
+
+    with :ok <- Policy.authorize(scope, :read_tasks),
+         [_ | _] <- canonical do
+      from(t in Task,
+        where: t.workspace_id == ^workspace_id and t.ident in ^canonical,
+        select: t.ident
+      )
+      |> Repo.all()
+      |> MapSet.new()
+    else
+      _ -> MapSet.new()
+    end
+  end
+
+  @doc """
   Lists the tasks of the project with `project_key`, most recently updated
   first.
 
