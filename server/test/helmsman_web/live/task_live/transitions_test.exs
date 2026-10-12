@@ -52,7 +52,17 @@ defmodule HelmsmanWeb.TaskLive.TransitionsTest do
 
   defp open_panel(view, to), do: view |> element("#transition-#{to}") |> render_click()
 
-  defp submit(view, params), do: render_submit(view, "submit_transition", %{transition: params})
+  # The reason editor's session goes with the form, as in the browser.
+  defp submit(view, params) do
+    session = portal_attr(view, @panel, "input[name=editor_session]", "value")
+    form = %{transition: params}
+
+    render_submit(
+      view,
+      "submit_transition",
+      if(session, do: Map.put(form, :editor_session, session), else: form)
+    )
+  end
 
   defp last_entry(ctx),
     do: ctx |> current() |> Tasks.detail() |> Map.fetch!(:history) |> List.last()
@@ -221,19 +231,40 @@ defmodule HelmsmanWeb.TaskLive.TransitionsTest do
   end
 
   describe "reason panels" do
-    defp reason_case(ctx, setup_moves, to, label, status) do
+    defp reason_case(ctx, setup_moves, to, label, status, kind \\ {"review", "评审"}) do
       Enum.each(setup_moves, fn {role, s, opts} -> move(ctx, role, s, opts) end)
       {:ok, view, _} = live(as(ctx, :bob), ctx.path)
 
       open_panel(view, to)
       assert in_portal?(view, @panel, "#transition-panel-title", "#{label} BOS-1")
       assert in_portal?(view, @panel, "#transition-help")
+      assert in_portal?(view, @panel, "#transition-editor [data-hm-editor], #transition-editor")
+
+      assert in_portal?(
+               view,
+               @panel,
+               ~s(textarea[name="transition[comment]"][data-submit=mod-enter-form])
+             )
 
       submit(view, %{comment: "原因：#{label}"})
       refute open?(view, @panel)
       assert has_element?(view, "#task-status", status)
-      assert last_entry(ctx).comment == "原因：#{label}"
-      assert has_element?(view, "#task-history > li:last-child [data-comment]", "原因：#{label}")
+
+      # The reason is a feedback record of the right kind, referred to by the entry.
+      %{feedback: id} = entry = last_entry(ctx)
+      assert id =~ ~r/^BOS-1#\d+$/
+      seq = id |> String.split("#") |> List.last()
+      assert entry.comment in [nil, ""]
+
+      {kind, kind_label} = kind
+      card = "#feedback-#{seq}"
+      assert has_element?(view, ~s(#{card}[data-kind="#{kind}"]), "原因：#{label}")
+      assert has_element?(view, "#{card} [data-kind-badge]", kind_label)
+
+      link = "#task-history > li:last-child [data-reason] a[href='#feedback-#{seq}']"
+      assert has_element?(view, link, id)
+      assert has_element?(view, "#task-history > li:last-child [data-reason]", "原因：")
+      refute has_element?(view, "#task-history > li:last-child [data-comment]")
     end
 
     @started {:alice, "in_progress", %{}}
@@ -254,14 +285,60 @@ defmodule HelmsmanWeb.TaskLive.TransitionsTest do
       reason_case(ctx, [{:alice, "rejected", %{comment: "no"}}], "new", "重新提交", "新建")
     end
 
-    test("撤销", ctx, do: reason_case(ctx, [], "cancelled", "撤销", "已撤销"))
+    test "撤销的原因 is a comment", ctx do
+      reason_case(ctx, [], "cancelled", "撤销", "已撤销", {"comment", "评论"})
+    end
 
     test "a reason is required", ctx do
       {:ok, view, _} = live(as(ctx, :bob), ctx.path)
       open_panel(view, "cancelled")
       submit(view, %{comment: "  "})
-      assert in_portal?(view, @panel, "#transition-comment-error", "请填写原因")
+      assert in_portal?(view, @panel, "#transition-editor-error", "请填写原因")
       assert current(ctx).status == :new
+    end
+
+    test "a reason over 64 KB is reported under the field and the input stays", ctx do
+      {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+      open_panel(view, "cancelled")
+      assert in_portal?(view, @panel, "#transition-editor-input-1")
+
+      submit(view, %{comment: String.duplicate("长", 22_000)})
+      assert in_portal?(view, @panel, "#transition-editor-error", "不能超过 64 KB")
+      assert open?(view, @panel)
+      assert in_portal?(view, @panel, "#transition-editor-input-1")
+      assert current(ctx).status == :new
+    end
+
+    test "a submit from an earlier reason editor is ignored", ctx do
+      {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+      open_panel(view, "cancelled")
+
+      render_submit(view, "submit_transition", %{
+        transition: %{comment: "旧的"},
+        editor_session: "0"
+      })
+
+      assert open?(view, @panel)
+      assert current(ctx).status == :new
+    end
+
+    test "each opened panel starts an empty reason editor", ctx do
+      move(ctx, :alice, "in_progress")
+      move(ctx, :alice, "done")
+      {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+
+      open_panel(view, "in_progress")
+      assert in_portal?(view, @panel, "#transition-editor-input-1")
+      render_click(view, "close_transition", %{})
+
+      open_panel(view, "verified")
+      refute in_portal?(view, @panel, "[id^=transition-editor-input]")
+      render_click(view, "close_transition", %{})
+
+      open_panel(view, "in_progress")
+      refute in_portal?(view, @panel, "#transition-editor-input-1")
+      assert in_portal?(view, @panel, "#transition-editor-input-3")
+      assert portal_text(view, @panel, "#transition-editor-input-3") |> String.trim() == ""
     end
   end
 

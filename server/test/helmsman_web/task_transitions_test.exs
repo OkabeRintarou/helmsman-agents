@@ -124,5 +124,28 @@ defmodule HelmsmanWeb.TaskTransitionsTest do
                assert TransitionErrors.message(:boom, "开始") == {:top, "操作失败，请稍后重试"}
              end) =~ ":boom"
     end
+
+    test "an invalid reason feedback is shown under the reason" do
+      {:error, changeset} = Helmsman.Feedback.normalize(%{content: String.duplicate("a", 65_537)})
+
+      assert TransitionErrors.message(changeset, "打回") == {{:field, :comment}, "不能超过 64 KB"}
+
+      {:error, blank} = Helmsman.Feedback.normalize(%{content: ""})
+      assert TransitionErrors.message(blank, "打回") == {{:field, :comment}, "不能为空"}
+    end
+
+    test "a reason that is not an object is a program error, logged" do
+      assert capture_log(fn ->
+               assert TransitionErrors.message({:invalid_feedback, :not_an_object}, "打回") ==
+                        {:top, "操作失败，请稍后重试"}
+             end) =~ "invalid_feedback"
+    end
+  end
+
+  test "reason_kind: 撤销 is a comment, the other reasons are reviews" do
+    assert TaskTransitions.reason_kind("cancelled") == "comment"
+
+    for to <- ~w(in_progress rejected new),
+        do: assert(TaskTransitions.reason_kind(to) == "review")
   end
 end

@@ -9,6 +9,8 @@ defmodule HelmsmanWeb.Dev.UiLive do
   """
   use HelmsmanWeb, :live_view
 
+  alias Helmsman.Accounts.Scope
+  alias Helmsman.Workspaces.Workspace
   alias HelmsmanWeb.Components.Status
   alias HelmsmanWeb.Dev.ThemeTokens
   alias HelmsmanWeb.Filters
@@ -90,7 +92,10 @@ defmodule HelmsmanWeb.Dev.UiLive do
         panel_dirty: false,
         confirmed: nil,
         guard_submits: 0,
-        menu_selected: nil
+        menu_selected: nil,
+        md_scope: markdown_scope(),
+        md_session: 1,
+        md_submitted: nil
       )
       |> stream_configure(:rows, dom_id: &"row-#{&1.id}")
       |> stream(:rows, [])
@@ -190,6 +195,74 @@ defmodule HelmsmanWeb.Dev.UiLive do
 
   def handle_event("flash_info", _params, socket) do
     {:noreply, put_flash(socket, :info, dgettext("ui", "已保存"))}
+  end
+
+  def handle_event("demo_md_submit", %{"demo_md" => text}, socket) do
+    {:noreply, assign(socket, md_submitted: text, md_session: socket.assigns.md_session + 1)}
+  end
+
+  def handle_event("demo_md_reset", _params, socket),
+    do: {:noreply, assign(socket, md_session: socket.assigns.md_session + 1)}
+
+  # Markdown needs a workspace scope; references only link tasks that exist in it.
+  defp markdown_scope do
+    %Scope{workspace: %Workspace{id: 0, slug: "acme", name: "acme"}, role: :member}
+  end
+
+  @doc false
+  def demo_markdown do
+    """
+    ## 复现步骤
+
+    1. 打开 `/w/acme/t/BOS-12`
+    2. 点击 **登录**，再点 *返回*
+       - 嵌套列表项
+    - [x] 写测试
+    - [ ] 修复
+
+    > 引用：登录后仍跳到首页。
+
+    | 环境 | 结果 |
+    | --- | --- |
+    | Chrome | 失败 |
+    | Firefox | 通过 |
+
+    @keel/dev 请看 #BOS-7 和 BOS-3#2，参见脚注[^1]。
+
+    ```elixir
+    defmodule Demo do
+      # 注释
+      def run(x), do: {:ok, "s", 42, x}
+    end
+    ```
+
+    ```javascript
+    const total = items.reduce((a, b) => a + b, 0) // sum
+    ```
+
+    ```diff
+    + 新增一行
+    - 删除一行
+    ```
+
+    ```mermaid
+    graph TD; A[开始]-->B{判断}; B-->|是|C[完成]; B-->|否|A
+    ```
+
+    ---
+
+    [^1]: 脚注内容。
+    """
+  end
+
+  @doc false
+  def demo_candidates do
+    [
+      %{name: "alice", kind: "human", owner_name: nil},
+      %{name: "kate", kind: "human", owner_name: nil},
+      %{name: "keel/dev", kind: "agent", owner_name: "alice"},
+      %{name: "keel/review", kind: "agent", owner_name: "alice"}
+    ]
   end
 
   defp base_path(%{assigns: %{live_action: :projects}}), do: "/dev/ui/projects"
@@ -453,6 +526,45 @@ defmodule HelmsmanWeb.Dev.UiLive do
             label={dgettext("ui", "全零数据")}
             points={Enum.map(spark_points(@now), &{elem(&1, 0), 0})}
           />
+        </.section>
+
+        <.section id="markdown" title="Markdown">
+          <div class="grid gap-6 lg:grid-cols-2">
+            <.markdown
+              content={demo_markdown()}
+              scope={@md_scope}
+              anchor_ns="demo"
+              mentions={["keel/dev"]}
+              class="max-w-2xl"
+            />
+            <form id="demo-md-form" phx-submit="demo_md_submit" class="flex flex-col gap-2">
+              <.live_component
+                module={HelmsmanWeb.MarkdownEditor}
+                id="demo-editor"
+                session={@md_session}
+                scope={@md_scope}
+                name="demo_md"
+                value=""
+                label={dgettext("ui", "演示编辑器")}
+                submit={:form}
+                candidates={demo_candidates()}
+                placeholder={dgettext("ui", "支持 Markdown，输入 @ 提及")}
+              />
+              <div class="flex items-center gap-2">
+                <.button type="button" size="sm" phx-click="demo_md_reset">
+                  {dgettext("ui", "重新开始")}
+                </.button>
+                <.button id="demo-md-submit" type="submit" size="sm" variant="primary">
+                  {dgettext("ui", "提交")}
+                </.button>
+              </div>
+              <pre
+                :if={@md_submitted}
+                id="demo-md-submitted"
+                class="whitespace-pre-wrap text-caption text-fg-muted"
+              >{@md_submitted}</pre>
+            </form>
+          </div>
         </.section>
 
         <.section id="layout" title={dgettext("ui", "布局")}>

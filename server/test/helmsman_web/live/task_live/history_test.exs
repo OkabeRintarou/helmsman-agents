@@ -87,4 +87,21 @@ defmodule HelmsmanWeb.TaskLive.HistoryTest do
     refute html =~ "data-auto"
     refute html =~ "data-tests"
   end
+
+  test "an entry with a reason links to its feedback; old entries keep their comment",
+       %{conn: conn, path: path, scope: scope} do
+    {:ok, _} = Tasks.transition(scope, "BOS-1", "in_progress", %{comment: "旧的备注"})
+
+    {:ok, _} =
+      Tasks.transition(scope, "BOS-1", "cancelled", %{feedback: %{kind: "comment", content: "重复"}})
+
+    {:ok, view, _html} = live(conn, path)
+
+    assert has_element?(view, "#history-1 [data-comment]", "旧的备注")
+    refute has_element?(view, "#history-1 [data-reason]")
+
+    assert has_element?(view, "#history-2 [data-reason]", "原因：")
+    assert has_element?(view, ~s(#history-2 [data-reason] a[href="#feedback-1"]), "BOS-1#1")
+    refute has_element?(view, "#history-2 [data-comment]")
+  end
 end

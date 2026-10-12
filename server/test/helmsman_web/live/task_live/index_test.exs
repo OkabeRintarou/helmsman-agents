@@ -82,6 +82,19 @@ defmodule HelmsmanWeb.TaskLive.IndexTest do
       assert has_element?(view, ~s(#tasks tr[phx-click*="/t/BOS-1"]))
     end
 
+    test "tasks waiting for an answer are marked (待回答的任务)", ctx do
+      task_fixture(ctx.scopes.owner, "BOS")
+      task_fixture(ctx.scopes.owner, "BOS")
+
+      {:ok, _} =
+        Helmsman.Feedback.add(ctx.scopes.member, "BOS-2", %{kind: "question", content: "?"})
+
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base)
+
+      assert has_element?(view, ~s(#task-BOS-2 [data-open-question][aria-label="待回答"]))
+      refute has_element?(view, "#task-BOS-1 [data-open-question]")
+    end
+
     test "header with breadcrumb and title", ctx do
       {:ok, view, _html} = live(as(ctx, :viewer), ctx.base)
 

@@ -4,12 +4,17 @@ defmodule HelmsmanWeb.TaskEvidence do
   `Helmsman.Tasks.transition/4` (design D8). Pure; the domain layer validates the
   values (commit format, lengths).
 
-  Params: `"kind"` (`"evidence"` or `"reason"`), `"commits"` (split on blanks and
-  commas), `"result"` (`"none"` / `"passed"` / `"failed"`), `"command"`, `"summary"`
-  and `"comment"`. A reason panel requires the comment; with a test result the command
-  is required.
+  Params: `"kind"` (`"evidence"` or `"reason"`), `"to"` (target status, for a reason),
+  `"commits"` (split on blanks and commas), `"result"` (`"none"` / `"passed"` /
+  `"failed"`), `"command"`, `"summary"` and `"comment"`. A reason panel requires the
+  comment, which becomes the transition's reason feedback (`feedback: %{kind,
+  content}`, the kind from `HelmsmanWeb.TaskTransitions.reason_kind/1`); the evidence
+  panels keep it as the transition's `comment`. With a test result the command is
+  required.
   """
   use Gettext, backend: HelmsmanWeb.Gettext
+
+  alias HelmsmanWeb.TaskTransitions
 
   @spec parse(map()) :: {:ok, map()} | {:error, %{atom() => String.t()}}
   def parse(params) do
@@ -21,16 +26,22 @@ defmodule HelmsmanWeb.TaskEvidence do
       |> put_if(reason? and comment == "", :comment, dgettext("ui", "请填写原因"))
       |> check_tests(params)
 
-    if errors == %{} do
-      opts =
-        %{}
-        |> put_present(:comment, comment)
-        |> put_present(:commits, commits(params["commits"]))
-        |> put_present(:tests, tests(params))
+    cond do
+      errors != %{} ->
+        {:error, errors}
 
-      {:ok, opts}
-    else
-      {:error, errors}
+      reason? ->
+        kind = TaskTransitions.reason_kind(params["to"])
+        {:ok, %{feedback: %{kind: kind, content: params["comment"]}}}
+
+      true ->
+        opts =
+          %{}
+          |> put_present(:comment, comment)
+          |> put_present(:commits, commits(params["commits"]))
+          |> put_present(:tests, tests(params))
+
+        {:ok, opts}
     end
   end
 

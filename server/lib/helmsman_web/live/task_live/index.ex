@@ -320,7 +320,17 @@ defmodule HelmsmanWeb.TaskLive.Index do
           <.task_id_link ident={task.id} workspace={@slug} status={task.status} />
         </:col>
         <:col :let={task} label={dgettext("ui", "标题")}>
-          <span class="text-fg">{task.title}</span>
+          <span class="inline-flex min-w-0 items-center gap-1.5">
+            <span class="truncate text-fg">{task.title}</span>
+            <.tooltip :if={task.open_question} text={dgettext("ui", "待回答")} class="flex-none">
+              <.icon
+                name="lucide-circle-question-mark"
+                class="size-3.5 text-warning"
+                label={dgettext("ui", "待回答")}
+                data-open-question
+              />
+            </.tooltip>
+          </span>
         </:col>
         <:col :let={task} label={dgettext("ui", "标签")} secondary class="w-48">
           <span class="flex items-center gap-1 overflow-hidden">

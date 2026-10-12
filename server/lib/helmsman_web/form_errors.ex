@@ -48,6 +48,18 @@ defmodule HelmsmanWeb.FormErrors do
   defp text(_field, {"must be 1-80 characters", _}), do: dgettext("ui", "长度须为 1–80 个字符")
   defp text(_field, {"must be 1-64 characters", _}), do: dgettext("ui", "长度须为 1–64 个字符")
   defp text(_field, {"must be at most 64 KB", _}), do: dgettext("ui", "不能超过 64 KB")
+
+  # Markdown bodies (feedback content) are limited in whole kilobytes.
+  defp text(_field, {"should be at most %{count} byte(s)", opts} = error) do
+    case opts[:count] do
+      count when is_integer(count) and count >= 1024 and rem(count, 1024) == 0 ->
+        dgettext("ui", "不能超过 %{n} KB", n: div(count, 1024))
+
+      _ ->
+        HelmsmanWeb.CoreComponents.translate_error(error)
+    end
+  end
+
   defp text(_field, {"must be at most 20 labels", _}), do: dgettext("ui", "最多 20 个标签")
 
   defp text(_field, {"each label must be 1-32 characters", _}),

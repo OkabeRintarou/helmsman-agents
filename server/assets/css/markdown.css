@@ -1,0 +1,138 @@
+/* Rendered Markdown (HelmsmanWeb.Components.Markdown, design D3). Colours come only from
+   the semantic tokens (--hm-*), so both themes and the contrast checks of
+   HelmsmanWeb.Dev.ThemeTokens apply. These classes live here, never in templates. */
+
+.hm-prose {
+  @apply text-body text-fg;
+  overflow-wrap: anywhere;
+}
+.hm-prose > :first-child { margin-top: 0; }
+.hm-prose > :last-child { margin-bottom: 0; }
+.hm-prose :where(p, ul, ol, blockquote, table, pre, hr, .hm-mermaid-figure, section) {
+  margin: 0.5rem 0;
+}
+
+.hm-prose :where(h1, h2, h3, h4, h5, h6) {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+  color: var(--hm-fg);
+}
+.hm-prose h1 { @apply text-heading; }
+.hm-prose :where(h2, h3) { @apply text-title; }
+.hm-prose :where(h4, h5, h6) { @apply text-body; }
+
+.hm-prose :where(ul, ol) { padding-left: 1.5rem; }
+.hm-prose ul { list-style: disc; }
+.hm-prose ol { list-style: decimal; }
+.hm-prose li + li { margin-top: 0.125rem; }
+.hm-prose li > :where(ul, ol) { margin: 0.125rem 0; }
+/* Task lists: the item carries a disabled checkbox. */
+.hm-prose li:has(> input[type=checkbox]:first-child) { list-style: none; margin-left: -1.25rem; }
+.hm-prose input[type=checkbox] {
+  margin-right: 0.375rem;
+  vertical-align: -0.125rem;
+  accent-color: var(--hm-brand);
+}
+
+.hm-prose blockquote {
+  border-left: 3px solid var(--hm-border-strong);
+  padding-left: 0.75rem;
+  color: var(--hm-fg-muted);
+}
+
+.hm-prose hr { border: 0; border-top: 1px solid var(--hm-border); }
+
+.hm-prose a {
+  color: var(--hm-brand-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Tables scroll sideways on narrow screens. */
+.hm-prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.hm-prose :where(th, td) {
+  border: 1px solid var(--hm-border);
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+.hm-prose th { color: var(--hm-fg-muted); font-weight: 600; }
+
+.hm-prose :not(pre) > code {
+  @apply font-mono text-label;
+  background-color: var(--hm-hover);
+  border-radius: 4px;
+  padding: 0.0625rem 0.25rem;
+}
+
+/* Footnotes: the only <section> in rendered Markdown (the sanitizer drops its class). */
+.hm-prose > section {
+  @apply text-caption;
+  border-top: 1px solid var(--hm-border);
+  padding-top: 0.5rem;
+  color: var(--hm-fg-muted);
+}
+.hm-prose sup a { text-decoration: none; }
+
+/* Code blocks: Lumis html_linked classes (pre.lumis, span.l-*). */
+.hm-prose pre {
+  @apply font-mono text-label;
+  background-color: var(--hm-canvas);
+  border: 1px solid var(--hm-border);
+  border-radius: 10px;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  color: var(--hm-fg);
+}
+.hm-prose pre code { font: inherit; background: none; padding: 0; }
+.hm-prose pre [class^="l-keyword"],
+.hm-prose pre [class^="l-operator"] { color: var(--hm-review-fg); }
+.hm-prose pre [class^="l-string"],
+.hm-prose pre [class^="l-character"] { color: var(--hm-success-fg); }
+.hm-prose pre [class^="l-number"],
+.hm-prose pre [class^="l-boolean"],
+.hm-prose pre [class^="l-constant"] { color: var(--hm-warning-fg); }
+.hm-prose pre [class^="l-function"],
+.hm-prose pre [class^="l-constructor"] { color: var(--hm-brand-fg); }
+.hm-prose pre [class^="l-type"],
+.hm-prose pre [class^="l-module"],
+.hm-prose pre [class^="l-tag"],
+.hm-prose pre [class^="l-attribute"],
+.hm-prose pre [class^="l-label"] { color: var(--hm-info-fg); }
+.hm-prose pre [class^="l-comment"] { color: var(--hm-fg-muted); font-style: italic; }
+.hm-prose pre [class^="l-diff-plus"] { color: var(--hm-success-fg); }
+.hm-prose pre [class^="l-diff-minus"] { color: var(--hm-danger-fg); }
+
+/* Mentions and task references. */
+.hm-prose .hm-mention {
+  color: var(--hm-brand-fg);
+  background-color: color-mix(in srgb, var(--hm-brand) var(--hm-badge-mix), var(--hm-surface));
+  border-radius: 4px;
+  padding: 0 0.1875rem;
+  font-weight: 500;
+}
+.hm-prose a.hm-ref {
+  @apply font-mono text-label;
+  color: var(--hm-fg-muted);
+  text-decoration: none;
+}
+.hm-prose a.hm-ref:hover { color: var(--hm-brand-fg); text-decoration: underline; }
+
+/* Mermaid: the source shows as a code block until the hook replaces it with a figure. */
+.hm-prose .hm-mermaid-figure {
+  background-color: var(--hm-surface);
+  border: 1px solid var(--hm-border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+.hm-prose .hm-mermaid-figure svg { max-width: 100%; height: auto; }
+.hm-prose .hm-mermaid-error {
+  @apply text-caption;
+  margin-top: -0.25rem;
+  color: var(--hm-danger-fg);
+}

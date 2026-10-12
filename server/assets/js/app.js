@@ -26,6 +26,7 @@ import {hooks as colocatedHooks} from "phoenix-colocated/helmsman"
 import topbar from "../vendor/topbar"
 import Hotkeys from "./hooks/hotkeys"
 import Editor from "./hooks/editor"
+import Mermaid from "./hooks/mermaid"
 
 const RECENT_TASKS = "hm:recent-tasks"
 const recentTasks = () => {
@@ -36,7 +37,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: () => ({_csrf_token: csrfToken, recent_tasks: recentTasks()}),
-  hooks: {...colocatedHooks, Hotkeys, Editor},
+  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid},
 })
 
 // Focus return for modal layers (design D5c): remember the element focused when a layer
@@ -88,6 +89,56 @@ window.addEventListener("phx:hm:title-suffix", ({detail}) => {
   const old = title.dataset.suffix || ""
   title.dataset.suffix = detail.suffix
   if (document.title.endsWith(old)) document.title = document.title.slice(0, document.title.length - old.length) + detail.suffix
+})
+
+// Feedback anchors (design D4): open the <details> around the target of a #feedback-N
+// link (an early version of a thread), scroll to it and flash it. The task page also
+// pushes hm:scroll-to after adding feedback.
+const reveal = id => {
+  const target = id && document.getElementById(id)
+  if (!target) return false
+  for (let el = target.parentElement; el; el = el.parentElement) {
+    if (el.tagName === "DETAILS" && !el.open) el.open = true
+  }
+  target.scrollIntoView({block: "start"})
+  // A Web Animation, not an attribute: LiveView patches would drop an attribute.
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const selected = getComputedStyle(document.documentElement).getPropertyValue("--hm-selected").trim()
+    target.animate([{backgroundColor: selected}, {}], {duration: 600, easing: "ease-out"})
+  }
+  return true
+}
+// Content drawn after the jump (diagrams) moves the target; follow it until the user
+// scrolls on their own.
+let revealedAt = 0
+const revealHash = () => {
+  const id = decodeURIComponent(location.hash.slice(1))
+  if (id.startsWith("feedback-") && reveal(id)) revealedAt = Date.now()
+}
+for (const type of ["wheel", "touchmove", "keydown", "mousedown"]) {
+  window.addEventListener(type, () => { revealedAt = 0 }, {passive: true, capture: true})
+}
+window.addEventListener("hm:layout", () => {
+  if (Date.now() - revealedAt > 5000) return
+  const target = document.getElementById(decodeURIComponent(location.hash.slice(1)))
+  target?.scrollIntoView({block: "start"})
+})
+window.addEventListener("hashchange", revealHash)
+// After the initial join patch, which would undo a reveal made before it.
+window.addEventListener("phx:page-loading-stop", () => setTimeout(revealHash, 0))
+window.addEventListener("phx:hm:scroll-to", ({detail}) => {
+  // The new card arrives in the same patch; wait for it to be in the DOM.
+  requestAnimationFrame(() => reveal(detail?.id))
+})
+// Clicking a link to the anchor that is already in the address bar fires no hashchange.
+document.addEventListener("click", e => {
+  const link = e.target.closest?.("a[href^='#feedback-']")
+  if (link && link.getAttribute("href") === location.hash) reveal(location.hash.slice(1))
+})
+// 复制链接 of a feedback card: the page address with the card's anchor.
+window.addEventListener("hm:copy-link", ({detail}) => {
+  const url = `${location.origin}${location.pathname}#${detail?.anchor || ""}`
+  navigator.clipboard?.writeText(url)
 })
 
 // Command palette actions that run on the client.

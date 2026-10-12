@@ -70,8 +70,9 @@ defmodule HelmsmanWeb.TaskComponents do
 
   @doc """
   One history entry (oldest first in the timeline): actor, action (创建了任务 or
-  `from → to`), relative time, the 自动 mark, comment, commits and test result.
-  Works with entries without `commits`, `tests` or `auto`.
+  `from → to`), relative time, the 自动 mark, the reason (a link to its feedback) or
+  else the comment, commits and test result. Works with entries without `commits`,
+  `tests`, `auto` or `feedback`.
   """
   attr :id, :string, required: true
   attr :entry, :map, required: true
@@ -85,7 +86,9 @@ defmodule HelmsmanWeb.TaskComponents do
         commits: Map.get(entry, :commits) || [],
         tests: Map.get(entry, :tests),
         auto: Map.get(entry, :auto, false) == true,
-        comment: Map.get(entry, :comment)
+        comment: Map.get(entry, :comment),
+        reason: Map.get(entry, :feedback),
+        reason_seq: HelmsmanWeb.FeedbackTimeline.seq_of(Map.get(entry, :feedback))
       )
 
     ~H"""
@@ -109,8 +112,14 @@ defmodule HelmsmanWeb.TaskComponents do
           class="ml-auto text-caption text-fg-subtle"
         />
       </div>
+      <p :if={@reason} data-reason class="text-body text-fg-muted">
+        {dgettext("ui", "原因：")}<a
+          href={"#feedback-#{@reason_seq}"}
+          class="font-mono text-label text-fg-muted hover:text-brand-fg"
+        >{@reason}</a>
+      </p>
       <p
-        :if={@comment not in [nil, ""]}
+        :if={!@reason and @comment not in [nil, ""]}
         data-comment
         class="whitespace-pre-wrap break-words text-body text-fg"
         phx-no-format

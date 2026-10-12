@@ -52,6 +52,7 @@ config :helmsman, HelmsmanWeb.Endpoint,
   secret_key_base: "rr3qT6PRH3QNe9cPnVe+Qo8lshhq9C0nz2A+ZSNQurMranGuj6IRi6G9tUzmACPr",
   watchers: [
     esbuild: {Esbuild, :install_and_run, [:helmsman, ~w(--sourcemap=inline --watch)]},
+    esbuild_mermaid: {Esbuild, :install_and_run, [:helmsman_mermaid, ~w(--watch)]},
     tailwind: {Tailwind, :install_and_run, [:helmsman, ~w(--watch)]}
   ]
 

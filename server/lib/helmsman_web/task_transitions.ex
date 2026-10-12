@@ -79,6 +79,19 @@ defmodule HelmsmanWeb.TaskTransitions do
   def direct_label("new"), do: dgettext("ui", "恢复")
   def direct_label(to), do: Status.task_status(to).label
 
+  @doc """
+  Kind of the reason feedback of a transition to `to` (designs/09 §3): a comment for
+  撤销, a review for 打回, 重开, 拒绝 and 重新提交.
+
+      iex> HelmsmanWeb.TaskTransitions.reason_kind("cancelled")
+      "comment"
+      iex> HelmsmanWeb.TaskTransitions.reason_kind("in_progress")
+      "review"
+  """
+  @spec reason_kind(String.t()) :: String.t()
+  def reason_kind("cancelled"), do: "comment"
+  def reason_kind(_to), do: "review"
+
   @doc "Explanation shown in the reason panel of `from → to`."
   @spec panel_help(String.t(), String.t()) :: String.t()
   def panel_help("done", "in_progress"),

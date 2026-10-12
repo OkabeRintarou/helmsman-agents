@@ -37,13 +37,30 @@ defmodule HelmsmanWeb.TaskEvidenceTest do
   end
 
   test "a reason panel needs a reason; the evidence comment is optional" do
-    assert TaskEvidence.parse(%{"kind" => "reason", "comment" => "  "}) ==
+    assert TaskEvidence.parse(%{"kind" => "reason", "to" => "cancelled", "comment" => "  "}) ==
              {:error, %{comment: "请填写原因"}}
 
-    assert {:ok, %{comment: "登录后仍跳到首页"}} =
-             TaskEvidence.parse(%{"kind" => "reason", "comment" => " 登录后仍跳到首页 "})
-
     assert {:ok, opts} = TaskEvidence.parse(%{"kind" => "evidence", "comment" => ""})
+    refute Map.has_key?(opts, :comment)
+
+    assert {:ok, %{comment: "looks good"}} =
+             TaskEvidence.parse(%{"kind" => "evidence", "comment" => " looks good "})
+  end
+
+  test "a reason becomes the transition's reason feedback" do
+    for {to, kind} <- [
+          {"cancelled", "comment"},
+          {"in_progress", "review"},
+          {"rejected", "review"},
+          {"new", "review"}
+        ] do
+      assert TaskEvidence.parse(%{"kind" => "reason", "to" => to, "comment" => "登录后仍跳到首页"}) ==
+               {:ok, %{feedback: %{kind: kind, content: "登录后仍跳到首页"}}}
+    end
+
+    assert {:ok, opts} =
+             TaskEvidence.parse(%{"kind" => "reason", "to" => "in_progress", "comment" => "x"})
+
     refute Map.has_key?(opts, :comment)
   end
 end

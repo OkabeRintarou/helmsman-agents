@@ -10,9 +10,23 @@ defmodule HelmsmanWeb.TaskLive.Show do
   """
   use HelmsmanWeb, :live_view
 
-  alias Helmsman.{Events, Policy, Tasks}
+  require Logger
+
+  alias Helmsman.{Events, Feedback, Policy, Tasks}
   alias Helmsman.Tasks.StateMachine
-  alias HelmsmanWeb.{FormErrors, TaskComponents, TaskData, TaskEvidence, TaskTransitions}
+
+  alias HelmsmanWeb.{
+    FeedbackComponents,
+    FeedbackTimeline,
+    FormErrors,
+    Markdown,
+    MarkdownEditor,
+    TaskComponents,
+    TaskData,
+    TaskEvidence,
+    TaskTransitions
+  }
+
   alias HelmsmanWeb.TaskLive.TransitionErrors
 
   @fields ~w(title description)
@@ -40,13 +54,24 @@ defmodule HelmsmanWeb.TaskLive.Show do
        page_title: page_title(detail),
        can_edit?: Policy.authorize(scope, :update_task) == :ok,
        can_transition?: Policy.authorize(scope, :transition_task) == :ok,
+       can_feedback?: Policy.authorize(scope, :add_feedback) == :ok,
        editing: %{"title" => nil, "description" => nil},
        field_errors: %{},
        labels_draft: nil,
        assignable: TaskData.assignable(scope),
        label_options: TaskData.labels(scope, detail.project_key),
-       transition_panel: nil
+       transition_panel: nil,
+       feedback_panel: nil,
+       feedback_html: %{},
+       description_html: nil,
+       revisable: revisable(scope, detail.id),
+       fresh_after: detail.feedback |> Enum.map(& &1.seq) |> Enum.max(fn -> 0 end),
+       # Editing sessions (design D14): one more for every new edit, never reused.
+       feedback_session: 0,
+       description_session: 0,
+       transition_session: 0
      )
+     |> cache_rendered()
      |> then(
        &if(connected?(&1), do: push_event(&1, "hm:visit-task", %{ident: detail.id}), else: &1)
      )}
@@ -83,6 +108,11 @@ defmodule HelmsmanWeb.TaskLive.Show do
           updated?: false
         })
 
+      socket =
+        if field == "description",
+          do: update(socket, :description_session, &(&1 + 1)),
+          else: socket
+
       {:noreply,
        assign(socket,
          editing: editing,
@@ -93,15 +123,17 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
-  def handle_event("draft_field", %{"field" => field, "value" => value}, socket)
+  def handle_event("draft_field", %{"field" => field, "value" => value} = params, socket)
       when field in @fields do
-    {:noreply, update_editing(socket, field, &%{&1 | draft: value})}
+    if current_session?(socket, field, params),
+      do: {:noreply, update_editing(socket, field, &%{&1 | draft: value})},
+      else: {:noreply, socket}
   end
 
-  def handle_event("save_field", %{"field" => field, "value" => value}, socket)
+  def handle_event("save_field", %{"field" => field, "value" => value} = params, socket)
       when field in @fields do
-    case socket.assigns.editing[field] do
-      nil ->
+    case current_session?(socket, field, params) && socket.assigns.editing[field] do
+      falsy when falsy in [nil, false] ->
         {:noreply, socket}
 
       edit ->
@@ -111,12 +143,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
-  def handle_event("cancel_field", %{"field" => field}, socket) when field in @fields do
-    {:noreply,
-     assign(socket,
-       editing: Map.put(socket.assigns.editing, field, nil),
-       field_errors: Map.delete(socket.assigns.field_errors, field)
-     )}
+  def handle_event("cancel_field", %{"field" => field} = params, socket) when field in @fields do
+    if current_session?(socket, field, params) do
+      {:noreply,
+       assign(socket,
+         editing: Map.put(socket.assigns.editing, field, nil),
+         field_errors: Map.delete(socket.assigns.field_errors, field)
+       )}
+    else
+      {:noreply, socket}
+    end
   end
 
   ## Priority, assignee and labels
@@ -217,33 +253,84 @@ defmodule HelmsmanWeb.TaskLive.Show do
           blocked: nil
         }
 
-        {:noreply, assign(socket, :transition_panel, panel)}
+        {:noreply,
+         socket
+         |> update(:transition_session, &(&1 + 1))
+         |> assign(:transition_panel, panel)}
     end
   end
 
   def handle_event("close_transition", _params, socket),
     do: {:noreply, assign(socket, :transition_panel, nil)}
 
-  def handle_event("transition_change", %{"transition" => params}, socket) do
-    {:noreply, update_panel(socket, &%{&1 | params: params})}
+  def handle_event("transition_change", %{"transition" => params} = form, socket) do
+    if transition_session?(socket, form),
+      do: {:noreply, update_panel(socket, &%{&1 | params: params})},
+      else: {:noreply, socket}
   end
 
-  def handle_event("submit_transition", %{"transition" => params}, socket) do
+  def handle_event("submit_transition", %{"transition" => params} = form, socket) do
     panel = socket.assigns.transition_panel
 
-    if panel == nil or panel.blocked do
+    if panel == nil or panel.blocked != nil or not transition_session?(socket, form) do
       {:noreply, socket}
     else
       socket = update_panel(socket, &%{&1 | params: params})
       kind = if panel.kind == :reason, do: "reason", else: "evidence"
 
-      case TaskEvidence.parse(Map.put(params, "kind", kind)) do
+      case TaskEvidence.parse(Map.merge(params, %{"kind" => kind, "to" => panel.to})) do
         {:error, errors} ->
           {:noreply, update_panel(socket, &%{&1 | errors: errors, top: nil})}
 
         {:ok, opts} ->
           {:noreply, run_transition(socket, panel, opts)}
       end
+    end
+  end
+
+  ## Feedback (design D5)
+
+  def handle_event("open_feedback", %{"mode" => mode} = params, socket)
+      when mode in ~w(add answer revise) do
+    case socket.assigns.can_feedback? && build_feedback_panel(socket, mode, params["target"]) do
+      panel when is_map(panel) ->
+        session = socket.assigns.feedback_session + 1
+
+        {:noreply,
+         assign(socket,
+           feedback_session: session,
+           feedback_panel: Map.put(panel, :session, session)
+         )}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("close_feedback", _params, socket),
+    do: {:noreply, assign(socket, :feedback_panel, nil)}
+
+  def handle_event("feedback_change", %{"feedback" => params} = form, socket) do
+    if feedback_session?(socket, form) do
+      {:noreply,
+       update_feedback_panel(socket, fn panel ->
+         %{panel | kind: kind_param(panel, params), content: params["content"] || panel.content}
+       end)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("submit_feedback", %{"feedback" => params} = form, socket) do
+    panel = socket.assigns.feedback_panel
+
+    if panel == nil or panel.blocked != nil or not feedback_session?(socket, form) do
+      {:noreply, socket}
+    else
+      content = params["content"] || ""
+      kind = kind_param(panel, params)
+      socket = update_feedback_panel(socket, &%{&1 | kind: kind, content: content})
+      {:noreply, submit_feedback(socket, panel, %{kind: kind, content: content})}
     end
   end
 
@@ -292,6 +379,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
   @impl true
   def handle_info({:task_updated, _ident}, socket), do: {:noreply, refresh(socket)}
   def handle_info({:task_transitioned, _payload}, socket), do: {:noreply, refresh(socket)}
+  def handle_info({:feedback_added, _view}, socket), do: {:noreply, refresh(socket)}
 
   ## Helpers
 
@@ -324,7 +412,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
         put_flash(socket, :error, dgettext("ui", "没有权限执行此操作"))
 
       {:error, reason} ->
-        require Logger
         Logger.error("Task update failed: #{inspect(reason)}")
         put_flash(socket, :error, dgettext("ui", "操作失败，请稍后重试"))
     end
@@ -394,9 +481,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
       task: detail,
       page_title: page_title(detail),
       editing: editing,
-      label_options: label_options
+      label_options: label_options,
+      revisable: revisable(socket.assigns.current_scope, detail.id)
     )
+    |> cache_rendered()
     |> check_panel()
+    |> check_feedback_panel()
   end
 
   defp check_panel(socket) do
@@ -426,6 +516,212 @@ defmodule HelmsmanWeb.TaskLive.Show do
   defp buttons(%{task: task}),
     do: TaskTransitions.buttons(task.status, allowed(task.status))
 
+  ## Editing sessions (design D14)
+
+  defp current_session?(socket, "description", params) do
+    session =
+      MarkdownEditor.session_of(%{"session" => params["session"] || params["editor_session"]})
+
+    session == socket.assigns.description_session
+  end
+
+  defp current_session?(_socket, _field, _params), do: true
+
+  # A reason panel's form must come from the current reason editor; evidence panels
+  # have no editor.
+  defp transition_session?(socket, form) do
+    case socket.assigns.transition_panel do
+      %{kind: :reason} ->
+        MarkdownEditor.session_of(%{"session" => form["editor_session"]}) ==
+          socket.assigns.transition_session
+
+      _ ->
+        true
+    end
+  end
+
+  defp feedback_session?(socket, form) do
+    case socket.assigns.feedback_panel do
+      nil -> false
+      panel -> MarkdownEditor.session_of(%{"session" => form["editor_session"]}) == panel.session
+    end
+  end
+
+  ## Feedback helpers
+
+  defp build_feedback_panel(_socket, "add", _target),
+    do: new_feedback_panel(:add, nil, "comment", "")
+
+  defp build_feedback_panel(socket, "answer", target) do
+    case find_feedback(socket, target) do
+      %{kind: "question", status: "active"} = question ->
+        quote = %{
+          id: question.id,
+          seq: question.seq,
+          text: TaskComponents.excerpt(question.content, 140)
+        }
+
+        %{new_feedback_panel(:answer, question.id, "answer", "") | quote: quote}
+
+      _ ->
+        nil
+    end
+  end
+
+  defp build_feedback_panel(socket, "revise", target) do
+    with true <- MapSet.member?(socket.assigns.revisable, target),
+         %{status: "active"} = entry <- find_feedback(socket, target) do
+      new_feedback_panel(:revise, entry.id, entry.kind, entry.content)
+    else
+      _ -> nil
+    end
+  end
+
+  defp new_feedback_panel(mode, target, kind, content) do
+    %{
+      mode: mode,
+      target: target,
+      kind: kind,
+      initial: content,
+      content: content,
+      quote: nil,
+      errors: %{},
+      top: nil,
+      blocked: nil
+    }
+  end
+
+  defp find_feedback(socket, id), do: Enum.find(socket.assigns.task.feedback, &(&1.id == id))
+
+  defp kind_param(%{mode: :answer}, _params), do: "answer"
+
+  defp kind_param(panel, params) do
+    if params["kind"] in ~w(comment review question answer), do: params["kind"], else: panel.kind
+  end
+
+  defp update_feedback_panel(socket, fun) do
+    case socket.assigns.feedback_panel do
+      nil -> socket
+      panel -> assign(socket, :feedback_panel, fun.(panel))
+    end
+  end
+
+  defp submit_feedback(socket, panel, attrs) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    result =
+      case panel.mode do
+        :revise -> Feedback.revise(scope, panel.target, attrs)
+        _ -> Feedback.add(scope, task.id, attrs)
+      end
+
+    case result do
+      {:ok, entry} ->
+        socket
+        |> assign(:feedback_panel, nil)
+        |> refresh()
+        |> push_event("hm:scroll-to", %{id: "feedback-#{entry.seq}"})
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        messages = FormErrors.messages(changeset)
+
+        errors =
+          %{
+            content: FormErrors.first(messages, :content),
+            kind: FormErrors.first(messages, :kind)
+          }
+          |> Map.reject(fn {_field, text} -> is_nil(text) end)
+
+        update_feedback_panel(socket, &%{&1 | errors: errors, top: nil})
+
+      {:error, {:superseded, latest}} ->
+        socket
+        |> refresh()
+        |> update_feedback_panel(&%{&1 | blocked: superseded_text(latest), errors: %{}, top: nil})
+
+      {:error, reason} ->
+        update_feedback_panel(socket, &%{&1 | top: feedback_error(reason), errors: %{}})
+    end
+  end
+
+  defp feedback_error(:forbidden), do: dgettext("ui", "没有权限执行此操作")
+  defp feedback_error(:not_found), do: dgettext("ui", "任务不存在")
+
+  defp feedback_error(reason) do
+    Logger.error("Feedback write failed: #{inspect(reason)}")
+    dgettext("ui", "操作失败，请稍后重试")
+  end
+
+  defp superseded_text(latest),
+    do: dgettext("ui", "这条 Feedback 已被修订为 %{id}，请修订最新版本", id: latest)
+
+  # An open revision whose record was revised meanwhile can no longer be submitted.
+  defp check_feedback_panel(socket) do
+    case socket.assigns.feedback_panel do
+      %{mode: :revise, blocked: nil, target: target} ->
+        case find_feedback(socket, target) do
+          %{superseded_by: next} = entry when is_binary(next) ->
+            latest =
+              Enum.find(
+                socket.assigns.task.feedback,
+                &(&1.thread_seq == entry.thread_seq and &1.status == "active")
+              )
+
+            update_feedback_panel(
+              socket,
+              &%{&1 | blocked: superseded_text((latest || %{id: next}).id)}
+            )
+
+          _ ->
+            socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
+  defp revisable(scope, ident) do
+    case Feedback.revisable_ids(scope, ident) do
+      {:ok, ids} -> ids
+      {:error, _} -> MapSet.new()
+    end
+  end
+
+  # Feedback never changes: each record is rendered once (design D2); the description
+  # again only when it changed.
+  defp cache_rendered(socket) do
+    %{task: task, feedback_html: cache, current_scope: scope} = socket.assigns
+
+    rendered =
+      for view <- task.feedback, not Map.has_key?(cache, view.seq), into: cache do
+        {view.seq, render_feedback(view, scope)}
+      end
+
+    description_html =
+      case socket.assigns.description_html do
+        {content, _html} = cached when content == task.description ->
+          cached
+
+        _ ->
+          {task.description, Markdown.to_html(task.description, scope: scope, anchor_ns: "desc")}
+      end
+
+    assign(socket, feedback_html: rendered, description_html: description_html)
+  end
+
+  @doc false
+  # Emits [:helmsman_web, :feedback, :render] so tests can see what was rendered.
+  def render_feedback(view, scope) do
+    :telemetry.execute([:helmsman_web, :feedback, :render], %{count: 1}, %{id: view.id})
+
+    Markdown.to_html(view.content,
+      scope: scope,
+      anchor_ns: "fb-#{view.seq}",
+      mentions: view.mentions
+    )
+  end
+
   ## Rendering
 
   @impl true
@@ -439,7 +735,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
         slug: slug,
         primary: primary,
         secondary: secondary,
-        assignees: assignee_options(assigns.assignable, assigns.task.assignee)
+        assignees: assignee_options(assigns.assignable, assigns.task.assignee),
+        open_question:
+          assigns.task.open_question && FeedbackTimeline.last_open_question(assigns.task.feedback)
       )
 
     ~H"""
@@ -448,6 +746,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
         <.page_header title={@task.id}>
           <:crumb navigate={"/w/#{@slug}/p/#{@task.project_key}"}>{@task.project_key}</:crumb>
           <:actions>
+            <a
+              :if={@task.open_question}
+              id="task-open-question"
+              href={"#feedback-#{@open_question && @open_question.seq}"}
+              class="inline-flex rounded-badge"
+            >
+              <.badge tone={:warning}>
+                <.icon name="lucide-circle-question-mark" class="size-3.5" />{dgettext("ui", "待回答")}
+              </.badge>
+            </a>
             <span id="task-status"><.status_badge status={@task.status} /></span>
             <div :if={@secondary != []} class="flex items-center gap-2 max-sm:hidden">
               <.transition_button :for={button <- @secondary} button={button} from={@task.status} />
@@ -480,6 +788,18 @@ defmodule HelmsmanWeb.TaskLive.Show do
             edit={@editing["description"]}
             error={@field_errors["description"]}
             can_edit?={@can_edit?}
+            html={elem(@description_html, 1)}
+            scope={@current_scope}
+            session={@description_session}
+            candidates={@assignable}
+          />
+          <FeedbackComponents.timeline
+            feedback={@task.feedback}
+            html={@feedback_html}
+            scope={@current_scope}
+            revisable={@revisable}
+            can_feedback?={@can_feedback?}
+            fresh_after={@fresh_after}
           />
         </section>
         <aside class="flex min-w-0 flex-col gap-6" aria-label={dgettext("ui", "属性")}>
@@ -573,6 +893,14 @@ defmodule HelmsmanWeb.TaskLive.Show do
         panel={@transition_panel}
         task={@task}
         scope={@current_scope}
+        session={@transition_session}
+        candidates={@assignable}
+      />
+      <.feedback_panel
+        panel={@feedback_panel}
+        task={@task}
+        scope={@current_scope}
+        candidates={@assignable}
       />
     </Layouts.app>
     """
@@ -670,6 +998,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
     """
   end
 
+  attr :task, :map, required: true
+  attr :edit, :map, default: nil
+  attr :error, :string, default: nil
+  attr :can_edit?, :boolean, required: true
+  attr :html, :any, required: true
+  attr :scope, :map, required: true
+  attr :session, :integer, required: true
+  attr :candidates, :list, required: true
+
   defp description_field(%{edit: nil} = assigns) do
     ~H"""
     <div id="task-description" class="flex flex-col gap-2">
@@ -686,12 +1023,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
           {dgettext("ui", "编辑")}
         </.button>
       </div>
-      <p
-        :if={@task.description != ""}
-        id="task-description-text"
-        class="whitespace-pre-wrap break-words text-body text-fg"
-        phx-no-format
-      >{@task.description}</p>
+      <div :if={@task.description != ""} id="task-description-text">
+        <.markdown content={@task.description} html={@html} scope={@scope} anchor_ns="desc" />
+      </div>
       <button
         :if={@task.description == "" and @can_edit?}
         type="button"
@@ -719,23 +1053,20 @@ defmodule HelmsmanWeb.TaskLive.Show do
         class="flex flex-col gap-2"
       >
         <input type="hidden" name="field" value="description" />
-        <label for="task-description-input" class="sr-only">{dgettext("ui", "描述")}</label>
-        <textarea
-          id="task-description-input"
+        <.live_component
+          module={MarkdownEditor}
+          id="description-editor"
+          session={@session}
+          scope={@scope}
           name="value"
-          rows="10"
-          phx-hook="Editor"
-          phx-debounce="300"
-          data-field="description"
-          data-submit="mod-enter"
-          autofocus
-          aria-invalid={@error && "true"}
-          aria-describedby={@error && "task-description-error"}
-          class="w-full rounded-field border border-border-strong bg-surface px-2 py-1.5 text-body leading-5 text-fg focus:border-brand focus:outline-none"
-        >{@edit.draft}</textarea>
-        <p :if={@error} id="task-description-error" role="alert" class="text-caption text-danger-fg">
-          {@error}
-        </p>
+          value={@edit.original}
+          label={dgettext("ui", "描述")}
+          errors={List.wrap(@error)}
+          submit={:event}
+          field="description"
+          rows={10}
+          candidates={@candidates}
+        />
         <div class="flex items-center gap-2">
           <p :if={@edit.updated?} class="text-caption text-warning-fg" data-updated>
             {dgettext("ui", "有更新")}
@@ -747,7 +1078,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
           <.button
             id="task-description-cancel"
             size="sm"
-            phx-click={JS.push("cancel_field", value: %{field: "description"})}
+            phx-click={JS.push("cancel_field", value: %{field: "description", session: @session})}
           >
             {dgettext("ui", "取消")}
           </.button>
@@ -909,6 +1240,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
   attr :panel, :map, default: nil
   attr :task, :map, required: true
   attr :scope, :map, required: true
+  attr :session, :integer, default: 0
+  attr :candidates, :list, default: []
 
   defp transition_panel(%{panel: nil} = assigns) do
     ~H"""
@@ -937,6 +1270,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       show
       title={"#{@panel.label} #{@task.id}"}
       dirty
+      focus={if(@panel.kind == :reason, do: "#transition-editor-input-#{@session}")}
       on_cancel={JS.push("close_transition")}
     >
       <:error :if={@panel.blocked || @panel.top}>
@@ -1014,14 +1348,18 @@ defmodule HelmsmanWeb.TaskLive.Show do
             rows="4"
           />
         <% else %>
-          <.input
-            type="textarea"
-            id="transition-comment"
+          <.live_component
+            module={MarkdownEditor}
+            id="transition-editor"
+            session={@session}
+            scope={@scope}
             name="transition[comment]"
+            value=""
             label={dgettext("ui", "原因")}
-            value={@panel.params["comment"]}
             errors={List.wrap(@panel.errors[:comment])}
-            rows="5"
+            submit={:form}
+            rows={6}
+            candidates={@candidates}
           />
         <% end %>
       </.form>
@@ -1037,6 +1375,113 @@ defmodule HelmsmanWeb.TaskLive.Show do
             disabled={@panel.blocked != nil}
           >
             {@panel.label}
+          </.button>
+        </div>
+      </:footer>
+    </.side_panel>
+    """
+  end
+
+  # Always rendered (closed when `panel` is nil), like the transition panel.
+  attr :panel, :map, default: nil
+  attr :task, :map, required: true
+  attr :scope, :map, required: true
+  attr :candidates, :list, required: true
+
+  defp feedback_panel(%{panel: nil} = assigns) do
+    ~H"""
+    <.side_panel id="feedback-panel" show={false} title="" on_cancel={JS.push("close_feedback")}>
+      <div />
+    </.side_panel>
+    """
+  end
+
+  defp feedback_panel(assigns) do
+    panel = assigns.panel
+
+    title =
+      case panel.mode do
+        :revise -> dgettext("ui", "修订 %{id}", id: panel.target)
+        :answer -> dgettext("ui", "回答 %{id}", id: panel.target)
+        :add -> dgettext("ui", "添加 Feedback")
+      end
+
+    assigns =
+      assign(assigns,
+        title: title,
+        dirty: String.trim(panel.content || "") != "",
+        submit_label:
+          if(panel.mode == :revise, do: dgettext("ui", "修订"), else: dgettext("ui", "提交"))
+      )
+
+    ~H"""
+    <.side_panel
+      id="feedback-panel"
+      show
+      title={@title}
+      dirty={@dirty}
+      focus={"#feedback-editor-input-#{@panel.session}"}
+      on_cancel={JS.push("close_feedback")}
+    >
+      <:error :if={@panel.blocked || @panel.top}>
+        <span id="feedback-panel-error">{@panel.blocked || @panel.top}</span>
+      </:error>
+      <blockquote
+        :if={@panel.quote}
+        id="feedback-quote"
+        class="mb-4 border-l-2 border-border-strong pl-3 text-body text-fg-muted"
+      >
+        <a href={"#feedback-#{@panel.quote.seq}"} class="font-mono text-label hover:text-brand-fg">
+          {@panel.quote.id}
+        </a>
+        <p class="mt-0.5 break-words">{@panel.quote.text}</p>
+      </blockquote>
+      <.form
+        for={%{}}
+        as={:feedback}
+        id="feedback-form"
+        phx-change="feedback_change"
+        phx-submit="submit_feedback"
+        class="flex flex-col gap-4"
+      >
+        <.input
+          :if={@panel.mode != :answer}
+          type="radio"
+          id="feedback-kind"
+          name="feedback[kind]"
+          label={dgettext("ui", "种类")}
+          value={@panel.kind}
+          options={FeedbackComponents.kind_options()}
+          errors={List.wrap(@panel.errors[:kind])}
+        />
+        <.live_component
+          module={MarkdownEditor}
+          id="feedback-editor"
+          session={@panel.session}
+          scope={@scope}
+          name="feedback[content]"
+          value={@panel.initial}
+          label={dgettext("ui", "内容")}
+          errors={List.wrap(@panel.errors[:content])}
+          submit={:form}
+          rows={8}
+          placeholder={dgettext("ui", "支持 Markdown，输入 @ 提及")}
+          candidates={@candidates}
+        />
+      </.form>
+      <:footer :let={cancel}>
+        <span class="text-caption text-fg-subtle"><.kbd mod>Enter</.kbd>
+        {@submit_label}</span>
+        <div class="flex items-center gap-2">
+          <.button phx-click={cancel}>{dgettext("ui", "取消")}</.button>
+          <.button
+            id="feedback-submit"
+            type="submit"
+            form="feedback-form"
+            variant="primary"
+            disabled={@panel.blocked != nil}
+          >
+            {@submit_label}
           </.button>
         </div>
       </:footer>

@@ -115,11 +115,21 @@ defmodule Helmsman.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
-      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind helmsman", "esbuild helmsman"],
+      "assets.setup": [
+        "tailwind.install --if-missing",
+        "esbuild.install --if-missing",
+        "cmd --cd assets npm ci"
+      ],
+      "assets.build": [
+        "compile",
+        "tailwind helmsman",
+        "esbuild helmsman",
+        "esbuild helmsman_mermaid"
+      ],
       "assets.deploy": [
         "tailwind helmsman --minify",
         "esbuild helmsman --minify",
+        "esbuild helmsman_mermaid",
         "phx.digest"
       ],
       # Check-only quality gate shared with CI; it never rewrites files.

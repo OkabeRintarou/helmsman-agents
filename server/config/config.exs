@@ -99,6 +99,13 @@ config :esbuild,
       ~w(js/app.js --bundle --target=es2022 --outdir=../priv/static/assets/js --external:/fonts/* --external:/images/* --alias:@=.),
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
+  ],
+  # Mermaid in its own file, loaded only by pages that show a diagram (designs/09 §6).
+  helmsman_mermaid: [
+    args:
+      ~w(js/mermaid.js --bundle --minify --format=iife --target=es2022 --outdir=../priv/static/assets/js),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => [Path.expand("../assets/node_modules", __DIR__)]}
   ]
 
 # Configure tailwind (the version is required)

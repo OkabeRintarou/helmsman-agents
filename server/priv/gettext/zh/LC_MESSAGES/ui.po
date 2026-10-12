@@ -293,6 +293,7 @@ msgstr ""
 msgid "复制当前页面链接"
 msgstr ""
 
+#: lib/helmsman_web/feedback_components.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #, elixir-autogen, elixir-format
 msgid "复制链接"
@@ -543,6 +544,7 @@ msgstr ""
 msgid "暗"
 msgstr ""
 
+#: lib/helmsman_web/feedback_components.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #, elixir-autogen, elixir-format
@@ -912,7 +914,7 @@ msgid "名称"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
-#, elixir-autogen, elixir-format, fuzzy
+#, elixir-autogen, elixir-format
 msgid "禁用提交"
 msgstr ""
 
@@ -1448,6 +1450,7 @@ msgstr ""
 msgid "描述（可选）"
 msgstr ""
 
+#: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/task_components.ex
 #, elixir-autogen, elixir-format
@@ -1607,6 +1610,7 @@ msgid "添加描述…"
 msgstr ""
 
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/markdown_editor.ex
 #, elixir-autogen, elixir-format
 msgid "编辑"
 msgstr ""
@@ -2410,4 +2414,163 @@ msgstr ""
 #: lib/helmsman_web/controllers/github_controller.ex
 #, elixir-autogen, elixir-format
 msgid "链接无效或已过期，请重新创建。"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "Feedback"
+msgstr ""
+
+#: lib/helmsman_web/components/markdown.ex
+#, elixir-autogen, elixir-format
+msgid "Mermaid 图表"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 %{n} KB"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "任务不存在"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "修订"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "修订 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "修订自 #%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "内容"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "原因："
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "取代"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "回答"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "回答 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/components/markdown.ex
+#, elixir-autogen, elixir-format
+msgid "图表无法渲染："
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "复制 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "已作废，被"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "待回答"
+msgstr ""
+
+#: lib/helmsman_web/markdown_editor.ex
+#, elixir-autogen, elixir-format
+msgid "提及"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "提问"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "支持 Markdown，输入 @ 提及"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "早期版本（%{n}）"
+msgstr ""
+
+#: lib/helmsman_web/markdown_editor.ex
+#, elixir-autogen, elixir-format
+msgid "没有内容"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "添加 Feedback"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "演示编辑器"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "种类"
+msgstr ""
+
+#: lib/helmsman_web/markdown_editor.ex
+#, elixir-autogen, elixir-format
+msgid "编辑方式"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "评审"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "评论"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "还没有 Feedback"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "这条 Feedback 已被修订为 %{id}，请修订最新版本"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "重新开始"
+msgstr ""
+
+#: lib/helmsman_web/markdown_editor.ex
+#, elixir-autogen, elixir-format
+msgid "预览"
 msgstr ""

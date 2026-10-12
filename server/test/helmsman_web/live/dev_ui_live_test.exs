@@ -8,7 +8,7 @@ defmodule HelmsmanWeb.Dev.UiLiveTest do
     html = html_response(conn, 200)
 
     for section <-
-          ~w(buttons forms overlays menus tabs status identity text layout table icons tokens contrast) do
+          ~w(buttons forms overlays menus tabs status identity text markdown layout table icons tokens contrast) do
       assert html =~ ~s(id="section-#{section}"), "missing section #{section}"
     end
   end
@@ -27,5 +27,24 @@ defmodule HelmsmanWeb.Dev.UiLiveTest do
     assert has_element?(view, ~s([data-theme-option="dark"]))
     assert has_element?(view, "#contrast-helmsman-light")
     assert has_element?(view, "#contrast-helmsman-dark")
+  end
+
+  test "the Markdown section shows highlighted code and a Mermaid block", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/dev/ui")
+
+    for selector <- [
+          "pre.lumis",
+          "pre[data-mermaid]",
+          "table",
+          "blockquote",
+          "input[type=checkbox]",
+          "section li[id]",
+          "span.hm-mention",
+          "h2"
+        ] do
+      assert has_element?(view, "#section-markdown .hm-prose " <> selector), selector
+    end
+
+    assert has_element?(view, "#section-markdown #demo-editor[data-hm-editor]")
   end
 end

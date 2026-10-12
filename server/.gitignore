@@ -38,3 +38,6 @@ npm-debug.log
 
 # Dialyzer PLTs.
 /priv/plts/
+
+# npm packages of the assets (mermaid only; `mix assets.setup` runs npm ci).
+/assets/node_modules/

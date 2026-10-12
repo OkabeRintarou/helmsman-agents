@@ -190,6 +190,7 @@ defmodule HelmsmanWeb.Components.Overlay do
   * `patch_on_close`: URL to patch to when closed (for panels driven by `?panel=…`).
   * `:error` slot is shown at the top of the body (e.g. a failed submit).
   * `:footer` slot is pinned to the bottom (secondary actions left, primary right).
+  * `focus`: selector of the element focused when the panel opens (e.g. an editor).
 
   The inner block receives the cancel JS, so a "取消" button can use `phx-click={cancel}`.
   """
@@ -200,6 +201,7 @@ defmodule HelmsmanWeb.Components.Overlay do
   attr :dirty, :boolean, default: false
   attr :patch_on_close, :string, default: nil
   attr :on_cancel, JS, default: %JS{}
+  attr :focus, :string, default: nil
   slot :inner_block, required: true
   slot :error
   slot :footer
@@ -214,6 +216,7 @@ defmodule HelmsmanWeb.Components.Overlay do
       show={@show}
       kind={:panel}
       dirty={@dirty}
+      focus={@focus}
       on_cancel={@on_cancel}
       position_class="justify-end"
       container_class={[

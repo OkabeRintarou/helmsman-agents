@@ -54,9 +54,7 @@ defmodule HelmsmanWeb.TaskLive.ShowTest do
       assert has_element?(view, ~s(header nav a[href="/w/#{ctx.slug}/p/BOS"]), "BOS")
       assert has_element?(view, "header h1", "BOS-3")
       assert has_element?(view, "#task-title", "Fix login")
-      # No template whitespace around the pre-wrapped text.
-      assert view |> element("#task-description-text") |> render() =~ ~r/>line 1\nline 2 &lt;/
-      assert has_element?(view, "#task-description-text.whitespace-pre-wrap")
+      assert has_element?(view, "#task-description-text .hm-prose p", "line 1")
       assert has_element?(view, "#task-properties", "优先级")
       assert has_element?(view, "#task-labels [data-label=api]")
       assert has_element?(view, "#task-history > li", "创建了任务")
@@ -64,7 +62,7 @@ defmodule HelmsmanWeb.TaskLive.ShowTest do
       assert render(view) =~ "lg:grid-cols-[minmax(0,1fr)_320px]"
     end
 
-    test "the description is escaped plain text", ctx do
+    test "raw HTML in the description is escaped", ctx do
       {:ok, _view, html} = live(as(ctx, :member), ctx.path)
       refute html =~ "<script>alert(1)</script>"
       assert html =~ "&lt;script&gt;alert(1)&lt;/script&gt;"
@@ -146,7 +144,7 @@ defmodule HelmsmanWeb.TaskLive.ShowTest do
 
       assert has_element?(
                view,
-               ~s(#task-description-input[phx-hook=Editor][data-submit=mod-enter])
+               ~s(#task-description-form #description-editor-input-1[name=value][phx-hook=Editor][data-submit=mod-enter][data-field=description])
              )
 
       view
@@ -155,6 +153,98 @@ defmodule HelmsmanWeb.TaskLive.ShowTest do
 
       assert current(ctx).description == "from the button"
       assert has_element?(view, "#task-description-text", "from the button")
+
+      view |> element("#task-description-edit") |> render_click()
+
+      render_hook(view, "save_field", %{
+        "field" => "description",
+        "value" => "from the keys",
+        "session" => 2
+      })
+
+      assert current(ctx).description == "from the keys"
+    end
+
+    test "Markdown description (Markdown 描述)", ctx do
+      {:ok, _} =
+        Tasks.update(ctx.scopes.owner, "BOS-3", %{description: "## 复现步骤\n\n1. 打开\n2. 登录"})
+
+      {:ok, view, _html} = live(as(ctx, :member), ctx.path)
+
+      assert has_element?(view, "#task-description-text .hm-prose h2", "复现步骤")
+      assert has_element?(view, "#task-description-text .hm-prose ol > li", "登录")
+      refute has_element?(view, "#task-description-text", "## 复现步骤")
+    end
+
+    test "previewing the description (预览描述)", ctx do
+      {:ok, view, _html} = live(as(ctx, :member), ctx.path)
+      view |> element("#task-description-edit") |> render_click()
+      editor = with_target(view, "#description-editor")
+
+      render_hook(editor, "set_mode", %{
+        "mode" => "preview",
+        "value" => "- [ ] 写测试",
+        "session" => 1
+      })
+
+      assert has_element?(view, "#description-editor-preview input[type=checkbox]")
+      assert has_element?(view, "#description-editor-source.hidden #description-editor-input-1")
+
+      render_hook(editor, "set_mode", %{"mode" => "edit", "value" => "- [ ] 写测试", "session" => 1})
+      view |> form("#task-description-form", %{value: "- [ ] 写测试"}) |> render_submit()
+
+      assert has_element?(view, "#task-description-text .hm-prose li input[type=checkbox]")
+    end
+
+    test "saving from the preview saves the textarea", ctx do
+      {:ok, view, _html} = live(as(ctx, :member), ctx.path)
+      view |> element("#task-description-edit") |> render_click()
+
+      render_hook(with_target(view, "#description-editor"), "set_mode", %{
+        "mode" => "preview",
+        "value" => "**预览中**",
+        "session" => 1
+      })
+
+      view |> form("#task-description-form", %{value: "**预览中**"}) |> render_submit()
+      assert current(ctx).description == "**预览中**"
+      assert has_element?(view, "#task-description-text strong", "预览中")
+    end
+
+    test "each edit starts a new editor with the description of that moment", ctx do
+      {:ok, view, _html} = live(as(ctx, :member), ctx.path)
+      view |> element("#task-description-edit") |> render_click()
+      view |> element("#task-description-cancel") |> render_click()
+
+      {:ok, _} = Tasks.update(ctx.scopes.bob, "BOS-3", %{description: "bob wrote this"})
+
+      view |> element("#task-description-edit") |> render_click()
+      refute has_element?(view, "#description-editor-input-1")
+      assert has_element?(view, "#description-editor-input-2", "bob wrote this")
+      assert has_element?(view, ~s(#description-editor-tab-edit[aria-selected="true"]))
+
+      view |> form("#task-description-form", %{value: "saved"}) |> render_submit()
+      view |> element("#task-description-edit") |> render_click()
+      assert has_element?(view, "#description-editor-input-3", "saved")
+    end
+
+    test "events of an earlier description session are ignored", ctx do
+      {:ok, view, _html} = live(as(ctx, :member), ctx.path)
+      view |> element("#task-description-edit") |> render_click()
+      view |> element("#task-description-cancel") |> render_click()
+      view |> element("#task-description-edit") |> render_click()
+
+      render_hook(view, "save_field", %{
+        "field" => "description",
+        "value" => "old tab",
+        "session" => 1
+      })
+
+      assert current(ctx).description =~ "line 1"
+      assert has_element?(view, "#description-editor-input-2")
+
+      render_hook(view, "cancel_field", %{"field" => "description", "session" => 1})
+      assert has_element?(view, "#description-editor-input-2")
     end
 
     test "viewers only read", ctx do
@@ -177,12 +267,14 @@ defmodule HelmsmanWeb.TaskLive.ShowTest do
       task = current(ctx)
       {:ok, _} = Tasks.update(ctx.scopes.bob, "BOS-3", %{description: "bob's"}, task.lock_version)
 
-      render_hook(view, "save_field", %{"field" => "description", "value" => "alice's"})
+      save = %{"field" => "description", "value" => "alice's", "session" => 1}
+      render_hook(view, "save_field", save)
       assert render(view) =~ "此任务已被其他人修改，已加载最新内容"
-      assert has_element?(view, "#task-description-input", "alice's")
+      # Same editing session: the textarea (the browser's draft) is left alone.
+      assert has_element?(view, "#description-editor-input-1")
       assert current(ctx).description == "bob's"
 
-      render_hook(view, "save_field", %{"field" => "description", "value" => "alice's"})
+      render_hook(view, "save_field", save)
       assert current(ctx).description == "alice's"
       assert has_element?(view, "#task-description-text", "alice's")
     end
@@ -276,11 +368,16 @@ defmodule HelmsmanWeb.TaskLive.ShowTest do
     test "an update while editing marks the editor and keeps the draft", ctx do
       {:ok, view, _html} = live(as(ctx, :member), ctx.path)
       view |> element("#task-description-edit") |> render_click()
-      render_change(view, "draft_field", %{"field" => "description", "value" => "my draft"})
+
+      render_change(view, "draft_field", %{
+        "field" => "description",
+        "value" => "my draft",
+        "editor_session" => "1"
+      })
 
       {:ok, _} = Tasks.update(ctx.scopes.bob, "BOS-3", %{description: "bob's version"})
 
-      assert has_element?(view, "#task-description-input", "my draft")
+      assert has_element?(view, "#description-editor-input-1")
       assert has_element?(view, "#task-description [data-updated]", "有更新")
 
       view |> element("#task-description-cancel") |> render_click()

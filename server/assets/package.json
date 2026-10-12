@@ -1,0 +1,8 @@
+{
+  "name": "helmsman-assets",
+  "private": true,
+  "description": "npm dependencies of the Helmsman assets: only Mermaid (designs/09 §6), bundled separately by the helmsman_mermaid esbuild profile.",
+  "dependencies": {
+    "mermaid": "11.17.2"
+  }
+}

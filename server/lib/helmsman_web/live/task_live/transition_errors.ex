@@ -17,6 +17,7 @@ defmodule HelmsmanWeb.TaskLive.TransitionErrors do
   require Logger
 
   alias HelmsmanWeb.Components.Status
+  alias HelmsmanWeb.FormErrors
 
   @spec message(term(), String.t()) :: {:blocked | :top | {:field, atom()}, String.t()}
   def message({:invalid_transition, from, _to, _allowed}, label) do
@@ -49,6 +50,22 @@ defmodule HelmsmanWeb.TaskLive.TransitionErrors do
     do: {:top, dgettext("ui", "你是执行方，验收需要通过的测试结果")}
 
   def message(:forbidden, _label), do: {:top, dgettext("ui", "没有权限执行此操作")}
+
+  # The reason feedback is invalid (too long, …): shown under the reason.
+  def message(%Ecto.Changeset{} = changeset, _label) do
+    messages = FormErrors.messages(changeset)
+
+    text =
+      FormErrors.first(messages, :content) || messages |> Map.values() |> List.flatten() |> hd()
+
+    {{:field, :comment}, text}
+  end
+
+  # Only a programming error sends a reason that is not a map.
+  def message({:invalid_feedback, _detail} = reason, label) do
+    Logger.error("Task transition #{label} failed: #{inspect(reason)}")
+    {:top, dgettext("ui", "操作失败，请稍后重试")}
+  end
 
   def message(reason, label) do
     Logger.error("Task transition #{label} failed: #{inspect(reason)}")

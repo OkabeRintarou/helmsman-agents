@@ -94,6 +94,7 @@ defmodule HelmsmanWeb do
       import HelmsmanWeb.Components.DataTable
       import HelmsmanWeb.Components.FilterBar
       import HelmsmanWeb.Components.Layout
+      import HelmsmanWeb.Components.Markdown
       import HelmsmanWeb.Components.Menu
       import HelmsmanWeb.Components.Overlay
       import HelmsmanWeb.Components.Status

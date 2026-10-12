@@ -3,6 +3,7 @@
 
 @import "tailwindcss" source(none);
 @import "phoenix-colocated/helmsman/colocated.css";
+@import "./markdown.css";
 @source "../css";
 @source "../js";
 @source "../../lib/helmsman_web";
