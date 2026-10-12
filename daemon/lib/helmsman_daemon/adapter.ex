@@ -1,0 +1,23 @@
+defmodule HelmsmanDaemon.Adapter do
+  @moduledoc "Extension point for agent CLI detection, launching and stream normalization."
+  alias HelmsmanDaemon.Launch
+  alias HelmsmanProtocol.RunSpec
+  @type action :: :close_stdin | {:write, iodata()}
+  @callback provider() :: :claude | :codex | :copilot | :cursor
+  @callback executable() :: String.t()
+  @callback min_version() :: Version.t()
+  @callback detect() :: {:ok, %{version: String.t(), models: [String.t()]}} | {:error, String.t()}
+  @callback prepare(RunSpec.t(), Path.t(), Path.t()) ::
+              {:ok, Launch.t()} | {:error, {atom(), String.t()}}
+  @callback init_state(RunSpec.t()) :: term()
+  @callback handle_output(:stdout | :stderr, binary(), term()) ::
+              {[{atom(), map()}], [action()], term()}
+  @callback finish(non_neg_integer(), term()) ::
+              {:succeeded | {:failed, atom(), String.t()}, map()}
+  @callback interrupt(term()) :: {:write, iodata()} | :signal
+  @callback steer(String.t(), term()) :: {:ok, iodata(), term()} | :unsupported
+
+  @adapters Application.compile_env(:helmsman_daemon, :adapters, [])
+  def registered, do: @adapters
+  def find(provider), do: Enum.find(@adapters, &(&1.provider() == provider))
+end

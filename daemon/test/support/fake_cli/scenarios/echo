@@ -1,0 +1,2 @@
+echo_stdin
+json {"type":"result","data":{"text":"done","success":true}}

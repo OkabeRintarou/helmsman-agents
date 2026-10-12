@@ -1,0 +1,4 @@
+ignore_term
+spawn_child
+out started
+sleep 600

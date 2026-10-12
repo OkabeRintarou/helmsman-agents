@@ -1,0 +1,31 @@
+#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  printf '1.0.0\n'
+  exit 0
+fi
+scenario=
+all_args=$(printf '%s\n' "$@")
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --scenario) scenario=$2; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$scenario" ] || exit 2
+while IFS= read -r line <&3 || [ -n "$line" ]; do
+  command=${line%% *}
+  value=${line#* }
+  case "$command" in
+    out|json) printf '%s\n' "$value" ;;
+    err) printf '%s\n' "$value" >&2 ;;
+    sleep) sleep "$value" ;;
+    spawn_child) sleep 600 & printf '%s\n' "$!" > "$FAKE_CLI_CHILD_PID_FILE" ;;
+    ignore_term) trap '' TERM ;;
+    echo_stdin) cat ;;
+    dump_env) env ;;
+    dump_argv) printf '%s\n' "$all_args" ;;
+    exit) exit "$value" ;;
+    ''|'#'*) ;;
+    *) printf 'unknown instruction: %s\n' "$command" >&2; exit 2 ;;
+  esac
+done 3< "$scenario"

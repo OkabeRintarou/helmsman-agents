@@ -66,7 +66,11 @@ jobs:
         run: mix ecto.rollback --all && mix ecto.migrate
 
   daemon:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         working-directory: daemon

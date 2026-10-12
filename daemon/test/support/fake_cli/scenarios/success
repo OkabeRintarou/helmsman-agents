@@ -1,0 +1,3 @@
+out hello
+json {"type":"result","data":{"text":"done","success":true}}
+exit 0

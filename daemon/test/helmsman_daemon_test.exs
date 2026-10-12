@@ -1,17 +1,10 @@
 defmodule HelmsmanDaemonTest do
   use ExUnit.Case, async: true
 
-  test "the application starts its top-level supervisor" do
-    pid = Process.whereis(HelmsmanDaemon.Supervisor)
-
-    assert is_pid(pid)
-    assert Process.alive?(pid)
+  test "application starts erlexec without starting the daemon" do
+    assert Process.whereis(HelmsmanDaemon.Supervisor) == nil
+    assert Enum.any?(Application.started_applications(), fn {app, _, _} -> app == :erlexec end)
   end
 
-  test "the shared protocol library is available with a positive version" do
-    version = HelmsmanProtocol.version()
-
-    assert is_integer(version)
-    assert version > 0
-  end
+  test "shared protocol is available", do: assert(HelmsmanProtocol.version() > 0)
 end
