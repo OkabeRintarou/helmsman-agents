@@ -41,11 +41,11 @@ API 调用用 Req 直接访问 REST / GraphQL；App 身份用 RS256 JWT（JOSE�
 | 任务在 CANCELLED / REJECTED | 关闭（不删分支，方便以后恢复） |
 | GitHub 上已被人直接合并 / 关闭 | 只记录，不改任务状态，任务详情页显示出来 |
 
-一个任务可以先后有多个 PR：合并后任务又被重开、又有新的推送时开新 PR；「当前 PR」是项目**当前绑定的仓库**里最新的一个，依赖规则（07 §3）与 PR 卡片都看它。PR 的身份是「仓库 + 编号」，请求一律发往 PR 记录自己的仓库；项目改绑仓库后，旧仓库里的 PR 脱离管理（不再转草稿、关闭或合并，由人处理），推送记录与 `verified_sha` 也只看当前仓库（`add-pr-reconcile-merge` 决策 20）。每次开新 PR 之前先找回「已创建、未记录」的开着的 PR。Helmsman 自己关闭的 PR（任务撤销 / 拒绝）在任务恢复后重新打开；别人在 GitHub 上关闭的不动，只记录。标题与基础分支只在创建时设定。草稿不受支持的仓库开普通 PR。对账的完整规则见 `add-pr-reconcile-merge` 决策 5–7。
+一个任务可以先后有多个 PR：合并后任务又被重开、又有**不在合并内容里**的新推送时开新 PR。已合并的 PR 记下 `included_sha`——确认包含在合并内容里的最近一次推送（合并时 PR 的头部就是它、或经 compare 确认是它的后代，压缩 / 变基合并同样成立；人在 PR 上补了提交再合并不会误开新 PR），依赖规则（07 §3）据此判断代码是否已进入基础分支（`add-pr-reconcile-merge` 决策 21）；「当前 PR」是项目**当前绑定的仓库**里最新的一个，依赖规则（07 §3）与 PR 卡片都看它。PR 的身份是「仓库 + 编号」，请求一律发往 PR 记录自己的仓库；项目改绑仓库后，旧仓库里的 PR 脱离管理（不再转草稿、关闭或合并，由人处理），推送记录与 `verified_sha` 也只看当前仓库（`add-pr-reconcile-merge` 决策 20）。每次开新 PR 之前先找回「已创建、未记录」的开着的 PR。Helmsman 自己关闭的 PR（任务撤销 / 拒绝）在任务恢复后重新打开；别人在 GitHub 上关闭的不动，只记录。标题与基础分支只在创建时设定。草稿不受支持的仓库开普通 PR。对账的完整规则见 `add-pr-reconcile-merge` 决策 5–7。
 
 `task_pull_requests` 记录：`task_id`、`repository_id`、`number`、`url`、`branch`、`state`（draft / open / merged / closed）、`head_sha`、`checks_state`（pending / success / failure）、`merge_status`（none / waiting / stale / merged / blocked / failed）、`merge_note`、`merged_sha`、`auto_reopen_count`。任务详情页右栏有 PR 卡片：状态、CI、合并进度、原因、链接。
 
-PR 合并后：在同一处理里检查依赖它的任务，满足条件的 `deferred` 运行开始排队（13 §2.4）。
+PR 合并后：记下合并的同一事务里插入 `ReleaseDependents`，提交后在图锁下复查依赖它的任务（以及依赖它所属 Epic 的任务），满足条件的 `deferred` 运行开始排队（13 §2.4）。
 
 ## 4. 合并策略
 
@@ -141,4 +141,4 @@ CI 失败或合并冲突时，不需要人介入：
 - **一个项目一台机器**：项目在 GitHub 仓库与本地仓库之间二选一（owner / admin 绑定）。没有远端在机器之间同步分支，所以只有该仓库所在守护进程上的运行时能执行这个项目的运行，别的机器领到会以 `workspace_prepare` 失败。
 - **先复制再交付**：守护进程把用户仓库 fetch 到 `~/.helmsman/repos/local/<name>.git`，在缓存的任务 worktree（分支 `hm/<工作区 ID>/<ident>`）里执行；收尾时不强推地把分支推进用户仓库（在用户仓库一侧的 receive-pack 命令里强制 `receive.denyCurrentBranch=refuse`、不运行 hook，用户自己设了 `updateInstead` 也不会改动其工作区），被拒就推救援分支。用户仓库只会多出 `hm/<工作区 ID>/…` 分支，工作区、`HEAD`、其他分支与 hook 都不受影响。出处、待推送账本与 GitHub 模式相同（14 §7）。
 - **审查与合并都由人在本地做**：没有 PR、CI 与自动合并，§4 的合并策略与前提不适用；验收照常（VERIFIED 时记下最近交付的提交）。任务详情的「本地分支」卡片给出审查与合并命令。
-- **合并状态**：守护进程定期检查任务分支的提交是否已进入基础分支（`repo_status`），检测到即记为已合并；压缩合并、变基合并检测不到，由人「标记为已合并」。已合并的本地分支让依赖它的任务满足条件（07 §3）。Helmsman 不删用户仓库里的分支。
+- **合并状态**：守护进程定期检查任务分支的提交是否已进入基础分支（`repo_status`），检测到即记为已合并；压缩合并、变基合并检测不到，由人「标记为已合并」。已合并、且记录的就是最近一次交付的本地分支让依赖它的任务满足条件（07 §3）；变为已合并（自动检测或人工标记）与取消标记时同样插入 `ReleaseDependents` 复查依赖方（13 §2.4）。Helmsman 不删用户仓库里的分支。

@@ -59,7 +59,7 @@ end
 |---|---|---|
 | 身份 | `identify(name, project?, worktree?)` `whoami()` `list_actors()` | 见 03 §4；为兼容 bosun 也接受 `kind` 参数，但只能是 `agent` |
 | 项目 | `list_projects(include_archived?)` `get_project(key)` `create_project(key, name, description?)` `update_project(key, …)` | 后两个需要 admin |
-| 任务 | `list_tasks(project_key, status?, label?, kind?, epic?, assignee?, query?, limit?, offset?)` `search_tasks(query, project_key?, limit?)` `get_task(task_id)` `create_task(project_key, title, description?, priority?, labels?, kind?, epic?, assignee?)` `update_task(task_id, …)` | |
+| 任务 | `list_tasks(project_key, status?, label?, kind?, epic?, assignee?, query?, limit?, offset?)` `search_tasks(query, project_key?, limit?)` `get_task(task_id)` `create_task(project_key, title, description?, priority?, labels?, kind?, epic?, assignee?)` `update_task(task_id, …)` | `search_tasks` 按相关度返回 `id title status project_key assignee`，有片段时带 `snippet`（命中词以 `**` 标出），命中来自 Feedback 时带 `feedback: {id, author, kind, snippet}`，精确的任务 ID 排第一；`limit` 缺省 20、最多 50；`list_tasks` 的 `query` 只筛选、不改排序（`add-fulltext-search`） |
 | 状态 | `transition_task(task_id, to, comment?, commits?, tests?, feedback?)` | `feedback = {kind, content}`：迁移原因，与迁移在同一事务里写入（06）；bosun 没有这个参数，不传时行为与 bosun 一致 |
 | 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | 返回 `from` 的详情；`type` 为 `depends_on`（from 等 to）或 `replaces`（from 接手 to，to 未结束时被撤销）；重复添加、删除不存在的都成功（`add-task-links`） |
 | 反馈 | `add_feedback(task_id, content, kind?)` `update_feedback(feedback_id, content, kind?)` `list_feedback(task_id)` | |

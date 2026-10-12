@@ -56,7 +56,7 @@
 | **重新提交** `resubmit` | 同上，任务 REJECTED → NEW | work | 看改过的需求，重新评估 |
 | **回答** `answer` | 新的 `answer` 让 `open_question` 变为 false，而那条 `question` 是托管 Agent 写的 | 与提问那次运行相同 | 带着答案继续（恢复会话）；授权继承**提问所在的运行**（提问的 Agent 不一定是执行方，`add-continuation-triggers` 决策 3） |
 | **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源（建任务时记为 `task_grants` 的 `requested`） |
-| **依赖满足** `unblocked` | 见 §2.4 | work | 同「指派」 |
+| **依赖满足** `unblocked` | 见 §2.4 | work | 不新建运行：把因依赖延后的 `deferred` 运行改为 `queued`，在 `triggers` 末尾追加一条不带授权来源的中性标记（授权仍由原指派类触发承担，领取时照常复核） |
 | **委派完成** `delegate_done` | 委派出去的运行结束 | work | leader 决定下一步 |
 
 引起延续或提及的身份就是目标 Agent 自己时不触发（例如执行方 Agent 自己把任务改回 IN_PROGRESS）。系统身份写的 Feedback 不引起提及、回答与回调；触发结果保存在引起它的 Feedback 上（`feedback.dispatch`），界面据此把被拒的提及置灰并说明原因。
@@ -95,7 +95,15 @@
 
 ### 2.4 依赖未满足时
 
-任务有未满足的依赖（07 §3 的定义：有仓库的项目要求前置任务的 PR **已合并**，本地仓库模式要求它交付的分支**已合并**，否则要求 DONE / VERIFIED）时，「指派」类运行建为 `deferred`，`triggers` 里注明 `blocked_by`。前置任务满足条件时（迁移事务里，或 PR 合并、本地分支变为已合并的处理里），把不再被阻塞的 `deferred` 运行改为 `queued`。
+任务有未满足的依赖（07 §3 的定义：前置任务 DONE / VERIFIED、没有活跃运行、交付的代码已合并——有仓库的项目要求 PR **已合并**，本地仓库模式要求交付的分支**已合并**）时，**指派类**触发（`assign`、`reopen`、`resubmit`；`Runs.Triggers.dependency_gated?/1` 去掉自动重试与 `unblocked` 标记后全部属于这三种）建的运行为 `deferred`，这条触发注明 `blocked_by`，派发结果为 `deferred`。其他触发（手动、提及、回答、回调、插话、委派）不看依赖：回答让已经开工的工作继续，其余是人或 leader 明确要它现在跑（`add-dependency-dispatch` 决策 3、4）。
+
+解除（前置任务都满足时把 `deferred` 改为 `queued`，追加 `unblocked` 标记）有两条路径，配合「一切改为 `deferred` 的写入都在工作区图锁下读依赖」保证唤醒不丢（`add-dependency-dispatch` 决策 5、6）：
+
+- **就地**：前置任务的迁移（经 `Links.status_changed/3`，含自动领取、自动重开、替代撤销、Epic 自动流转）与删掉一条 `depends_on`，都已持有图锁，在原事务里解除；
+- **提交后复查**：运行的领取与结束、推送、PR 首次记为已合并或 `included_sha`（15 §3）改变、本地分支变为已合并或被取消标记、Epic 步骤挂上 / 摘下——这些写入不持有图锁，在原事务里插入 Oban 任务 `ReleaseDependents(task_id)`，提交后先取图锁再复查并通知依赖方；
+- **清扫**：每 10 分钟一次兜底（项目改绑 / 解绑仓库等），同时取消失效的 `deferred` 运行。
+
+`deferred` 运行不会被领取，所以失效时在原因发生的事务里取消（`obsolete`）：执行方改为别人、任务 CANCELLED / VERIFIED。
 
 配合 Epic，这就是一条流水线：把一组步骤分别指派给不同的 Agent，用 `depends_on` 串起来，前一步合并后下一步自动开工，并且基于已经包含前一步代码的基础分支。
 
@@ -106,7 +114,7 @@
 - 同一个 `(task, agent, lane, squad_id)` 已有 `deferred` / `queued` 的运行时，新的触发**并进去**（追加到 `triggers`），不新建行。部分唯一索引兜底：`UNIQUE (task_id, agent_id, lane, coalesce(squad_id, 0)) WHERE status IN ('deferred','queued')`（`squad_id` 随 `add-squads` 加入）。
 - 合并时：运行的 `root_initiator_user_id` 保持最早一条触发的；`causal_agent_ids` 取各触发链的并集（只会让防循环与自动合并的独立性判断更保守）；`priority` 取较高者；能力不合并（§1）。防循环只检查新触发自己的链。
 - 重试同样走合并：已有排队的就把「重试」追加进去，没有才新建（`retry_of_id` 唯一，防止同一条失败被重试两次）。
-- 合并时状态取更「急」的：`deferred` 的行并入一个立即可跑的触发后变为 `queued`（例如被阻塞的指派又收到「手动运行」）。
+- 合并时状态取更「急」的：`deferred` 的行并入一个立即可跑的触发（不受依赖约束，或受约束但依赖已满足）后变为 `queued`（例如被阻塞的指派又收到「手动运行」）；`queued` 的行不会因并入受约束的触发而降回 `deferred`，交给领取时的复查。
 - **同一任务同一时刻最多一个运行在执行**（不论哪个 Agent、哪条 lane）：它们共用一个代码分支（15 §2），并发会互相踩。不同任务之间完全并行。
 
 **领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、执行方已换成别人（`work` lane 的指派类）、Agent 已归档、运行时已禁用，以及 §2.2 的授权校验。
@@ -161,7 +169,7 @@ SELECT r.* FROM runs r
    - 工作区维护锁（共享）——工作区正在导入时拿不到，不派发；
    - 任务锁 `k_task(task_id)`，拿到后确认这个任务没有 `claimed` / `running` / `cancelling` 的运行；
    - Agent 配置行 `FOR UPDATE SKIP LOCKED`，拿到后数一下它的活跃运行，未超过 `max_concurrency`。
-4. §3 的重新校验；运行里**只有**指派类触发（指派、打回、重新提交、依赖满足）时再检查一次依赖——排队后又加了依赖的，改回 `deferred`。含有手动运行、委派等人或 leader 明确发起的触发时不看依赖。
+4. §3 的重新校验；运行里**只有**指派类触发（指派、打回、重新提交，忽略自动重试与 `unblocked` 标记）、且任务有出向依赖时再检查一次依赖：`try` 工作区图锁，拿不到就留在队列；拿到后未满足的改回 `deferred`——排队后又加了依赖、或前置任务又有了活跃运行与新交付。含有手动运行、委派等人或 leader 明确发起的触发时不看依赖。
 5. 通过的改为 `claimed`、记下 `daemon_id`、签发 `hmr_` 令牌，返回运行描述（14 §3）。
 
 `SKIP LOCKED` 加上全部 `try` 锁，让多个守护进程并发领取互不阻塞，也不会和任务写操作互相等待。
@@ -195,6 +203,7 @@ SELECT r.* FROM runs r
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
 | 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
 | 插话结算（§8） | 运行以 `succeeded` 结束、且有已回执的插话 | Oban 唯一键（`steer_settle`） |
+| 依赖方复查（§2.4） | 运行被领取、进入终态、记下推送的同一事务里（`ReleaseDependents`） | Oban 唯一键（`task_id`） |
 
 ## 5. 失败与重试
 

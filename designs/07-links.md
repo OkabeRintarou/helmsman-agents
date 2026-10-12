@@ -30,21 +30,26 @@ SELECT path FROM reach WHERE id = $a LIMIT 1;
 ```
 
 - 删链允许（不是审计记录），删链不改任何状态（删掉 `replaces` 链后，被撤销的任务仍是 CANCELLED，需要的话再手动恢复）。任务不能删，所以链不需要级联删除。
-- **与派发的关系**：指派给托管 Agent 的任务被阻塞时，运行以 `deferred` 状态等待；依赖全部满足时自动开始排队（13 §2.4）。删掉最后一条未满足的依赖链也会让它开始排队。
+- **与派发的关系**：指派给托管 Agent 的任务被阻塞时，运行以 `deferred` 状态等待；依赖全部满足时自动开始排队（13 §2.4）。前置任务的迁移与删掉最后一条未满足的依赖链在原事务里解除；运行结束、推送、PR 或本地分支合并等不在图锁下的变化由提交后的 `ReleaseDependents` 复查解除（`add-dependency-dispatch` 决策 5、6）。
 
 ## 3. 派生字段
 
-- **依赖满足**（只在一处定义：`Helmsman.Links.satisfied?/1` 与列表用的 SQL 条件 `Links.unsatisfied_dependency/1` 同在一个模块，性质测试保证二者一致；`blocked`、迁移检查、BQL、派发都用它。`add-task-links` 只实现最后一条「看状态」，前两条随 #32 `add-dependency-dispatch` 加入）：
-  - 前置任务所在项目**绑定了仓库**、且这个任务有 PR → 要求 PR **已合并**。只到 DONE / VERIFIED 不够：后一个任务的分支从基础分支建出，此时还拿不到前一个任务的代码。
-  - 前置任务所在项目绑定了**本地仓库**、且这个任务交付过分支（有 `task_local_branches` 行）→ 要求该分支**已合并**（守护进程检测到它已进入基础分支，或人工标记，15 §8），理由同上。
-  - 其他情况（项目没绑仓库、任务没产生代码改动）→ 前置任务在 DONE / VERIFIED。
-  - 这与 bosun 的语义（只看 DONE / VERIFIED）在代码任务上有意不同。
+- **依赖满足**（只在一处定义：`Helmsman.Links` 里一个 SQL 表达式算出前置任务的 `waiting_for`，`satisfied?/1`、`blockers/1`、列表用的 `Links.unsatisfied_dependency/1` 与链项都由它组合，性质测试对照参照模型；`blocked`、迁移检查、BQL、派发都用它。完整规则随 `add-dependency-dispatch` 决策 2）。前置任务 P 满足 ⇔ 全部成立：
+  1. P 在 DONE / VERIFIED；
+  2. P 上没有 `claimed` / `running` / `cancelling` 的运行——Agent 在运行中途置 DONE，推送在收尾时才发生，置 DONE 的那一刻还看不到交付；
+  3. P 交付到任务分支的代码已进入基础分支。只看项目**当前**绑定的仓库 R；「交付」= P 在 R 上 `push_status = pushed` 的运行，「最近交付」取 `(claimed_at, id)` 最大的一条：
+     - 没绑仓库，或 P 在 R 上没有交付 → 成立；
+     - GitHub 仓库：P 的当前 PR 已合并，且它的 `included_sha`（对账确认包含在合并内容里的最近交付，15 §3）就是最近交付——合并后重开又有新交付、新 PR 还没开出时，当前 PR 仍是旧的已合并 PR，只看 `state` 会误放行；人在 PR 上补了提交再合并时合并头部不是任何一次交付，所以比「包含」而不是比头部；
+     - 本地仓库：`task_local_branches` 行属于 R、`state = merged`、`head_sha` 就是最近交付（15 §8）；
+     理由：后一个任务的分支从基础分支建出，只到 DONE / VERIFIED 时还拿不到前一个任务的代码。这与 bosun 的语义（只看 DONE / VERIFIED）在代码任务上有意不同；
+  4. P 是 Epic 时，每个不在 CANCELLED 的步骤也满足 1–3（依赖 Epic = 等这一组工作都落地）。
+  - `waiting_for`：按 1–4 的顺序取第一条不成立的（`status` / `run` / `merge` / `steps`），满足时为空；详情里出向 `depends_on` 的链项带上它，界面据此说明「已完成，等待合并」等。
 - `blocked`：存在出向 `depends_on` 且对端不满足。列表一次查询用 `EXISTS` 子查询算出，不落库。
-- `links`（详情）：`[%{type, direction: :out | :in, task, title, status, kind, actor, created_at}]`，出链在前，再按类型、ID 排序。
+- `links`（详情）：`[%{type, direction: :out | :in, task, title, status, kind, actor, created_at, waiting_for}]`（`waiting_for` 只有出向 `depends_on` 有），出链在前，再按类型、ID 排序。
 
 ## 4. 广播
 
-建 / 删链（有实际变化）后，两端任务各发 `task:<id>` `{:links_changed, ident}`，出向一端所在项目发 `{:task_updated, summary}`（`blocked` 可能变化）；对端被自动撤销时额外走 05 §7 的迁移广播。前置任务的状态变化（迁移、替代撤销，以及不经 `TransitionSteps` 的 Epic 自动流转）使其满足与否翻转时，每个依赖它的任务同样收到这两条；唯一入口 `Links.status_changed/3`，只发通知（`add-task-links` 决策 9）。
+建 / 删链（有实际变化）后，两端任务各发 `task:<id>` `{:links_changed, ident}`，出向一端所在项目发 `{:task_updated, summary}`（`blocked` 可能变化）；对端被自动撤销时额外走 05 §7 的迁移广播。前置任务的状态变化（迁移、替代撤销，以及不经 `TransitionSteps` 的 Epic 自动流转）使其满足与否翻转时，每个依赖它的任务同样收到这两条；入口 `Links.status_changed/3`（`add-task-links` 决策 9），它同时就地解除依赖方的 `deferred` 运行（13 §2.4）。运行的领取与结束、推送、PR 合并、本地分支合并状态变化、Epic 步骤挂上 / 摘下也可能改变满足与否，由提交后的 `ReleaseDependents` 复查并通知依赖方（可能多发，`add-dependency-dispatch` 决策 10）。
 
 ## 5. 接口
 
