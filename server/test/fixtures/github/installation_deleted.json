@@ -1,0 +1,6 @@
+{
+  "action": "deleted",
+  "installation": {"id": 1, "account": {"login": "acme", "type": "Organization"}},
+  "repositories": [],
+  "sender": {"login": "octocat", "type": "User"}
+}

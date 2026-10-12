@@ -44,6 +44,18 @@ config :helmsman, Helmsman.Repo,
   # schedulers.
   pool_size: max(System.schedulers_online() * 2, 24)
 
+# Fixed field encryption key for tests.
+config :helmsman, Helmsman.Vault,
+  ciphers: [default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: <<0::256>>}]
+
+# Jobs are only inserted; tests run them with Oban.Testing.perform_job/2.
+config :helmsman, Oban, testing: :manual
+
+# GitHub calls go to Req.Test stubs; the App configuration is read on every
+# call (no cache), so tests can switch it.
+config :helmsman, Helmsman.GitHub.Client, req_options: [plug: {Req.Test, Helmsman.GitHub.Client}]
+config :helmsman, Helmsman.GitHub.AppConfig, cache: false
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :helmsman, HelmsmanWeb.Endpoint,

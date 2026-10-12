@@ -90,6 +90,29 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
+  vault_key =
+    case System.get_env("HELMSMAN_VAULT_KEY") do
+      nil ->
+        raise """
+        environment variable HELMSMAN_VAULT_KEY is missing.
+        It is the base64 encoding of a random 32-byte key, for example:
+        openssl rand -base64 32
+        """
+
+      encoded ->
+        case Base.decode64(encoded) do
+          {:ok, <<_::binary-size(32)>> = key} ->
+            key
+
+          _ ->
+            raise "environment variable HELMSMAN_VAULT_KEY must be the base64 encoding " <>
+                    "of exactly 32 bytes"
+        end
+    end
+
+  config :helmsman, Helmsman.Vault,
+    ciphers: [default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: vault_key}]
+
   host = System.get_env("PHX_HOST") || "example.com"
 
   config :helmsman, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")

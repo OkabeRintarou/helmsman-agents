@@ -1,0 +1,10 @@
+{
+  "action": "removed",
+  "installation": {"id": 1, "account": {"login": "acme", "type": "Organization"}},
+  "repository_selection": "selected",
+  "repositories_added": [],
+  "repositories_removed": [
+    {"id": 101, "name": "web", "full_name": "acme/web", "private": true}
+  ],
+  "sender": {"login": "octocat", "type": "User"}
+}

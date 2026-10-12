@@ -220,6 +220,16 @@ defmodule Helmsman.PolicyMatrixTest do
                 {:revise_feedback, role, kind, @foreign_own_human, :forbidden},
                 {:revise_feedback, role, kind, @none, :forbidden}
               ]
+            end,
+            # manage_github: owner and admin humans; agents never
+            for role <- @roles, kind <- [:human, :agent] do
+              expected = if kind == :human and role in [:owner, :admin], do: :ok, else: :forbidden
+              {:manage_github, role, kind, @none, expected}
+            end,
+            # manage_github_app: instance administrators only, whatever the
+            # workspace role (see the test below); the matrix user is not one
+            for role <- @roles, kind <- [:human, :agent] do
+              {:manage_github_app, role, kind, @none, :forbidden}
             end
           ]
           |> List.flatten()
@@ -325,6 +335,19 @@ defmodule Helmsman.PolicyMatrixTest do
     assert Policy.authorize(scope, :revoke_own_token, @own_token) == :ok
     assert Policy.authorize(scope, :revoke_any_token, @other_token) == {:error, :forbidden}
     assert Policy.authorize(%{scope | role: :viewer}, :identify) == {:error, :forbidden}
+  end
+
+  test "manage_github_app: instance administrators, without a workspace too; never agents" do
+    admin = %User{id: 10, instance_admin: true}
+
+    assert Policy.authorize(%Scope{user: admin}, :manage_github_app) == :ok
+    assert Policy.authorize(%{scope(:viewer, :human) | user: admin}, :manage_github_app) == :ok
+
+    assert Policy.authorize(%{scope(:owner, :agent) | user: admin}, :manage_github_app) ==
+             {:error, :forbidden}
+
+    assert Policy.authorize(%Scope{user: @user}, :manage_github_app) == {:error, :forbidden}
+    assert :manage_github_app in Policy.management_actions()
   end
 
   test "unknown actions and scopes without a role are refused" do

@@ -45,6 +45,9 @@ defmodule HelmsmanWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # Needs the raw request body, so it runs before Plug.Parsers.
+  plug HelmsmanWeb.GitHubWebhookPlug
+
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],

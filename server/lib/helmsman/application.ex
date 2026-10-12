@@ -19,12 +19,13 @@ defmodule Helmsman.Application do
     children = [
       HelmsmanWeb.Telemetry,
       Helmsman.Repo,
+      Helmsman.Vault,
+      {Oban, Application.fetch_env!(:helmsman, Oban)},
+      Helmsman.GitHub.Tokens,
       {DNSCluster, query: Application.get_env(:helmsman, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Helmsman.PubSub},
       Helmsman.Presence,
       {Helmsman.RateLimit, clean_period: :timer.minutes(1)},
-      # Start a worker by calling: Helmsman.Worker.start_link(arg)
-      # {Helmsman.Worker, arg},
       HelmsmanMCP.Supervisor,
       # Start to serve requests, typically the last entry
       HelmsmanWeb.Endpoint

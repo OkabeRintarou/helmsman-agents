@@ -1,0 +1,10 @@
+{
+  "action": "suspend",
+  "installation": {
+    "id": 1,
+    "account": {"login": "acme", "type": "Organization"},
+    "suspended_at": "2026-10-01T10:00:00Z",
+    "suspended_by": {"login": "octocat", "type": "User"}
+  },
+  "sender": {"login": "octocat", "type": "User"}
+}

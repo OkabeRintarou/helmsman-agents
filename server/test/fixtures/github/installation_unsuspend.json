@@ -1,0 +1,10 @@
+{
+  "action": "unsuspend",
+  "installation": {
+    "id": 1,
+    "account": {"login": "acme", "type": "Organization"},
+    "suspended_at": null,
+    "suspended_by": null
+  },
+  "sender": {"login": "octocat", "type": "User"}
+}

@@ -34,6 +34,25 @@ config :helmsman, Helmsman.RateLimit,
 # Requests per minute per API token (designs/03 §2).
 config :helmsman, :api_token_rate_limit, 600
 
+# Background jobs (designs/15 §1): GitHub calls and syncs run in Oban.
+config :helmsman, Oban,
+  engine: Oban.Engines.Basic,
+  repo: Helmsman.Repo,
+  queues: [github: 5, github_sync: 1, default: 10],
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"0 4 * * *", Helmsman.GitHub.Workers.SyncAll},
+       {"30 4 * * *", Helmsman.GitHub.Workers.PruneDeliveries}
+     ]}
+  ]
+
+# GitHub endpoints; GitHub Enterprise is not supported (designs/00 §10).
+config :helmsman, Helmsman.GitHub,
+  api_url: "https://api.github.com",
+  web_url: "https://github.com"
+
 # Configure the endpoint
 config :helmsman, HelmsmanWeb.Endpoint,
   url: [host: "localhost"],

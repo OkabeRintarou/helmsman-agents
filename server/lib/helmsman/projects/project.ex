@@ -26,7 +26,60 @@ defmodule Helmsman.Projects.Project do
     field :task_seq, :integer, default: 0
     field :archived_at, :utc_datetime
 
+    # GitHub settings (designs/15 §2, §4). `repository_id` references a
+    # repository of the same workspace (composite foreign key); a nil
+    # `base_branch` means the repository's default branch.
+    field :repository_id, :id
+    field :base_branch, :string
+    field :merge_policy, :string, default: "on_verified"
+    field :merge_method, :string, default: "squash"
+    field :require_ci, :boolean, default: true
+    field :delete_branch_after_merge, :boolean, default: true
+
+    # Set by `Helmsman.Projects` reads: `%{owner, name, full_name, available}`
+    # or nil, and the effective base branch (the default branch when
+    # `base_branch` is nil).
+    field :repository, :map, virtual: true
+    field :effective_base_branch, :string, virtual: true
+
     timestamps(type: :utc_datetime)
+  end
+
+  @merge_policies ~w(on_verified on_verified_human manual)
+  @merge_methods ~w(squash merge rebase)
+
+  @doc "The merge policies."
+  @spec merge_policies() :: [String.t()]
+  def merge_policies, do: @merge_policies
+
+  @doc "The merge methods."
+  @spec merge_methods() :: [String.t()]
+  def merge_methods, do: @merge_methods
+
+  @doc """
+  Changeset for the GitHub settings. `repository_id` and `base_branch` are
+  put by `Helmsman.Projects.update_github_settings/3` after checking them;
+  only the merge settings are cast here.
+  """
+  @spec github_settings_changeset(t(), map(), map()) :: Ecto.Changeset.t()
+  def github_settings_changeset(project, attrs, %{
+        repository_id: repository_id,
+        base_branch: branch
+      }) do
+    project
+    |> cast(attrs, [:merge_policy, :merge_method, :require_ci, :delete_branch_after_merge])
+    |> put_change(:repository_id, repository_id)
+    |> put_change(:base_branch, branch)
+    |> validate_required([:merge_policy, :merge_method, :require_ci, :delete_branch_after_merge])
+    |> validate_inclusion(:merge_policy, @merge_policies)
+    |> validate_inclusion(:merge_method, @merge_methods)
+    |> validate_length(:base_branch, min: 1, max: 255, count: :codepoints)
+    |> check_constraint(:merge_policy, name: :projects_merge_policy_check, message: "is invalid")
+    |> check_constraint(:merge_method, name: :projects_merge_method_check, message: "is invalid")
+    |> check_constraint(:base_branch,
+      name: :projects_base_branch_length,
+      message: "must be 1-255 characters"
+    )
   end
 
   @doc """

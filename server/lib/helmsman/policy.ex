@@ -8,6 +8,7 @@ defmodule Helmsman.Policy do
   """
 
   alias Helmsman.Accounts.Scope
+  alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
 
@@ -38,6 +39,8 @@ defmodule Helmsman.Policy do
     :manage_autopilots,
     # GitHub connection
     :manage_github,
+    # the instance's GitHub App (instance administrators)
+    :manage_github_app,
     # import and export
     :import_workspace,
     :export_workspace,
@@ -74,7 +77,9 @@ defmodule Helmsman.Policy do
     :update_task,
     :transition_task,
     :add_feedback,
-    :revise_feedback
+    :revise_feedback,
+    :manage_github,
+    :manage_github_app
   ]
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -193,6 +198,17 @@ defmodule Helmsman.Policy do
   # a record the system wrote (designs/06).
   def authorize(%Scope{} = scope, :revise_feedback, %Actor{} = author),
     do: allow_if(role_at_least?(scope, :member) and may_revise?(scope, author))
+
+  ## GitHub (management actions: agents never)
+
+  # Connecting / disconnecting the installation, binding projects to
+  # repositories and their merge settings (designs/15 §6).
+  def authorize(%Scope{} = scope, :manage_github, _resource),
+    do: allow_if(role_at_least?(scope, :admin))
+
+  # Instance-wide: the GitHub App itself. Needs no workspace.
+  def authorize(%Scope{user: %User{instance_admin: true}}, :manage_github_app, _resource),
+    do: :ok
 
   def authorize(_scope, _action, _resource), do: {:error, :forbidden}
 

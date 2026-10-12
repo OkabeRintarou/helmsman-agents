@@ -1,0 +1,15 @@
+{
+  "action": "edited",
+  "changes": {"default_branch": {"from": "main"}},
+  "repository": {
+    "id": 101,
+    "name": "web",
+    "full_name": "acme/web",
+    "owner": {"login": "acme", "type": "Organization"},
+    "private": true,
+    "default_branch": "develop",
+    "archived": false
+  },
+  "installation": {"id": 1},
+  "sender": {"login": "octocat", "type": "User"}
+}

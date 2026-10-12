@@ -1,0 +1,16 @@
+{
+  "action": "opened",
+  "number": 2,
+  "pull_request": {
+    "id": 279147437,
+    "number": 2,
+    "state": "open",
+    "title": "Update the README with new information.",
+    "head": {"ref": "hm/bos-12", "sha": "ec26c3e57ca3a959ca5aad62de7213c562f8c821"},
+    "base": {"ref": "main", "sha": "f95f852bd8fca8fcc58a9a2d6c842781e32a215e"},
+    "merged": false
+  },
+  "repository": {"id": 101, "name": "web", "full_name": "acme/web", "owner": {"login": "acme"}},
+  "installation": {"id": 1},
+  "sender": {"login": "octocat", "type": "User"}
+}

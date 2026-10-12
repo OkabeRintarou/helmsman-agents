@@ -93,6 +93,21 @@ defmodule HelmsmanWeb.Router do
     post "/users/update-password", UserSessionController, :update_password
   end
 
+  ## GitHub (designs/15 §1): the App's manifest flow for instance
+  ## administrators and the installation flow for workspace admins. Plain
+  ## controller routes behind login: they only redirect to and from GitHub.
+  ## `POST /webhooks/github` is served by HelmsmanWeb.GitHubWebhookPlug in
+  ## the endpoint.
+
+  scope "/", HelmsmanWeb do
+    pipe_through [:browser, :require_authenticated_user]
+
+    get "/admin/github", GitHubController, :admin
+    get "/admin/github/callback", GitHubController, :manifest_callback
+    get "/w/:slug/settings/github/connect", GitHubController, :connect
+    get "/github/setup", GitHubController, :setup
+  end
+
   ## Workspace routes
 
   scope "/", HelmsmanWeb do

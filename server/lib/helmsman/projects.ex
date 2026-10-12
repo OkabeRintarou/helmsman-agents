@@ -11,6 +11,9 @@ defmodule Helmsman.Projects do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Events
+  alias Helmsman.GitHub.Installation
+  alias Helmsman.GitHub.Repositories
+  alias Helmsman.GitHub.Repository
   alias Helmsman.Policy
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
@@ -43,7 +46,7 @@ defmodule Helmsman.Projects do
     with :ok <- Policy.authorize(scope, :read_tasks) do
       case Repo.one(by_key(workspace_id, key)) do
         nil -> {:error, :not_found}
-        project -> {:ok, project}
+        project -> {:ok, put_github(project)}
       end
     end
   end
@@ -66,7 +69,7 @@ defmodule Helmsman.Projects do
           do: query,
           else: where(query, [p], is_nil(p.archived_at))
 
-      {:ok, Repo.all(query)}
+      {:ok, query |> Repo.all() |> put_github()}
     end
   end
 
@@ -133,6 +136,244 @@ defmodule Helmsman.Projects do
       nil -> {:error, :not_found}
       project -> {:ok, project}
     end
+  end
+
+  ## GitHub settings
+
+  @github_keys ~w(repository_id base_branch merge_policy merge_method require_ci
+                  delete_branch_after_merge)a
+
+  @doc """
+  Changes a project's repository binding and merge settings
+  (`:manage_github`, designs/15 §2, §4). `attrs` may hold `repository_id`
+  (nil unbinds), `base_branch` (nil or "" = the repository's default
+  branch), `merge_policy`, `merge_method`, `require_ci` and
+  `delete_branch_after_merge`. Archived projects may be changed too.
+
+  A base branch is first checked on GitHub, outside the transaction. The
+  transaction then recomputes the repository / base branch pair from the
+  locked row: if someone changed it since the check, the check runs once
+  more on the new pair, and a second change returns `{:error, :stale}`. The
+  repository's availability is decided inside the transaction with its
+  installation and repository rows locked `FOR SHARE`.
+
+  Errors: `:not_found` (project or repository), `:repository_unavailable`,
+  `:repository_required` (a base branch without a repository),
+  `{:branch_not_found, branch}`, `{:github_unavailable, _}`,
+  `{:rate_limited, _}`, `:stale`, a changeset.
+  """
+  @spec update_github_settings(Scope.t(), String.t(), map()) ::
+          {:ok, Project.t()} | {:error, error() | {atom(), term()}}
+  def update_github_settings(%Scope{workspace: %Workspace{}} = scope, key, attrs)
+      when is_binary(key) and is_map(attrs) do
+    with :ok <- Policy.authorize(scope, :manage_github),
+         {:ok, attrs} <- github_attrs(attrs) do
+      settle_github_settings(scope, key, attrs, 2)
+    end
+  end
+
+  defp github_attrs(attrs) do
+    Enum.reduce_while(@github_keys, {:ok, %{}}, fn key, {:ok, acc} ->
+      case github_attr(key, fetch_attr(attrs, key)) do
+        :absent -> {:cont, {:ok, acc}}
+        {:ok, value} -> {:cont, {:ok, Map.put(acc, key, value)}}
+        :error -> {:halt, {:error, invalid_attr(key)}}
+      end
+    end)
+  end
+
+  defp fetch_attr(attrs, key) do
+    case Map.fetch(attrs, key) do
+      {:ok, value} -> {:ok, value}
+      :error -> Map.fetch(attrs, Atom.to_string(key))
+    end
+  end
+
+  defp github_attr(_key, :error), do: :absent
+  defp github_attr(key, {:ok, value}), do: github_attr(key, value)
+
+  defp github_attr(:repository_id, value) when is_integer(value) or is_nil(value),
+    do: {:ok, value}
+
+  defp github_attr(:repository_id, ""), do: {:ok, nil}
+
+  defp github_attr(:repository_id, value) when is_binary(value) do
+    case Integer.parse(value) do
+      {id, ""} -> {:ok, id}
+      _ -> :error
+    end
+  end
+
+  defp github_attr(:repository_id, _value), do: :error
+  defp github_attr(:base_branch, value) when value in [nil, ""], do: {:ok, nil}
+  defp github_attr(:base_branch, value) when is_binary(value), do: {:ok, value}
+  defp github_attr(:base_branch, _value), do: :error
+  defp github_attr(_key, value), do: {:ok, value}
+
+  defp invalid_attr(key) do
+    %Project{}
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.add_error(key, "is invalid")
+  end
+
+  defp settle_github_settings(scope, key, attrs, attempts_left) do
+    with {:ok, project} <- fetch_project(scope.workspace.id, key),
+         {:ok, pair} <- github_pair(project, attrs),
+         :ok <- check_pair(scope.workspace.id, pair) do
+      result =
+        Workspaces.write_transaction(scope, :manage_github, fn scope ->
+          save_github_settings(scope, key, attrs, pair)
+        end)
+
+      case result do
+        {:error, :pair_changed} when attempts_left > 1 ->
+          settle_github_settings(scope, key, attrs, attempts_left - 1)
+
+        {:error, :pair_changed} ->
+          {:error, :stale}
+
+        {:ok, project} ->
+          {:ok, put_github(project)}
+
+        error ->
+          error
+      end
+    end
+  end
+
+  defp fetch_project(workspace_id, key) do
+    case Repo.one(by_key(workspace_id, key)) do
+      nil -> {:error, :not_found}
+      project -> {:ok, project}
+    end
+  end
+
+  # The repository / base branch pair the save would leave: no repository
+  # means no base branch.
+  defp github_pair(project, attrs) do
+    repository_id = Map.get(attrs, :repository_id, project.repository_id)
+
+    case {repository_id, Map.get(attrs, :base_branch, project.base_branch)} do
+      {nil, branch} when branch != nil ->
+        if Map.has_key?(attrs, :base_branch),
+          do: {:error, :repository_required},
+          else: {:ok, {nil, nil}}
+
+      pair ->
+        {:ok, pair}
+    end
+  end
+
+  defp check_pair(_workspace_id, {nil, nil}), do: :ok
+
+  defp check_pair(workspace_id, {repository_id, branch}) do
+    with {:ok, {repository, installation}} <-
+           Repositories.fetch_available(workspace_id, repository_id) do
+      check_branch(repository, installation, branch)
+    end
+  end
+
+  defp check_branch(_repository, _installation, nil), do: :ok
+
+  defp check_branch(repository, installation, branch) do
+    case Repositories.branch_exists?(repository, installation, branch) do
+      {:ok, true} -> :ok
+      {:ok, false} -> {:error, {:branch_not_found, branch}}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp save_github_settings(scope, key, attrs, checked_pair) do
+    with {:ok, project} <- lock_project(scope, key),
+         {:ok, pair} <- github_pair(project, attrs),
+         :ok <- same_pair(pair, checked_pair),
+         :ok <- lock_available_repository(scope.workspace.id, pair) do
+      {repository_id, branch} = pair
+
+      project
+      |> Project.github_settings_changeset(attrs, %{
+        repository_id: repository_id,
+        base_branch: branch
+      })
+      |> save()
+    end
+  end
+
+  defp same_pair(pair, pair), do: :ok
+  defp same_pair(_pair, _checked), do: {:error, :pair_changed}
+
+  # Installation row, then repository row, both FOR SHARE (lock order of
+  # the GitHub writes): syncs, disconnects and refreshes wait for the save.
+  defp lock_available_repository(_workspace_id, {nil, _branch}), do: :ok
+
+  defp lock_available_repository(workspace_id, {repository_id, _branch}) do
+    installation_id =
+      Repo.one(
+        from(r in Repository,
+          where: r.workspace_id == ^workspace_id and r.id == ^repository_id,
+          select: r.installation_id
+        )
+      )
+
+    case installation_id do
+      nil -> {:error, :not_found}
+      installation_id -> lock_repository(installation_id, repository_id)
+    end
+  end
+
+  defp lock_repository(installation_id, repository_id) do
+    installation =
+      Repo.one!(from(i in Installation, where: i.id == ^installation_id, lock: "FOR SHARE"))
+
+    repository =
+      Repo.one!(from(r in Repository, where: r.id == ^repository_id, lock: "FOR SHARE"))
+
+    cond do
+      # A sync moved the repository to another installation meanwhile.
+      repository.installation_id != installation.id -> {:error, :pair_changed}
+      Repositories.available?(repository, installation) -> :ok
+      true -> {:error, :repository_unavailable}
+    end
+  end
+
+  # Puts the virtual `repository` and `effective_base_branch` fields.
+  defp put_github(projects) when is_list(projects) do
+    ids = for %Project{repository_id: id} <- projects, id != nil, uniq: true, do: id
+
+    repositories =
+      if ids == [] do
+        %{}
+      else
+        from(r in Repository,
+          join: i in Installation,
+          on: i.id == r.installation_id,
+          where: r.id in ^ids,
+          select: {r, i}
+        )
+        |> Repo.all()
+        |> Map.new(fn {r, i} -> {r.id, {r, i}} end)
+      end
+
+    Enum.map(projects, &put_repository(&1, Map.get(repositories, &1.repository_id)))
+  end
+
+  defp put_github(%Project{} = project), do: hd(put_github([project]))
+
+  defp put_repository(project, nil),
+    do: %{project | repository: nil, effective_base_branch: nil}
+
+  defp put_repository(project, {repository, installation}) do
+    %{
+      project
+      | repository: %{
+          id: repository.id,
+          owner: repository.owner,
+          name: repository.name,
+          full_name: Repository.full_name(repository),
+          available: Repositories.available?(repository, installation)
+        },
+        effective_base_branch: project.base_branch || repository.default_branch
+    }
   end
 
   defp save(%Ecto.Changeset{valid?: true, changes: changes} = changeset) when changes == %{},

@@ -97,6 +97,10 @@ defmodule Helmsman.Workspaces do
     )
   end
 
+  @doc "Gets a workspace by id, or nil."
+  @spec get(integer()) :: Workspace.t() | nil
+  def get(id) when is_integer(id), do: Repo.get(Workspace, id)
+
   @doc "Gets a workspace by slug, or nil."
   @spec get_by_slug(String.t()) :: Workspace.t() | nil
   def get_by_slug(slug) when is_binary(slug),

@@ -1,0 +1,15 @@
+{
+  "action": "renamed",
+  "changes": {"repository": {"name": {"from": "web"}}},
+  "repository": {
+    "id": 101,
+    "name": "site",
+    "full_name": "acme/site",
+    "owner": {"login": "acme", "type": "Organization"},
+    "private": true,
+    "default_branch": "main",
+    "archived": false
+  },
+  "installation": {"id": 1},
+  "sender": {"login": "octocat", "type": "User"}
+}

@@ -12,6 +12,11 @@ else
     database: "helmsman_dev"
 end
 
+# Field encryption key for development only (not secret); production reads
+# HELMSMAN_VAULT_KEY (config/runtime.exs).
+config :helmsman, Helmsman.Vault,
+  ciphers: [default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: <<0::256>>}]
+
 config :helmsman, Helmsman.Repo,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
