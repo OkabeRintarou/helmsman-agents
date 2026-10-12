@@ -65,4 +65,61 @@ defmodule Helmsman.Tasks.TransitionRaceTest do
     # Creation, start and the winner.
     assert count == 3
   end
+
+  test "expected_from is compared under the task lock (domain-decision-3)",
+       %{scope: scope, task: task} do
+    parent = self()
+    tests = %{command: "mix test", passed: true, summary: "1 test, 0 failures"}
+    CommittedData.unboxed(fn -> {:ok, _} = Tasks.transition(scope, task.ident, "done") end)
+
+    verifier =
+      start(parent, fn ->
+        Process.put(:helmsman_test_hook, fn
+          :reason_inserted ->
+            send(parent, {:held, self()})
+
+            receive do
+              :continue -> :ok
+            end
+
+          _other ->
+            :ok
+        end)
+
+        Tasks.transition(scope, task.ident, "verified", tests: tests)
+      end)
+
+    assert_receive {:backend, verifier_pid, _backend}, 5_000
+    assert_receive {:held, ^verifier_pid}, 5_000
+
+    restarter =
+      start(parent, fn ->
+        Tasks.transition(scope, task.ident, "in_progress", expected_from: :done)
+      end)
+
+    assert_receive {:backend, restarter_pid, backend}, 5_000
+    assert restarter_pid == restarter.pid
+    CommittedData.await_lock_wait(backend)
+
+    send(verifier.pid, :continue)
+    assert {:ok, %{status: "verified"}} = Task.await(verifier, 10_000)
+    assert Task.await(restarter, 10_000) == {:error, {:status_changed, :verified}}
+
+    CommittedData.unboxed(fn ->
+      assert {:ok, %{status: :verified}} = Tasks.get(scope, task.ident)
+
+      # Creation, start, done and the verification.
+      assert %{rows: [[4]]} =
+               Repo.query!("SELECT count(*) FROM task_events WHERE task_id = $1", [task.id])
+    end)
+  end
+
+  defp start(parent, fun) do
+    Task.async(fn ->
+      CommittedData.unboxed(fn ->
+        send(parent, {:backend, self(), CommittedData.backend_pid()})
+        fun.()
+      end)
+    end)
+  end
 end

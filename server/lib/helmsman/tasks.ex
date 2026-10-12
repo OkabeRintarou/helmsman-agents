@@ -398,8 +398,14 @@ defmodule Helmsman.Tasks do
   `to` is read by `Helmsman.Tasks.StateMachine.normalize/1`; `opts` (a map
   or keyword list) may carry `comment`, `commits` and `tests`, checked by
   `Helmsman.Tasks.Evidence.normalize/1`, and `feedback`, a reason
-  `%{kind, content}` checked by `Helmsman.Feedback.normalize/1`. All are
-  checked before the transaction starts.
+  `%{kind, content}` checked by `Helmsman.Feedback.normalize/1`, and
+  `expected_from`, the status the caller saw (read like `to`; nil or
+  absent: not checked). All are checked before the transaction starts.
+
+  With `expected_from`, the task's status is compared with it right after
+  the task row is locked: when they differ the result is
+  `{:error, {:status_changed, current}}` and nothing is written or
+  broadcast.
 
   In one transaction, after the maintenance lock and the membership row:
   the workspace graph lock, the task row `FOR UPDATE`, the check context
@@ -423,7 +429,8 @@ defmodule Helmsman.Tasks do
   Errors: `{:invalid_status, input, valid}`, `{:invalid_comment, _}`,
   `{:invalid_commits, bad}`, `{:invalid_tests, _}`, a changeset or
   `{:invalid_feedback, :not_an_object}` for the reason, `:forbidden`,
-  `:not_found`, `:no_actor` and the reasons of `StateMachine.check/3`
+  `:not_found`, `:no_actor`, `{:status_changed, current}` and the reasons
+  of `StateMachine.check/3`
   (`{:invalid_transition, from, to, allowed}`,
   `{:self_verify_requires_tests, assignee}`, ...).
   """
@@ -436,11 +443,20 @@ defmodule Helmsman.Tasks do
   def transition(%Scope{workspace: %Workspace{}} = scope, ident, to, opts)
       when is_binary(ident) and (is_map(opts) or is_list(opts)) do
     with {:ok, to} <- StateMachine.normalize(to),
+         {:ok, expected_from} <- normalize_expected_from(opts),
          {:ok, evidence} <- Evidence.normalize(opts),
          {:ok, reason} <- normalize_reason(opts) do
       Workspaces.write_transaction(scope, :transition_task, fn scope ->
-        transition_locked(scope, ident, to, evidence, reason)
+        transition_locked(scope, ident, {expected_from, to}, evidence, reason)
       end)
+    end
+  end
+
+  defp normalize_expected_from(opts) do
+    case opts |> Map.new() |> fetch_attr(:expected_from) do
+      {:ok, nil} -> {:ok, nil}
+      {:ok, status} -> StateMachine.normalize(status)
+      :error -> {:ok, nil}
     end
   end
 
@@ -455,10 +471,11 @@ defmodule Helmsman.Tasks do
 
   # Lock order: maintenance lock, membership row (write_transaction), graph
   # lock, task row (designs/01 §4).
-  defp transition_locked(scope, ident, to, evidence, reason) do
+  defp transition_locked(scope, ident, {expected_from, to}, evidence, reason) do
     with {:ok, ident, _key, _seq} <- Ident.parse(ident),
          :ok <- Locks.graph!(scope.workspace.id),
          {:ok, task} <- lock_task(scope.workspace.id, ident),
+         :ok <- check_expected_from(task, expected_from),
          ctx = TransitionContext.build(task, scope, to, evidence),
          :ok <- StateMachine.check(task.status, to, ctx) do
       {feedback_id, task} = insert_reason(task, scope, reason)
@@ -488,6 +505,12 @@ defmodule Helmsman.Tasks do
       end
     end
   end
+
+  defp check_expected_from(_task, nil), do: :ok
+  defp check_expected_from(%Task{status: status}, status), do: :ok
+
+  defp check_expected_from(%Task{status: status}, _expected),
+    do: {:error, {:status_changed, status}}
 
   defp insert_reason(task, _scope, nil), do: {nil, task}
 

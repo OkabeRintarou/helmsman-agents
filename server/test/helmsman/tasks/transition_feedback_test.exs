@@ -142,6 +142,50 @@ defmodule Helmsman.Tasks.TransitionFeedbackTest do
     end
   end
 
+  describe "expected_from (domain-decision-3)" do
+    test "a status other than the expected one is refused without writing anything",
+         %{alice: alice, task: task} do
+      subscribe(task)
+      before = snapshot(task)
+      version = Repo.get!(Task, task.id).lock_version
+
+      assert Tasks.transition(alice, task.ident, "in_progress",
+               expected_from: :new,
+               feedback: @reason
+             ) == {:error, {:status_changed, :done}}
+
+      assert snapshot(task) == before
+      assert Repo.get!(Task, task.id).lock_version == version
+      refute_notified()
+    end
+
+    test "the expected status lets the transition run as without it",
+         %{alice: alice, task: task} do
+      assert {:ok, %{status: "in_progress"}} =
+               Tasks.transition(alice, task.ident, "in_progress", %{"expected_from" => "DONE"})
+
+      assert {:ok, %{status: "done"}} =
+               Tasks.transition(alice, task.ident, "done", expected_from: "In-Progress")
+
+      assert {:ok, %{status: "in_progress"}} =
+               Tasks.transition(alice, task.ident, "in_progress", expected_from: :done)
+
+      assert {:ok, %{status: "done"}} =
+               Tasks.transition(alice, task.ident, "done", expected_from: nil)
+    end
+
+    test "an invalid expected status is refused before the transaction",
+         %{alice: alice, task: task} do
+      before = snapshot(task)
+
+      assert {:error, {:invalid_status, "bogus", valid}} =
+               Tasks.transition(alice, task.ident, "in_progress", expected_from: "bogus")
+
+      assert :done in valid
+      assert snapshot(task) == before
+    end
+  end
+
   describe "atomicity (review R2)" do
     test "a failure after the reason is written rolls everything back",
          %{alice: alice, task: task} do
