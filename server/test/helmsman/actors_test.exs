@@ -28,6 +28,113 @@ defmodule Helmsman.ActorsTest do
     end
   end
 
+  describe "list_assignable/1" do
+    test "humans then agents by name; no system, squads or disabled identities" do
+      owner = user_fixture(%{email: "zed@example.com"})
+      ws = workspace_fixture(owner)
+      member = user_fixture(%{email: "amy@example.com"})
+      member_fixture(ws, member, :viewer)
+      {:ok, _system} = Actors.ensure_system(ws)
+
+      insert = fn attrs -> Repo.insert!(struct!(%Actor{workspace_id: ws.id}, attrs)) end
+      insert.(kind: :agent, name: "keel/dev", owner_id: member.id)
+      insert.(kind: :agent, name: "claude", owner_id: owner.id)
+
+      insert.(
+        kind: :agent,
+        name: "old",
+        owner_id: owner.id,
+        disabled_at: DateTime.utc_now(:second)
+      )
+
+      insert.(kind: :squad, name: "team")
+
+      other = user_fixture()
+      other_ws = workspace_fixture(other)
+
+      Repo.insert!(%Actor{
+        workspace_id: other_ws.id,
+        kind: :agent,
+        name: "far",
+        owner_id: other.id
+      })
+
+      scope = workspace_scope_fixture(member, ws)
+      assert {:ok, actors} = Actors.list_assignable(scope)
+
+      assert Enum.map(actors, &{&1.kind, &1.name}) == [
+               human: "amy",
+               human: "zed",
+               agent: "claude",
+               agent: "keel/dev"
+             ]
+
+      assert Enum.find(actors, &(&1.name == "keel/dev")).owner.id == member.id
+      assert Enum.find(actors, &(&1.name == "amy")).owner == nil
+    end
+
+    test "scopes without a role are refused" do
+      owner = user_fixture()
+      scope = workspace_scope_fixture(owner, workspace_fixture(owner))
+      assert Actors.list_assignable(%{scope | role: nil}) == {:error, :forbidden}
+    end
+  end
+
+  describe "list_own_agents/1" do
+    setup do
+      owner = user_fixture()
+      ws = workspace_fixture(owner)
+      viewer = user_fixture()
+      member_fixture(ws, viewer, :viewer)
+      insert = fn attrs -> Repo.insert!(struct!(%Actor{workspace_id: ws.id}, attrs)) end
+      %{owner: owner, ws: ws, viewer: viewer, insert: insert}
+    end
+
+    test "the user's enabled agents in this workspace, by name",
+         %{owner: owner, ws: ws, viewer: viewer, insert: insert} do
+      insert.(kind: :agent, name: "zeta", owner_id: viewer.id)
+      insert.(kind: :agent, name: "alpha", owner_id: viewer.id)
+
+      insert.(
+        kind: :agent,
+        name: "old",
+        owner_id: viewer.id,
+        disabled_at: DateTime.utc_now(:second)
+      )
+
+      insert.(kind: :agent, name: "boss", owner_id: owner.id)
+      insert.(kind: :squad, name: "team")
+
+      other_ws = workspace_fixture(user_fixture())
+      member_fixture(other_ws, viewer, :member)
+
+      Repo.insert!(%Actor{
+        workspace_id: other_ws.id,
+        kind: :agent,
+        name: "far",
+        owner_id: viewer.id
+      })
+
+      names = fn scope -> scope |> Actors.list_own_agents() |> Enum.map(& &1.name) end
+      assert names.(workspace_scope_fixture(viewer, ws)) == ["alpha", "zeta"]
+      assert names.(workspace_scope_fixture(owner, ws)) == ["boss"]
+      assert names.(workspace_scope_fixture(viewer, other_ws)) == ["far"]
+    end
+
+    test "no agents", %{ws: ws, viewer: viewer} do
+      assert Actors.list_own_agents(workspace_scope_fixture(viewer, ws)) == []
+    end
+
+    test "scopes without a role or acting as an agent get nothing",
+         %{ws: ws, viewer: viewer, insert: insert} do
+      agent = insert.(kind: :agent, name: "alpha", owner_id: viewer.id)
+      scope = workspace_scope_fixture(viewer, ws)
+
+      assert Actors.list_own_agents(%{scope | role: nil}) == []
+      assert Actors.list_own_agents(%{scope | actor: agent}) == []
+    end
+  end
+
   describe "ensure_human/2" do
     setup do
       owner = user_fixture(%{email: "owner@example.com"})

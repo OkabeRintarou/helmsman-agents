@@ -293,6 +293,64 @@ defmodule Helmsman.TasksTest do
     test "unknown projects are not found", %{viewer: viewer} do
       assert Tasks.list(viewer, "NOPE") == {:error, :not_found}
     end
+
+    defp cursor(%Task{updated_at: updated_at, id: id}), do: {updated_at, id}
+
+    test "before: the page after a cursor, offset ignored", %{viewer: viewer} do
+      {:ok, [_, second]} = Tasks.list(viewer, "BOS", limit: 2)
+      assert second.ident == "BOS-2"
+
+      assert idents(Tasks.list(viewer, "BOS", before: cursor(second))) == ["BOS-1"]
+      assert idents(Tasks.list(viewer, "BOS", before: cursor(second), offset: 5)) == ["BOS-1"]
+      assert idents(Tasks.list(viewer, "BOS", before: nil, offset: 1)) == ["BOS-2", "BOS-1"]
+
+      {:ok, [last]} = Tasks.list(viewer, "BOS", before: cursor(second))
+      assert idents(Tasks.list(viewer, "BOS", before: cursor(last))) == []
+    end
+
+    test "before: equal update times are ordered by id", %{viewer: viewer} do
+      at = ~U[2026-01-01 00:00:00.000000Z]
+      Repo.update_all(Task, set: [updated_at: at])
+
+      assert idents(Tasks.list(viewer, "BOS")) == ["BOS-3", "BOS-2", "BOS-1"]
+      {:ok, [_, second]} = Tasks.list(viewer, "BOS", limit: 2)
+
+      assert idents(Tasks.list(viewer, "BOS", before: cursor(second), limit: 2)) == ["BOS-1"]
+    end
+
+    test "before: with filters", %{viewer: viewer} do
+      {:ok, [first | _]} = Tasks.list(viewer, "BOS")
+
+      assert idents(Tasks.list(viewer, "BOS", label: "backend", before: cursor(first))) == [
+               "BOS-1"
+             ]
+    end
+  end
+
+  describe "list_labels/2" do
+    test "distinct labels of the project, sorted", %{viewer: viewer, member: member, owner: owner} do
+      task_fixture(member, "BOS", labels: ["backend", "api"])
+      task_fixture(member, "BOS", labels: ["Backend", "ui"])
+      task_fixture(member, "BOS")
+      project_fixture(owner, key: "OTH")
+      task_fixture(member, "OTH", labels: ["other"])
+
+      assert Tasks.list_labels(viewer, "bos") == {:ok, ["api", "backend", "ui"]}
+      assert Tasks.list_labels(viewer, "OTH") == {:ok, ["other"]}
+    end
+
+    test "no labels, unknown projects, other workspaces", %{viewer: viewer} do
+      assert Tasks.list_labels(viewer, "BOS") == {:ok, []}
+      assert Tasks.list_labels(viewer, "NOPE") == {:error, :not_found}
+
+      other = user_fixture()
+      other_scope = workspace_scope_fixture(other, workspace_fixture(other))
+      assert Tasks.list_labels(other_scope, "BOS") == {:error, :not_found}
+    end
+
+    test "scopes without a role are refused", %{viewer: viewer} do
+      assert Tasks.list_labels(%{viewer | role: nil}, "BOS") == {:error, :forbidden}
+    end
   end
 
   describe "update/4" do

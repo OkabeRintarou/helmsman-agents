@@ -9,6 +9,7 @@ defmodule Helmsman.Actors do
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Workspace
@@ -156,6 +157,54 @@ defmodule Helmsman.Actors do
         where: a.workspace_id == ^workspace_id and a.user_id == ^user_id and a.kind == :human
       )
     )
+  end
+
+  @doc """
+  Lists the identities a task may be assigned to (`:read_tasks`): the
+  workspace's humans and agents that are not disabled, as
+  `Helmsman.Tasks.update/4` accepts them. Humans first, then agents, each
+  by name; agents have their `owner` preloaded.
+  """
+  @spec list_assignable(Scope.t()) :: {:ok, [Actor.t()]} | {:error, :forbidden}
+  def list_assignable(%Scope{workspace: %Workspace{id: workspace_id}} = scope) do
+    with :ok <- Policy.authorize(scope, :read_tasks) do
+      actors =
+        from(a in Actor,
+          where:
+            a.workspace_id == ^workspace_id and a.kind in [:human, :agent] and
+              is_nil(a.disabled_at),
+          order_by: [asc: fragment("? = 'agent'", a.kind), asc: a.name],
+          preload: :owner
+        )
+        |> Repo.all()
+
+      {:ok, actors}
+    end
+  end
+
+  @doc """
+  Lists the scope user's own enabled agents in the workspace, by name: the
+  agents a new API token may default to (see `Helmsman.ApiTokens`). Every
+  role may list them; scopes that may not list their own tokens (no role,
+  agent identities) get `[]`.
+  """
+  @spec list_own_agents(Scope.t()) :: [Actor.t()]
+  def list_own_agents(
+        %Scope{workspace: %Workspace{id: workspace_id}, user: %User{id: user_id}} = scope
+      ) do
+    case Policy.authorize(scope, :list_own_tokens) do
+      :ok ->
+        from(a in Actor,
+          where:
+            a.workspace_id == ^workspace_id and a.kind == :agent and a.owner_id == ^user_id and
+              is_nil(a.disabled_at),
+          order_by: [asc: a.name]
+        )
+        |> Repo.all()
+
+      {:error, :forbidden} ->
+        []
+    end
   end
 
   @doc """

@@ -20,6 +20,7 @@ defmodule Helmsman do
       Projects.Project,
       Tasks,
       Tasks.Task,
+      Tasks.Ident,
       Tasks.StateMachine,
       Feedback,
       Feedback.Entry,

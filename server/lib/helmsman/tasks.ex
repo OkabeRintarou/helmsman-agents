@@ -204,6 +204,9 @@ defmodule Helmsman.Tasks do
     * `:assignee` - an identity name; `""` for unassigned tasks
     * `:limit` - at most this many tasks (default 50, at most 200)
     * `:offset` - skip this many tasks (default 0)
+    * `:before` - `{updated_at, id}` of the last task of the previous page:
+      only the tasks after it in this order (keyset pagination; `:offset`
+      is then ignored)
 
   Returns `{:error, :not_found}` for an unknown project.
   """
@@ -218,9 +221,9 @@ defmodule Helmsman.Tasks do
           where: t.workspace_id == ^workspace_id and t.project_id == ^project.id,
           order_by: [desc: t.updated_at, desc: t.id],
           limit: ^limit(opts[:limit]),
-          offset: ^offset(opts[:offset]),
           preload: [:created_by, :assignee]
         )
+        |> page(opts[:before], opts[:offset])
         |> filter_status(opts[:status])
         |> filter_label(opts[:label])
         |> filter_assignee(workspace_id, opts[:assignee])
@@ -234,8 +237,33 @@ defmodule Helmsman.Tasks do
   defp limit(n) when is_integer(n), do: n |> max(0) |> min(@max_limit)
   defp limit(_), do: @default_limit
 
-  defp offset(n) when is_integer(n) and n > 0, do: n
-  defp offset(_), do: 0
+  defp page(query, nil, n) when is_integer(n) and n > 0, do: offset(query, ^n)
+  defp page(query, nil, _offset), do: query
+
+  defp page(query, {%DateTime{} = updated_at, id}, _offset) when is_integer(id),
+    do: where(query, [t], fragment("(?, ?) < (?, ?)", t.updated_at, t.id, ^updated_at, ^id))
+
+  @doc """
+  Lists the distinct labels of the tasks of the project with
+  `project_key`, sorted (`:read_tasks`). Returns `{:error, :not_found}` for
+  an unknown project.
+  """
+  @spec list_labels(Scope.t(), String.t()) ::
+          {:ok, [String.t()]} | {:error, :forbidden | :not_found}
+  def list_labels(%Scope{workspace: %Workspace{id: workspace_id}} = scope, project_key)
+      when is_binary(project_key) do
+    with :ok <- Policy.authorize(scope, :read_tasks),
+         {:ok, project} <- fetch_project(scope, project_key) do
+      %{rows: rows} =
+        Repo.query!(
+          "SELECT DISTINCT unnest(labels) AS label FROM tasks " <>
+            "WHERE workspace_id = $1 AND project_id = $2 ORDER BY 1",
+          [workspace_id, project.id]
+        )
+
+      {:ok, List.flatten(rows)}
+    end
+  end
 
   # Compared as text: an unknown status matches nothing instead of raising.
   defp filter_status(query, nil), do: query
