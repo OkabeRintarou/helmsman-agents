@@ -22,6 +22,7 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
     spawn_child) sleep 600 & printf '%s\n' "$!" > "$FAKE_CLI_CHILD_PID_FILE" ;;
     ignore_term) trap '' TERM ;;
     echo_stdin) cat ;;
+    await_stdin_eof) cat > /dev/null ;;
     dump_env) env ;;
     dump_argv) printf '%s\n' "$all_args" ;;
     exit) exit "$value" ;;

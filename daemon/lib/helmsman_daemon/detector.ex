@@ -29,7 +29,10 @@ defmodule HelmsmanDaemon.Detector do
               false,
               "CLI version too old; requires #{adapter.min_version()}"
             ),
-          else: cli(adapter, info.version, info.models, true, nil)
+          else: %{
+            cli(adapter, info.version, info.models, true, nil)
+            | efforts: Map.get(info, :efforts, [])
+          }
 
       :error ->
         cli(adapter, info.version, info.models, false, "Invalid CLI version")

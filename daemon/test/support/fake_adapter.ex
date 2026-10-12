@@ -12,7 +12,7 @@ defmodule HelmsmanDaemon.Adapters.Fake do
 
   def detect do
     with {:ok, version} <- Exec.version(executable()),
-         do: {:ok, %{version: version, models: ["fake"]}}
+         do: {:ok, %{version: version, models: ["fake"], efforts: []}}
   end
 
   def prepare(spec, _run_dir, _work_dir) do

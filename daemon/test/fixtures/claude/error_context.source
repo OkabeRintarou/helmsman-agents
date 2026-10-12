@@ -1,0 +1,4 @@
+Known CLI diagnostic literal: Prompt is too long
+Source: installed Claude Code 2.1.246 executable, exact UTF-8 string located read-only.
+No live rate limit, exhausted quota, context overflow or invalid API key was induced.
+This stderr-only fixture is not a recorded model response; exit=1 is the failure test input.

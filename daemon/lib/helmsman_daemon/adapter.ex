@@ -6,7 +6,12 @@ defmodule HelmsmanDaemon.Adapter do
   @callback provider() :: :claude | :codex | :copilot | :cursor
   @callback executable() :: String.t()
   @callback min_version() :: Version.t()
-  @callback detect() :: {:ok, %{version: String.t(), models: [String.t()]}} | {:error, String.t()}
+  @type detection :: %{
+          required(:version) => String.t(),
+          required(:models) => [String.t()],
+          optional(:efforts) => [String.t()]
+        }
+  @callback detect() :: {:ok, detection()} | {:error, String.t()}
   @callback prepare(RunSpec.t(), Path.t(), Path.t()) ::
               {:ok, Launch.t()} | {:error, {atom(), String.t()}}
   @callback init_state(RunSpec.t()) :: term()
