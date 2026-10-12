@@ -46,6 +46,7 @@
 | **委派** `delegated` | 小队 leader 调用 `delegate`（16 §1.2） | work | 按 leader 的指示做 |
 | **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent` | work | 按附带的说明做 |
 | **自动化** | 定时 / 手动 / webhook（16 §2） | work | |
+| **插话兜底** `steer` | 人写 Feedback 时插话正在运行的托管 Agent（§8），且这条 Feedback 没有为该 Agent 排上别的触发 | 与被插话的运行相同 | 处理这条 Feedback；被插话的运行成功结束且有回执时，领取前移除（`add-run-steering` 决策 5、7） |
 
 **延续**——是之前某次授权的继续，授权**继承**自该任务上这个 Agent 最近一次「指派」（或委派）的授权来源，而不是那个碰巧改了状态的人：
 
@@ -86,7 +87,7 @@
 | 能力 | 缺省 | 包含 |
 |---|---|---|
 | `read` | 总是 | 读工作区里的项目、任务、反馈、检索、BQL |
-| `write_task` | 有任务的运行 | 只对**本次运行的任务**：写 / 修订 Feedback（含 @其他 Agent）、状态迁移、改字段、建 / 删以它为一端的链 |
+| `write_task` | 有任务的运行 | 只对**本次运行的任务**：写 / 修订 Feedback（含 @其他 Agent）、状态迁移、改字段、建 / 删以它为一端的链（不能用 `replaces` 撤销另一张未结束的任务，07 §5） |
 | `create_tasks` | 小队 leader、Agent 配置里勾选了的 | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
 | `delegate` | 小队 leader 运行 | 16 §1.2 |
 
@@ -193,6 +194,7 @@ SELECT r.* FROM runs r
 | 唤醒 leader（`delegate_done`） | 委派运行结束之后 | 触发记录里的 `run_id` |
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
 | 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
+| 插话结算（§8） | 运行以 `succeeded` 结束、且有已回执的插话 | Oban 唯一键（`steer_settle`） |
 
 ## 5. 失败与重试
 
@@ -270,11 +272,12 @@ SELECT r.* FROM runs r
 - **停止**：界面按钮、MCP / REST `cancel_run`。`queued` / `deferred` 直接 → `cancelled`；`claimed` / `running` → `cancelling`，通知守护进程中断 CLI（14 §6）。守护进程把已有改动提交并推送后上报，运行 → `cancelled`。守护进程不在线时，宽限期后直接 → `cancelled`。
 - 改执行方、改任务状态**不会**停止正在跑的运行；界面在这些操作旁边提示可以手动停止。
 - 自动停止只发生在：Agent 被停用 / 归档、Agent 所属用户被移出工作区、运行的授权来源用户被移出工作区（§2.2）。
-- **插话**：人在任务上写 Feedback 时，如果有 Agent 正在跑，输入框下方出现「同时发给正在运行的 keel/dev」（缺省勾选）。
-  - 这条 Feedback 照常记在任务上，并且照常按 §2 产生一条排队的触发（作为兜底），触发上标记 `steer_pending`；
-  - CLI 支持运行中追加输入（Claude Code、Codex）→ 通过守护进程送进当前会话；守护进程确认送达后回执，服务端从排队的运行里**移除**这条触发（没有别的触发了就取消那条排队运行）；
-  - 不支持（Copilot CLI、Cursor）或没收到回执就结束了 → 兜底触发保留，当前运行结束后接着跑。
-  - 回执按 `(feedback_id, run_id)` 记录，重复回执无副作用。所以一条插话既不会被处理两次，也不会丢。
+- **插话**（`add-run-steering`）：人在任务上写 Feedback 时，如果有 Agent 正在跑（`running`），输入框下方出现「同时发给正在运行的 keel/dev」（缺省勾选）。
+  - 只有人能插话（MCP 的写入身份总是 Agent），且作者必须有权触发该 Agent（与提及同一标准）；否则 Feedback 照常保存，插话结果记为 `skipped`。只在追加 Feedback 时可用，修订与迁移原因不行。
+  - 这条 Feedback 照常记在任务上，照常按 §2 产生触发；它为该 Agent 产生的触发标记 `steer_run_id`，一条都没排上队时另加一条 `steer` 触发（§2.1，授权来源 = 作者、lane 与被插话的运行相同）作为兜底。
+  - 运行在 `running` 且兜底已排上队时，提交后服务端把一段英文说明加原文推给守护进程（记入 `run_steers`），守护进程交给 CLI 适配器送进当前会话；CLI 确认收下后守护进程上报回执（`acked_at`），回执先于 `finished` 落库。守护进程重连（`join`）时服务端重推没有回执的插话，守护进程按 Feedback 去重。实时送达与兜底同进同退：兜底被频率上限、运行时不可用等规则拒绝时不推送，插话整体不发生，结果说明原因。
+  - **结算**：被插话的运行**成功结束**且有回执，标记了它的兜底触发才移除（副作用 `steer_settle` 主动移除，领取时的复核再兜一次；一条不剩的排队运行以 `obsolete` 取消）。只有回执、运行却失败或被停止的，兜底保留——回执只说明 CLI 收下了，不说明处理完了。
+  - 不支持运行中追加输入的 CLI（Copilot CLI、Cursor；Claude Code 以实测为准）或没收到回执 → 兜底保留，当前运行结束后接着跑。所以一条插话不会丢，送达且处理完的也不会再跑一次。
 
 ## 9. 实时与界面
 
@@ -285,6 +288,6 @@ SELECT r.* FROM runs r
 
 ## 10. 接口
 
-- 领域：`Helmsman.Runs.enqueue/3`（只由触发器和手动入口调用）、`claim/2`、`starting/2`、`append_events/3`、`pushed/3`、`finish/3`、`cancel/2`、`retry/2`、`steer/3`。
+- 领域：`Helmsman.Runs.enqueue/3`（只由触发器和手动入口调用）、`claim/2`、`starting/2`、`append_events/3`、`pushed/3`、`finish/3`、`cancel/2`、`retry/2`、`steer_ack/3`（守护进程回执）、`steerable/2`（界面是否显示插话勾选框）；插话本身是 `Helmsman.Feedback.add/3` 的 `steer_run_id`（`add-run-steering`）。
 - MCP：`run_agent(agent, task_id?, instructions?)`、`list_runs(task_id)`、`cancel_run(run_id)`。
 - REST：`/api/v1/w/:slug/runs`、`/runs/:id`、`/runs/:id/events`、`/runs/:id/cancel`、`/runs/:id/retry`。

@@ -61,7 +61,7 @@ end
 | 项目 | `list_projects(include_archived?)` `get_project(key)` `create_project(key, name, description?)` `update_project(key, …)` | 后两个需要 admin |
 | 任务 | `list_tasks(project_key, status?, label?, kind?, epic?, assignee?, query?, limit?, offset?)` `search_tasks(query, project_key?, limit?)` `get_task(task_id)` `create_task(project_key, title, description?, priority?, labels?, kind?, epic?, assignee?)` `update_task(task_id, …)` | |
 | 状态 | `transition_task(task_id, to, comment?, commits?, tests?, feedback?)` | `feedback = {kind, content}`：迁移原因，与迁移在同一事务里写入（06）；bosun 没有这个参数，不传时行为与 bosun 一致 |
-| 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | |
+| 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | 返回 `from` 的详情；`type` 为 `depends_on`（from 等 to）或 `replaces`（from 接手 to，to 未结束时被撤销）；重复添加、删除不存在的都成功（`add-task-links`） |
 | 反馈 | `add_feedback(task_id, content, kind?)` `update_feedback(feedback_id, content, kind?)` `list_feedback(task_id)` | |
 | 查询 | `query_tasks(bql, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name, bql, filter_id?, shared?)` `delete_filter(filter_id)` | `save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致） |
 
@@ -96,7 +96,7 @@ end
 | reason | 文本示例 |
 |---|---|
 | `{:invalid_transition, from, to, allowed}` | `Cannot move BOS-3 from DONE to CANCELLED. Allowed: VERIFIED, IN_PROGRESS.` |
-| `{:blocked, ids}` | `BOS-3 is blocked by BOS-1, BOS-2 (not DONE yet). Finish them first, or unlink_tasks if the dependency is wrong.` |
+| `{:blocked, ids}` | `BOS-3 is blocked by BOS-1, BOS-2 (not finished yet). Finish them first, or unlink_tasks if the dependency is wrong.`（「满足」的定义见 07 §3，不一定是 DONE） |
 | `{:replaced, ids}` | `BOS-3 was replaced by BOS-7. unlink_tasks(BOS-7, BOS-3, replaces) first if it really needs to come back.` |
 | `{:self_verify_requires_tests, name}` | `You (keel/search) are the assignee. Pass tests={passed:true,...} or let the requester verify.` |
 | `:forbidden` | `Your role (viewer) cannot do this.` |
@@ -104,7 +104,9 @@ end
 | `:run_ended` | `This run has ended; its token is no longer valid.` |
 | `{:missing_capability, cap, task}` | `This run may only modify BOS-12. Creating tasks / touching BOS-15 needs the create_tasks capability; ask a human or write a question on BOS-12.` |
 | `{:run_active, run}` | `BOS-12 cannot be verified while keel/dev is still running on it (run 881). Wait until the run ends and its changes are pushed.` |
-| `:not_found` | `Task BOS-99 not found in workspace acme.` |
+| `{:cycle, path}` | `Cannot make BOS-1 depend on BOS-2: it would create the cycle BOS-1 → BOS-2 → BOS-3 → BOS-1.` |
+| 运行替代别的未结束任务（07 §5） | `This run cannot replace BOS-2: it would cancel a task other than BOS-7. Ask a person to do it.` |
+| `:not_found` / `{:not_found, ident}` | `Task BOS-99 not found in workspace acme.`（两端的工具指出是哪一端） |
 | `%Ecto.Changeset{}` | 字段名 + 错误信息逐条列出 |
 
 ## 6. 测试

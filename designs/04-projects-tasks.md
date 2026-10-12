@@ -57,7 +57,8 @@ MCP / REST 调 `update` 时可以不传 `lock_version`，此时在行锁内按�
 
 Epic 就是 `kind = epic` 的任务：一个整体目标，普通任务通过 `epic_id` 挂上去作为步骤。
 
-- 校验：`epic_id` 必须指向同一工作区内 `kind = epic` 的任务；Epic 不能再挂到别的 Epic 下；`epic = ""` 表示摘掉。
+- 校验：`epic_id` 必须指向同一工作区内 `kind = epic` 的任务；Epic 不能再挂到别的 Epic 下；`epic = ""` 表示摘掉。目标的状态不限：挂到已 DONE / VERIFIED 的 Epic 会使它自动回到 IN_PROGRESS（05 §6）。`kind` 建单后不能改，编辑请求带不同的 `kind` 返回字段错误（`add-epics` 决策 3）。
+- 步骤按创建顺序（任务 ID 的内部主键）列出，没有显式顺序；需要先后时用依赖表达（07）。
 - `progress = %{total, done, by_status}`：一次聚合查询 `GROUP BY status` 得到；DONE 与 VERIFIED 算完成，CANCELLED / REJECTED 计入 total 但不算完成。不落库。
 - 有自己的状态、历史和 Feedback，走同一个状态机；另外随步骤自动流转（05 §6）。
 
@@ -69,4 +70,4 @@ Epic 就是 `kind = epic` 的任务：一个整体目标，普通任务通过 `e
 |---|---|
 | `project:<id>` | `{:task_created, summary}` / `{:task_updated, summary}` |
 | `task:<id>` | `{:task_updated, ident}`（详情页收到后重新加载） |
-| `task:<epic_id>` | 步骤挂上 / 摘下 / 状态变化时通知 Epic 页面刷新进度 |
+| `task:<epic_id>` | 步骤挂上 / 摘下 / 状态变化时通知 Epic 页面刷新进度：沿用 `{:task_updated, ident}`，Epic 所在项目主题同时收到 `{:task_updated, summary}`（`add-epics` 决策 9） |

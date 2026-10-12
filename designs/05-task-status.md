@@ -107,12 +107,13 @@ Helmsman.Tasks.transition(scope, ident, to, opts)    :: {:ok, task_detail} | {:e
 
 步骤迁移时，在同一事务里同步 Epic 的状态（不经迁移表）：
 
-- 全部步骤都在 DONE / VERIFIED / CANCELLED，且至少一个 DONE / VERIFIED → Epic 自动 → DONE（从 NEW / IN_PROGRESS），备注 `all steps completed (auto)`；
-- 已 DONE / VERIFIED 的 Epic 因步骤重开不再满足上一条 → 自动 → IN_PROGRESS，备注 `step reopened (auto)`；
+- 至少一个步骤，全部步骤都在 DONE / VERIFIED / CANCELLED，且至少一个 DONE / VERIFIED → Epic 自动 → DONE（从 NEW / IN_PROGRESS），备注 `all steps completed (auto)`；
+- 已 DONE / VERIFIED 的 Epic 出现未结束的步骤（NEW / IN_PROGRESS / REJECTED）→ 自动 → IN_PROGRESS，备注 `step reopened (auto)`（步骤迁移引起）或 `step added (auto)`（挂上引起）；
 - CANCELLED / REJECTED 的 Epic 不参与；
-- 自动事件的 actor 是触发步骤迁移的人，`auto = true`，`commits` / `tests` 为空。
+- 自动事件的 actor 是触发步骤迁移的人（挂上 / 摘下时是编辑者），`source_run_id` 同样取自引起它的操作，`auto = true`，`commits` / `tests` 为空；不改 Epic 的 `lock_version`。
+- Epic 的自动迁移**不**触发运行、**不**入队 PR 对账：Epic 是容器，自动迁移只是记账（`add-epics` 决策 6）。
 
-步骤挂上 / 摘下（`update` 改 `epic_id`、建单时带 `epic`）时同样重算一次相关的 Epic。
+步骤挂上 / 摘下（`update` 改 `epic_id`、建单时带 `epic`）时同样重算一次相关的 Epic；摘掉步骤不会让 Epic 回到 IN_PROGRESS，但可能让它自动 DONE。所有状态变化与挂接变化都持有图锁，重算读到的步骤集合是稳定的。重算挂在 `TransitionSteps` 上，所以手动迁移、运行开始时的自动领取、自动重开、被替代撤销都会触发它。
 
 ### 被替代
 

@@ -59,7 +59,7 @@
 | `started` | `run_id, session_id?` |
 | `events` | `run_id, [%{seq, type, data, at}]`，最多每秒一批、每批 ≤ 200 条。回复：已连续落库的最大 `seq`，守护进程据此丢弃缓冲 |
 | `heartbeat` | 每 30 秒；所有在跑的运行的 `run_id, last_seq`。回复：服务端认为已结束、应立即终止的运行 |
-| `steer_ack` | `run_id, feedback_id`：插话已送进 CLI（13 §8） |
+| `steer_ack` | `run_id, feedback_id`：CLI 已把插话纳入当前会话（以适配器的确认为准）；与事件同一套重发，`finished` 在它得到回复之后才上报（13 §8） |
 | `git_token` | `run_id`：请求新的推送令牌（安装令牌 1 小时过期，长任务结束时可能已失效） |
 | `cleanup_check` | 协议 Vc（`add-pr-reconcile-merge`）：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
 | `repo_status` | 协议 3：本地仓库模式下，`join` / `sync` 回复给出要检查的分支，守护进程 fetch 用户仓库后上报每个分支的提交是否已进入基础分支（15 §8） |
@@ -105,14 +105,14 @@
 @callback init_state(spec) :: state
 @callback handle_output(:stdout | :stderr, line :: binary, state) :: {[event], [:close_stdin | {:write, iodata}], state}
 @callback finish(exit_status, state) :: {:succeeded | {:failed, reason, message}, %{session_id, summary, usage}}
-@callback steer(text, state) :: {:ok, iodata, state} | :unsupported
+@callback steer(ref, text, state) :: {:ok, iodata, :delivered | :pending, state} | :unsupported   # :pending 时之后由 handle_output 的动作 {:steer_result, ref, :delivered | {:rejected, msg}} 确认（add-run-steering 决策 11）
 @callback interrupt(state) :: {:write, iodata} | :signal
 ```
 
 | | 启动命令（无人值守） | 提示词怎么给 | 注入 Helmsman MCP | 恢复会话 | 插话 |
 |---|---|---|---|---|---|
-| **Claude Code** | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode bypassPermissions --strict-mcp-config --mcp-config <run_dir>/mcp.json [--model] [--effort] [--resume <id>]` | stdin 写一帧 stream-json 用户消息，stdin 保持打开；收到 `result` 后关闭 stdin | `--mcp-config` 指向私有目录里的 JSON（HTTP 服务器 + `Authorization: Bearer ${HELMSMAN_RUN_TOKEN}`，CLI 展开环境变量，令牌不落盘；2.1.246 实测，`add-claude-adapter` 决策 16） | `--resume` | stdin 再写一帧用户消息 |
-| **Codex** | `codex app-server`（stdio 上的 JSON-RPC：`initialize` → `thread/start` 或 `thread/resume` → `turn/start`；审批 `never`、沙箱 `danger-full-access`），环境变量 `CODEX_HOME=~/.helmsman/codex` | `turn/start` 的参数 | `thread/start` 的 `config` 写 `mcp_servers.helmsman = {url, bearer_token_env_var = "HELMSMAN_RUN_TOKEN"}`（streamable HTTP，令牌不落盘、不进命令行）。用守护进程专用、持久的 `CODEX_HOME` 隔离：守护进程**不读不改不复制**用户的 `~/.codex`，provider 与登录由机器主人在其中配置一次；该目录的 `config.toml` 定义了 MCP 服务器时 CLI 不可用；工作目录或仓库根有 `.codex/config.toml` 时拒绝运行（`workspace_prepare`，未信任的项目配置也会生效）。不支持 MCP prompts（提示词只依赖工具与资源） | `thread/resume` | 当前 turn 内追加输入（`turn/steer`，#28） |
+| **Claude Code** | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode bypassPermissions --strict-mcp-config --mcp-config <run_dir>/mcp.json [--model] [--effort] [--resume <id>]` | stdin 写一帧 stream-json 用户消息，stdin 保持打开；收到 `result` 后关闭 stdin | `--mcp-config` 指向私有目录里的 JSON（HTTP 服务器 + `Authorization: Bearer ${HELMSMAN_RUN_TOKEN}`，CLI 展开环境变量，令牌不落盘；2.1.246 实测，`add-claude-adapter` 决策 16） | `--resume` | stdin 再写一帧用户消息；送达信号与关闭 stdin 的时机以实测为准，找不到可靠信号则不支持（`add-run-steering` 决策 12） |
+| **Codex** | `codex app-server`（stdio 上的 JSON-RPC：`initialize` → `thread/start` 或 `thread/resume` → `turn/start`；审批 `never`、沙箱 `danger-full-access`），环境变量 `CODEX_HOME=~/.helmsman/codex` | `turn/start` 的参数 | `thread/start` 的 `config` 写 `mcp_servers.helmsman = {url, bearer_token_env_var = "HELMSMAN_RUN_TOKEN"}`（streamable HTTP，令牌不落盘、不进命令行）。用守护进程专用、持久的 `CODEX_HOME` 隔离：守护进程**不读不改不复制**用户的 `~/.codex`，provider 与登录由机器主人在其中配置一次；该目录的 `config.toml` 定义了 MCP 服务器时 CLI 不可用；工作目录或仓库根有 `.codex/config.toml` 时拒绝运行（`workspace_prepare`，未信任的项目配置也会生效）。不支持 MCP prompts（提示词只依赖工具与资源） | `thread/resume` | 当前 turn 内追加输入（`turn/steer`），成功回复即送达（`add-run-steering` 决策 11） |
 | **Copilot CLI** | `copilot -p <prompt> --output-format json --allow-all --no-ask-user --disable-builtin-mcps --additional-mcp-config @<run_dir>/mcp.json [--model] [--resume <id>]`，环境变量 `COPILOT_HOME=<run_dir>/copilot-home` | 命令行参数（所以提示词要短，13 §6） | `--additional-mcp-config @文件`（注意 `@` 前缀，否则会被当作 JSON 字符串）。它会**追加**而不是替换用户的 `mcp-config.json`，所以用私有的 `COPILOT_HOME` 隔离，只放入登录所需的文件 | `--resume` | 不支持 → 结束后续跑 |
 | **Cursor CLI** | `cursor-agent -p --output-format stream-json --force --workspace <work_dir> [--model] [--resume <id>]`，环境变量 `CURSOR_DATA_DIR=<run_dir>/cursor-data` | stdin（写完关闭） | Cursor 只从项目目录读 MCP 配置：写 `<work_dir>/.cursor/mcp.json`，并在私有的 `CURSOR_DATA_DIR` 里只批准这一个服务器（不用 `--approve-mcps`，否则仓库和用户已有的 MCP 也会被批准）。仓库里已有 `.cursor/mcp.json` 时**拒绝运行**（`workspace_prepare`），不覆盖；文件加进 `$(git rev-parse --git-path info/exclude)` | `--resume` | 不支持 → 结束后续跑 |
 

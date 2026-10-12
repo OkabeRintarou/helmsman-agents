@@ -288,7 +288,7 @@ helmsman-agents/
 |---|---|
 | ~~多条触发并入同一排队运行时，授权来源、`causal_agent_ids`、能力怎么合并；指派不进历史，`start: false` 之后的延续触发无处继承授权~~ 已解决：每条触发记自己的授权来源，合并保留最早的、领取时逐条复核；因果链取并集；能力领取时重算；授权记在 `task_grants`（13 §2.2–§3） | 18 `add-run-dispatch` |
 | ~~`run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建~~ 已解决：不分区，按运行整块清理（13 §1） | 19 `add-run-lifecycle` |
-| 插话的兜底触发在 13 §2 里没有对应的触发类型 | 28 `add-run-steering` |
+| ~~插话的兜底触发在 13 §2 里没有对应的触发类型~~ 已解决：新发起触发 `steer`；被插话的运行成功结束且有回执才移除兜底（13 §2.1、§8） | 28 `add-run-steering` |
 | ~~运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas`~~ 已解决：`pushed` 不看运行状态，只看是否领取者当前代次的上报；`git_token` 在运行结束后 30 分钟内仍可续签（`add-daemon-git-workspace` 决策 4、5） | 24 `add-daemon-git-workspace` |
 | 恢复会话失败（CLI 找不到会话）的运行以 `cli_error` 结束且 `session_id` 为空；`add-run-lifecycle` 决策 11 取「最近结束且 `session_id` 非空」的运行，下一次又会恢复同一个失效的会话，持续失败。方向：只看最近一次终态运行，其 `session_id` 为空就开新会话 | 19 `add-run-lifecycle` |
 | 未绑定供应商账号的 Claude Agent，仓库里的 `.claude/settings*.json` 能改 Claude Code 的供应商地址与凭据去向（`-p` 下不询问信任；`add-provider-accounts` 预探查 P6b）。绑定了账号的不受影响。方向待定：未绑定时也只钉住地址（需要读用户配置），或对不可信仓库拒绝运行（类似 Codex 的项目配置检查） | 未分配 |
