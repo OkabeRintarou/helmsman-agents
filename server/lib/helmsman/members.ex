@@ -187,9 +187,6 @@ defmodule Helmsman.Members do
   # transaction. The human identity stays (history keeps the name; it is
   # reused on rejoining); the agents stay disabled until their owner
   # re-enables them; their API tokens for the workspace are revoked.
-  #
-  # Still to hook in here: `add-run-lifecycle` stops their agents' claimed
-  # and running runs.
   defp cascade_removal(workspace_id, user_id) do
     now = DateTime.utc_now(:second)
 
@@ -216,10 +213,13 @@ defmodule Helmsman.Members do
 
     Helmsman.Daemons.cascade_member(workspace_id, user_id, true)
 
-    # Their agents are disabled above: their queued runs go last (designs/01
-    # §4). Runs they authorized for others' agents are checked when claimed
-    # (`add-run-lifecycle`).
-    Helmsman.Runs.cancel_pending(
+    # Runs go last (designs/01 §4), in a fixed order so each run changes
+    # once (decision 26): the runs they authorized (`unauthorized`), then
+    # the queued runs of their agents, disabled above (`obsolete`), then
+    # the claimed and running runs of their agents (stopped).
+    Helmsman.Runs.cancel_for_initiator(workspace_id, user_id)
+
+    own_runs =
       from(r in Helmsman.Runs.Run,
         where: r.workspace_id == ^workspace_id,
         where:
@@ -229,9 +229,10 @@ defmodule Helmsman.Members do
               select: a.id
             )
           )
-      ),
-      :obsolete
-    )
+      )
+
+    Helmsman.Runs.cancel_pending(own_runs, :obsolete)
+    Helmsman.Runs.stop_active(own_runs)
 
     :ok
   end

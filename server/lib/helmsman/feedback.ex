@@ -104,17 +104,19 @@ defmodule Helmsman.Feedback do
   inside a transaction, and updates the task's feedback columns. `input`
   comes from `normalize/1` (a `nil` kind is `comment`). No authorization:
   the caller has authorized its own action. Records `scope.run` as the
-  source of a run token's write. Registers the
+  source of a run token's write. Options (`Helmsman.Runs.SideEffects`):
+  `fallback: true` and `source_run_id`. Registers the
   `{:feedback_added, view}` notification on the task topic only; the
   caller notifies the project topic.
 
   Returns the new entry and the updated task.
   """
-  @spec insert_locked(Task.t(), Scope.t(), input()) :: {:ok, {Entry.t(), Task.t()}}
+  @spec insert_locked(Task.t(), Scope.t(), input(), keyword()) :: {:ok, {Entry.t(), Task.t()}}
   def insert_locked(
         %Task{} = task,
         %Scope{actor: %Actor{} = actor} = scope,
-        %{content: content} = input
+        %{content: content} = input,
+        opts \\ []
       ) do
     seq = task.feedback_seq + 1
 
@@ -128,7 +130,8 @@ defmodule Helmsman.Feedback do
         kind: input[:kind] || :comment,
         content: content,
         mentions: resolve_mentions(task.workspace_id, content),
-        source_run_id: source_run_id(scope)
+        source_run_id: Keyword.get(opts, :source_run_id, source_run_id(scope)),
+        fallback: Keyword.get(opts, :fallback, false)
       })
 
     task = refresh_counters(task, seq)

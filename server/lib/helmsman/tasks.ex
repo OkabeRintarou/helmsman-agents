@@ -31,6 +31,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Projects
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
+  alias Helmsman.Tx
 
   alias Helmsman.Tasks.{
     Evidence,
@@ -631,6 +632,69 @@ defmodule Helmsman.Tasks do
     do: [status: :in_progress, assignee_id: scope.actor.id, lock_version: task.lock_version + 1]
 
   defp transition_changes(_task, to, _scope), do: [status: to]
+
+  @doc """
+  Moves the task of a run that just started to `in_progress`, as the
+  run's agent (`add-run-lifecycle` decision 12): a server decision, not
+  authorized by `Helmsman.Policy`. In its own transaction, in the order of
+  transitions (maintenance lock, graph lock, task row `FOR UPDATE`); only
+  while the task is `new` and its assignee is the agent. The history entry
+  is `auto` and refers to the run; a unique index makes a second one for
+  the same run impossible. The notifications are those of `transition/4`.
+  Returns `{:ok, :claimed | :skipped}`.
+  """
+  @spec auto_claim_for_run(Helmsman.Runs.Run.t()) :: {:ok, :claimed | :skipped}
+  def auto_claim_for_run(%Helmsman.Runs.Run{task_id: nil}), do: {:ok, :skipped}
+
+  def auto_claim_for_run(%Helmsman.Runs.Run{} = run) do
+    Tx.run(fn ->
+      Locks.maint_shared!(run.workspace_id)
+      :ok = Locks.graph!(run.workspace_id)
+      task = Repo.one!(from(t in Task, where: t.id == ^run.task_id, lock: "FOR UPDATE"))
+
+      if task.status == :new and task.assignee_id == run.agent_id,
+        do: auto_claim_locked(task, run),
+        else: {:ok, :skipped}
+    end)
+  end
+
+  defp auto_claim_locked(task, run) do
+    event =
+      Repo.insert!(
+        %TaskEvent{
+          workspace_id: task.workspace_id,
+          task_id: task.id,
+          from_status: :new,
+          to_status: :in_progress,
+          actor_id: run.agent_id,
+          commits: [],
+          auto: true,
+          source_run_id: run.id
+        },
+        on_conflict: :nothing
+      )
+
+    if event.id do
+      agent = Repo.get!(Actor, run.agent_id)
+
+      scope = %Scope{
+        user: Repo.get!(Helmsman.Accounts.User, agent.owner_id),
+        workspace: Repo.get!(Workspace, task.workspace_id),
+        actor: agent,
+        run: run
+      }
+
+      task = task |> Changeset.change(status: :in_progress) |> Repo.update!()
+
+      with :ok <- TransitionSteps.run(task, event, scope) do
+        task = preload_detail(task)
+        notify_transition(task, Enum.find(task.events, &(&1.id == event.id)))
+        {:ok, :claimed}
+      end
+    else
+      {:ok, :skipped}
+    end
+  end
 
   ## Assignee
 

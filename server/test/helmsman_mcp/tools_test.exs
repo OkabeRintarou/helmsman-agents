@@ -29,7 +29,7 @@ defmodule HelmsmanMCP.ToolsTest do
              Enum.sort(~w(identify whoami list_actors list_projects get_project create_project
                  update_project list_tasks get_task create_task update_task list_my_tasks
                  transition_task add_feedback update_feedback list_feedback list_agents run_agent
-                 list_runs))
+                 list_runs cancel_run))
 
     assert names == Enum.uniq(names)
 
@@ -57,7 +57,7 @@ defmodule HelmsmanMCP.ToolsTest do
     write_tools = Enum.filter(Tools.all(), &(&1.mode() == :write))
 
     assert write_tools |> Enum.map(& &1.name()) |> Enum.sort() ==
-             ~w(add_feedback create_project create_task run_agent transition_task
+             ~w(add_feedback cancel_run create_project create_task run_agent transition_task
                 update_feedback update_project update_task)
   end
 

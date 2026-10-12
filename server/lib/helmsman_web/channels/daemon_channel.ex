@@ -1,7 +1,10 @@
 defmodule HelmsmanWeb.DaemonChannel do
-  @moduledoc "Daemon control messages and authorization-aware disconnects."
+  @moduledoc """
+  Daemon control messages and authorization-aware disconnects; the run
+  messages of `add-run-lifecycle` (decision 18) go to `Helmsman.Runs`.
+  """
   use HelmsmanWeb, :channel
-  alias Helmsman.{Daemons, Repo}
+  alias Helmsman.{Daemons, Repo, Runs}
   alias HelmsmanProtocol.{ErrorReply, Messages, Push, Reply}
 
   @impl true
@@ -13,13 +16,19 @@ defmodule HelmsmanWeb.DaemonChannel do
            Daemons.register(socket.assigns.daemon_id, socket.assigns.auth_epoch, report) do
       socket = assign(socket, :protocol, report.protocol)
 
+      {:ok, %{terminate_run_ids: terminate, cancel_run_ids: cancel}} =
+        Runs.reconcile(daemon_ctx(socket), Enum.map(report.active_runs, & &1.run_id), :join)
+
+      # After the join reply.
+      if cancel != [], do: send(self(), {:push_cancels, cancel})
+
       {:ok,
        wire_reply(
          "join",
          %Reply.Join{
            daemon_id: socket.assigns.daemon_id,
            runtimes: runtimes,
-           terminate_run_ids: []
+           terminate_run_ids: terminate
          },
          socket
        ), socket}
@@ -53,9 +62,29 @@ defmodule HelmsmanWeb.DaemonChannel do
   @impl true
   def handle_in(name, payload, socket) do
     case Messages.decode(name, payload) do
-      {:ok, report} -> handle_report(name, report, socket)
+      {:ok, report} -> name |> handle_report(report, socket) |> maybe_drop_reply(name)
       _ -> {:reply, {:error, error(:invalid_payload)}, socket}
     end
+  end
+
+  if Mix.env() == :test do
+    # Test-only (`add-run-lifecycle` 7.1): for each message name in
+    # `config :helmsman, :daemon_channel_drop_replies`, the first reply of
+    # the connection is swallowed after the message was handled.
+    defp maybe_drop_reply({:reply, reply, socket}, name) do
+      dropped = Map.get(socket.assigns, :dropped_replies, MapSet.new())
+
+      if name in Application.get_env(:helmsman, :daemon_channel_drop_replies, []) and
+           not MapSet.member?(dropped, name) do
+        {:noreply, assign(socket, :dropped_replies, MapSet.put(dropped, name))}
+      else
+        {:reply, reply, socket}
+      end
+    end
+
+    defp maybe_drop_reply(result, _name), do: result
+  else
+    defp maybe_drop_reply(result, _name), do: result
   end
 
   defp handle_report("sync", report, socket) do
@@ -89,25 +118,97 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
-  defp handle_report("heartbeat", _report, socket) do
+  defp handle_report("heartbeat", report, socket) do
     case Daemons.heartbeat(socket.assigns.daemon_id, socket.assigns.auth_epoch) do
-      {:ok, _} -> respond("heartbeat", %Reply.Heartbeat{terminate_run_ids: []}, socket)
-      _ -> unauthorized_reply(socket)
+      {:ok, _} ->
+        {:ok, %{terminate_run_ids: terminate, cancel_run_ids: cancel}} =
+          Runs.reconcile(daemon_ctx(socket), Enum.map(report.runs, & &1.run_id), :heartbeat)
+
+        Enum.each(cancel, &push_message(%Push.Cancel{run_id: &1}, socket))
+        respond("heartbeat", %Reply.Heartbeat{terminate_run_ids: terminate}, socket)
+
+      _ ->
+        unauthorized_reply(socket)
     end
   end
 
   defp handle_report("claim", _report, socket) do
-    daemon = Repo.get(Daemons.Daemon, socket.assigns.daemon_id)
-
-    case Daemons.authorized(daemon, socket.assigns.auth_epoch) do
-      :ok -> respond("claim", %Reply.Claim{runs: []}, socket)
-      _ -> unauthorized_reply(socket)
+    case Runs.claim(daemon_ctx(socket), HelmsmanWeb.Endpoint.url()) do
+      {:ok, specs} -> respond("claim", %Reply.Claim{runs: specs}, socket)
+      {:error, reason} -> run_error(reason, socket)
     end
   end
 
+  defp handle_report("starting", report, socket) do
+    case Runs.starting(daemon_ctx(socket), report.run_id) do
+      {:ok, :proceed} ->
+        respond("starting", %Reply.Starting{action: :proceed, reason: nil}, socket)
+
+      {:ok, {:abort, reason}} ->
+        respond("starting", %Reply.Starting{action: :abort, reason: reason}, socket)
+
+      {:error, reason} ->
+        run_error(reason, socket)
+    end
+  end
+
+  defp handle_report("started", report, socket) do
+    case Runs.started(daemon_ctx(socket), report) do
+      :ok -> respond("started", %Reply.Empty{}, socket)
+      {:error, reason} -> run_error(reason, socket)
+    end
+  end
+
+  defp handle_report("events", report, socket) do
+    case Runs.append_events(daemon_ctx(socket), report.run_id, report.events) do
+      {:ok, acked} -> respond("events", %Reply.Events{acked_seq: acked}, socket)
+      {:error, reason} -> run_error(reason, socket)
+    end
+  end
+
+  defp handle_report("finished", report, socket) do
+    case Runs.finish(daemon_ctx(socket), report) do
+      :ok -> respond("finished", %Reply.Empty{}, socket)
+      {:error, reason} -> run_error(reason, socket)
+    end
+  end
+
+  # `git_token` and `pushed` come with `add-daemon-git-workspace`,
+  # `steer_ack` with `add-run-steering`.
   defp handle_report(_name, _report, socket), do: {:reply, {:error, error(:not_found)}, socket}
 
+  defp run_error(:reauthorized, socket), do: unauthorized_reply(socket)
+
+  defp run_error(reason, socket) when reason in [:not_found, :wrong_state],
+    do: {:reply, {:error, error(reason)}, socket}
+
+  defp run_error({:invalid_payload, _detail}, socket),
+    do: {:reply, {:error, error(:invalid_payload)}, socket}
+
+  defp daemon_ctx(socket) do
+    %{
+      daemon_id: socket.assigns.daemon_id,
+      user_id: socket.assigns.user_id,
+      auth_epoch: socket.assigns.auth_epoch
+    }
+  end
+
   @impl true
+  def handle_info({:runs_available}, socket) do
+    push_message(%Push.RunsAvailable{}, socket)
+    {:noreply, socket}
+  end
+
+  def handle_info({:cancel_run, run_id}, socket) do
+    push_message(%Push.Cancel{run_id: run_id}, socket)
+    {:noreply, socket}
+  end
+
+  def handle_info({:push_cancels, run_ids}, socket) do
+    Enum.each(run_ids, &push_message(%Push.Cancel{run_id: &1}, socket))
+    {:noreply, socket}
+  end
+
   def handle_info({:daemon_config_changed}, socket) do
     push_message(%Push.ConfigChanged{}, socket)
     {:noreply, socket}

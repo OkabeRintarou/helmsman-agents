@@ -36,6 +36,11 @@ defmodule Helmsman.PolicyMatrixTest do
   @others_agent %Actor{id: 202, workspace_id: 1, kind: :agent, owner_id: 11}
   @foreign_own_human %Actor{id: 103, workspace_id: 2, kind: :human, user_id: 10}
 
+  # Runs for :cancel_run / :retry_run, relative to the scope's user (id 10).
+  @initiated_run %{initiator_id: 10, agent_owner_id: 11}
+  @own_agent_run %{initiator_id: 11, agent_owner_id: 10}
+  @unrelated_run %{initiator_id: 11, agent_owner_id: 12}
+
   @roles [:owner, :admin, :member, :viewer]
   @rank %{owner: 4, admin: 3, member: 2, viewer: 1}
 
@@ -290,6 +295,30 @@ defmodule Helmsman.PolicyMatrixTest do
             for role <- @roles, kind <- [:human, :agent] do
               {:view_runs, role, kind, @none, :ok}
             end,
+            # view_run_events: member and above
+            for role <- @roles, kind <- [:human, :agent] do
+              {:view_run_events, role, kind, @none,
+               if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
+            # cancel_run / retry_run: admin and above, or a member who is the
+            # run's authorization source or owns its agent
+            for action <- [:cancel_run, :retry_run],
+                role <- @roles,
+                kind <- [:human, :agent],
+                {run, related?} <- [
+                  {@initiated_run, true},
+                  {@own_agent_run, true},
+                  {@unrelated_run, false}
+                ] do
+              expected =
+                cond do
+                  role in [:owner, :admin] -> :ok
+                  role == :member and related? -> :ok
+                  true -> :forbidden
+                end
+
+              {action, role, kind, run, expected}
+            end,
             # write_task outside runs: the coarse action checked the role
             for role <- @roles, kind <- [:human, :agent] do
               {:write_task, role, kind, @task, :ok}
@@ -420,6 +449,19 @@ defmodule Helmsman.PolicyMatrixTest do
 
   describe "run scopes (designs/13 §2.3)" do
     @read_actions [:view_workspace, :view_members, :read_tasks, :view_agents, :view_runs]
+
+    test "a run token reads run events with read and the owner's role; never stops or retries" do
+      for role <- [:owner, :member, :viewer] do
+        scope = run_scope(role, ["read", "write_task"], 500)
+        expected = if role == :viewer, do: {:error, :forbidden}, else: :ok
+        assert Policy.authorize(scope, :view_run_events) == expected
+
+        for action <- [:cancel_run, :retry_run], run <- [@initiated_run, @own_agent_run] do
+          assert Policy.authorize(scope, action, run) == {:error, :forbidden}
+        end
+      end
+    end
+
     @write_actions [:update_task, :transition_task, :add_feedback]
     @refused [
       :run_agent,

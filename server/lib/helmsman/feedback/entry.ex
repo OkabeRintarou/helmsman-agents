@@ -38,6 +38,8 @@ defmodule Helmsman.Feedback.Entry do
     belongs_to :superseded_by, __MODULE__
     # The run the record was written in (an `hmr_` token), if any.
     belongs_to :source_run, Helmsman.Runs.Run
+    # Written by the system from a run's last output (designs/13 §7).
+    field :fallback, :boolean, default: false
 
     # Filled in by `Helmsman.Feedback.load/2` for the external form.
     field :task_ident, :string, virtual: true

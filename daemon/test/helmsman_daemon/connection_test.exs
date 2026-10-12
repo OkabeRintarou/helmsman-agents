@@ -92,6 +92,20 @@ defmodule HelmsmanDaemon.ConnectionTest do
     assert_receive {:report_result, ^finished, {:ok, %Reply.Empty{}}}
   end
 
+  # Slipstream turns `{"status":"ok","response":{}}` into the bare atom `:ok`
+  # (add-run-lifecycle reviews/daemon-issue-1.md): an empty reply is a reply,
+  # not a transport error to resend.
+  test "an empty reply in Slipstream's shape (:ok) is accepted, not resent" do
+    client = start_connection(push_timeout_ms: 5_000, report_backoff_ms: [20])
+    join_connection(client)
+    started = Connection.report(1, %Report.Started{run_id: 1, session_id: nil})
+
+    assert_push("daemon:1", "started", _, ref, 1_000)
+    reply(client, ref, :ok)
+    assert_receive {:report_result, ^started, {:ok, %Reply.Empty{}}}
+    refute_push("daemon:1", "started", _, 100)
+  end
+
   test "disconnect requeues in flight events before later finished" do
     client = start_connection(reconnect_after_ms: [10])
     join_connection(client)

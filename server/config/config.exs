@@ -40,7 +40,7 @@ config :helmsman, :api_token_rate_limit, 600
 config :helmsman, Oban,
   engine: Oban.Engines.Basic,
   repo: Helmsman.Repo,
-  queues: [github: 5, github_sync: 1, default: 10, daemons: 2],
+  queues: [github: 5, github_sync: 1, default: 10, daemons: 2, runs: 10],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
     {Oban.Plugins.Cron,
@@ -48,7 +48,9 @@ config :helmsman, Oban,
        {"0 4 * * *", Helmsman.GitHub.Workers.SyncAll},
        {"30 4 * * *", Helmsman.GitHub.Workers.PruneDeliveries},
        {"* * * * *", Helmsman.Daemons.Workers.MarkOffline},
-       {"15 3 * * *", Helmsman.Daemons.Workers.PruneDeviceCodes}
+       {"15 3 * * *", Helmsman.Daemons.Workers.PruneDeviceCodes},
+       {"* * * * *", Helmsman.Runs.Workers.Sweep},
+       {"45 4 * * *", Helmsman.Runs.Workers.PruneEvents}
      ]}
   ]
 

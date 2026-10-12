@@ -286,6 +286,8 @@ defmodule HelmsmanDaemon.Connection do
     end
   end
 
+  defp decode_reply(event, :ok), do: decode_reply(event, {:ok, %{}})
+  defp decode_reply(event, :error), do: decode_reply(event, {:error, %{}})
   defp decode_reply(event, {:ok, payload}), do: Messages.decode_reply(event, payload)
 
   defp decode_reply(_event, {:error, payload}) when is_map(payload) do

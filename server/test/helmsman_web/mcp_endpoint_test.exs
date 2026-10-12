@@ -162,7 +162,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     conn = rpc(token, sid, "tools/list")
     assert conn.status == 200
     tools = Jason.decode!(conn.resp_body)["result"]["tools"]
-    assert length(tools) == 19
+    assert length(tools) == 20
 
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
              Enum.sort(Enum.map(HelmsmanMCP.Tools.all(), & &1.name()))

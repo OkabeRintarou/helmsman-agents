@@ -3,6 +3,7 @@ defmodule HelmsmanMCP.Tools do
 
   alias HelmsmanMCP.Tools.{
     AddFeedback,
+    CancelRun,
     CreateProject,
     CreateTask,
     GetProject,
@@ -42,7 +43,8 @@ defmodule HelmsmanMCP.Tools do
     ListFeedback,
     ListAgents,
     RunAgent,
-    ListRuns
+    ListRuns,
+    CancelRun
   ]
 
   @doc "Every tool module."

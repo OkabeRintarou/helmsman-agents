@@ -43,27 +43,36 @@ defmodule Helmsman.Dispatch.CancelPendingTest do
     {status, reason}
   end
 
-  defp assert_only_cancelled(ctx, key) do
+  # `claimed`: what becomes of keel/dev's claimed run (add-run-lifecycle
+  # decision 15 stops it when the agent is disabled or archived).
+  defp assert_only_cancelled(ctx, key, claimed \\ :claimed, reason \\ :obsolete) do
     id = ctx.runs[key].id
-    assert_receive {:run_updated, %{id: ^id, status: "cancelled", failure_reason: "obsolete"}}
-    assert status(ctx.runs[key]) == {:cancelled, :obsolete}
+    text = Atom.to_string(reason)
+    assert_receive {:run_updated, %{id: ^id, status: "cancelled", failure_reason: ^text}}
+    assert status(ctx.runs[key]) == {:cancelled, reason}
 
     for {other, run} <- ctx.runs, other != key do
       assert status(run) == {:queued, nil}
     end
 
-    assert status(ctx.claimed) == {:claimed, nil}
+    assert status(ctx.claimed) == {claimed, nil}
+
+    if claimed == :cancelling do
+      claimed_id = ctx.claimed.id
+      assert_receive {:run_updated, %{id: ^claimed_id, status: "cancelling"}}
+    end
+
     refute_receive {:run_updated, _}
   end
 
   test "archiving an agent cancels its queued run", ctx do
     assert {:ok, _} = Agents.archive(ctx.alice_scope, "keel/dev")
-    assert_only_cancelled(ctx, :dev)
+    assert_only_cancelled(ctx, :dev, :cancelling)
   end
 
   test "disabling an agent cancels its queued run", ctx do
     assert {:ok, _} = Agents.disable(ctx.alice_scope, "keel/dev")
-    assert_only_cancelled(ctx, :dev)
+    assert_only_cancelled(ctx, :dev, :cancelling)
   end
 
   test "unbinding the runtime cancels the queued run", ctx do
@@ -77,10 +86,12 @@ defmodule Helmsman.Dispatch.CancelPendingTest do
     assert_only_cancelled(ctx, :dev)
   end
 
+  # bob authorized his agent's run too: `unauthorized` wins (add-run-lifecycle
+  # decision 26).
   test "removing a member cancels their agents' queued runs", ctx do
     membership = Workspaces.get_membership(ctx.workspace.id, ctx.bob.id)
     assert {:ok, _} = Members.remove(ctx.alice_scope, membership.id)
-    assert_only_cancelled(ctx, :bob)
+    assert_only_cancelled(ctx, :bob, :claimed, :unauthorized)
   end
 
   test "rebinding moves the queued run to the new runtime and tells its daemon", ctx do

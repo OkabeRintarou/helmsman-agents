@@ -13,7 +13,7 @@ defmodule Helmsman.Runs do
 
   import Ecto.Query, warn: false
 
-  alias Helmsman.Accounts.Scope
+  alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents
   alias Helmsman.Agents.AgentProfile
@@ -22,12 +22,14 @@ defmodule Helmsman.Runs do
   alias Helmsman.Feedback
   alias Helmsman.Policy
   alias Helmsman.Repo
-  alias Helmsman.Runs.{Origin, Outcome, Run}
+  alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent}
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Workspaces.Workspace
 
   @max_chain 5
+  @default_events 500
+  @max_events 1000
   @default_rate 20
   @default_limit 50
   @max_limit 100
@@ -41,24 +43,32 @@ defmodule Helmsman.Runs do
   @type trigger :: %{kind: :assign | :manual, instructions: String.t() | nil}
   @type actor_ref :: %{name: String.t(), kind: String.t()} | nil
   @type summary :: %{
-          id: pos_integer(),
-          task: String.t() | nil,
-          agent: String.t(),
-          lane: String.t(),
-          status: String.t(),
-          triggers: [
-            %{
-              kind: String.t(),
-              by: actor_ref(),
-              at: DateTime.t() | nil,
-              instructions: String.t() | nil
-            }
-          ],
-          failure_reason: String.t() | nil,
-          priority: 1..3,
-          inserted_at: DateTime.t(),
-          updated_at: DateTime.t()
+          required(:id) => pos_integer(),
+          required(:task) => String.t() | nil,
+          required(:agent) => String.t(),
+          required(:agent_owner_id) => pos_integer(),
+          required(:lane) => String.t(),
+          required(:status) => String.t(),
+          required(:triggers) => [map()],
+          required(:failure_reason) => String.t() | nil,
+          required(:priority) => 1..3,
+          required(:attempt) => pos_integer(),
+          required(:daemon) => String.t() | nil,
+          required(:initiator) => %{id: pos_integer(), name: String.t() | nil},
+          required(:retry_of_id) => pos_integer() | nil,
+          required(:retry_run_id) => pos_integer() | nil,
+          required(:events_seq) => non_neg_integer(),
+          required(:summary) => String.t() | nil,
+          required(:usage) => map() | nil,
+          required(:cancel_requested_by) => actor_ref(),
+          required(:claimed_at) => DateTime.t() | nil,
+          required(:started_at) => DateTime.t() | nil,
+          required(:finished_at) => DateTime.t() | nil,
+          required(:last_event_at) => DateTime.t() | nil,
+          required(:inserted_at) => DateTime.t(),
+          required(:updated_at) => DateTime.t()
         }
+  @type event_view :: %{seq: pos_integer(), type: String.t(), data: map(), at: DateTime.t()}
 
   ## Enqueueing
 
@@ -228,9 +238,11 @@ defmodule Helmsman.Runs do
   creates a run (decision 3, steps 4-6).
 
   `attrs`: `workspace_id`, `agent_id`, `runtime_id`, `task_id` (nil: never
-  merged), `lane`, `trigger` (one entry of `triggers`),
-  `root_initiator_user_id`, `causal_agent_ids`, `capabilities` and
-  `priority`.
+  merged), `lane`, `trigger` (one entry of `triggers`) or `triggers` (the
+  entries to add), `root_initiator_user_id`, `causal_agent_ids`,
+  `capabilities` and `priority`; a retry (`Helmsman.Runs.Retry`) also
+  gives `attempt`, `auto_retries`, `retry_of_id` and `not_before`, used
+  only by a new run.
 
   1. The pending run of the key is locked `FOR UPDATE`; found → merged
      (trigger appended, causal chains united, the higher priority), without
@@ -251,7 +263,7 @@ defmodule Helmsman.Runs do
     case attrs.task_id && lock_pending(attrs) do
       %Run{} = run ->
         merged = merge(run.id, attrs)
-        notify(merged)
+        notify_run(merged)
         {:merged, merged}
 
       _none ->
@@ -281,8 +293,10 @@ defmodule Helmsman.Runs do
 
   @insert_sql """
   INSERT INTO runs (workspace_id, agent_id, runtime_id, task_id, lane, status, triggers,
-    root_initiator_user_id, causal_agent_ids, capabilities, priority, inserted_at, updated_at)
-  VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, $8, $9, $10, $11, $11)
+    root_initiator_user_id, causal_agent_ids, capabilities, priority, inserted_at, updated_at,
+    attempt, auto_retries, retry_of_id, not_before)
+  VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, $8, $9, $10, $11, $11, $12, $13, $14,
+    coalesce($15::timestamp, $11))
   ON CONFLICT (task_id, agent_id, lane) WHERE status IN ('deferred','queued')
   DO UPDATE SET #{@merge_set}
   RETURNING id, (xmax = 0)
@@ -293,10 +307,10 @@ defmodule Helmsman.Runs do
     run = Repo.get!(Run, id)
 
     if inserted? do
-      notify(run, available: true)
+      notify_run(run, available: true)
       {:queued, run}
     else
-      notify(run)
+      notify_run(run)
       {:merged, run}
     end
   end
@@ -308,14 +322,21 @@ defmodule Helmsman.Runs do
       attrs.runtime_id,
       attrs.task_id,
       Atom.to_string(attrs.lane),
-      [attrs.trigger],
+      triggers(attrs),
       attrs.root_initiator_user_id,
       attrs.causal_agent_ids,
       attrs.capabilities,
       attrs.priority,
-      DateTime.utc_now()
+      DateTime.utc_now(),
+      Map.get(attrs, :attempt, 1),
+      Map.get(attrs, :auto_retries, 0),
+      Map.get(attrs, :retry_of_id),
+      Map.get(attrs, :not_before)
     ]
   end
+
+  defp triggers(%{triggers: triggers}) when is_list(triggers), do: triggers
+  defp triggers(%{trigger: trigger}), do: [trigger]
 
   # The same changes as the conflict clause of the insert, on a row this
   # transaction has locked.
@@ -329,7 +350,7 @@ defmodule Helmsman.Runs do
         updated_at = $5
       WHERE id = $1
       """,
-      [id, [attrs.trigger], attrs.causal_agent_ids, attrs.priority, DateTime.utc_now()]
+      [id, triggers(attrs), attrs.causal_agent_ids, attrs.priority, DateTime.utc_now()]
     )
 
     Repo.get!(Run, id)
@@ -370,10 +391,15 @@ defmodule Helmsman.Runs do
         {count, runs} =
           Repo.update_all(
             from(r in Run, where: r.id in ^ids, select: r),
-            set: [status: :cancelled, failure_reason: reason, updated_at: DateTime.utc_now()]
+            set: [
+              status: :cancelled,
+              failure_reason: reason,
+              finished_at: DateTime.utc_now(),
+              updated_at: DateTime.utc_now()
+            ]
           )
 
-        Enum.each(runs, &notify/1)
+        Enum.each(runs, &notify_run/1)
         count
     end
   end
@@ -396,7 +422,7 @@ defmodule Helmsman.Runs do
             set: [runtime_id: runtime_id, updated_at: DateTime.utc_now()]
           )
 
-        Enum.each(runs, &notify(&1, available: true))
+        Enum.each(runs, &notify_run(&1, available: true))
         count
     end
   end
@@ -414,9 +440,11 @@ defmodule Helmsman.Runs do
 
   ## Notifications
 
+  @doc false
   # Once per transaction and run (the latest summary); the daemon once per
-  # transaction.
-  defp notify(%Run{} = run, opts \\ []) do
+  # transaction. `available: true` also tells the runtime's daemon.
+  @spec notify_run(Run.t(), keyword()) :: :ok
+  def notify_run(%Run{} = run, opts \\ []) do
     summary = summary(run)
     message = {:run_updated, summary}
     Events.after_commit_once(:run, Events.topic(:run, run.id), message)
@@ -553,17 +581,112 @@ defmodule Helmsman.Runs do
   defp before(query, {%DateTime{} = inserted_at, id}) when is_integer(id),
     do: where(query, [r], fragment("(?, ?) < (?, ?)", r.inserted_at, r.id, ^inserted_at, ^id))
 
-  @doc "The run `id` of the scope's workspace (`:view_runs`)."
-  @spec get(Scope.t(), integer()) :: {:ok, summary()} | {:error, :forbidden | :not_found}
+  @doc """
+  The run `id` of the scope's workspace (`:view_runs`): its summary, with
+  `error` (the error text) for those who may read its execution events
+  (`:view_run_events`, member and above).
+  """
+  @spec get(Scope.t(), integer()) ::
+          {:ok, summary() | map()} | {:error, :forbidden | :not_found}
   def get(%Scope{workspace: %Workspace{id: workspace_id}} = scope, id) when is_integer(id) do
     with :ok <- Policy.authorize(scope, :view_runs),
          %Run{} = run <-
            Repo.one(from(r in Run, where: r.workspace_id == ^workspace_id and r.id == ^id)) do
-      {:ok, summary(run)}
+      case Policy.authorize(scope, :view_run_events) do
+        :ok -> {:ok, Map.put(summary(run), :error, run.error)}
+        {:error, :forbidden} -> {:ok, summary(run)}
+      end
     else
       nil -> {:error, :not_found}
       error -> error
     end
+  end
+
+  @doc """
+  The execution events of the run `run_id` (`:view_run_events`), by
+  sequence number: `%{events: [event_view], pruned: boolean, last_seq}`.
+  `last_seq` is the run's last saved sequence number; a pruned run has no
+  events left.
+
+  ## Options
+
+    * `:after_seq` - the events after this one (default 0)
+    * `:before_seq` - instead, the events right before this one
+    * `:latest` - `true`: instead, the latest events
+    * `:limit` - at most this many (default #{@default_events}, at most #{@max_events})
+  """
+  @spec list_events(Scope.t(), integer(), keyword()) ::
+          {:ok, %{events: [event_view()], pruned: boolean(), last_seq: non_neg_integer()}}
+          | {:error, :forbidden | :not_found}
+  def list_events(%Scope{workspace: %Workspace{id: workspace_id}} = scope, run_id, opts \\ [])
+      when is_integer(run_id) do
+    with :ok <- Policy.authorize(scope, :view_run_events),
+         %Run{} = run <-
+           Repo.one(from(r in Run, where: r.workspace_id == ^workspace_id and r.id == ^run_id)) do
+      limit = opts[:limit] |> event_limit()
+
+      events =
+        if run.events_pruned_at,
+          do: [],
+          else: run |> events_page(opts, limit) |> Enum.map(&event_view/1)
+
+      {:ok, %{events: events, pruned: not is_nil(run.events_pruned_at), last_seq: run.events_seq}}
+    else
+      nil -> {:error, :not_found}
+      error -> error
+    end
+  end
+
+  defp event_limit(n) when is_integer(n), do: n |> max(1) |> min(@max_events)
+  defp event_limit(_), do: @default_events
+
+  # Only events up to the run's `events_seq` as read with it: they were
+  # saved in the transaction that raised it, so `last_seq` and the events
+  # are one snapshot even while more arrive.
+  defp events_page(run, opts, limit) do
+    base = from(e in RunEvent, where: e.run_id == ^run.id and e.seq <= ^run.events_seq)
+
+    cond do
+      opts[:latest] == true ->
+        latest(base, limit)
+
+      is_integer(opts[:before_seq]) ->
+        latest(where(base, [e], e.seq < ^opts[:before_seq]), limit)
+
+      true ->
+        after_seq = Keyword.get(opts, :after_seq, 0)
+
+        Repo.all(
+          from(e in base, where: e.seq > ^after_seq, order_by: [asc: e.seq], limit: ^limit)
+        )
+    end
+  end
+
+  defp latest(query, limit),
+    do:
+      from(e in query, order_by: [desc: e.seq], limit: ^limit)
+      |> Repo.all()
+      |> Enum.reverse()
+
+  @doc """
+  The external form of an execution event, in `list_events/3` and in the
+  `{:run_events, run_id, [event_view]}` notification: `%{seq, type, data,
+  at}`, `type` a string, `data` with string keys.
+  """
+  @spec event_view(RunEvent.t() | map()) :: event_view()
+  def event_view(%{seq: seq, type: type, data: data, at: at}),
+    do: %{seq: seq, type: to_string(type), data: data, at: at}
+
+  @doc """
+  Whether `scope` may stop (`:cancel`) or retry (`:retry`) the run of
+  `summary` (`summary/1`), by the rule of `Helmsman.Policy` for
+  `:cancel_run` / `:retry_run`, without looking at its status. Pure.
+  """
+  @spec can?(Scope.t(), :cancel | :retry, summary()) :: boolean()
+  def can?(%Scope{} = scope, action, %{initiator: initiator, agent_owner_id: owner_id})
+      when action in [:cancel, :retry] do
+    resource = %{initiator_id: initiator && initiator.id, agent_owner_id: owner_id}
+    Policy.authorize(scope, :"#{action}_run", resource) == :ok
   end
 
   @doc """
@@ -599,9 +722,13 @@ defmodule Helmsman.Runs do
   ## External form
 
   @doc """
-  The summary of a run (decision 14): `%{id, task, agent, lane, status,
-  triggers: [%{kind, by, at, instructions}], failure_reason, priority,
-  inserted_at, updated_at}`.
+  The summary of a run (decision 14, `add-run-lifecycle` decision 19):
+  `%{id, task, agent, agent_owner_id, lane, status, triggers: [%{kind,
+  by, at, instructions}] (a retry marker also has `auto` and `retry_of`),
+  failure_reason, priority, attempt, daemon, initiator: %{id, name},
+  retry_of_id, retry_run_id, events_seq, summary, usage,
+  cancel_requested_by, claimed_at, started_at, finished_at, last_event_at,
+  inserted_at, updated_at}`. Never the error text (`get/2`).
   """
   @spec summary(Run.t()) :: summary()
   def summary(%Run{} = run), do: hd(summaries([run]))
@@ -611,37 +738,70 @@ defmodule Helmsman.Runs do
   defp summaries(runs) do
     runs = Repo.preload(runs, [:agent, :task])
 
-    by_ids =
+    actor_ids =
       runs
-      |> Enum.flat_map(fn run -> Enum.map(run.triggers, & &1["by_actor_id"]) end)
+      |> Enum.flat_map(fn run ->
+        [run.cancel_requested_by_id | Enum.map(run.triggers, & &1["by_actor_id"])]
+      end)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
-    actors = Map.new(Repo.all(from(a in Actor, where: a.id in ^by_ids)), &{&1.id, &1})
+    actors = Map.new(Repo.all(from(a in Actor, where: a.id in ^actor_ids)), &{&1.id, &1})
+    daemons = names(Daemon, runs |> Enum.map(& &1.daemon_id) |> Enum.reject(&is_nil/1))
+    users = names(User, Enum.map(runs, & &1.root_initiator_user_id))
+
+    retries = Retry.targets(runs)
 
     Enum.map(runs, fn run ->
       %{
         id: run.id,
         task: run.task && run.task.ident,
         agent: run.agent.name,
+        agent_owner_id: run.agent.owner_id,
         lane: Atom.to_string(run.lane),
         status: Atom.to_string(run.status),
         triggers: Enum.map(run.triggers, &trigger_view(&1, actors)),
         failure_reason: run.failure_reason && Atom.to_string(run.failure_reason),
         priority: run.priority,
+        attempt: run.attempt,
+        daemon: run.daemon_id && daemons[run.daemon_id],
+        initiator: %{
+          id: run.root_initiator_user_id,
+          name: users[run.root_initiator_user_id]
+        },
+        retry_of_id: run.retry_of_id,
+        retry_run_id: retries[run.id],
+        events_seq: run.events_seq,
+        summary: run.summary,
+        usage: run.usage,
+        cancel_requested_by: actor_ref(actors[run.cancel_requested_by_id]),
+        claimed_at: run.claimed_at,
+        started_at: run.started_at,
+        finished_at: run.finished_at,
+        last_event_at: run.last_event_at,
         inserted_at: run.inserted_at,
         updated_at: run.updated_at
       }
     end)
   end
 
+  defp names(Daemon, ids),
+    do: Map.new(Repo.all(from(d in Daemon, where: d.id in ^ids, select: {d.id, d.name})))
+
+  defp names(User, ids),
+    do: Map.new(Repo.all(from(u in User, where: u.id in ^ids, select: {u.id, u.display_name})))
+
   defp trigger_view(trigger, actors) do
-    %{
+    view = %{
       kind: trigger["kind"],
       by: actor_ref(actors[trigger["by_actor_id"]]),
       at: parse_at(trigger["at"]),
       instructions: trigger["instructions"]
     }
+
+    if trigger["kind"] == "retry",
+      do: Map.merge(view, %{auto: trigger["auto"] == true, retry_of: trigger["retry_of"]}),
+      else: view
   end
 
   defp actor_ref(nil), do: nil
@@ -655,4 +815,18 @@ defmodule Helmsman.Runs do
   end
 
   defp parse_at(_at), do: nil
+
+  ## Lifecycle (add-run-lifecycle)
+
+  defdelegate revalidate(run, locked), to: Helmsman.Runs.Revalidation, as: :check
+  defdelegate claim(daemon_ctx, base_url), to: Helmsman.Runs.Claim
+  defdelegate starting(daemon_ctx, run_id), to: Helmsman.Runs.Lifecycle
+  defdelegate started(daemon_ctx, report), to: Helmsman.Runs.Lifecycle
+  defdelegate append_events(daemon_ctx, run_id, events), to: Helmsman.Runs.Lifecycle
+  defdelegate finish(daemon_ctx, report), to: Helmsman.Runs.Lifecycle
+  defdelegate reconcile(daemon_ctx, run_ids, mode), to: Helmsman.Runs.Lifecycle
+  defdelegate cancel(scope, run_id), to: Helmsman.Runs.Stop
+  defdelegate stop_active(queryable), to: Helmsman.Runs.Stop
+  defdelegate cancel_for_initiator(workspace_id, user_id), to: Helmsman.Runs.Stop
+  defdelegate retry(scope, run_id), to: Helmsman.Runs.Retry
 end

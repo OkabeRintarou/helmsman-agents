@@ -97,6 +97,9 @@ defmodule Helmsman.Policy do
     :manage_github_app,
     :run_agent,
     :view_runs,
+    :view_run_events,
+    :cancel_run,
+    :retry_run,
     :write_task
   ]
 
@@ -108,6 +111,7 @@ defmodule Helmsman.Policy do
     read_tasks: "read",
     view_agents: "read",
     view_runs: "read",
+    view_run_events: "read",
     identify: "read",
     create_task: "create_tasks",
     update_task: "write_task",
@@ -298,6 +302,23 @@ defmodule Helmsman.Policy do
 
   defp check(%Scope{} = scope, :view_runs, _resource),
     do: allow_if(role_at_least?(scope, :viewer))
+
+  defp check(%Scope{} = scope, :view_run_events, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
+  # `%{initiator_id, agent_owner_id}`: the run's authorization source and
+  # its agent's owner (designs/02 §4). A run token never gets here (no
+  # capability allows it).
+  defp check(%Scope{} = scope, action, %{initiator_id: initiator_id, agent_owner_id: owner_id})
+       when action in [:cancel_run, :retry_run] do
+    user_id = scope.user && scope.user.id
+
+    allow_if(
+      role_at_least?(scope, :admin) or
+        (role_at_least?(scope, :member) and not is_nil(user_id) and
+           user_id in [initiator_id, owner_id])
+    )
+  end
 
   # The coarse action (`:update_task`, ...) checked the role already; a run
   # may only write its own task.

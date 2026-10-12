@@ -44,6 +44,12 @@ defmodule Helmsman.CommittedData do
         )
       end
 
+      Repo.query!(
+        "DELETE FROM oban_jobs WHERE worker LIKE 'Helmsman.Runs.Workers.%' " <>
+          "AND (args->>'run_id')::bigint IN (#{run_ids})",
+        [workspace_ids, user_ids]
+      )
+
       Repo.query!("DELETE FROM run_tokens WHERE run_id IN (#{run_ids})", [
         workspace_ids,
         user_ids

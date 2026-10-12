@@ -51,6 +51,7 @@ defmodule HelmsmanMCP.ErrorText do
         id = arg(args, "feedback_id") -> "Feedback #{id} #{where}"
         id = arg(args, "task_id") -> "Task #{id} #{where}"
         key = arg(args, "project_key") || arg(args, "key") -> "Project #{key} #{where}"
+        is_integer(args["run_id"]) -> "Run #{args["run_id"]} #{where}"
         true -> "Not found in workspace #{scope.workspace.slug}."
       end
 
@@ -151,6 +152,14 @@ defmodule HelmsmanMCP.ErrorText do
     do: {:ok, "instructions are too long (max 8 KB). Put details in the task instead."}
 
   def format({:invalid_instructions, _reason}, _ctx), do: {:ok, "instructions must be a string."}
+
+  def format(:already_finished, %Context{args: args}) do
+    {:ok, "Run #{args["run_id"] || ""} has already ended; there is nothing to stop."}
+  end
+
+  def format({:already_retried, id}, _ctx) do
+    {:ok, "This run was already retried by run #{id}. Look at that run instead (list_runs)."}
+  end
 
   def format(:task_closed, %Context{args: args}) do
     {:ok,

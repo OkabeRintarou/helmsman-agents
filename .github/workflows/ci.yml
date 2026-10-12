@@ -70,6 +70,8 @@ jobs:
         run: mix compile
       - run: mix deps.get
       - run: mix precommit
+      - name: End-to-end tests with the daemon
+        run: mix test --only e2e
       - name: Roll back all migrations and migrate again
         env:
           MIX_ENV: test

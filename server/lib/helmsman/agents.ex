@@ -149,9 +149,13 @@ defmodule Helmsman.Agents do
     end)
   end
 
-  # Lock order: actor, profile (`mutate/4`), runs (designs/01 §4).
-  defp cancel_pending_runs(actor),
-    do: Runs.cancel_pending(from(r in Run, where: r.agent_id == ^actor.id), :obsolete)
+  # Lock order: actor, profile (`mutate/4`), runs (designs/01 §4). Queued
+  # runs are cancelled, claimed and running ones stopped.
+  defp cancel_pending_runs(actor) do
+    query = from(r in Run, where: r.agent_id == ^actor.id)
+    Runs.cancel_pending(query, :obsolete)
+    Runs.stop_active(query)
+  end
 
   defp mutate(scope, name, action, fun) do
     Workspaces.write_transaction(scope, :view_agents, nil, fn scope ->
@@ -273,10 +277,24 @@ defmodule Helmsman.Agents do
   defp check_trigger(_profile, _actor, _user, false), do: {:error, :unauthorized}
 
   defp check_trigger(profile, actor, user, true) do
-    allowed =
-      user == actor.owner_id or profile.access == "workspace" or
-        (profile.access == "members" and user in profile.access_member_ids)
+    if access?(profile, actor, user), do: :ok, else: {:error, :unauthorized}
+  end
 
-    if allowed, do: :ok, else: {:error, :unauthorized}
+  @doc """
+  Whether `user_id`, whose role in the agent's workspace is `role` (nil:
+  not a member), may trigger the managed agent `actor` with `profile`,
+  ignoring whether the agent is disabled or archived: the rule of
+  `trigger_check/3` on rows the caller has read (and locked) itself.
+  """
+  @spec may_trigger?(AgentProfile.t() | nil, Actor.t(), pos_integer() | nil, atom() | nil) ::
+          boolean()
+  def may_trigger?(nil, _actor, _user_id, _role), do: false
+
+  def may_trigger?(profile, actor, user_id, role),
+    do: role in [:owner, :admin, :member] and access?(profile, actor, user_id)
+
+  defp access?(profile, actor, user) do
+    user == actor.owner_id or profile.access == "workspace" or
+      (profile.access == "members" and user in (profile.access_member_ids || []))
   end
 end
