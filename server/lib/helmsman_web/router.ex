@@ -139,6 +139,9 @@ defmodule HelmsmanWeb.Router do
       live "/w/:slug/settings/members", SettingsLive.Members, :index
       live "/w/:slug/settings/tokens", SettingsLive.Tokens, :index
       live "/w/:slug/settings/runtimes", SettingsLive.Runtimes, :index
+      live "/w/:slug/agents", AgentLive.Index, :index
+      live "/w/:slug/agents/*name", AgentLive.Show, :show
+      live "/w/:slug/runs/:id", RunLive.Show, :show
     end
   end
 

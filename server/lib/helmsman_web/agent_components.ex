@@ -1,8 +1,8 @@
 defmodule HelmsmanWeb.AgentComponents do
   @moduledoc """
-  Agent pieces (add-agents-runs-ui D2, D3): the CLI (provider) label with a neutral
-  terminal icon (no third-party marks, web-visual-system「图标集与第三方商标」) and the
-  runtime status.
+  Agent pieces (add-agents-runs-ui D2, D3): the status of an agent view, the CLI
+  (provider) label with a neutral terminal icon (no third-party marks, web-visual-system
+  「图标集与第三方商标」), the runtime status and the "who can trigger" text.
   """
   use Phoenix.Component
   use Gettext, backend: HelmsmanWeb.Gettext
@@ -23,6 +23,73 @@ defmodule HelmsmanWeb.AgentComponents do
   def provider_label("cursor"), do: "Cursor CLI"
   def provider_label(nil), do: ""
   def provider_label(other), do: to_string(other)
+
+  @doc """
+  The status of an agent view (spec web-agents Agent 列表页), the first that holds:
+  `:archived`, `:disabled`, `{:busy, n}`, `:idle`, `:offline` (managed) or `:online` /
+  `nil` (external, from the names in `online`).
+  """
+  def status(view, online \\ MapSet.new())
+  def status(%{archived: true}, _online), do: :archived
+  def status(%{disabled: true}, _online), do: :disabled
+
+  def status(%{kind: "managed"} = view, _online) do
+    cond do
+      (view[:active_runs] || 0) > 0 -> {:busy, view.active_runs}
+      runtime_online?(view.runtime) -> :idle
+      true -> :offline
+    end
+  end
+
+  def status(%{name: name}, online), do: if(MapSet.member?(online, name), do: :online)
+
+  defp runtime_online?(%{status: "online", disabled: false}), do: true
+  defp runtime_online?(_runtime), do: false
+
+  @doc "Label of `status/2`."
+  def status_label(:archived), do: dgettext("ui", "已归档")
+  def status_label(:disabled), do: dgettext("ui", "已停用")
+  def status_label({:busy, n}), do: dgettext("ui", "忙碌（%{n}）", n: n)
+  def status_label(:idle), do: dgettext("ui", "空闲")
+  def status_label(:offline), do: dgettext("ui", "离线")
+  def status_label(:online), do: dgettext("ui", "在线")
+  def status_label(nil), do: ""
+
+  @doc "The presence dot of `status/2`."
+  def presence(:idle), do: :online
+  def presence(:online), do: :online
+  def presence({:busy, _}), do: :busy
+  def presence(:offline), do: :offline
+  def presence(_), do: nil
+
+  @doc "Status badge of an agent (dot + label); renders nothing for `nil`."
+  attr :id, :string, default: nil
+  attr :status, :any, required: true
+  attr :class, :any, default: nil
+
+  def agent_status(%{status: nil} = assigns), do: ~H""
+
+  def agent_status(assigns) do
+    ~H"""
+    <span
+      id={@id}
+      data-agent-status={status_key(@status)}
+      class={["inline-flex items-center gap-1.5 text-body", tone_class(@status), @class]}
+    >
+      <.presence_dot :if={presence(@status)} status={presence(@status)} />
+      <.icon :if={@status == :disabled} name="lucide-circle-pause" class="size-3.5" />
+      <.icon :if={@status == :archived} name="lucide-archive" class="size-3.5" />
+      {status_label(@status)}
+    </span>
+    """
+  end
+
+  defp status_key({:busy, _}), do: "busy"
+  defp status_key(status), do: to_string(status)
+
+  defp tone_class({:busy, _}), do: "text-brand-fg"
+  defp tone_class(status) when status in [:idle, :online], do: "text-success-fg"
+  defp tone_class(_), do: "text-fg-muted"
 
   @doc "CLI icon and name."
   attr :provider, :string, required: true
@@ -70,4 +137,12 @@ defmodule HelmsmanWeb.AgentComponents do
     </span>
     """
   end
+
+  @doc "Who can trigger the agent (`access`), with member names for `members`."
+  def access_label(%{access: "workspace"}, _names), do: dgettext("ui", "工作区成员")
+
+  def access_label(%{access: "members"}, names),
+    do: dgettext("ui", "指定成员：%{names}", names: Enum.join(names, "、"))
+
+  def access_label(_view, _names), do: dgettext("ui", "仅所属用户")
 end

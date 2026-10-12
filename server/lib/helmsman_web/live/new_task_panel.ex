@@ -18,7 +18,7 @@ defmodule HelmsmanWeb.NewTaskPanel do
   alias Ecto.Changeset
   alias Helmsman.Accounts.Scope
   alias Helmsman.Tasks
-  alias HelmsmanWeb.{FormErrors, TaskComponents, TaskData, Url}
+  alias HelmsmanWeb.{FormErrors, RunComponents, RunData, TaskComponents, TaskData, Url}
 
   @impl true
   def mount(socket) do
@@ -30,7 +30,8 @@ defmodule HelmsmanWeb.NewTaskPanel do
        top_error: nil,
        created: nil,
        continuous: false,
-       assignable: []
+       assignable: [],
+       availability: %{}
      )}
   end
 
@@ -60,14 +61,23 @@ defmodule HelmsmanWeb.NewTaskPanel do
         "description" => "",
         "priority" => "medium",
         "labels" => "",
-        "assignee" => ""
+        "assignee" => "",
+        "start" => "true"
       },
       errors: %{},
       top_error: nil,
       created: nil,
       continuous: false,
-      assignable: TaskData.assignable(scope)
+      assignable: TaskData.assignable(scope),
+      availability: availability(scope)
     )
+  end
+
+  defp availability(scope) do
+    case RunData.availability(scope) do
+      {:ok, availability} -> availability
+      {:error, _} -> %{}
+    end
   end
 
   @doc false
@@ -108,13 +118,19 @@ defmodule HelmsmanWeb.NewTaskPanel do
       assignee: params["assignee"]
     }
 
+    # `start` only means something for a managed agent (design D11).
+    attrs =
+      if Map.has_key?(socket.assigns.availability, params["assignee"]),
+        do: Map.put(attrs, :start, params["start"] != "false"),
+        else: attrs
+
     case Tasks.create(scope, params["project"] || "", attrs) do
       {:ok, task} -> {:noreply, created(socket, task)}
       {:error, reason} -> {:noreply, failed(socket, reason)}
     end
   end
 
-  defp fields, do: ~w(project title description priority labels assignee)
+  defp fields, do: ~w(project title description priority labels assignee start)
 
   @doc false
   def split_labels(nil), do: []
@@ -135,7 +151,15 @@ defmodule HelmsmanWeb.NewTaskPanel do
         created: %{ident: task.ident, path: path}
       )
     else
-      push_navigate(socket, to: path)
+      socket |> put_dispatch_flash(Map.get(task, :dispatch)) |> push_navigate(to: path)
+    end
+  end
+
+  defp put_dispatch_flash(socket, outcomes) do
+    case RunComponents.dispatch_flash(outcomes) do
+      nil -> socket
+      {:info, text} -> put_flash(socket, :info, text)
+      {:warning, text} -> put_flash(socket, :error, text)
     end
   end
 
@@ -274,6 +298,26 @@ defmodule HelmsmanWeb.NewTaskPanel do
               errors={Map.get(@errors, :assignee, [])}
             />
           </div>
+          <div
+            :if={@availability[@params["assignee"]]}
+            id="new-task-start-group"
+            class="flex flex-col gap-1"
+          >
+            <.input
+              type="switch"
+              id="new-task-start"
+              name="task[start]"
+              label={dgettext("ui", "创建后立即开始")}
+              checked={@params["start"] != "false"}
+            />
+            <p
+              :if={start_note(@params["assignee"], @availability[@params["assignee"]])}
+              id="new-task-start-note"
+              class="text-caption text-fg-muted"
+            >
+              {start_note(@params["assignee"], @availability[@params["assignee"]])}
+            </p>
+          </div>
           <.input
             id="new-task-labels"
             name="task[labels]"
@@ -311,6 +355,18 @@ defmodule HelmsmanWeb.NewTaskPanel do
     </div>
     """
   end
+
+  defp start_note(agent, %{result: {:skipped, _} = result}),
+    do: RunComponents.unavailable_reason(agent, result) <> dgettext("ui", "，创建后不会启动运行")
+
+  defp start_note(agent, %{runtime: %{status: "offline", daemon_name: machine}}),
+    do:
+      dgettext("ui", "%{agent} 的运行时（%{machine}）当前离线，运行会排队，等它上线后开始",
+        agent: agent,
+        machine: machine
+      )
+
+  defp start_note(_agent, _availability), do: nil
 
   defp dirty?(params),
     do: Enum.any?(~w(title description labels), &(String.trim(params[&1] || "") != ""))

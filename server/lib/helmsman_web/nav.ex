@@ -35,6 +35,13 @@ defmodule HelmsmanWeb.Nav do
         path: &"/w/#{&1.workspace.slug}/projects"
       },
       %{
+        id: :agents,
+        group: :agents,
+        label: "Agents",
+        icon: "lucide-bot",
+        path: &"/w/#{&1.workspace.slug}/agents"
+      },
+      %{
         id: :runtimes,
         group: :config,
         label: fn -> dgettext("ui", "运行时") end,

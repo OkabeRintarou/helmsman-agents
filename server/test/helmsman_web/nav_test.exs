@@ -135,4 +135,14 @@ defmodule HelmsmanWeb.NavTest do
       assert [%{label: "运行时", path: "/w/acme/settings/runtimes"}] = results
     end
   end
+
+  test "Agents is in the Agent 团队 group for every role, current on detail pages" do
+    for role <- [:viewer, :member, :admin] do
+      groups = Nav.items_for(%{@scope | role: role}, "/w/acme/agents/keel/dev")
+      assert %{label: "Agent 团队", items: [agents]} = Enum.find(groups, &(&1.id == :agents))
+      assert agents.label == "Agents"
+      assert agents.path == "/w/acme/agents"
+      assert agents.current?
+    end
+  end
 end

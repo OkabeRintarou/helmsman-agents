@@ -21,10 +21,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
     FormErrors,
     Markdown,
     MarkdownEditor,
+    RunActions,
+    RunComponents,
+    RunData,
+    RunLog,
     TaskComponents,
     TaskData,
     TaskEvidence,
-    TaskTransitions
+    TaskRuns,
+    TaskTransitions,
+    Throttle
   }
 
   alias HelmsmanWeb.TaskLive.TransitionErrors
@@ -59,6 +65,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
        field_errors: %{},
        labels_draft: nil,
        assignable: TaskData.assignable(scope),
+       availability: availability(scope),
+       assign_confirm: nil,
        label_options: TaskData.labels(scope, detail.project_key),
        transition_panel: nil,
        feedback_panel: nil,
@@ -71,14 +79,19 @@ defmodule HelmsmanWeb.TaskLive.Show do
        description_session: 0,
        transition_session: 0
      )
+     |> assign(:uri, "/w/#{scope.workspace.slug}/t/#{detail.id}")
      |> cache_rendered()
+     |> TaskRuns.init()
+     |> TaskRuns.load()
+     |> RunLog.init()
+     |> RunActions.init()
      |> then(
        &if(connected?(&1), do: push_event(&1, "hm:visit-task", %{ident: detail.id}), else: &1)
      )}
   end
 
   @impl true
-  def handle_params(%{"ident" => ident}, uri, socket) do
+  def handle_params(%{"ident" => ident} = params, uri, socket) do
     canonical = socket.assigns.task.id
 
     if ident != canonical do
@@ -87,7 +100,24 @@ defmodule HelmsmanWeb.TaskLive.Show do
       to = if query, do: "#{path}?#{query}", else: path
       {:noreply, push_navigate(socket, to: to, replace: true)}
     else
+      %URI{path: path, query: query} = URI.parse(uri)
+
+      socket =
+        socket
+        |> assign(:uri, if(query, do: "#{path}?#{query}", else: path))
+        |> open_run_log(params["run"])
+
       {:noreply, socket}
+    end
+  end
+
+  # `?run=<id>` opens the run log modal (design D9).
+  defp open_run_log(socket, nil), do: RunLog.close(socket)
+
+  defp open_run_log(socket, id) do
+    case Integer.parse(id) do
+      {id, ""} -> RunLog.open(socket, id)
+      _ -> RunLog.close(socket)
     end
   end
 
@@ -156,6 +186,44 @@ defmodule HelmsmanWeb.TaskLive.Show do
   end
 
   ## Priority, assignee and labels
+
+  # Choosing a managed agent for a new or in-progress task asks first (design D11).
+  def handle_event("set_field", %{"field" => "assignee", "value" => value} = params, socket) do
+    %{task: task, availability: availability} = socket.assigns
+    version = parse_version(params["version"]) || task.lock_version
+    current = task.assignee && task.assignee.name
+
+    case availability[value] do
+      %{} = agent when value != current and task.status in ["new", "in_progress"] ->
+        confirm = %{agent: value, version: version, availability: agent}
+        {:noreply, assign(socket, :assign_confirm, confirm)}
+
+      _ ->
+        {:noreply, save(socket, "assignee", %{assignee: value}, version)}
+    end
+  end
+
+  # The buttons that promise not to start always submit `start: false` (D11).
+  def handle_event("confirm_assign", %{"agent" => agent, "start" => start} = params, socket) do
+    version = parse_version(params["version"]) || socket.assigns.task.lock_version
+    attrs = %{assignee: agent, start: start == "true"}
+    {:noreply, socket |> assign(:assign_confirm, nil) |> save("assignee", attrs, version)}
+  end
+
+  def handle_event("dismiss_assign", _params, socket),
+    do: {:noreply, assign(socket, :assign_confirm, nil)}
+
+  ## Runs (design D8)
+
+  def handle_event("runs_" <> _ = event, _params, socket),
+    do: {:noreply, TaskRuns.handle_event(event, socket)}
+
+  def handle_event("run_log_" <> _ = event, params, socket),
+    do: {:noreply, RunLog.handle_event(event, params, socket)}
+
+  def handle_event(event, params, socket)
+      when event in ~w(ask_cancel_run dismiss_cancel_run cancel_run retry_run),
+      do: {:noreply, RunActions.handle_event(event, params, socket, &TaskRuns.load/1)}
 
   def handle_event("set_field", %{"field" => field, "value" => value} = params, socket)
       when field in ~w(priority assignee) do
@@ -381,6 +449,20 @@ defmodule HelmsmanWeb.TaskLive.Show do
   def handle_info({:task_transitioned, _payload}, socket), do: {:noreply, refresh(socket)}
   def handle_info({:feedback_added, _view}, socket), do: {:noreply, refresh(socket)}
 
+  def handle_info({:run_events, _id, _events} = message, socket),
+    do: run_log_info(message, socket)
+
+  def handle_info({:run_updated, _summary} = message, socket), do: run_log_info(message, socket)
+
+  def handle_info({:runs_changed, _ident}, socket),
+    do: {:noreply, Throttle.schedule(socket, :reload_runs)}
+
+  def handle_info(:reload_runs, socket),
+    do: {:noreply, socket |> Throttle.done(:reload_runs) |> TaskRuns.load()}
+
+  def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
+    do: {:noreply, assign(socket, :availability, availability(socket.assigns.current_scope))}
+
   ## Helpers
 
   defp save(socket, field, attrs, version) do
@@ -389,6 +471,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     case Tasks.update(scope, task.id, attrs, version) do
       {:ok, updated} ->
         socket
+        |> put_dispatch_flash(Map.get(updated, :dispatch))
         |> put_task(Tasks.detail(updated))
         |> assign(
           editing: clear_editing(socket.assigns.editing, field),
@@ -414,6 +497,28 @@ defmodule HelmsmanWeb.TaskLive.Show do
       {:error, reason} ->
         Logger.error("Task update failed: #{inspect(reason)}")
         put_flash(socket, :error, dgettext("ui", "操作失败，请稍后重试"))
+    end
+  end
+
+  defp run_log_info(message, socket) do
+    case RunLog.handle_info(message, socket) do
+      {:ok, socket} -> {:noreply, socket}
+      :ignore -> {:noreply, socket}
+    end
+  end
+
+  defp put_dispatch_flash(socket, outcomes) do
+    case RunComponents.dispatch_flash(outcomes) do
+      nil -> socket
+      {:info, text} -> put_flash(socket, :info, text)
+      {:warning, text} -> put_flash(socket, :error, text)
+    end
+  end
+
+  defp availability(scope) do
+    case RunData.availability(scope) do
+      {:ok, availability} -> availability
+      {:error, _} -> %{}
     end
   end
 
@@ -736,6 +841,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
         primary: primary,
         secondary: secondary,
         assignees: assignee_options(assigns.assignable, assigns.task.assignee),
+        availability: assigns.availability,
         open_question:
           assigns.task.open_question && FeedbackTimeline.last_open_question(assigns.task.feedback)
       )
@@ -841,7 +947,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
                   :if={@can_edit?}
                   id="assignee-menu"
                   label={dgettext("ui", "执行方")}
-                  items={assignee_items(@assignees, @task)}
+                  items={assignee_items(@assignees, @task, @availability)}
                   trigger_class="h-7 px-1.5 -mx-1.5 min-w-0"
                 >
                   <:trigger><TaskComponents.actor_ref actor={@task.assignee} /></:trigger>
@@ -875,6 +981,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
               </.property_row>
             </.property_list>
           </div>
+          <TaskRuns.section
+            state={@task_runs}
+            stream={@streams.task_runs}
+            scope={@current_scope}
+            uri={@uri}
+            managed_assignee?={
+              @task.assignee != nil and Map.has_key?(@availability, @task.assignee.name)
+            }
+          />
           <section aria-labelledby="task-history-title">
             <h2 id="task-history-title" class="mb-1 text-label font-medium text-fg-muted">
               {dgettext("ui", "历史")}
@@ -902,9 +1017,81 @@ defmodule HelmsmanWeb.TaskLive.Show do
         scope={@current_scope}
         candidates={@assignable}
       />
+      <.assign_confirm confirm={@assign_confirm} task={@task} />
+      <.modal
+        id="run-log-modal"
+        show={@run_log != nil}
+        size={:xl}
+        title={if(@run_log, do: dgettext("ui", "执行记录 · 运行 #%{id}", id: @run_log.id), else: "")}
+        patch_on_close={HelmsmanWeb.Url.drop_params(@uri, ["run"])}
+      >
+        <RunLog.log :if={@run_log} log={@run_log} events={@streams.run_events} scope={@current_scope} />
+      </.modal>
+      <RunActions.dialog stop_run={@stop_run} />
     </Layouts.app>
     """
   end
+
+  attr :confirm, :map, default: nil
+  attr :task, :map, required: true
+
+  defp assign_confirm(assigns) do
+    confirm = assigns.confirm
+    available? = confirm != nil and confirm.availability.result == :ok
+    agent = confirm && confirm.agent
+
+    assigns =
+      assign(assigns,
+        available?: available?,
+        agent: agent,
+        value: confirm && %{agent: agent, version: confirm.version},
+        text: confirm && assign_confirm_text(confirm)
+      )
+
+    ~H"""
+    <.confirm_dialog
+      id="assign-confirm"
+      show={@confirm != nil}
+      title={
+        if(@confirm,
+          do: dgettext("ui", "把 %{task} 指派给 %{agent}", task: @task.id, agent: @agent),
+          else: ""
+        )
+      }
+      confirm_label={if(@available?, do: dgettext("ui", "开始"), else: dgettext("ui", "仍然指派（不会启动运行）"))}
+      on_confirm="confirm_assign"
+      confirm_value={Map.put(@value || %{}, :start, @available?)}
+      on_cancel={JS.push("dismiss_assign")}
+    >
+      {@text}
+      <:secondary_action
+        :if={@available?}
+        label={dgettext("ui", "暂不开始")}
+        event="confirm_assign"
+        value={Map.put(@value, :start, false)}
+      />
+    </.confirm_dialog>
+    """
+  end
+
+  defp assign_confirm_text(%{agent: agent, availability: %{result: :ok, runtime: runtime}}) do
+    case runtime do
+      %{status: "offline", daemon_name: machine} ->
+        dgettext("ui", "%{agent} 的运行时（%{machine}）当前离线，运行会排队，等它上线后开始",
+          agent: agent,
+          machine: machine
+        )
+
+      _ ->
+        dgettext("ui", "开始后 %{agent} 会立即排队运行；暂不开始只指派，不启动运行", agent: agent)
+    end
+  end
+
+  defp assign_confirm_text(%{agent: agent, availability: %{result: result}}),
+    do:
+      dgettext("ui", "%{reason}。仍可指派，但不会启动运行",
+        reason: RunComponents.unavailable_reason(agent, result)
+      )
 
   attr :button, :map, required: true
   attr :from, :string, required: true
@@ -1207,7 +1394,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
   @doc false
   def assignee_item_id(name), do: "assignee-" <> Base.url_encode64(name, padding: false)
 
-  defp assignee_items(options, task) do
+  defp assignee_items(options, task, availability) do
     current = task.assignee && task.assignee.name
 
     [
@@ -1228,9 +1415,25 @@ defmodule HelmsmanWeb.TaskLive.Show do
             on_select: "set_field",
             value: %{field: "assignee", value: actor.name, version: task.lock_version}
           }
+          |> Map.merge(availability_item(actor.name, availability[actor.name]))
         end)
     ]
   end
+
+  # Unavailable agents stay selectable (the confirmation explains); the reason is the
+  # item's description (design D11).
+  defp availability_item(_name, nil), do: %{}
+
+  defp availability_item(name, %{result: {:skipped, _} = result}),
+    do: %{
+      description: RunComponents.unavailable_reason(name, result),
+      attrs: %{"data-unavailable" => "true"}
+    }
+
+  defp availability_item(_name, %{runtime: %{status: "offline"}}),
+    do: %{description: dgettext("ui", "运行时离线"), attrs: %{"data-runtime-offline" => "true"}}
+
+  defp availability_item(_name, _available), do: %{}
 
   defp passed_tests(%{last_done_tests: %{passed: true} = tests}), do: tests
   defp passed_tests(_hint), do: nil

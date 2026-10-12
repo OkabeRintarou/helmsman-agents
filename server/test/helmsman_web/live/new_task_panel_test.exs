@@ -219,4 +219,51 @@ defmodule HelmsmanWeb.NewTaskPanelTest do
       assert in_portal?(view, @panel, "#new-task-project-error", "项目已归档，不能新建任务")
     end
   end
+
+  describe "assigning a managed agent (web-runs 新建任务时指派托管 Agent)" do
+    setup ctx do
+      projects(ctx)
+      member = ctx.scopes.member
+      Helmsman.AgentsFixtures.managed_agent_fixture(member, %{name: "keel/dev"})
+      :ok
+    end
+
+    defp runs_of_task(scope, ident) do
+      {:ok, task} = Tasks.get(scope, ident)
+      Helmsman.RunsFixtures.runs_of(task.id)
+    end
+
+    test "新建并开始", ctx do
+      {:ok, view, _} = live(as(ctx, :member), "/w/#{ctx.slug}/p/BOS?panel=new")
+
+      refute in_portal?(view, @panel, "#new-task-start")
+      change(view, form_params(%{title: "x", assignee: "keel/dev"}))
+      assert in_portal?(view, @panel, "#new-task-start[checked]")
+
+      submit(view, form_params(%{title: "x", assignee: "keel/dev", start: "true"}))
+      {path, flash} = assert_redirect(view)
+      assert path == "/w/#{ctx.slug}/t/BOS-1"
+      assert flash["info"] == "已派发给 keel/dev"
+      assert [%{status: :queued}] = runs_of_task(ctx.scopes.member, "BOS-1")
+    end
+
+    test "新建但不开始", ctx do
+      {:ok, view, _} = live(as(ctx, :member), "/w/#{ctx.slug}/p/BOS?panel=new")
+      change(view, form_params(%{title: "x", assignee: "keel/dev"}))
+
+      submit(view, form_params(%{title: "x", assignee: "keel/dev", start: "false"}))
+      {_path, flash} = assert_redirect(view)
+      assert flash["info"] == "已指派给 keel/dev，暂不开始"
+      assert {:ok, %{assignee: %{name: "keel/dev"}}} = Tasks.get(ctx.scopes.member, "BOS-1")
+      assert runs_of_task(ctx.scopes.member, "BOS-1") == []
+    end
+
+    test "an agent the user cannot start shows why", ctx do
+      {:ok, view, _} = live(as(ctx, :admin), "/w/#{ctx.slug}/p/BOS?panel=new")
+      change(view, form_params(%{title: "x", assignee: "keel/dev"}))
+
+      assert in_portal?(view, @panel, "#new-task-start")
+      assert in_portal?(view, @panel, "#new-task-start-note", "你无权触发 keel/dev")
+    end
+  end
 end
