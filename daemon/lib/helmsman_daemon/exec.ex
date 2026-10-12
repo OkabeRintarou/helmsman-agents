@@ -1,6 +1,146 @@
 defmodule HelmsmanDaemon.Exec do
   @moduledoc "Bounded CLI version lookup and operating system process identity."
 
+  require Logger
+  alias HelmsmanDaemon.{ProcGroup, RepoCache}
+
+  @doc "Run a bounded command in its own group, tied to the caller's lifetime."
+  def command(argv, opts \\ []) do
+    caller = self()
+    ref = make_ref()
+    locks = RepoCache.command_locks()
+    {pid, monitor} = spawn_monitor(fn -> command_owner(caller, ref, argv, opts, locks) end)
+
+    receive do
+      {^ref, result} ->
+        Process.demonitor(monitor, [:flush])
+        result
+
+      {:DOWN, ^monitor, :process, ^pid, _reason} ->
+        {:error, {:launch, "command supervisor exited"}}
+    end
+  end
+
+  defp command_owner(caller, ref, argv, opts, locks) do
+    owner = Process.monitor(caller)
+    if callback = Keyword.get(opts, :before_lock), do: callback.()
+
+    result =
+      RepoCache.with_command_locks(locks, fn ->
+        receive do
+          {:DOWN, ^owner, :process, _, _} ->
+            {:error, {:owner_down, "caller exited before launch"}}
+        after
+          0 ->
+            if Process.alive?(caller),
+              do: run_command(owner, argv, opts),
+              else: {:error, {:owner_down, "caller exited before launch"}}
+        end
+      end)
+
+    send(caller, {ref, result})
+  end
+
+  defp run_command(owner, argv, opts) do
+    options = [:stdout, :stderr, :monitor, {:group, 0}, :kill_group, {:kill_timeout, 0}]
+    options = options ++ Keyword.take(opts, [:cd, :env])
+
+    case :exec.run(argv, options) do
+      {:ok, exec_pid, os_pid} ->
+        members =
+          case ProcGroup.snapshot(os_pid) do
+            {:ok, members} -> members
+            _ -> []
+          end
+
+        try do
+          notify_start(opts, os_pid)
+          deadline = System.monotonic_time(:millisecond) + Keyword.get(opts, :timeout, 30_000)
+          collect_command(exec_pid, os_pid, owner, "", deadline)
+        after
+          cleanup_command(os_pid, members)
+        end
+
+      _ ->
+        {:error, {:launch, "command could not be started"}}
+    end
+  end
+
+  defp cleanup_command(os_pid, members) do
+    ProcGroup.step(os_pid, members, 9)
+    cleanup_command(os_pid, members, System.monotonic_time(:millisecond) + 30_000)
+  end
+
+  defp cleanup_command(os_pid, members, warn_at) do
+    case ProcGroup.live_snapshot(os_pid) do
+      {:ok, []} ->
+        :ok
+
+      _ ->
+        next_warning = cleanup_warning(os_pid, warn_at)
+        Process.sleep(100)
+        cleanup_command(os_pid, members, next_warning)
+    end
+  end
+
+  defp cleanup_warning(os_pid, warn_at) do
+    now = System.monotonic_time(:millisecond)
+
+    if now >= warn_at do
+      Logger.warning(
+        "Git process group #{os_pid} cleanup is still pending; resource locks retained"
+      )
+
+      now + 30_000
+    else
+      warn_at
+    end
+  end
+
+  defp notify_start(opts, os_pid) do
+    if callback = Keyword.get(opts, :on_start), do: callback.(os_pid)
+  end
+
+  defp collect_command(exec_pid, os_pid, owner, output, deadline) do
+    receive do
+      {stream, ^os_pid, data} when stream in [:stdout, :stderr] ->
+        collect_output(exec_pid, os_pid, owner, output, data, deadline)
+
+      {:DOWN, _, :process, ^exec_pid, :normal} ->
+        {:ok, output}
+
+      {:DOWN, _, :process, ^exec_pid, reason} ->
+        {:error, {reason, output}}
+
+      {:DOWN, ^owner, :process, _, _} ->
+        stop_command(exec_pid, os_pid)
+        {:error, {:owner_down, output}}
+    after
+      max(deadline - System.monotonic_time(:millisecond), 0) ->
+        stop_command(exec_pid, os_pid)
+        {:error, {:timeout, output}}
+    end
+  end
+
+  defp collect_output(exec_pid, os_pid, owner, output, data, deadline) do
+    if byte_size(output) + byte_size(data) > 1_048_576 do
+      stop_command(exec_pid, os_pid)
+      {:error, {:output_limit, output}}
+    else
+      collect_command(exec_pid, os_pid, owner, output <> data, deadline)
+    end
+  end
+
+  defp stop_command(exec_pid, os_pid) do
+    signal_group(os_pid, 9)
+
+    receive do
+      {:DOWN, _, :process, ^exec_pid, _} -> :ok
+    after
+      5_000 -> :ok
+    end
+  end
+
   def version(executable, opts \\ []) do
     case System.find_executable(executable) do
       nil ->

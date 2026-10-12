@@ -1,6 +1,7 @@
 defmodule HelmsmanProtocol.RunSpec.Repo do
   @moduledoc "RunSpec.Repo protocol payload."
   use HelmsmanProtocol.Schema
+  field(:github_repository_id, :pos_integer)
   field(:clone_url, :string, min_bytes: 1)
   field(:base_branch, :string, min_bytes: 1)
   field(:branch, :string, min_bytes: 1)

@@ -8,6 +8,39 @@ defmodule HelmsmanDaemon.ProcGroup do
     end
   end
 
+  @doc "Group snapshot excluding zombies, which cannot perform repository writes."
+  def live_snapshot(pgid) do
+    with {:ok, ps} <- Exec.ps_executable() do
+      case System.cmd(ps, ["-A", "-o", "pid=", "-o", "pgid=", "-o", "stat=", "-o", "lstart="],
+             stderr_to_stdout: true
+           ) do
+        {output, 0} -> {:ok, parse_live(output, pgid)}
+        _ -> {:error, :process_snapshot_failed}
+      end
+    end
+  end
+
+  defp parse_live(output, pgid) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.flat_map(&parse_live_line(&1, pgid))
+  end
+
+  defp parse_live_line(line, pgid) do
+    case String.split(String.trim(line), ~r/\s+/, parts: 4) do
+      [pid, group, status, start] -> live_identity(pid, group, status, start, pgid)
+      _ -> []
+    end
+  end
+
+  defp live_identity(pid, group, status, start, pgid) do
+    if String.starts_with?(status, "Z") do
+      []
+    else
+      for {member, ^pgid, identity} <- parse_identity(pid, group, start), do: {member, identity}
+    end
+  end
+
   def continuous?(_pgid, known, snapshot), do: Enum.any?(snapshot, &(&1 in known))
   def merge(known, snapshot), do: Enum.uniq(known ++ snapshot)
 

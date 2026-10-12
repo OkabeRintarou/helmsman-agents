@@ -22,6 +22,11 @@ defmodule HelmsmanDaemon.Workspace do
     _ -> {:error, {:workspace_prepare, "Invalid scratch workspace path"}}
   end
 
+  @doc "Prepare a repository context; RunWorker integration follows the run lifecycle change."
+  defdelegate prepare_git(spec, run_dir, opts \\ []),
+    to: HelmsmanDaemon.GitWorkspace,
+    as: :prepare
+
   def cleanup(run_id) do
     run_dir = Paths.run(run_id)
 

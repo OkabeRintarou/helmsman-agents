@@ -49,6 +49,7 @@ defmodule HelmsmanProtocol.Fixtures do
 
   def repo do
     %{
+      "github_repository_id" => 123_456_789,
       "clone_url" => "https://github.com/acme/repo.git",
       "base_branch" => "main",
       "branch" => "hm/T-1",

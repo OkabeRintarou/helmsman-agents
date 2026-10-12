@@ -69,12 +69,12 @@ Finished 中只有 failed 可且必须带 failure_reason；summary ≤ 4096 字�
 
 run_id；workspace（id, slug）；task（ident, title，整体可空）；
 agent（name, provider, model, effort, custom_args, env, extra_mcp_servers）；prompt；resume_session_id（可空）；
-repo（clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at，整体可空）；
+repo（github_repository_id, clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at，整体可空）；
 mcp（url, token）；limits（timeout_ms, idle_timeout_ms）；trigger（kind, reason, feedback_id）。
 
 custom_args 为最多 64 项的字符串列表，每项 1–4096 字节，不做 shell 拆分。
 model、effort 为可空字符串，非空值 1–128 字节；env 为字符串 map；extra_mcp_servers 为 JSON 对象。
-repo 非空时 git_token 和令牌过期时间必填；其他仓库标量为非空字符串。
+repo 非空时 github_repository_id 为必填正整数（GitHub 仓库 ID，改名和转移后不变）；git_token 和令牌过期时间必填；其他仓库标量为非空字符串。
 trigger.kind 与可空 reason 为 1–64 字节自由字符串，feedback_id 可空；新增触发名称无需升版本。
 Inspect 隐去 env 的值、extra_mcp_servers 与各令牌，保留环境变量名；to_wire 保留原始值。
 
