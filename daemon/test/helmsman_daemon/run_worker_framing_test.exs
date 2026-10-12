@@ -107,14 +107,19 @@ defmodule HelmsmanDaemon.RunWorkerFramingTest do
   } do
     Application.put_env(:helmsman_daemon, :framing_limit, 64 * 1_024)
 
-    cli =
-      executable!(
-        dir,
-        "stopping-cli",
-        "trap '' TERM\nsleep 0.1\nhead -c 100000 /dev/zero | tr '\\000' x\nsleep 600 &\nwait\n"
-      )
-
     for reason <- [:cancel, :timeout] do
+      ready_file = Path.join(dir, "#{reason}-ready")
+      release_file = Path.join(dir, "#{reason}-release")
+
+      cli =
+        executable!(
+          dir,
+          "stopping-cli-#{reason}",
+          "trap '' TERM\ntouch #{shell_quote(ready_file)}\n" <>
+            "while [ ! -e #{shell_quote(release_file)} ]; do sleep 0.01; done\n" <>
+            "head -c 100000 /dev/zero | tr '\\000' x\n"
+        )
+
       run = framing_run(if(reason == :cancel, do: 1, else: 2), cli)
       Application.put_env(:helmsman_daemon, :framing_cli, cli)
 
@@ -125,14 +130,23 @@ defmodule HelmsmanDaemon.RunWorkerFramingTest do
             [
               adapter: HelmsmanDaemon.Adapters.FramingLauncher,
               reporter: TestReporter,
-              kill_timeout_ms: 200
+              kill_timeout_ms: 2_000
             ]}}
         )
 
       monitor = Process.monitor(worker)
       eventually(fn -> :sys.get_state(worker).phase == :running end)
+      eventually(fn -> File.exists?(ready_file) end)
       GenServer.cast(worker, {:stop, reason})
-      finished = collect(run.run_id)
+      eventually(fn -> :sys.get_state(worker).stop_reason == reason end)
+      File.touch!(release_file)
+
+      {finished, events} = collect_with_events(run.run_id)
+
+      assert Enum.any?(events, fn event ->
+               event.type == :status and event.data.message =~ "CLI output message exceeded"
+             end)
+
       assert finished.status == if(reason == :cancel, do: :cancelled, else: :failed)
       assert finished.failure_reason == if(reason == :cancel, do: nil, else: :timeout)
       assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 2_000
@@ -157,6 +171,10 @@ defmodule HelmsmanDaemon.RunWorkerFramingTest do
     File.write!(path, "#!/bin/sh\n" <> body)
     File.chmod!(path, 0o700)
     path
+  end
+
+  defp shell_quote(value) do
+    "'" <> String.replace(value, "'", "'\\''") <> "'"
   end
 
   defp execute(run) do
@@ -185,6 +203,21 @@ defmodule HelmsmanDaemon.RunWorkerFramingTest do
     receive do
       {:report, ^id, %Report.Finished{} = finished, _, _, _} -> finished
       {:report, ^id, _, _, _, _} -> collect(id)
+    after
+      4_000 -> flunk("bounded CLI did not finish")
+    end
+  end
+
+  defp collect_with_events(id, events \\ []) do
+    receive do
+      {:report, ^id, %Report.Events{events: batch}, _, _, _} ->
+        collect_with_events(id, events ++ batch)
+
+      {:report, ^id, %Report.Finished{} = finished, _, _, _} ->
+        {finished, events}
+
+      {:report, ^id, _, _, _, _} ->
+        collect_with_events(id, events)
     after
       4_000 -> flunk("bounded CLI did not finish")
     end
