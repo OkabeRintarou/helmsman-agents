@@ -26,6 +26,12 @@ defmodule Helmsman.PolicyMatrixTest do
   def other_human(_scope), do: %Actor{id: 101, workspace_id: 1, kind: :human, user_id: 11}
   def system_actor(_scope), do: %Actor{id: 102, workspace_id: 1, kind: :system, name: "helmsman"}
 
+  # Feedback authors, relative to the scope's user (id 10).
+  @own_human @human
+  @own_other_agent %Actor{id: 201, workspace_id: 1, kind: :agent, owner_id: 10}
+  @others_agent %Actor{id: 202, workspace_id: 1, kind: :agent, owner_id: 11}
+  @foreign_own_human %Actor{id: 103, workspace_id: 2, kind: :human, user_id: 10}
+
   @roles [:owner, :admin, :member, :viewer]
   @rank %{owner: 4, admin: 3, member: 2, viewer: 1}
 
@@ -191,6 +197,29 @@ defmodule Helmsman.PolicyMatrixTest do
             for role <- @roles, kind <- [:human, :agent] do
               {:transition_task, role, kind, @none,
                if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
+            # add_feedback: member and above, agents too
+            for role <- @roles, kind <- [:human, :agent] do
+              {:add_feedback, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
+            # revise_feedback: member and above, on records of their own
+            # identity or another identity of the same user; never the
+            # system's, never someone else's (whatever the role)
+            for role <- @roles, kind <- [:human, :agent] do
+              member? = role != :viewer
+              same_user = if member?, do: :ok, else: :forbidden
+
+              [
+                {:revise_feedback, role, kind, @own_actor, same_user},
+                {:revise_feedback, role, kind, @own_human, same_user},
+                {:revise_feedback, role, kind, @agent, same_user},
+                {:revise_feedback, role, kind, @own_other_agent, same_user},
+                {:revise_feedback, role, kind, @other_human, :forbidden},
+                {:revise_feedback, role, kind, @others_agent, :forbidden},
+                {:revise_feedback, role, kind, @system_actor, :forbidden},
+                {:revise_feedback, role, kind, @foreign_own_human, :forbidden},
+                {:revise_feedback, role, kind, @none, :forbidden}
+              ]
             end
           ]
           |> List.flatten()
@@ -281,7 +310,9 @@ defmodule Helmsman.PolicyMatrixTest do
           :archive_project,
           :create_task,
           :update_task,
-          :transition_task
+          :transition_task,
+          :add_feedback,
+          :revise_feedback
         ] do
       refute action in management
     end

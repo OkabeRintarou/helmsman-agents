@@ -21,6 +21,8 @@ defmodule Helmsman do
       Tasks,
       Tasks.Task,
       Tasks.StateMachine,
+      Feedback,
+      Feedback.Entry,
       Policy,
       Events,
       Bootstrap

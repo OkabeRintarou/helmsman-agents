@@ -74,6 +74,7 @@ defmodule Helmsman.MixProject do
       {:gen_smtp, "~> 1.3"},
       {:hammer, "~> 7.5"},
       {:req, "~> 0.5"},
+      {:mdex, "~> 0.14"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"},
       {:gettext, "~> 1.0"},

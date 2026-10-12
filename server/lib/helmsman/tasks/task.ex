@@ -38,10 +38,19 @@ defmodule Helmsman.Tasks.Task do
     belongs_to :created_by, Actor
     belongs_to :assignee, Actor
     field :lock_version, :integer, default: 1
+    # Kept by `Helmsman.Feedback` under the task row lock: the last feedback
+    # number given out, the active records and whether a question waits
+    # for an answer.
+    field :feedback_seq, :integer, default: 0
+    field :feedback_count, :integer, default: 0
+    field :open_question, :boolean, default: false
 
     # Every commit in the task's history (first occurrence first), filled in
     # by `Helmsman.Tasks` when it loads tasks for their summary.
     field :commits, {:array, :string}, virtual: true, default: []
+    # Every feedback record by number, filled in by `Helmsman.Tasks` for
+    # the task detail.
+    field :feedback, {:array, :any}, virtual: true, default: []
 
     has_many :events, TaskEvent
 

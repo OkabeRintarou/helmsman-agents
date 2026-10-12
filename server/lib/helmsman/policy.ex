@@ -72,7 +72,9 @@ defmodule Helmsman.Policy do
     :archive_project,
     :create_task,
     :update_task,
-    :transition_task
+    :transition_task,
+    :add_feedback,
+    :revise_feedback
   ]
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -181,7 +183,37 @@ defmodule Helmsman.Policy do
       when action in [:create_task, :update_task, :transition_task],
       do: allow_if(role_at_least?(scope, :member))
 
+  ## Feedback (not management actions)
+
+  def authorize(%Scope{} = scope, :add_feedback, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
+  # `author`: the identity that wrote the record. Its author, or another
+  # identity of the same user (their human identity, their agents); never
+  # a record the system wrote (designs/06).
+  def authorize(%Scope{} = scope, :revise_feedback, %Actor{} = author),
+    do: allow_if(role_at_least?(scope, :member) and may_revise?(scope, author))
+
   def authorize(_scope, _action, _resource), do: {:error, :forbidden}
+
+  defp may_revise?(_scope, %Actor{kind: :system}), do: false
+
+  defp may_revise?(%Scope{workspace: %{id: ws_id}} = scope, %Actor{workspace_id: ws_id} = author),
+    do: own_actor?(scope, author) or same_user?(scope, author)
+
+  defp may_revise?(_scope, _author), do: false
+
+  defp own_actor?(%Scope{actor: %Actor{id: id}}, %Actor{id: id}) when is_integer(id), do: true
+  defp own_actor?(_scope, _author), do: false
+
+  defp same_user?(%Scope{user: %{id: id}}, %Actor{kind: :human, user_id: id}) when is_integer(id),
+    do: true
+
+  defp same_user?(%Scope{user: %{id: id}}, %Actor{kind: :agent, owner_id: id})
+       when is_integer(id),
+       do: true
+
+  defp same_user?(_scope, _author), do: false
 
   defp not_above_own?(%Scope{role: own}, role)
        when is_map_key(@role_rank, own) and is_map_key(@role_rank, role),

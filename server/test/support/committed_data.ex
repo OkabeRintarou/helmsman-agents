@@ -31,7 +31,7 @@ defmodule Helmsman.CommittedData do
 
       workspace_ids = Enum.uniq(List.flatten(rows) ++ extra_workspace_ids)
 
-      for table <- ["task_events", "tasks", "projects"] do
+      for table <- ["task_events", "feedback", "tasks", "projects"] do
         Repo.query!("DELETE FROM #{table} WHERE workspace_id = ANY($1)", [workspace_ids])
       end
 

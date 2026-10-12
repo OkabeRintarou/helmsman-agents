@@ -23,6 +23,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
   alias Helmsman.Events
+  alias Helmsman.Feedback
   alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Projects
@@ -55,6 +56,8 @@ defmodule Helmsman.Tasks do
           assignee: actor_ref(),
           lock_version: pos_integer(),
           commits: [String.t()],
+          feedback_count: non_neg_integer(),
+          open_question: boolean(),
           created_at: DateTime.t(),
           updated_at: DateTime.t()
         }
@@ -66,6 +69,7 @@ defmodule Helmsman.Tasks do
           commits: [String.t()],
           tests: %{command: String.t(), passed: boolean(), summary: String.t()} | nil,
           auto: boolean(),
+          feedback: String.t() | nil,
           at: DateTime.t()
         }
 
@@ -333,14 +337,17 @@ defmodule Helmsman.Tasks do
 
   `to` is read by `Helmsman.Tasks.StateMachine.normalize/1`; `opts` (a map
   or keyword list) may carry `comment`, `commits` and `tests`, checked by
-  `Helmsman.Tasks.Evidence.normalize/1`. Both are checked before the
-  transaction starts.
+  `Helmsman.Tasks.Evidence.normalize/1`, and `feedback`, a reason
+  `%{kind, content}` checked by `Helmsman.Feedback.normalize/1`. All are
+  checked before the transaction starts.
 
   In one transaction, after the maintenance lock and the membership row:
   the workspace graph lock, the task row `FOR UPDATE`, the check context
   (`Helmsman.Tasks.TransitionContext`), `Helmsman.Tasks.StateMachine.check/3`,
-  the history entry, the new status and the steps of
-  `Helmsman.Tasks.TransitionSteps`. Concurrent transitions of a task run
+  the reason feedback, if any (`Helmsman.Feedback.insert_locked/3`), the
+  history entry (referring to the reason), the new status and the steps of
+  `Helmsman.Tasks.TransitionSteps`. A failure at any step rolls the reason
+  back with the rest. Concurrent transitions of a task run
   one after the other, each checked against the status the previous one
   committed.
 
@@ -350,10 +357,12 @@ defmodule Helmsman.Tasks do
 
   After the commit `{:task_updated, summary}` is broadcast on the project
   topic and `{:task_transitioned, %{ident: ident, event: event}}` on the
-  task topic, `event` being the new history entry (`event_view/1`).
+  task topic, `event` being the new history entry (`event_view/1`), and,
+  with a reason, `{:feedback_added, view}` on the task topic before it.
 
   Errors: `{:invalid_status, input, valid}`, `{:invalid_comment, _}`,
-  `{:invalid_commits, bad}`, `{:invalid_tests, _}`, `:forbidden`,
+  `{:invalid_commits, bad}`, `{:invalid_tests, _}`, a changeset or
+  `{:invalid_feedback, :not_an_object}` for the reason, `:forbidden`,
   `:not_found`, `:no_actor` and the reasons of `StateMachine.check/3`
   (`{:invalid_transition, from, to, allowed}`,
   `{:self_verify_requires_tests, assignee}`, ...).
@@ -367,21 +376,34 @@ defmodule Helmsman.Tasks do
   def transition(%Scope{workspace: %Workspace{}} = scope, ident, to, opts)
       when is_binary(ident) and (is_map(opts) or is_list(opts)) do
     with {:ok, to} <- StateMachine.normalize(to),
-         {:ok, evidence} <- Evidence.normalize(opts) do
+         {:ok, evidence} <- Evidence.normalize(opts),
+         {:ok, reason} <- normalize_reason(opts) do
       Workspaces.write_transaction(scope, :transition_task, fn scope ->
-        transition_locked(scope, ident, to, evidence)
+        transition_locked(scope, ident, to, evidence, reason)
       end)
+    end
+  end
+
+  defp normalize_reason(opts) do
+    case opts |> Map.new() |> fetch_attr(:feedback) do
+      {:ok, reason} when is_map(reason) and not is_struct(reason) -> Feedback.normalize(reason)
+      {:ok, nil} -> {:ok, nil}
+      {:ok, _other} -> {:error, {:invalid_feedback, :not_an_object}}
+      :error -> {:ok, nil}
     end
   end
 
   # Lock order: maintenance lock, membership row (write_transaction), graph
   # lock, task row (designs/01 §4).
-  defp transition_locked(scope, ident, to, evidence) do
+  defp transition_locked(scope, ident, to, evidence, reason) do
     with {:ok, ident, _key, _seq} <- Ident.parse(ident),
          :ok <- Locks.graph!(scope.workspace.id),
          {:ok, task} <- lock_task(scope.workspace.id, ident),
          ctx = TransitionContext.build(task, scope, to, evidence),
          :ok <- StateMachine.check(task.status, to, ctx) do
+      {feedback_id, task} = insert_reason(task, scope, reason)
+      test_hook(:reason_inserted)
+
       event =
         Repo.insert!(%TaskEvent{
           workspace_id: task.workspace_id,
@@ -392,7 +414,8 @@ defmodule Helmsman.Tasks do
           comment: evidence.comment,
           commits: evidence.commits,
           tests: evidence.tests,
-          auto: false
+          auto: false,
+          feedback_id: feedback_id
         })
 
       task = task |> Changeset.change(transition_changes(task, to, scope)) |> Repo.update!()
@@ -404,6 +427,13 @@ defmodule Helmsman.Tasks do
         {:ok, detail(task)}
       end
     end
+  end
+
+  defp insert_reason(task, _scope, nil), do: {nil, task}
+
+  defp insert_reason(task, scope, reason) do
+    {:ok, {entry, task}} = Feedback.insert_locked(task, scope, reason)
+    {entry.id, task}
   end
 
   # Claiming is the only transition that edits a field, so the only one
@@ -498,25 +528,34 @@ defmodule Helmsman.Tasks do
       assignee: actor_ref(task.assignee),
       lock_version: task.lock_version,
       commits: task.commits,
+      feedback_count: task.feedback_count,
+      open_question: task.open_question,
       created_at: task.inserted_at,
       updated_at: task.updated_at
     }
   end
 
   @doc """
-  The detail map of a task: the summary plus `description` and `history`
-  (oldest first). Needs the preloads of `get/2`.
+  The detail map of a task: the summary plus `description`, `history`
+  (oldest first) and `feedback` (every record, superseded ones included,
+  by number; `Helmsman.Feedback.view/1`). Needs the preloads of `get/2`.
   """
   @spec detail(Task.t()) :: map()
   def detail(%Task{} = task) do
     task
     |> summary()
-    |> Map.merge(%{description: task.description, history: Enum.map(task.events, &event_view/1)})
+    |> Map.merge(%{
+      description: task.description,
+      history: Enum.map(task.events, &event_view/1),
+      feedback: Enum.map(task.feedback, &Feedback.view/1)
+    })
   end
 
   @doc """
   The external form of a history entry, in `detail/1` and in the
-  `:task_transitioned` notification. Needs `actor` preloaded.
+  `:task_transitioned` notification; `feedback` is the ID of its reason.
+  Needs `actor` preloaded and `feedback_ident` filled in, as the tasks of
+  `get/2` have.
   """
   @spec event_view(TaskEvent.t()) :: event_view()
   def event_view(%TaskEvent{} = event) do
@@ -528,6 +567,7 @@ defmodule Helmsman.Tasks do
       commits: event.commits,
       tests: tests_view(event.tests),
       auto: event.auto,
+      feedback: event.feedback_ident,
       at: event.inserted_at
     }
   end
@@ -543,10 +583,28 @@ defmodule Helmsman.Tasks do
   defp actor_ref(nil), do: nil
   defp actor_ref(%Actor{name: name, kind: kind}), do: %{name: name, kind: Atom.to_string(kind)}
 
+  @doc """
+  Loads what `summary/1` needs into `task` (creator, assignee, commits).
+  """
+  @spec load_summary(Task.t()) :: Task.t()
+  def load_summary(%Task{} = task) do
+    task = Repo.preload(task, [:created_by, :assignee], force: true)
+    hd(put_commits([task]))
+  end
+
   defp preload_detail(task) do
     events = from(e in TaskEvent, order_by: [asc: e.inserted_at, asc: e.id], preload: :actor)
     task = Repo.preload(task, [:created_by, :assignee, events: events], force: true)
-    %{task | commits: task.events |> Enum.flat_map(& &1.commits) |> Enum.uniq()}
+    feedback = Feedback.for_task(task)
+    ids = Map.new(feedback, &{&1.id, Feedback.Id.build(task.ident, &1.seq)})
+    events = Enum.map(task.events, &%{&1 | feedback_ident: ids[&1.feedback_id]})
+
+    %{
+      task
+      | events: events,
+        feedback: feedback,
+        commits: events |> Enum.flat_map(& &1.commits) |> Enum.uniq()
+    }
   end
 
   # One query for the commits of all `tasks`, whatever their number.
