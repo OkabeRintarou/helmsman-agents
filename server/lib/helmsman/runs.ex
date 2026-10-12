@@ -819,7 +819,7 @@ defmodule Helmsman.Runs do
   ## Lifecycle (add-run-lifecycle)
 
   defdelegate revalidate(run, locked), to: Helmsman.Runs.Revalidation, as: :check
-  defdelegate claim(daemon_ctx, base_url), to: Helmsman.Runs.Claim
+  defdelegate claim(daemon_ctx, base_url, push_tokens \\ %{}), to: Helmsman.Runs.Claim
   defdelegate starting(daemon_ctx, run_id), to: Helmsman.Runs.Lifecycle
   defdelegate started(daemon_ctx, report), to: Helmsman.Runs.Lifecycle
   defdelegate append_events(daemon_ctx, run_id, events), to: Helmsman.Runs.Lifecycle
@@ -829,4 +829,21 @@ defmodule Helmsman.Runs do
   defdelegate stop_active(queryable), to: Helmsman.Runs.Stop
   defdelegate cancel_for_initiator(workspace_id, user_id), to: Helmsman.Runs.Stop
   defdelegate retry(scope, run_id), to: Helmsman.Runs.Retry
+
+  ## Git (add-daemon-git-workspace)
+
+  defdelegate prefetch_push_tokens(daemon_ctx), to: Helmsman.Runs.GitRepo
+  defdelegate git_token(daemon_ctx, run_id), to: Helmsman.Runs.Pushes
+  defdelegate pushed(daemon_ctx, report), to: Helmsman.Runs.Pushes
+
+  @doc """
+  Called once after a push record of `run` was committed
+  (`add-daemon-git-workspace` decision 5). Does nothing yet but emit the
+  `[:helmsman, :runs, :after_push]` telemetry event (`%{run_id: id}`);
+  `add-pr-reconcile-merge` enqueues the pull request reconciliation here.
+  """
+  @spec after_push(Run.t()) :: :ok
+  def after_push(%Run{id: id}) do
+    :telemetry.execute([:helmsman, :runs, :after_push], %{}, %{run_id: id})
+  end
 end

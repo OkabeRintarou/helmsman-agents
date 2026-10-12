@@ -21,8 +21,12 @@ defmodule Helmsman.Runs.Claim do
        does not exist is read as no longer a member;
     6. `Helmsman.Runs.Revalidation`: invalid → `cancelled` (`obsolete` /
        `unauthorized`); triggers pruned → written back;
-    7. `claimed`, the daemon, `claimed_at`, the capabilities recomputed,
-       a run token and the run description (`Helmsman.Runs.Spec`).
+    7. the repository (`Helmsman.Runs.GitRepo`, `add-daemon-git-workspace`
+       decision 2): unavailable → `failed` (`workspace_prepare`); no
+       prefetched push token → left queued;
+    8. `claimed`, the daemon, `claimed_at`, the capabilities recomputed,
+       the repository and task branch, a run token and the run description
+       (`Helmsman.Runs.Spec`).
 
   Claiming is the only path that locks a run row before other rows; every
   other lock is a `try`, so it never waits in a cycle with task writes or
@@ -37,7 +41,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Locks
   alias Helmsman.Repo
   alias Helmsman.Runs
-  alias Helmsman.Runs.{Lifecycle, Run, RunTokens, Spec}
+  alias Helmsman.Runs.{GitRepo, Lifecycle, Run, RunTokens, Spec}
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -48,18 +52,19 @@ defmodule Helmsman.Runs.Claim do
 
   @doc """
   Claims runs for the daemon of `daemon_ctx`; `base_url` is the server's
-  URL (the MCP endpoint of the descriptions). Returns the descriptions
-  (none: `{:ok, []}`); `{:error, :reauthorized}` for a revoked daemon or
-  another authorization epoch.
+  URL (the MCP endpoint of the descriptions); `tokens` the push tokens
+  fetched before (`GitRepo.prefetch_push_tokens/1`). Returns the
+  descriptions (none: `{:ok, []}`); `{:error, :reauthorized}` for a
+  revoked daemon or another authorization epoch.
   """
-  @spec claim(Lifecycle.daemon_ctx(), String.t()) ::
+  @spec claim(Lifecycle.daemon_ctx(), String.t(), GitRepo.tokens()) ::
           {:ok, [HelmsmanProtocol.RunSpec.t()]} | {:error, :reauthorized}
-  def claim(ctx, base_url) do
+  def claim(ctx, base_url, tokens \\ %{}) do
     Tx.run(fn ->
       with true <- Locks.try_daemon(ctx.daemon_id),
            {:ok, daemon} <- Lifecycle.lock_daemon(ctx) do
         slots = daemon.max_concurrency - active_count(:daemon_id, daemon.id)
-        claim_from(daemon, runtime_ids(daemon), slots, base_url)
+        claim_from(daemon, runtime_ids(daemon), slots, {base_url, tokens})
       else
         false -> {:ok, []}
         error -> error
@@ -67,10 +72,18 @@ defmodule Helmsman.Runs.Claim do
     end)
   end
 
-  defp claim_from(_daemon, ids, slots, _base_url) when slots <= 0 or ids == [], do: {:ok, []}
+  defp claim_from(_daemon, ids, slots, _args) when slots <= 0 or ids == [], do: {:ok, []}
 
-  defp claim_from(daemon, ids, slots, base_url) do
-    state = %{daemon: daemon, base_url: base_url, slots: slots, seen: [], specs: []}
+  defp claim_from(daemon, ids, slots, {base_url, tokens}) do
+    state = %{
+      daemon: daemon,
+      base_url: base_url,
+      tokens: tokens,
+      slots: slots,
+      seen: [],
+      specs: []
+    }
+
     {:ok, state |> scan(ids) |> Map.fetch!(:specs) |> Enum.reverse()}
   end
 
@@ -81,7 +94,11 @@ defmodule Helmsman.Runs.Claim do
     )
   end
 
-  defp runtime_ids(%Daemon{} = daemon) do
+  @doc false
+  # The runtimes the daemon claims from: online, enabled, in a workspace it
+  # serves and where its user is a member or above.
+  @spec runtime_ids(Daemon.t()) :: [pos_integer()]
+  def runtime_ids(%Daemon{} = daemon) do
     Repo.all(
       from(r in Runtime,
         join: dw in DaemonWorkspace,
@@ -217,8 +234,8 @@ defmodule Helmsman.Runs.Claim do
   defp decide(run, locked, state) do
     if Map.get(locked.members, state.daemon.user_id) in @member_roles do
       case Runs.revalidate(run, locked) do
-        :ok -> claim!(run, locked, [], state)
-        {:pruned, changes} -> claim!(run, locked, Map.to_list(changes), state)
+        :ok -> with_repo(run, locked, [], state)
+        {:pruned, changes} -> with_repo(run, locked, Map.to_list(changes), state)
         {:obsolete, _why} -> cancel!(run, :obsolete, state)
         :unauthorized -> cancel!(run, :unauthorized, state)
       end
@@ -232,7 +249,28 @@ defmodule Helmsman.Runs.Claim do
     state
   end
 
-  defp claim!(run, locked, changes, state) do
+  defp with_repo(run, locked, changes, state) do
+    case GitRepo.resolve(run, locked.task, state.tokens) do
+      :none ->
+        claim!(run, locked, changes, nil, state)
+
+      {:ok, repo} ->
+        changes = changes ++ [repository_id: repo.repository.id, branch: repo.branch]
+        claim!(run, locked, changes, repo, state)
+
+      :no_token ->
+        state
+
+      {:unavailable, message} ->
+        run
+        |> Lifecycle.end!(:failed, failure_reason: :workspace_prepare, error: message)
+        |> Lifecycle.maybe_retry()
+
+        state
+    end
+  end
+
+  defp claim!(run, locked, changes, repo, state) do
     run =
       Lifecycle.update!(
         run,
@@ -245,7 +283,7 @@ defmodule Helmsman.Runs.Claim do
       )
 
     {:ok, token} = RunTokens.issue(run)
-    {:ok, spec} = Spec.build(run, token, state.base_url)
+    {:ok, spec} = Spec.build(run, token, state.base_url, repo)
     %{state | slots: state.slots - 1, specs: [spec | state.specs]}
   end
 end

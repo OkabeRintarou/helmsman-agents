@@ -130,6 +130,50 @@ defmodule Helmsman.GitHubFixtures do
     |> Req.Test.json(%{"token" => token, "expires_at" => expires_at})
   end
 
+  @doc "Binds `project` to `repository` (directly, as the settings page would)."
+  def bind_repository(project, %Repository{} = repository, base_branch \\ nil) do
+    project
+    |> Ecto.Changeset.change(repository_id: repository.id, base_branch: base_branch)
+    |> Repo.update!()
+
+    :ok
+  end
+
+  @doc """
+  Stubs the installation token endpoint for push tokens: request `n` gets
+  `"ghs_push_<n>"`, valid one hour; the test gets `{:push_token_request,
+  installation_id, body}`. A request made inside a database transaction
+  raises (HTTP must never run in one) and reports `:http_in_transaction`.
+  `:fail` (a set of installation IDs, or `:all`) answers 503 instead.
+  Returns a counter of the requests (`:counters.get(counter, 1)`).
+  """
+  def stub_push_tokens(opts \\ []) do
+    test = self()
+    counter = :counters.new(1, [])
+    fail = Keyword.get(opts, :fail, [])
+
+    stub_github(fn conn ->
+      if Repo.in_transaction?() do
+        send(test, :http_in_transaction)
+        raise "GitHub was called inside a database transaction"
+      end
+
+      "/app/installations/" <> rest = conn.request_path
+      [id, "access_tokens"] = String.split(rest, "/")
+      id = String.to_integer(id)
+      :counters.add(counter, 1, 1)
+      send(test, {:push_token_request, id, json_body(conn)})
+
+      if fail == :all or id in fail do
+        conn |> Plug.Conn.put_status(503) |> Req.Test.json(%{"message" => "Unavailable"})
+      else
+        token_response(conn, "ghs_push_#{:counters.get(counter, 1)}")
+      end
+    end)
+
+    counter
+  end
+
   @doc "Sends 404 with GitHub's error body."
   def not_found(conn),
     do: conn |> Plug.Conn.put_status(404) |> Req.Test.json(%{"message" => "Not Found"})

@@ -52,8 +52,19 @@ defmodule Helmsman.Runs.Lifecycle do
     end
   end
 
-  defp lock_run(%{daemon_id: daemon_id}, run_id) do
-    case Repo.one(from(r in Run, where: r.id == ^run_id, lock: "FOR UPDATE")) do
+  @doc false
+  # The run row `FOR UPDATE` (`:share`: `FOR SHARE`), when this daemon
+  # claimed it.
+  @spec lock_run(daemon_ctx(), pos_integer(), :update | :share) ::
+          {:ok, Run.t()} | {:error, :not_found}
+  def lock_run(%{daemon_id: daemon_id}, run_id, mode \\ :update) do
+    query =
+      case mode do
+        :update -> from(r in Run, where: r.id == ^run_id, lock: "FOR UPDATE")
+        :share -> from(r in Run, where: r.id == ^run_id, lock: "FOR SHARE")
+      end
+
+    case Repo.one(query) do
       %Run{daemon_id: ^daemon_id} = run -> {:ok, run}
       _other -> {:error, :not_found}
     end
@@ -341,7 +352,8 @@ defmodule Helmsman.Runs.Lifecycle do
   The run has ended (decision 13). Accepted for `claimed` (failed while
   preparing), `running` and `cancelling` runs; a `cancelling` run is
   `cancelled` whatever was reported, keeping its failure reason. Records
-  the summary, usage, error and session, revokes the token, and inserts
+  the summary, usage, error and session (`push_failed` without a push
+  record: `push_status = failed`), revokes the token, and inserts
   the `fallback` job (`succeeded` with a task) or the automatic retry job
   (decision 25). The same end reported again is `:ok`; another end is
   `:wrong_state`.
@@ -378,7 +390,9 @@ defmodule Helmsman.Runs.Lifecycle do
           summary: report.summary,
           usage: report.usage && Event.Usage.to_wire(report.usage),
           error: report.error
-        ] ++ if(report.session_id in [nil, ""], do: [], else: [session_id: report.session_id])
+        ] ++
+          if(report.session_id in [nil, ""], do: [], else: [session_id: report.session_id]) ++
+          push_failed(run, reason)
       )
 
     if run.status == :succeeded and run.task_id,
@@ -387,6 +401,10 @@ defmodule Helmsman.Runs.Lifecycle do
     maybe_retry(run)
     {:ok, :ok}
   end
+
+  # `add-daemon-git-workspace` decision 6: a push record, if any, stays.
+  defp push_failed(%Run{pushed_at: nil}, :push_failed), do: [push_status: :failed]
+  defp push_failed(_run, _reason), do: []
 
   ## Reconciliation
 

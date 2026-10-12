@@ -206,4 +206,97 @@ defmodule Helmsman.Runs.PromptTest do
     assert Spec.main_trigger([assign(ctx), reopen]) ==
              %{kind: "reopen", reason: "merge_conflict", feedback_id: 4}
   end
+
+  describe "with a repository (add-daemon-git-workspace 1.3)" do
+    setup ctx do
+      repository = %Helmsman.GitHub.Repository{id: 1, github_id: 4711, owner: "acme", name: "app"}
+      branch = "hm/#{ctx.workspace.id}/#{String.downcase(ctx.task.ident)}"
+
+      repo = %{
+        repository: repository,
+        base_branch: "main",
+        branch: branch,
+        rescue_branches: [],
+        token: %{token: "ghs_secret_push_token", expires_at: DateTime.utc_now()}
+      }
+
+      %{repo: repo, branch: branch}
+    end
+
+    defp build_repo(run, repo), do: Spec.build(run, @token, "https://hm.test", repo)
+
+    defp reopen(ctx, reason),
+      do: trigger("reopen", ctx.workspace, ctx.alice, ctx.agent, %{"reason" => reason})
+
+    test "the prompt with a repository (scenario)", ctx do
+      repo = %{ctx.repo | rescue_branches: ["#{ctx.branch}-run-31"]}
+      run = claimed(ctx, %{triggers: [assign(ctx)]})
+      assert {:ok, %RunSpec{prompt: prompt, repo: spec_repo}} = build_repo(run, repo)
+
+      assert prompt =~
+               "\nWorking directory: a git worktree of acme/app on branch #{ctx.branch} " <>
+                 "(based on main). Commit your changes, but do not push, open pull requests, " <>
+                 "or switch branches; Helmsman does that.\n" <>
+                 "Before this run Helmsman merged #{ctx.branch}-run-31 into #{ctx.branch}.\n" <>
+                 "If `git status` shows unmerged paths, resolve the conflicts and commit them " <>
+                 "before anything else.\n" <>
+                 "Before you start, call get_task(\"#{ctx.task.ident}\")"
+
+      refute prompt =~ "no repository"
+      refute prompt =~ "ghs_secret_push_token"
+      refute prompt =~ @token
+      assert spec_repo.git_token == "ghs_secret_push_token"
+      assert spec_repo.github_repository_id == 4711
+      refute inspect(spec_repo) =~ "ghs_secret_push_token"
+    end
+
+    test "no merge line without rescue branches or a merge conflict reopen", ctx do
+      run = claimed(ctx, %{triggers: [assign(ctx), reopen(ctx, "rejected")]})
+      assert {:ok, %RunSpec{prompt: prompt}} = build_repo(run, ctx.repo)
+      refute prompt =~ "Helmsman merged"
+      assert prompt =~ "If `git status` shows unmerged paths"
+    end
+
+    test "a merge conflict reopen mentions origin/<base branch>", ctx do
+      repo = %{ctx.repo | rescue_branches: ["#{ctx.branch}-run-31"]}
+      run = claimed(ctx, %{triggers: [assign(ctx), reopen(ctx, "merge_conflict")]})
+      assert {:ok, %RunSpec{prompt: prompt, trigger: trigger}} = build_repo(run, repo)
+      assert trigger.reason == "merge_conflict"
+
+      assert prompt =~
+               "Before this run Helmsman merged #{ctx.branch}-run-31, origin/main into #{ctx.branch}.\n"
+
+      run = claimed(ctx, %{triggers: [reopen(ctx, "merge_conflict")]})
+      assert {:ok, %RunSpec{prompt: prompt}} = build_repo(run, ctx.repo)
+      assert prompt =~ "Before this run Helmsman merged origin/main into #{ctx.branch}.\n"
+    end
+
+    test "a resumed session: why, the merge line, the conflicts line", ctx do
+      run_fixture(ctx.agent, %{
+        task_id: ctx.task.id,
+        status: :succeeded,
+        session_id: "s-1",
+        finished_at: DateTime.utc_now()
+      })
+
+      manual = trigger("manual", ctx.workspace, ctx.alice, ctx.agent)
+      repo = %{ctx.repo | rescue_branches: ["#{ctx.branch}-run-31"]}
+      assert {:ok, spec} = build_repo(claimed(ctx, %{triggers: [manual]}), repo)
+      assert spec.resume_session_id == "s-1"
+
+      assert spec.prompt ==
+               "Why you were started:\n- #{ctx.alice_actor.name} started you manually.\n" <>
+                 "Before this run Helmsman merged #{ctx.branch}-run-31 into #{ctx.branch}.\n" <>
+                 "If `git status` shows unmerged paths, resolve the conflicts and commit them " <>
+                 "before anything else.\n" <>
+                 "Before you start, call get_task(\"#{ctx.task.ident}\") to read the full " <>
+                 "requirements, history and feedback."
+
+      refute spec.prompt =~ "ghs_secret_push_token"
+
+      assert {:ok, spec} = build_repo(claimed(ctx, %{triggers: [manual]}), ctx.repo)
+      refute spec.prompt =~ "Helmsman merged"
+      assert spec.prompt =~ "If `git status` shows unmerged paths"
+    end
+  end
 end

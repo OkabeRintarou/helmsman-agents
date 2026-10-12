@@ -227,7 +227,7 @@ defmodule HelmsmanWeb.DaemonChannelRunsTest do
     assert id == ctx.run.id
   end
 
-  test "git_token, pushed and steer_ack are not_found", ctx do
+  test "steer_ack is not_found; git_token and pushed of an unclaimed run too", ctx do
     {socket, _reply} = joined(ctx)
     id = ctx.run.id
 

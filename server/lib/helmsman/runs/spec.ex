@@ -5,9 +5,11 @@ defmodule Helmsman.Runs.Spec do
 
   Built inside the claim transaction, after the run was checked again: the
   agent's execution settings come from `Helmsman.Agents.execution_config/1`
-  (decrypted `env` and `extra_mcp_servers`). `repo` is always nil until
-  `add-daemon-git-workspace`; the daemon then works in a scratch
-  directory. The description holds the run token and secrets: it only
+  (decrypted `env` and `extra_mcp_servers`). `repo` comes from
+  `Helmsman.Runs.GitRepo` (`add-daemon-git-workspace` decision 2); nil
+  when the project has no repository, and the daemon then works in a
+  scratch directory. The description holds the run token, the push token
+  and secrets: it only
   goes into the claim reply and is never logged (the protocol's `Inspect`
   hides those fields).
   """
@@ -17,17 +19,20 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents
   alias Helmsman.Repo
-  alias Helmsman.Runs.{Prompt, Run}
+  alias Helmsman.Runs.{GitRepo, Prompt, Run}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
   alias HelmsmanProtocol.RunSpec
 
   @doc """
-  The run description of the claimed `run`, with its `token` and the
-  server's `base_url` (the MCP endpoint is `base_url <> "/mcp"`).
+  The run description of the claimed `run`, with its `token`, the
+  server's `base_url` (the MCP endpoint is `base_url <> "/mcp"`) and its
+  repository (`GitRepo.resolve/3`; nil: none).
   """
-  @spec build(Run.t(), String.t(), String.t()) :: {:ok, RunSpec.t()} | {:error, term()}
-  def build(%Run{} = run, token, base_url) when is_binary(token) and is_binary(base_url) do
+  @spec build(Run.t(), String.t(), String.t(), GitRepo.t() | nil) ::
+          {:ok, RunSpec.t()} | {:error, term()}
+  def build(%Run{} = run, token, base_url, repo \\ nil)
+      when is_binary(token) and is_binary(base_url) do
     with {:ok, profile} <- Agents.execution_config(run.agent_id) do
       agent = Repo.get!(Actor, run.agent_id)
       workspace = Repo.get!(Workspace, run.workspace_id)
@@ -41,7 +46,8 @@ defmodule Helmsman.Runs.Spec do
         task: task,
         names: trigger_names(run),
         retried: retried(run),
-        resume?: not is_nil(resume_session_id)
+        resume?: not is_nil(resume_session_id),
+        repo: repo
       }
 
       RunSpec.new(%{
@@ -59,7 +65,7 @@ defmodule Helmsman.Runs.Spec do
         },
         prompt: Prompt.build(run, ctx),
         resume_session_id: resume_session_id,
-        repo: nil,
+        repo: repo && repo_spec(repo),
         mcp: %{url: base_url <> "/mcp", token: token},
         limits: %{
           timeout_ms: profile.timeout_minutes * 60_000,
@@ -68,6 +74,18 @@ defmodule Helmsman.Runs.Spec do
         trigger: main_trigger(run.triggers)
       })
     end
+  end
+
+  defp repo_spec(repo) do
+    %{
+      github_repository_id: repo.repository.github_id,
+      clone_url: GitRepo.clone_url(repo.repository),
+      base_branch: repo.base_branch,
+      branch: repo.branch,
+      rescue_branches: repo.rescue_branches,
+      git_token: repo.token.token,
+      git_token_expires_at: repo.token.expires_at
+    }
   end
 
   @doc """

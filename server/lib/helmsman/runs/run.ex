@@ -8,7 +8,11 @@ defmodule Helmsman.Runs.Run do
   attempt and the automatic retries so far, the run it retries, when it
   may be claimed (`not_before`), the CLI session, the last output
   (`summary`), the usage, the error text, the last event sequence number
-  and the times of its life. `triggers` lists why the run exists,
+  and the times of its life. `add-daemon-git-workspace` added the push
+  record: the repository and task branch of the run (written when it was
+  claimed), and what the daemon pushed (`push_status`: `none`, `pushed`
+  to the task branch, `conflict` (pushed to `rescue_branch`), `failed`;
+  no record yet while `pushed_at` is nil). `triggers` lists why the run exists,
   each entry with its own authorization source and causal chain
   (`%{"kind", "by_actor_id", "initiator_user_id", "causal_agent_ids",
   "instructions", "feedback_id", "at"}`); `root_initiator_user_id` is that
@@ -20,6 +24,7 @@ defmodule Helmsman.Runs.Run do
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
   alias Helmsman.Daemons.{Daemon, Runtime}
+  alias Helmsman.GitHub.Repository
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
@@ -38,6 +43,7 @@ defmodule Helmsman.Runs.Run do
   @pending [:deferred, :queued]
   @active [:claimed, :running, :cancelling]
   @ended [:succeeded, :failed, :cancelled]
+  @push_statuses [:none, :pushed, :conflict, :failed]
   @capabilities ["read", "write_task", "create_tasks", "delegate"]
   @failure_reasons [
     :runtime_offline,
@@ -90,6 +96,16 @@ defmodule Helmsman.Runs.Run do
     field :finished_at, :utc_datetime_usec
     field :last_event_at, :utc_datetime_usec
     field :events_pruned_at, :utc_datetime_usec
+
+    # The push record (`add-daemon-git-workspace` decision 1).
+    belongs_to :repository, Repository
+    field :branch, :string
+    field :base_sha, :string
+    field :head_sha, :string
+    field :push_status, Ecto.Enum, values: @push_statuses, default: :none
+    field :rescue_branch, :string
+    field :push_commits, {:array, :map}
+    field :pushed_at, :utc_datetime_usec
 
     timestamps(type: :utc_datetime_usec)
   end

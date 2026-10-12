@@ -11,11 +11,18 @@ defmodule Helmsman.Runs.Prompt do
   `get_task`. A resumed session gets only why it was started and that
   last line. The task's description, history and feedback are never in
   the prompt, nor is any token.
+
+  With a repository (`add-daemon-git-workspace` decision 3) the working
+  directory is a worktree of the task branch: commit, but do not push,
+  open pull requests or switch branches; what Helmsman merged before the
+  run (rescue branches, the base branch when reopened for a merge
+  conflict) and to resolve conflicts first. A resumed session gets those
+  lines too, after why it was started.
   """
 
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
-  alias Helmsman.Runs.Run
+  alias Helmsman.Runs.{GitRepo, Run, Spec}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
@@ -26,17 +33,19 @@ defmodule Helmsman.Runs.Prompt do
           required(:task) => Task.t() | nil,
           required(:names) => %{pos_integer() => String.t()},
           required(:retried) => %{pos_integer() => atom() | nil},
-          required(:resume?) => boolean()
+          required(:resume?) => boolean(),
+          optional(:repo) => GitRepo.t() | nil
         }
 
   @doc """
   The prompt of `run`. `ctx`: the agent, its profile, the workspace, the
   task (nil: none), `names` (actor ID → name, for the triggers), `retried`
-  (run ID → failure reason, for retry markers) and `resume?`.
+  (run ID → failure reason, for retry markers), `resume?` and `repo`
+  (nil or absent: none).
   """
   @spec build(Run.t(), ctx()) :: String.t()
   def build(%Run{} = run, %{resume?: true, task: %Task{}} = ctx) do
-    Enum.join([why(run, ctx), get_task(ctx.task)], "\n")
+    Enum.join([why(run, ctx)] ++ repo_lines(run, ctx[:repo]) ++ [get_task(ctx.task)], "\n")
   end
 
   def build(%Run{} = run, ctx) do
@@ -46,9 +55,10 @@ defmodule Helmsman.Runs.Prompt do
           identity(ctx),
           "",
           this_run(ctx.task),
-          why(run, ctx),
-          working_directory(ctx.task)
-        ] ++ if(ctx.task, do: [get_task(ctx.task)], else: []),
+          why(run, ctx)
+        ] ++
+          working_directory(run, ctx.task, ctx[:repo]) ++
+          if(ctx.task, do: [get_task(ctx.task)], else: []),
         "\n"
       )
 
@@ -118,13 +128,47 @@ defmodule Helmsman.Runs.Prompt do
 
   defp by(trigger, ctx), do: Map.get(ctx.names, trigger["by_actor_id"]) || "Someone"
 
-  defp working_directory(nil),
-    do: "Working directory: an empty scratch directory for this run only."
+  defp working_directory(_run, nil, _repo),
+    do: ["Working directory: an empty scratch directory for this run only."]
 
-  defp working_directory(%Task{ident: ident}),
-    do:
+  defp working_directory(_run, %Task{ident: ident}, nil),
+    do: [
       "Working directory: an empty scratch directory that is kept for later runs on " <>
         "#{ident}. This project has no repository."
+    ]
+
+  defp working_directory(run, %Task{}, repo) do
+    %{owner: owner, name: name} = repo.repository
+
+    [
+      "Working directory: a git worktree of #{owner}/#{name} on branch #{repo.branch} " <>
+        "(based on #{repo.base_branch}). Commit your changes, but do not push, open pull " <>
+        "requests, or switch branches; Helmsman does that."
+      | repo_lines(run, repo)
+    ]
+  end
+
+  defp repo_lines(_run, nil), do: []
+
+  defp repo_lines(run, repo) do
+    merged =
+      repo.rescue_branches ++
+        if merge_conflict?(run), do: ["origin/#{repo.base_branch}"], else: []
+
+    merged_line =
+      if merged == [],
+        do: [],
+        else: ["Before this run Helmsman merged #{Enum.join(merged, ", ")} into #{repo.branch}."]
+
+    merged_line ++
+      [
+        "If `git status` shows unmerged paths, resolve the conflicts and commit them " <>
+          "before anything else."
+      ]
+  end
+
+  defp merge_conflict?(run),
+    do: match?(%{kind: "reopen", reason: "merge_conflict"}, Spec.main_trigger(run.triggers))
 
   defp get_task(%Task{ident: ident}),
     do:

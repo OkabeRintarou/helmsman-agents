@@ -132,8 +132,13 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
+  # Push tokens are fetched before the claim transaction
+  # (`add-daemon-git-workspace` decision 2).
   defp handle_report("claim", _report, socket) do
-    case Runs.claim(daemon_ctx(socket), HelmsmanWeb.Endpoint.url()) do
+    ctx = daemon_ctx(socket)
+    tokens = Runs.prefetch_push_tokens(ctx)
+
+    case Runs.claim(ctx, HelmsmanWeb.Endpoint.url(), tokens) do
       {:ok, specs} -> respond("claim", %Reply.Claim{runs: specs}, socket)
       {:error, reason} -> run_error(reason, socket)
     end
@@ -173,8 +178,37 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
-  # `git_token` and `pushed` come with `add-daemon-git-workspace`,
-  # `steer_ack` with `add-run-steering`.
+  defp handle_report("git_token", report, socket) do
+    case Runs.git_token(daemon_ctx(socket), report.run_id) do
+      {:ok, %{token: token, expires_at: expires_at}} ->
+        respond("git_token", %Reply.GitToken{token: token, expires_at: expires_at}, socket)
+
+      {:error, :wrong_state} ->
+        {:reply, {:error, error(:wrong_state, "the run ended over 30 minutes ago")}, socket}
+
+      {:error, {:unavailable, message}} ->
+        {:reply, {:error, error(:wrong_state, message)}, socket}
+
+      {:error, reason} ->
+        run_error(reason, socket)
+    end
+  end
+
+  defp handle_report("pushed", report, socket) do
+    case Runs.pushed(daemon_ctx(socket), report) do
+      :ok ->
+        respond("pushed", %Reply.Empty{}, socket)
+
+      {:error, :wrong_state} ->
+        message = "the run has no repository or another push is recorded for it"
+        {:reply, {:error, error(:wrong_state, message)}, socket}
+
+      {:error, reason} ->
+        run_error(reason, socket)
+    end
+  end
+
+  # `steer_ack` comes with `add-run-steering`.
   defp handle_report(_name, _report, socket), do: {:reply, {:error, error(:not_found)}, socket}
 
   defp run_error(:reauthorized, socket), do: unauthorized_reply(socket)
@@ -258,15 +292,17 @@ defmodule HelmsmanWeb.DaemonChannel do
   end
 
   defp error(reason) do
-    {:ok, reply} =
-      ErrorReply.new(
-        reason,
-        if(reason == :wrong_state,
-          do: "state changed concurrently, reconnecting",
-          else: Atom.to_string(reason)
-        )
+    error(
+      reason,
+      if(reason == :wrong_state,
+        do: "state changed concurrently, reconnecting",
+        else: Atom.to_string(reason)
       )
+    )
+  end
 
+  defp error(reason, message) do
+    {:ok, reply} = ErrorReply.new(reason, message)
     ErrorReply.to_wire(reply)
   end
 
