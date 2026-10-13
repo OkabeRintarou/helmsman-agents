@@ -8,7 +8,7 @@
 // * data-submit="mod-enter" (description): Ctrl/⌘+Enter sends save_field with the
 //   textarea's text; Esc cancels.
 // * data-submit="mod-enter-form" (feedback, reasons): Ctrl/⌘+Enter submits the form;
-//   Esc is left to the panel.
+//   Esc is left to the panel. Also on a plain <textarea> (no data-session).
 // * Ctrl/⌘+Enter is caught on the editor root, so it also works in preview mode.
 // * "hm:editor-mode" (dispatched by the tabs) asks the editor component for that mode
 //   with the textarea's current text, so a preview never lags behind the input.
@@ -95,6 +95,15 @@ const Editor = {
 
     // Markdown editors: Ctrl/⌘+Enter bubbles to the root listener.
     if (this.markdown || e.key !== "Enter") return
+    // Plain textareas of a form (the agent design page): Ctrl/⌘+Enter submits, Enter is
+    // a new line.
+    if (this.el.dataset.submit === "mod-enter-form") {
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      e.stopPropagation()
+      this.el.form?.requestSubmit()
+      return
+    }
     if (this.el.dataset.submit !== "enter" || e.shiftKey) return
     e.preventDefault()
     e.stopPropagation()

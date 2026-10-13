@@ -83,6 +83,10 @@ defmodule HelmsmanWeb.RunActions do
   def error_text(:agent_archived, nil), do: dgettext("ui", "Agent 已归档")
   def error_text(:agent_archived, agent), do: dgettext("ui", "%{agent} 已归档", agent: agent)
   def error_text(:forbidden, _), do: dgettext("ui", "没有权限执行此操作")
+
+  def error_text(:not_retryable, _),
+    do: dgettext("ui", "创建对话的运行不能重试，请在对话里重新发送")
+
   def error_text(:not_found, _), do: dgettext("ui", "运行不存在")
   def error_text(_reason, _), do: dgettext("ui", "操作失败，请稍后重试")
 

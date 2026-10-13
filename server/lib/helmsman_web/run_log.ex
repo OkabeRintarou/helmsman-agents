@@ -303,62 +303,115 @@ defmodule HelmsmanWeb.RunLog do
             {dgettext("ui", "加载更早的记录")}
           </.button>
         </div>
-        <ol
-          id="run-log-events"
-          phx-update="stream"
-          phx-hook=".RunLogScroll"
-          class="min-h-0 flex-1 overflow-y-auto"
-          data-jump="#run-log-jump"
-        >
+        <.follow_list id="run-log-events" jump_id="run-log-jump">
           <li :for={{dom_id, ev} <- @events} id={dom_id} class="py-1" data-type={ev.type}>
             <.event event={ev} scope={@scope} />
           </li>
-        </ol>
-        <button
-          id="run-log-jump"
-          type="button"
-          hidden
-          class="absolute right-3 bottom-3 inline-flex h-7 items-center gap-1 rounded-badge border border-border bg-raised px-2 text-caption text-fg shadow-popover"
-        >
-          <.icon name="lucide-arrow-down" class="size-3.5" />{dgettext("ui", "跳到最新")}
-        </button>
+        </.follow_list>
       </div>
-      <script :type={Phoenix.LiveView.ColocatedHook} name=".RunLogScroll">
-        export default {
-          mounted() {
-            this.jump = document.querySelector(this.el.dataset.jump)
-            this.stick = true
-            this.el.addEventListener("scroll", () => {
-              this.stick = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight < 32
-              if (this.stick && this.jump) this.jump.hidden = true
-            })
-            if (this.jump) this.jump.addEventListener("click", () => this.bottom())
-            this.bottom()
-          },
-          beforeUpdate() {
-            this.prevHeight = this.el.scrollHeight
-            this.prevTop = this.el.scrollTop
-            this.firstId = this.el.firstElementChild && this.el.firstElementChild.id
-          },
-          updated() {
-            const first = this.el.firstElementChild && this.el.firstElementChild.id
-            if (first !== this.firstId && !this.stick) {
-              // Earlier events were added on top: keep the viewport where it was.
-              this.el.scrollTop = this.prevTop + (this.el.scrollHeight - this.prevHeight)
-            } else if (this.stick) {
-              this.bottom()
-            } else if (this.jump) {
-              this.jump.hidden = false
-            }
-          },
-          bottom() {
-            this.el.scrollTop = this.el.scrollHeight
-            this.stick = true
-            if (this.jump) this.jump.hidden = true
-          }
-        }
-      </script>
     </div>
+    """
+  end
+
+  @doc """
+  A list that follows its end (09 §6 执行记录滚动): a `phx-update="stream"` list that
+  scrolls to the bottom when items are added or grow, unless the reader scrolled up — then
+  the 跳到最新 button `jump_id` shows. Shared by the execution log and the conversation of
+  the agent design page; place it in a `relative` container (the button is positioned
+  in it). The inner block renders the stream items. Content after the stream that
+  is not a stream item (a stream container never removes such children) goes in
+  `:tail`: the scrolling element is then a wrapper `id` around the list
+  (`<id>-list`, classes `list_class`) and that content.
+  """
+  attr :id, :string, required: true
+  attr :jump_id, :string, required: true
+  attr :class, :any, default: nil
+  attr :list_class, :any, default: nil
+  attr :rest, :global
+  slot :inner_block, required: true
+  slot :tail
+
+  def follow_list(%{tail: [_ | _]} = assigns) do
+    ~H"""
+    <div
+      id={@id}
+      phx-hook=".RunLogScroll"
+      class={["min-h-0 flex-1 overflow-y-auto", @class]}
+      data-jump={"##{@jump_id}"}
+      {@rest}
+    >
+      <ol id={"#{@id}-list"} phx-update="stream" class={@list_class}>
+        {render_slot(@inner_block)}
+      </ol>
+      {render_slot(@tail)}
+    </div>
+    <.jump_button id={@jump_id} />
+    """
+  end
+
+  def follow_list(assigns) do
+    ~H"""
+    <ol
+      id={@id}
+      phx-update="stream"
+      phx-hook=".RunLogScroll"
+      class={["min-h-0 flex-1 overflow-y-auto", @class]}
+      data-jump={"##{@jump_id}"}
+      {@rest}
+    >
+      {render_slot(@inner_block)}
+    </ol>
+    <.jump_button id={@jump_id} />
+    <script :type={Phoenix.LiveView.ColocatedHook} name=".RunLogScroll">
+      export default {
+        mounted() {
+          this.jump = document.querySelector(this.el.dataset.jump)
+          this.stick = true
+          this.el.addEventListener("scroll", () => {
+            this.stick = this.el.scrollHeight - this.el.scrollTop - this.el.clientHeight < 32
+            if (this.stick && this.jump) this.jump.hidden = true
+          })
+          if (this.jump) this.jump.addEventListener("click", () => this.bottom())
+          this.bottom()
+        },
+        beforeUpdate() {
+          this.prevHeight = this.el.scrollHeight
+          this.prevTop = this.el.scrollTop
+          this.firstId = this.el.firstElementChild && this.el.firstElementChild.id
+        },
+        updated() {
+          const first = this.el.firstElementChild && this.el.firstElementChild.id
+          if (first !== this.firstId && !this.stick) {
+            // Earlier events were added on top: keep the viewport where it was.
+            this.el.scrollTop = this.prevTop + (this.el.scrollHeight - this.prevHeight)
+          } else if (this.stick) {
+            this.bottom()
+          } else if (this.jump) {
+            this.jump.hidden = false
+          }
+        },
+        bottom() {
+          this.el.scrollTop = this.el.scrollHeight
+          this.stick = true
+          if (this.jump) this.jump.hidden = true
+        }
+      }
+    </script>
+    """
+  end
+
+  attr :id, :string, required: true
+
+  defp jump_button(assigns) do
+    ~H"""
+    <button
+      id={@id}
+      type="button"
+      hidden
+      class="absolute right-3 bottom-3 inline-flex h-7 items-center gap-1 rounded-badge border border-border bg-raised px-2 text-caption text-fg shadow-popover"
+    >
+      <.icon name="lucide-arrow-down" class="size-3.5" />{dgettext("ui", "跳到最新")}
+    </button>
     """
   end
 

@@ -138,6 +138,14 @@ defmodule HelmsmanWeb.FormErrors do
   defp text(:headers, {"Claude Code accounts do not support custom headers yet", _}),
     do: dgettext("ui", "Claude Code 账号暂不支持自定义请求头")
 
+  # Errors of a creation conversation's draft (add-agent-conversation-ui D11).
+  defp text(:name, {"is already in the draft", _}), do: dgettext("ui", "草稿里已有同名 Agent")
+
+  defp text(:access, {"must be owner_only or workspace", _}),
+    do: dgettext("ui", "只能是仅所属用户或工作区成员")
+
+  defp text(_field, {"cannot be set in a draft", _}), do: dgettext("ui", "草稿里不能设置这一项")
+
   defp text(_field, {"does not exist", _}), do: dgettext("ui", "不存在")
   defp text(_field, {"is disabled", _}), do: dgettext("ui", "已停用，不能指派")
   defp text(_field, {"cannot be the system identity", _}), do: dgettext("ui", "不能指派给系统身份")

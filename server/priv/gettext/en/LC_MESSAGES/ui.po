@@ -149,6 +149,7 @@ msgstr ""
 msgid "关闭后将无法再次查看，请立即复制保存。"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_turn.ex
 #: lib/helmsman_web/components/status.ex
 #, elixir-autogen, elixir-format
 msgid "准备中"
@@ -185,6 +186,7 @@ msgid "刚刚"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
@@ -291,6 +293,7 @@ msgid "图标"
 msgstr ""
 
 #: lib/helmsman_web/agent_components.ex
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/components/actor.ex
 #: lib/helmsman_web/live/agent_live/show.ex
@@ -473,6 +476,8 @@ msgstr ""
 msgid "托管"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_turn.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/run_components.ex
@@ -490,6 +495,7 @@ msgstr ""
 msgid "按钮"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_turn.ex
 #: lib/helmsman_web/components/status.ex
 #, elixir-autogen, elixir-format
 msgid "排队中"
@@ -701,6 +707,7 @@ msgid "禁用并说明原因"
 msgstr ""
 
 #: lib/helmsman_web/agent_components.ex
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/components/actor.ex
 #: lib/helmsman_web/live/agent_live/show.ex
@@ -927,6 +934,7 @@ msgstr ""
 msgid "已填写的内容不会保存。"
 msgstr ""
 
+#: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #, elixir-autogen, elixir-format
 msgid "放弃"
@@ -1511,6 +1519,7 @@ msgstr ""
 msgid "拒绝后任务结束；之后可以修改并重新提交。原因会记入历史。"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/new_task_panel.ex
@@ -1692,6 +1701,7 @@ msgstr ""
 msgid "添加描述…"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
@@ -1877,6 +1887,7 @@ msgstr ""
 msgid "从未使用"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #, elixir-autogen, elixir-format
 msgid "你"
@@ -2213,7 +2224,9 @@ msgstr ""
 msgid "确认修改"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
@@ -2713,6 +2726,7 @@ msgstr ""
 msgid "吊销后这台机器立即断开，它的运行时全部离线，需要重新 helmsman login"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/provider_account_form.ex
@@ -2804,6 +2818,7 @@ msgstr ""
 msgid "授权设备"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/provider_account_form.ex
@@ -2837,6 +2852,7 @@ msgstr ""
 msgid "机器"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
@@ -2901,6 +2917,7 @@ msgstr ""
 msgid "输入终端里 helmsman login 显示的设备码。"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
@@ -3061,6 +3078,7 @@ msgstr ""
 msgid "CLI 版本过旧"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -3092,6 +3110,7 @@ msgstr ""
 msgid "不指定任务时必须填写说明"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
@@ -3156,6 +3175,7 @@ msgstr ""
 msgid "值"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_turn.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/run_actions.ex
 #: lib/helmsman_web/run_components.ex
@@ -3308,6 +3328,7 @@ msgstr ""
 msgid "已停用"
 msgstr ""
 
+#: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/agent_live/index.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
@@ -3350,6 +3371,7 @@ msgstr ""
 msgid "已重试 → #%{id}"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -3422,6 +3444,7 @@ msgstr ""
 msgid "把 %{task} 指派给 %{agent}"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -3474,6 +3497,7 @@ msgstr ""
 msgid "排队于"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -3516,6 +3540,7 @@ msgid "新增变量"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/agent_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "新建 Agent"
@@ -3567,6 +3592,7 @@ msgstr ""
 msgid "模型服务限流，稍后重试"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_turn.ex
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "正在停止…"
@@ -3679,6 +3705,7 @@ msgstr ""
 msgid "请填写变量名"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -3786,6 +3813,7 @@ msgstr ""
 msgid "长时间无输出"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #, elixir-autogen, elixir-format
 msgid "限制"
@@ -4037,6 +4065,7 @@ msgstr ""
 msgid "%{name}（当前）"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -4119,6 +4148,7 @@ msgstr ""
 msgid "使用中的 Agent"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/components/layouts.ex
 #: lib/helmsman_web/live/agent_live/show.ex
@@ -4336,6 +4366,7 @@ msgstr ""
 msgid "账号的缺省模型"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "账号缺省"
@@ -5462,6 +5493,7 @@ msgid "自动重开"
 msgstr ""
 
 #: lib/helmsman_web/github_components.ex
+#: lib/helmsman_web/live/agent_design_live.ex
 #, elixir-autogen, elixir-format
 msgid "草稿"
 msgstr ""
@@ -5737,4 +5769,556 @@ msgstr ""
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "请求头的值"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{agent}（新增）"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{helper} 10 分钟内没有开始（可能正忙或离线），这一轮已取消"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "%{helper} 正在回复，回复结束后才能保存"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{helper} 正在回复，等这一轮结束"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "%{helper} 正忙或离线时最多等 10 分钟，之后这一轮会自动取消"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{helper} 没有回复文字"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "%{helper} 现在不能启动：%{reason}。可以更换起草 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 已从草稿移除，保存会重新加入"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 的创建对话"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} / 8 个 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 个 Agent 未通过校验，没有创建任何 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "AI 修改"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "AI 写的配置会一起删除。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "AI 提出的 Agent 会出现在这里。你也可以直接添加。"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "不确定怎么配？"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "仅你"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "从草稿移除 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "从草稿移除了"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "你修改"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "你修改了草稿：%{list}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "你已有一个进行中的对话，已为你打开"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "例如：它负责什么、要遵守哪些约定、想用哪个模型"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "保存到草稿"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "创建 %{n} 个 Agent？"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "创建出的 Agent 属于你，运行在你的机器上。"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "创建对话"
+msgstr ""
+
+#: lib/helmsman_web/run_actions.ex
+#, elixir-autogen, elixir-format
+msgid "创建对话的运行不能重试，请在对话里重新发送"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "发送"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "只有成员及以上角色能用对话创建 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "只能更新自己的任务"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "可以建任务"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "和 AI 对话创建"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "回复会进入 %{helper} 的执行记录，不要粘贴密钥"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "它们属于你，运行在你的机器上。环境变量、额外 MCP 服务器、追加参数与指定成员请在创建后到 Agent 的编辑面板设置。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "它的回复会出现在 %{helper} 的执行记录里，工作区成员都能看到。不要粘贴密钥或密码。"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "它能在工作区里新建任务并指派"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "对话不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话会在 %{owner} 的机器上由 %{helper} 处理。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话会在你的机器上由 %{helper} 处理。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话创建"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话已不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话已结束"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "对话记录与草稿都会关闭，草稿里的 Agent 不会创建。"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "工作区所有成员"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "工作区所有成员都能触发这个 Agent，在你的机器上运行"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "已停止这一轮"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "已创建 %{n} 个 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "已放弃对话"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "已达 40 条消息上限"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "已达 40 条消息上限，请确认或放弃这个对话"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "并发 %{n} · 总时长 %{t} 分钟 · 无输出 %{i} 分钟"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "开始对话"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "开始新的对话"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "总时长"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "指令（%{size}）"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "描述你想要的 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "放弃这个对话？"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "无输出时长"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "更换"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "更换起草 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "更新了草稿"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "有变化"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "正在发送…"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "正在回复"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "正在开始…"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "正在收尾…"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "没有你能触发的托管 Agent。先新建一个 Agent 作为起草 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有权限"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "消息"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "添加 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "环境变量、额外 MCP 服务器、追加参数与指定成员请在创建后到 Agent 的编辑面板设置"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "用你自己的话说：它做什么、怎么工作、用哪个模型都可以。AI 会追问并起草，你确认后才会创建。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "用对话创建"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "用对话创建 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "确认创建 %{count} 个 Agent"
+msgid_plural "确认创建 %{count} 个 Agent"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "移除了 %{list}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "等 %{helper} 回复完"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "等 %{helper} 回复完再修改"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "等 %{helper} 回复完再确认"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "等这一轮结束后再更换"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "系统消息"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "继续描述，或回答 AI 的问题"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "缺省"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "能力"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "草稿刚被更新"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "草稿刚被更新（可能是 AI 或另一个标签页），已载入最新内容，你改过的字段保留"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "草稿刚被更新，请检查后再确认"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "草稿最多 8 个 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "草稿里还没有 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "草稿（%{n}）"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "读取了草稿"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_turn.ex
+#, elixir-autogen, elixir-format
+msgid "调用了 %{tool}"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "账号 #%{id}（不可用）"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "起草 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "起草 Agent 换成了 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "起草："
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "输入 %{input} · 输出 %{output}"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "运行时 #%{id}（不可用）"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "这一轮失败：%{reason}"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "这一轮被取消"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "这个对话 7 天没有活动，已过期"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "这个对话已放弃"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "这个对话已确认，创建了"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "这个对话已结束"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "这些修改会在你下一条消息时告诉 AI：%{edits}"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "只能是仅所属用户或工作区成员"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "草稿里不能设置这一项"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "草稿里已有同名 Agent"
 msgstr ""

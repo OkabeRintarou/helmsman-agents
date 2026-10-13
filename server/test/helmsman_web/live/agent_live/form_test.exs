@@ -83,6 +83,29 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
     )
   end
 
+  # add-agent-conversation-ui D12: web-agents 对话创建的入口.
+  describe "对话创建的入口" do
+    test "从新建面板进入", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new-agent")
+      slug = ctx.agents |> String.split("/") |> Enum.at(2)
+
+      assert in_portal?(
+               view,
+               "agent-panel",
+               ~s(#agent-form-design a[href="/w/#{slug}/agent-design"]),
+               "和 AI 对话创建"
+             )
+
+      assert in_portal?(view, "agent-panel", "#agent-form-design", "不确定怎么配？")
+    end
+
+    test "编辑面板没有入口", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.edit)
+      assert open?(view, "agent-panel")
+      refute in_portal?(view, "agent-panel", "#agent-form-design")
+    end
+  end
+
   describe "new" do
     test "新建 Agent opens only the agent form, not the shell's 新建任务", ctx do
       {:ok, view, _html} = open(ctx, :alice, ctx.agents)

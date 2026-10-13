@@ -210,6 +210,9 @@
   --animate-flash-out: hm-flash-out 200ms ease-out 5s forwards;
   --animate-row-flash: hm-row-flash 600ms ease-out;
   --animate-pulse-soft: hm-pulse-soft 1.6s ease-in-out infinite;
+  /* A changed draft card (agent design page): two names so each version replays it. */
+  --animate-draft-ring-a: hm-draft-ring-a 1.5s ease-out;
+  --animate-draft-ring-b: hm-draft-ring-b 1.5s ease-out;
 
   @keyframes hm-flash-out {
     to {
@@ -221,6 +224,16 @@
   @keyframes hm-row-flash {
     from {
       background-color: var(--hm-selected);
+    }
+  }
+  @keyframes hm-draft-ring-a {
+    from {
+      box-shadow: 0 0 0 3px var(--hm-brand);
+    }
+  }
+  @keyframes hm-draft-ring-b {
+    from {
+      box-shadow: 0 0 0 3px var(--hm-brand);
     }
   }
   @keyframes hm-pulse-soft {

@@ -146,10 +146,19 @@ defmodule HelmsmanWeb.RunComponents do
   defp kind_name("requester"), do: dgettext("ui", "回调提出方")
   defp kind_name("unblocked"), do: dgettext("ui", "依赖满足")
   defp kind_name("delegate"), do: dgettext("ui", "委派")
+  defp kind_name("design"), do: dgettext("ui", "创建对话")
   defp kind_name(_), do: dgettext("ui", "其他触发")
 
   @doc "「<触发者> <种类>」of one trigger (「自动重试」 alone)."
   def trigger_label(%{kind: "retry", auto: true} = trigger), do: trigger_kind(trigger)
+
+  # A creation conversation is only its user's: the label never names or links it.
+  def trigger_label(%{kind: kind} = trigger) when kind in ["design", :design] do
+    case trigger[:by] do
+      %{name: name} -> dgettext("ui", "%{name} 的创建对话", name: name)
+      _ -> trigger_kind(trigger)
+    end
+  end
 
   def trigger_label(trigger) do
     case trigger[:by] do

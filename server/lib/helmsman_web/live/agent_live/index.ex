@@ -219,6 +219,15 @@ defmodule HelmsmanWeb.AgentLive.Index do
             </.link>
             <.button
               :if={@can_create?}
+              id="agents-design"
+              size="sm"
+              icon="lucide-messages-square"
+              navigate={Url.agent_design_path(@current_scope.workspace.slug)}
+            >
+              {dgettext("ui", "用对话创建")}
+            </.button>
+            <.button
+              :if={@can_create?}
               id="agents-new"
               variant="primary"
               size="sm"

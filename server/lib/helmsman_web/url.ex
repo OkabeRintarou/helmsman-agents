@@ -47,6 +47,10 @@ defmodule HelmsmanWeb.Url do
 
   defp encode_segment(segment), do: URI.encode(segment, &URI.char_unreserved?/1)
 
+  @doc "The conversation page (用对话创建 Agent) of the workspace `slug`."
+  @spec agent_design_path(String.t()) :: String.t()
+  def agent_design_path(slug), do: "/w/#{slug}/agent-design"
+
   @doc "The agent name of the `*name` glob segments of `agent_path/2`."
   @spec agent_name([String.t()]) :: String.t()
   def agent_name(segments) when is_list(segments), do: Enum.join(segments, "/")

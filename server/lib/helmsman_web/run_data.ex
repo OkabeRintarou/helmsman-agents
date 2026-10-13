@@ -174,8 +174,17 @@ defmodule HelmsmanWeb.RunData do
 
   @doc """
   Whether `scope` may stop (`:cancel`) or retry (`:retry`) the run of `summary` (R3),
-  regardless of its status.
+  regardless of its status; never retry for a design run.
   """
-  def can?(scope, action, summary) when action in [:cancel, :retry],
-    do: Runs.can?(scope, action, summary)
+  def can?(scope, :retry, summary),
+    do: not design?(summary) and Runs.can?(scope, :retry, summary)
+
+  def can?(scope, :cancel, summary), do: Runs.can?(scope, :cancel, summary)
+
+  @doc """
+  Whether the run of `summary` was started by a creation conversation (trigger
+  `design`): such runs are never retried (add-agent-conversation-ui D13).
+  """
+  def design?(summary),
+    do: Enum.any?(Map.get(summary, :triggers) || [], &(to_string(&1[:kind]) == "design"))
 end

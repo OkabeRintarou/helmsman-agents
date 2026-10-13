@@ -17,6 +17,12 @@ defmodule HelmsmanWeb.AgentForm do
     (`ProviderAccounts.options/2`); with an account the model is free text. Changing the
     CLI clears an account of another CLI; an edit switching a bound agent to a CLI
     without accounts submits `provider_account_id: nil` explicitly.
+  * Draft forms (add-agent-conversation-ui D7): `draft_new/2` and `draft_edit/4` edit an
+    agent of a creation conversation's draft (a map with string keys). The name is
+    editable in both; there are no secrets, CLI arguments or member list, 谁能触发 has
+    two choices and the owner is always the current user. `draft_attrs/1` gives what to
+    send to `put_agent/4`; the page submits it and `rebase/2` merges a newer draft agent
+    after a `stale` refusal.
   """
   use HelmsmanWeb, :html
 
@@ -31,6 +37,9 @@ defmodule HelmsmanWeb.AgentForm do
   @basic ~w(description)
   @execution ~w(provider runtime_id provider_account_id model effort instructions custom_args)
   @access ~w(access access_member_ids capabilities)
+  @draft_fields ~w(description provider runtime_id provider_account_id model effort instructions
+                   access capabilities max_concurrency timeout_minutes idle_timeout_minutes)
+  @draft_modes [:draft_new, :draft_edit]
   @limits ~w(max_concurrency timeout_minutes idle_timeout_minutes)
   @integers ~w(max_concurrency timeout_minutes idle_timeout_minutes)
   @defaults %{
@@ -116,10 +125,78 @@ defmodule HelmsmanWeb.AgentForm do
   defp runtime_param(%{id: id}), do: to_string(id)
   defp runtime_param(_runtime), do: ""
 
+  @doc "A panel adding an agent to the draft (generation `gen`)."
+  def draft_new(scope, gen) do
+    %{
+      mode: :draft_new,
+      gen: gen,
+      name: nil,
+      base: nil,
+      configure?: true,
+      params: @defaults,
+      add_rows: [],
+      errors: %{},
+      error: nil,
+      notice: nil,
+      missing_account: nil,
+      model_cleared: nil
+    }
+    |> load_options(scope)
+  end
+
+  @doc """
+  A panel editing the draft agent `entry` (string keys) of generation `gen`; `errors`
+  are field errors to show at once (a refused confirmation, D8).
+  """
+  def draft_edit(scope, gen, entry, errors \\ %{}) do
+    %{
+      mode: :draft_edit,
+      gen: gen,
+      name: entry["name"],
+      base: entry,
+      configure?: true,
+      params: draft_params(entry),
+      add_rows: [],
+      errors: errors,
+      error: nil,
+      notice: nil,
+      missing_account: nil,
+      model_cleared: nil
+    }
+    |> load_options(scope)
+  end
+
+  @doc "Whether `form` edits a draft agent."
+  def draft?(%{mode: mode}), do: mode in @draft_modes
+  def draft?(_form), do: false
+
+  defp draft_params(entry) do
+    string = fn key -> to_string(entry[key] || @defaults[key]) end
+
+    Map.merge(@defaults, %{
+      "name" => entry["name"] || "",
+      "description" => entry["description"] || "",
+      "provider" => entry["provider"] || @defaults["provider"],
+      "runtime_id" => id_param(entry["runtime_id"]),
+      "provider_account_id" => id_param(entry["provider_account_id"]),
+      "model" => entry["model"] || "",
+      "effort" => entry["effort"] || "",
+      "instructions" => entry["instructions"] || "",
+      "access" => entry["access"] || "owner_only",
+      "capabilities" => List.wrap(entry["capabilities"]),
+      "max_concurrency" => string.("max_concurrency"),
+      "timeout_minutes" => string.("timeout_minutes"),
+      "idle_timeout_minutes" => string.("idle_timeout_minutes")
+    })
+  end
+
+  defp id_param(id) when is_integer(id), do: to_string(id)
+  defp id_param(_id), do: ""
+
   # Runtimes the owner may bind (their own, enabled, same CLI) and the members who may be
   # named in `access_member_ids` (member and above, not the owner).
   defp load_options(form, scope) do
-    owner_id = if form.base, do: form.base.owner.id, else: scope.user.id
+    owner_id = if form.mode == :edit, do: form.base.owner.id, else: scope.user.id
 
     members =
       case Members.list(scope) do
@@ -177,6 +254,16 @@ defmodule HelmsmanWeb.AgentForm do
       do: %{form | missing_account: %{id: previous.id, name: previous.name}},
       else: form
   end
+
+  @doc """
+  The workspace's runtimes changed (another tab, a machine going offline …): reloads the
+  runtime and account options, keeping the selected values; a selected runtime no
+  longer bindable shows as unavailable.
+  """
+  def runtimes_changed(%{configure?: true} = form, scope),
+    do: form |> load_runtimes(scope) |> accounts_changed(scope)
+
+  def runtimes_changed(form, _scope), do: form
 
   ## Events
 
@@ -366,6 +453,8 @@ defmodule HelmsmanWeb.AgentForm do
     clean =
       if form.mode == :edit, do: Map.put(clean, "name", form.name), else: clean
 
+    clean = if draft?(form), do: Map.drop(clean, ~w(custom_args access_member_ids)), else: clean
+
     form.params
     |> Map.merge(clean)
     |> Map.update!("access_member_ids", &reject_blank/1)
@@ -522,6 +611,93 @@ defmodule HelmsmanWeb.AgentForm do
 
   def refreshed(form, _fresh), do: form
 
+  ## Draft forms (add-agent-conversation-ui D7)
+
+  @doc """
+  Merges the submitted `params` of a draft form: `{form, attrs}` with the attrs for
+  `put_agent/4` (`draft_attrs/1`).
+  """
+  def draft_submit(form, params) do
+    form = %{form | params: merge(form, params)}
+    {form, draft_attrs(form)}
+  end
+
+  @doc """
+  The attrs of a draft form (string keys): every field for `:draft_new`; for
+  `:draft_edit` the fields that differ from the draft agent it opened with, plus `name`
+  and, after a rename, `previous_name`. Empty runtime, account, model and effort are
+  `nil` (the domain's default); never secrets, CLI arguments or members.
+  """
+  def draft_attrs(%{mode: :draft_new} = form) do
+    form
+    |> draft_values()
+    |> Map.put("name", String.trim(form.params["name"] || ""))
+  end
+
+  def draft_attrs(%{mode: :draft_edit, base: base} = form) do
+    fields = draft_fields(form)
+    old = draft_params(base)
+    name = String.trim(form.params["name"] || "")
+
+    attrs =
+      form
+      |> draft_values()
+      |> Map.filter(fn {k, v} -> v != value(k, old[k]) end)
+      |> Map.put("name", name)
+
+    # A bound agent moved to a CLI without accounts drops the binding.
+    attrs =
+      if "provider_account_id" not in fields and base["provider_account_id"] != nil,
+        do: Map.put(attrs, "provider_account_id", nil),
+        else: attrs
+
+    if name != base["name"], do: Map.put(attrs, "previous_name", base["name"]), else: attrs
+  end
+
+  defp draft_values(form),
+    do: Map.new(draft_fields(form), &{&1, value(&1, form.params[&1])})
+
+  defp draft_fields(form) do
+    if supported?(form.params["provider"]),
+      do: @draft_fields,
+      else: List.delete(@draft_fields, "provider_account_id")
+  end
+
+  @doc "Field errors of a refused draft save (a changeset of `put_agent/4`)."
+  def draft_errors(form, %Ecto.Changeset{} = cs), do: field_errors(form, cs)
+
+  @doc """
+  The draft changed under an edit form (a `stale` save, D7): the fields the user did
+  not change take the values of `fresh` (the draft agent now, or nil when it was
+  removed — the form then adds it again), the others keep the panel's values; `fresh`
+  becomes the base, so the next save sends only the user's changes.
+  """
+  def rebase(%{mode: :draft_edit} = form, _scope, nil),
+    do: %{form | mode: :draft_new, base: nil, notice: :draft_removed, error: nil}
+
+  def rebase(%{mode: :draft_edit} = form, scope, fresh) do
+    old = draft_params(form.base)
+    new = draft_params(fresh)
+
+    params =
+      Map.new(form.params, fn {k, v} ->
+        if k in ["name" | @draft_fields] and same_value?(k, v, old[k]),
+          do: {k, new[k]},
+          else: {k, v}
+      end)
+
+    form = %{form | base: fresh, name: fresh["name"], params: params, notice: :draft_stale}
+
+    if params["provider"] != old["provider"],
+      do: form |> load_runtimes(scope) |> load_accounts(scope),
+      else: form
+  end
+
+  def rebase(form, _scope, _fresh), do: %{form | notice: :draft_stale, error: nil}
+
+  defp same_value?("name", a, b), do: String.trim(a || "") == String.trim(b || "")
+  defp same_value?(k, a, b), do: value(k, a) == value(k, b)
+
   # `updated_at` has second precision: compare the configuration itself too.
   @config_keys ~w(updated_at description provider model effort instructions custom_args access
                   access_member_ids capabilities max_concurrency timeout_minutes
@@ -537,7 +713,9 @@ defmodule HelmsmanWeb.AgentForm do
 
   attr :form, :map, required: true
   attr :scope, :map, required: true
-  attr :close_path, :string, required: true
+  attr :close_path, :string, default: nil
+  attr :on_cancel, JS, default: %JS{}
+  attr :locked, :string, default: nil, doc: "why saving a draft form is unavailable now"
 
   def panel(assigns) do
     ~H"""
@@ -548,6 +726,7 @@ defmodule HelmsmanWeb.AgentForm do
       width={:wide}
       dirty={@form != nil}
       patch_on_close={@close_path}
+      on_cancel={@on_cancel}
     >
       <:error :if={@form && @form.error}>{@form.error}</:error>
       <div
@@ -559,6 +738,15 @@ defmodule HelmsmanWeb.AgentForm do
         <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
         {notice_text(@form)}
       </div>
+      <div
+        :if={@locked}
+        id="agent-form-locked-notice"
+        role="status"
+        class="mb-4 flex items-start gap-2 rounded-field border border-warning tint-warning px-3 py-2 text-body text-warning-fg"
+      >
+        <.icon name="lucide-hourglass" class="mt-0.5 size-4 shrink-0" />
+        {@locked}
+      </div>
       <.agent_form :if={@form} form={@form} scope={@scope} />
       <:footer :let={cancel}>
         <span />
@@ -569,10 +757,10 @@ defmodule HelmsmanWeb.AgentForm do
             type="submit"
             form="agent-form"
             variant="primary"
-            disabled={@form != nil and @form.notice == :archived}
+            disabled={(@form != nil and @form.notice == :archived) or @locked != nil}
             phx-disable-with={dgettext("ui", "正在保存…")}
           >
-            {if(@form && @form.mode == :new, do: dgettext("ui", "创建"), else: dgettext("ui", "保存"))}
+            {submit_label(@form)}
           </.button>
         </div>
       </:footer>
@@ -580,7 +768,16 @@ defmodule HelmsmanWeb.AgentForm do
     """
   end
 
+  defp submit_label(%{mode: :new}), do: dgettext("ui", "创建")
+  defp submit_label(%{mode: mode}) when mode in @draft_modes, do: dgettext("ui", "保存到草稿")
+  defp submit_label(_form), do: dgettext("ui", "保存")
+
   defp panel_title(%{mode: :new}), do: dgettext("ui", "新建 Agent")
+  defp panel_title(%{mode: :draft_new}), do: dgettext("ui", "添加 Agent")
+
+  defp panel_title(%{mode: :draft_edit, base: base}),
+    do: dgettext("ui", "编辑 %{name}", name: base["name"])
+
   defp panel_title(%{mode: :edit, name: name}), do: dgettext("ui", "编辑 %{name}", name: name)
   defp panel_title(_), do: ""
 
@@ -589,6 +786,12 @@ defmodule HelmsmanWeb.AgentForm do
 
   defp notice_text(%{notice: :archived, name: name}),
     do: dgettext("ui", "%{name} 已归档，不能再修改", name: name)
+
+  defp notice_text(%{notice: :draft_stale}),
+    do: dgettext("ui", "草稿刚被更新（可能是 AI 或另一个标签页），已载入最新内容，你改过的字段保留")
+
+  defp notice_text(%{notice: :draft_removed, name: name}),
+    do: dgettext("ui", "%{name} 已从草稿移除，保存会重新加入", name: name)
 
   attr :form, :map, required: true
   attr :scope, :map, required: true
@@ -623,10 +826,26 @@ defmodule HelmsmanWeb.AgentForm do
       phx-submit="agent_form_submit"
       class="flex flex-col gap-6"
     >
+      <p
+        :if={@form.mode == :new}
+        id="agent-form-design"
+        class="flex items-center gap-2 rounded-field border border-info tint-info px-3 py-2 text-body text-info-fg"
+      >
+        <.icon name="lucide-messages-square" class="size-4 shrink-0" />
+        {dgettext("ui", "不确定怎么配？")}
+        <.link
+          id="agent-form-design-link"
+          navigate={HelmsmanWeb.Url.agent_design_path(@scope.workspace.slug)}
+          class="font-medium underline"
+        >
+          {dgettext("ui", "和 AI 对话创建")}
+        </.link>
+      </p>
+
       <fieldset id="agent-form-basic" class="flex flex-col gap-4">
         <legend class="mb-2 text-label font-semibold text-fg">{dgettext("ui", "基本")}</legend>
         <.input
-          :if={@form.mode == :new}
+          :if={@form.mode != :edit}
           id="agent-name"
           name="agent[name]"
           label={dgettext("ui", "名字")}
@@ -715,6 +934,7 @@ defmodule HelmsmanWeb.AgentForm do
           rows={8}
         />
         <.input
+          :if={not draft?(@form)}
           id="agent-custom-args"
           name="agent[custom_args]"
           type="textarea"
@@ -734,14 +954,14 @@ defmodule HelmsmanWeb.AgentForm do
           type="select"
           label={dgettext("ui", "谁能触发")}
           value={@p["access"]}
-          options={[
-            {dgettext("ui", "仅所属用户"), "owner_only"},
-            {dgettext("ui", "指定成员"), "members"},
-            {dgettext("ui", "工作区成员"), "workspace"}
-          ]}
+          options={access_options(@form)}
           errors={Map.get(@e, :access, [])}
         />
-        <div :if={@p["access"] == "members"} id="agent-access-members" class="flex flex-col gap-1">
+        <div
+          :if={@p["access"] == "members" and not draft?(@form)}
+          id="agent-access-members"
+          class="flex flex-col gap-1"
+        >
           <input type="hidden" name="agent[access_member_ids][]" value="" />
           <p :if={@form.members == []} class="text-caption text-fg-muted">
             {dgettext("ui", "没有可指定的成员")}
@@ -806,7 +1026,19 @@ defmodule HelmsmanWeb.AgentForm do
         />
       </fieldset>
 
-      <fieldset id="agent-form-secrets" disabled={@locked?} class="flex flex-col gap-3">
+      <p :if={draft?(@form)} id="agent-form-draft-note" class="text-caption text-fg-muted">
+        {dgettext(
+          "ui",
+          "环境变量、额外 MCP 服务器、追加参数与指定成员请在创建后到 Agent 的编辑面板设置"
+        )}
+      </p>
+
+      <fieldset
+        :if={not draft?(@form)}
+        id="agent-form-secrets"
+        disabled={@locked?}
+        class="flex flex-col gap-3"
+      >
         <legend class="mb-2 text-label font-semibold text-fg">{dgettext("ui", "密钥")}</legend>
         <div
           :if={Map.get(@e, :secrets, []) != []}
@@ -922,6 +1154,15 @@ defmodule HelmsmanWeb.AgentForm do
     """
   end
 
+  defp access_options(form) do
+    owner = {dgettext("ui", "仅所属用户"), "owner_only"}
+    workspace = {dgettext("ui", "工作区成员"), "workspace"}
+
+    if draft?(form),
+      do: [owner, workspace],
+      else: [owner, {dgettext("ui", "指定成员"), "members"}, workspace]
+  end
+
   attr :id, :string, required: true
   attr :name, :string, required: true
   attr :label, :string, required: true
@@ -968,8 +1209,15 @@ defmodule HelmsmanWeb.AgentForm do
 
     provider = form.params["provider"]
 
+    selected = form.params["runtime_id"]
+
     current =
       case form.base do
+        _ when form.mode in @draft_modes ->
+          if selected in ["", nil] or Enum.any?(bindable, &(elem(&1, 1) == selected)),
+            do: [],
+            else: [{dgettext("ui", "运行时 #%{id}（不可用）", id: selected), selected}]
+
         %{runtime: %{id: id, provider: ^provider} = r} ->
           if Enum.any?(form.runtimes, &(&1.id == id)),
             do: [],
@@ -1063,6 +1311,9 @@ defmodule HelmsmanWeb.AgentForm do
       cond do
         selected in ["", nil] or Enum.any?(listed, &(elem(&1, 1) == selected)) ->
           []
+
+        form.mode in @draft_modes ->
+          [{dgettext("ui", "账号 #%{id}（不可用）", id: selected), selected}]
 
         match?(%{provider_account: %{}}, form.base) and
             to_string(form.base.provider_account.id) == selected ->

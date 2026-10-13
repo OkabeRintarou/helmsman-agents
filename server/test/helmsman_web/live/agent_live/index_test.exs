@@ -148,6 +148,29 @@ defmodule HelmsmanWeb.AgentLive.IndexTest do
     assert has_element?(view, ~s(#hm-sidebar a[aria-current="page"]), "Agents")
   end
 
+  # add-agent-conversation-ui D12: web-agents 对话创建的入口.
+  describe "对话创建的入口" do
+    test "从列表页进入", ctx do
+      {:ok, view, _html} = open(ctx, :bob)
+
+      assert has_element?(
+               view,
+               ~s(#agents-design[href="/w/#{ctx.ws.slug}/agent-design"]),
+               "用对话创建"
+             )
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               view |> element("#agents-design") |> render_click()
+
+      assert to == "/w/#{ctx.ws.slug}/agent-design"
+    end
+
+    test "viewer 看不到入口", ctx do
+      {:ok, view, _html} = open(ctx, :vic)
+      refute has_element?(view, "#agents-design")
+    end
+  end
+
   describe "live updates" do
     test "a disable in another window", ctx do
       {:ok, view, _html} = open(ctx, :bob)

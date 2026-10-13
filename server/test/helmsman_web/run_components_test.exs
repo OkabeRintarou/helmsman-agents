@@ -176,4 +176,26 @@ defmodule HelmsmanWeb.RunComponentsTest do
       assert RunComponents.duration_text(%{started_at: start, finished_at: nil}) == nil
     end
   end
+
+  # add-agent-conversation-ui D13: design runs.
+  describe "design runs" do
+    test "the trigger names the conversation's user, never the conversation" do
+      design = %{kind: "design", by: %{name: "alice", kind: "human"}, at: nil, instructions: nil}
+      assert RunComponents.trigger_label(design) == "alice 的创建对话"
+      assert RunComponents.trigger_label(%{design | by: nil}) == "创建对话"
+      assert RunComponents.trigger_kind(design) == "创建对话"
+      assert RunComponents.trigger_summary([design]) == "alice 的创建对话"
+    end
+
+    test "never retried; not_retryable has its text" do
+      design = %{kind: "design", by: nil, at: nil, instructions: nil}
+      run = %{id: 1, status: "failed", retry_run_id: nil, triggers: [design]}
+      assert HelmsmanWeb.RunData.design?(run)
+      refute HelmsmanWeb.RunData.design?(%{run | triggers: [%{design | kind: "manual"}]})
+      refute RunComponents.retryable?(%Helmsman.Accounts.Scope{}, run)
+
+      assert HelmsmanWeb.RunActions.error_text(:not_retryable) ==
+               "创建对话的运行不能重试，请在对话里重新发送"
+    end
+  end
 end
