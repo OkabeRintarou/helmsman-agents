@@ -23,6 +23,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
+  alias Helmsman.BQL.Executor
   alias Helmsman.Dispatch
   alias Helmsman.Dispatch.{Continuation, Dependencies, Targets}
   alias Helmsman.Events
@@ -242,6 +243,14 @@ defmodule Helmsman.Tasks do
     end
   else
     defp test_hook(_point), do: :ok
+  end
+
+  @doc "Queries all workspace tasks with BQL or a saved filter; returns summaries, total and order."
+  @spec query(Scope.t(), term(), keyword()) :: {:ok, map()} | {:error, term()}
+  def query(scope, input, opts \\ []) do
+    Executor.query(scope, input, opts, fn tasks ->
+      tasks |> put_derived() |> Enum.map(&summary/1)
+    end)
   end
 
   ## Reading

@@ -16,6 +16,10 @@ defmodule HelmsmanMCP.Resources do
   @external_resource @workflow_path
   @workflow File.read!(@workflow_path)
 
+  @bql_path Path.expand("../../../docs/BQL.en.md", __DIR__)
+  @external_resource @bql_path
+  @bql File.read!(@bql_path)
+
   @tasks_prefix "helmsman://tasks/"
 
   @type resource :: %{
@@ -42,6 +46,13 @@ defmodule HelmsmanMCP.Resources do
         description:
           "The collaboration rules: roles, statuses and transitions, what to do at each " <>
             "step, feedback.",
+        mime_type: "text/markdown"
+      },
+      %{
+        uri: "helmsman://bql",
+        name: "bql",
+        title: "BQL query reference",
+        description: "BQL syntax, fields, identities, ordering and saved filters.",
         mime_type: "text/markdown"
       },
       %{
@@ -83,6 +94,8 @@ defmodule HelmsmanMCP.Resources do
   unknown URI or task.
   """
   @spec read(String.t(), Context.t()) :: {:ok, String.t()} | {:error, term()}
+  def read("helmsman://bql", _ctx), do: {:ok, @bql}
+
   def read("helmsman://workflow", _ctx), do: {:ok, @workflow}
 
   def read("helmsman://projects", %Context{scope: scope}) do

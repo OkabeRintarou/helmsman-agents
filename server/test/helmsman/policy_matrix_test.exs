@@ -93,6 +93,26 @@ defmodule Helmsman.PolicyMatrixTest do
 
               {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
             end,
+            for action <- [:read_filters, :create_filter],
+                role <- @roles,
+                kind <- [:human, :agent] do
+              allowed = action == :read_filters or role != :viewer
+              {action, role, kind, @none, if(allowed, do: :ok, else: :forbidden)}
+            end,
+            for action <- [:update_filter, :delete_filter, :change_filter_visibility],
+                role <- @roles,
+                kind <- [:human, :agent],
+                {owner_id, visibility} <- [{10, :private}, {11, :private}, {11, :workspace}] do
+              resource = %{workspace_id: 1, owner_id: owner_id, visibility: visibility}
+
+              allowed =
+                role != :viewer and
+                  (owner_id == 10 or
+                     (action != :change_filter_visibility and visibility == :workspace and
+                        role in [:owner, :admin]))
+
+              {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
+            end,
             # view_workspace: everyone, humans and agents
             for role <- [:owner, :admin, :member, :viewer], kind <- [:human, :agent] do
               {:view_workspace, role, kind, @none, :ok}

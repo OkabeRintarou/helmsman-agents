@@ -231,3 +231,10 @@ Two MCP shortcuts help:
 
 The section structure follows the AGENT-WORKFLOW document of bosun
 (Apache-2.0); the text is written for Helmsman's own rules.
+
+## Finding tasks with BQL
+
+Use `query_tasks` with exactly one of `bql` or `filter_id` to query across
+projects. Read `helmsman://bql` for fields, operators, pagination and saved
+filters. `assignee = currentUser()` uses your current MCP or run identity;
+call `identify` first if your session has no identity.

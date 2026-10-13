@@ -90,6 +90,11 @@ defmodule Helmsman.Policy do
     :revoke_any_token,
     :identify,
     :read_tasks,
+    :read_filters,
+    :create_filter,
+    :update_filter,
+    :delete_filter,
+    :change_filter_visibility,
     :create_project,
     :update_project,
     :archive_project,
@@ -121,6 +126,7 @@ defmodule Helmsman.Policy do
     view_workspace: "read",
     view_members: "read",
     read_tasks: "read",
+    read_filters: "read",
     view_agents: "read",
     view_runs: "read",
     view_run_events: "read",
@@ -279,6 +285,31 @@ defmodule Helmsman.Policy do
   # Not a management action: the one agents may perform (designs/03 §4).
   defp check(%Scope{} = scope, :identify, _resource),
     do: allow_if(role_at_least?(scope, :member))
+
+  defp check(%Scope{} = scope, :read_filters, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
+
+  defp check(%Scope{} = scope, :create_filter, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
+  defp check(%Scope{} = scope, action, %{
+         owner_id: owner_id,
+         workspace_id: ws,
+         visibility: visibility
+       })
+       when action in [:update_filter, :delete_filter, :change_filter_visibility] do
+    own = scope.user != nil and scope.user.id == owner_id
+
+    allowed =
+      own or
+        (action != :change_filter_visibility and visibility == :workspace and
+           role_at_least?(scope, :admin))
+
+    allow_if(
+      scope.workspace != nil and scope.workspace.id == ws and role_at_least?(scope, :member) and
+        allowed
+    )
+  end
 
   ## Projects and tasks (not management actions: agents act with their
   ## owner's role, designs/08 §3)

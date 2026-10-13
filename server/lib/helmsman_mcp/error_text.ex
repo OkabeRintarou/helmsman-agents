@@ -12,6 +12,28 @@ defmodule HelmsmanMCP.ErrorText do
   clause (the pipeline then answers with `internal/1`).
   """
   @spec format(term(), Context.t()) :: {:ok, String.t()} | :error
+  def format(:bql_or_filter, _ctx), do: {:ok, "Pass either bql or filter_id."}
+
+  def format(:no_identity, %Context{tool: "query_tasks"}),
+    do: {:ok, "currentUser() needs an identity; call identify first."}
+
+  def format(:query_timeout, _ctx),
+    do: {:ok, "The query took too long; narrow it down (e.g. add project = KEY)."}
+
+  def format({:invalid_bql, %{message: message, position: position}}, _ctx) do
+    fields =
+      if String.starts_with?(message, "unknown field"),
+        do:
+          " Available fields: " <>
+            Enum.map_join(Helmsman.BQL.fields(), ", ", &to_string(&1.name)) <> ".",
+        else: ""
+
+    {:ok, "Invalid BQL at position #{position}: #{message}" <> fields}
+  end
+
+  def format({:invalid, field}, %Context{tool: "query_tasks"}) when field in [:limit, :offset],
+    do: {:ok, "Invalid #{field}; use limit 1–200 and offset 0–10000."}
+
   def format({:forbidden, {:cancels_other_task, replaced, own}}, _ctx) do
     {:ok,
      "This run cannot replace #{replaced}: it would cancel a task other than #{own}. " <>
@@ -200,6 +222,11 @@ defmodule HelmsmanMCP.ErrorText do
 
     {:ok, "Too many concurrent changes to #{ident}; try again."}
   end
+
+  def format(:stale, %Context{tool: "save_filter"}),
+    do:
+      {:ok,
+       "The filter was changed by someone else since you read it. Call list_filters for the latest lock_version, then retry."}
 
   def format(:stale, %Context{args: args}) do
     {:ok,

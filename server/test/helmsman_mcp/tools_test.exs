@@ -27,7 +27,7 @@ defmodule HelmsmanMCP.ToolsTest do
 
     assert Enum.sort(names) ==
              Enum.sort(~w(identify whoami list_actors list_projects get_project create_project
-                 update_project list_tasks search_tasks get_task create_task update_task list_my_tasks
+                 update_project list_tasks search_tasks query_tasks list_filters save_filter delete_filter get_task create_task update_task list_my_tasks
                  transition_task link_tasks unlink_tasks add_feedback update_feedback
                  list_feedback list_agents run_agent list_runs cancel_run get_design propose_agent
                withdraw_agent delegate propose_squad))

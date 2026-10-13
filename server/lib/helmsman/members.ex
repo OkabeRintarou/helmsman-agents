@@ -211,6 +211,7 @@ defmodule Helmsman.Members do
       set: [revoked_at: now, updated_at: now]
     )
 
+    Helmsman.Filters.cascade_removal(workspace_id, user_id)
     Helmsman.Daemons.cascade_member(workspace_id, user_id, true)
 
     # Runs go last (designs/01 §4), in a fixed order so each run changes

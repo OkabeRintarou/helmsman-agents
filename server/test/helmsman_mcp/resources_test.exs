@@ -53,6 +53,27 @@ defmodule HelmsmanMCP.ResourcesTest do
       assert text =~ "after delegating, finish your run"
     end
 
+    test "BQL is the exact English guide", %{session: session} do
+      assert read(session, "helmsman://bql") ==
+               {:ok, File.read!(Path.expand("../../../docs/BQL.en.md", __DIR__))}
+
+      assert Enum.find(Resources.list(), &(&1.uri == "helmsman://bql")).mime_type ==
+               "text/markdown"
+
+      for file <- ["BQL.md", "BQL.en.md"] do
+        text = File.read!(Path.expand("../../../docs/#{file}", __DIR__))
+
+        for field <- Helmsman.BQL.fields(),
+            name <- [to_string(field.name) | field.aliases],
+            do: assert(text =~ name)
+      end
+
+      text = File.read!(Path.expand("../../../docs/BQL.en.md", __DIR__))
+
+      for [_, query] <- Regex.scan(~r/```bql\n(.*?)```/s, text),
+          do: assert({:ok, _} = Helmsman.BQL.parse(String.trim(query)))
+    end
+
     test "projects have the shape of list_projects", %{session: session} do
       assert {:ok, json} = read(session, "helmsman://projects")
       assert Jason.decode!(json) == call!(session, "list_projects")
@@ -107,6 +128,7 @@ defmodule HelmsmanMCP.ResourcesTest do
     test "list and templates" do
       assert Enum.map(Resources.list(), & &1.uri) == [
                "helmsman://workflow",
+               "helmsman://bql",
                "helmsman://projects"
              ]
 

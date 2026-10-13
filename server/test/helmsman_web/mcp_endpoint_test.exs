@@ -162,7 +162,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     conn = rpc(token, sid, "tools/list")
     assert conn.status == 200
     tools = Jason.decode!(conn.resp_body)["result"]["tools"]
-    assert length(tools) == 23
+    assert length(tools) == 27
 
     # The draft tools are listed only for design runs (add-agent-conversation).
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
@@ -185,6 +185,45 @@ defmodule HelmsmanWeb.MCPEndpointTest do
   end
 
   @tag :capture_log
+  test "BQL and saved filters through the MCP endpoint, including decimal IDs", ctx do
+    token = ctx.token
+    sid = handshake(token)
+    tools = result!(rpc(token, sid, "tools/list"))["tools"]
+    save = Enum.find(tools, &(&1["name"] == "save_filter"))
+    assert save["inputSchema"]["required"] in [nil, []]
+
+    assert %{
+             "result" => %{
+               "isError" => true,
+               "content" => [%{"text" => "Pass either bql or filter_id."}]
+             }
+           } = call_tool(token, sid, "query_tasks", %{})
+
+    filter = tool_json(token, sid, "save_filter", %{name: "empty", bql: "", shared: true})
+    assert filter["lock_version"] == 1
+    result = tool_json(token, sid, "query_tasks", %{filter_id: "#{filter["id"]}"})
+    assert result["total"] == 0
+    assert result["text"] =~ "0 total; 0 tasks on this page"
+
+    updated =
+      tool_json(token, sid, "save_filter", %{
+        filter_id: "#{filter["id"]}",
+        name: "renamed",
+        lock_version: 1
+      })
+
+    assert updated["shared"] and updated["lock_version"] == 2
+    assert [^updated] = tool_json(token, sid, "list_filters")
+
+    assert %{"deleted" => true} =
+             tool_json(token, sid, "delete_filter", %{filter_id: "#{filter["id"]}"})
+
+    assert %{"contents" => [%{"mimeType" => "text/markdown", "text" => text}]} =
+             result!(rpc(token, sid, "resources/read", %{uri: "helmsman://bql"}))
+
+    assert text == File.read!(Path.expand("../../../docs/BQL.en.md", __DIR__))
+  end
+
   test "the M4 flow: project, task, claim, question, resources and prompts",
        %{token: token} = ctx do
     owner_token = owner_token(ctx)
@@ -223,6 +262,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     assert %{"resources" => resources} = result!(rpc(token, sid, "resources/list"))
 
     assert Enum.map(resources, & &1["uri"]) |> Enum.sort() == [
+             "helmsman://bql",
              "helmsman://projects",
              "helmsman://workflow"
            ]
