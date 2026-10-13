@@ -895,7 +895,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
         </:col>
         <:col :let={task} label={dgettext("ui", "执行方")} class="w-32">
           <span :if={task.assignee}>
-            <TaskComponents.actor_ref actor={task.assignee} agents={@agents} compact />
+            <TaskComponents.actor_ref actor={task.assignee} agents={@agents} slug={@slug} compact />
           </span>
         </:col>
         <:col :let={task} label={dgettext("ui", "更新")} secondary class="w-24">

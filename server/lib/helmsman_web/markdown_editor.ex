@@ -215,7 +215,16 @@ defmodule HelmsmanWeb.MarkdownEditor do
             data-muted={actor[:muted] && "true"}
             class="flex min-h-7 cursor-pointer flex-col justify-center rounded-field px-1.5 py-0.5 aria-selected:bg-selected hover:bg-hover"
           >
-            <.actor_chip actor={actor} class={actor[:muted] && "opacity-60"} />
+            <span class="flex items-center gap-1.5">
+              <.actor_chip actor={actor} class={actor[:muted] && "opacity-60"} />
+              <span
+                :if={to_string(actor.kind) == "squad"}
+                class="text-caption text-fg-subtle"
+                data-squad
+              >
+                {dgettext("ui", "小队")}
+              </span>
+            </span>
             <span :if={actor[:note]} class="pl-6 text-caption leading-4 text-fg-subtle">
               {actor.note}
             </span>

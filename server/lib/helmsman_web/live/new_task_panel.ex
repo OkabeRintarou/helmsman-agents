@@ -134,7 +134,7 @@ defmodule HelmsmanWeb.NewTaskPanel do
 
   defp availability(scope) do
     case RunData.availability(scope) do
-      {:ok, availability} -> availability
+      {:ok, availability} -> TaskData.with_squads(scope, availability)
       {:error, _} -> %{}
     end
   end
@@ -402,7 +402,7 @@ defmodule HelmsmanWeb.NewTaskPanel do
               name="task[assignee]"
               label={dgettext("ui", "执行方")}
               value={@params["assignee"]}
-              options={[{dgettext("ui", "未指派"), ""} | Enum.map(@assignable, &{&1.name, &1.name})]}
+              options={assignee_options(@assignable)}
               errors={Map.get(@errors, :assignee, [])}
             />
           </div>
@@ -487,8 +487,27 @@ defmodule HelmsmanWeb.NewTaskPanel do
     LocalRepositoryComponents.other_machine(local, agent, availability[agent])
   end
 
-  defp start_note(agent, %{result: {:skipped, _} = result}),
-    do: RunComponents.unavailable_reason(agent, result) <> dgettext("ui", "，创建后不会启动运行")
+  defp start_note(name, %{result: {:skipped, _}} = entry),
+    do: TaskData.unavailable_text(name, entry) <> dgettext("ui", "，创建后不会启动运行")
+
+  defp start_note(squad, %{kind: :squad, leader: leader} = entry) do
+    case entry.runtime do
+      %{status: "offline", daemon_name: machine} ->
+        dgettext(
+          "ui",
+          "%{squad} 的 leader %{leader} 的运行时（%{machine}）当前离线，运行会排队，等它上线后开始",
+          squad: squad,
+          leader: leader,
+          machine: machine
+        )
+
+      _ ->
+        dgettext("ui", "%{squad} 的 leader %{leader} 会排队运行，由它决定谁来做",
+          squad: squad,
+          leader: leader
+        )
+    end
+  end
 
   defp start_note(agent, %{runtime: %{status: "offline", daemon_name: machine}}),
     do:
@@ -498,6 +517,21 @@ defmodule HelmsmanWeb.NewTaskPanel do
       )
 
   defp start_note(_agent, _availability), do: nil
+
+  # Grouped like the assignee menu (add-squads-autopilots-ui D6): 人, Agent, 小队.
+  defp assignee_options(assignable) do
+    groups =
+      for {kind, label} <- [
+            {"human", dgettext("ui", "人")},
+            {"agent", "Agent"},
+            {"squad", dgettext("ui", "小队")}
+          ],
+          names = for(a <- assignable, to_string(a.kind) == kind, do: {a.name, a.name}),
+          names != [],
+          do: {label, names}
+
+    [{dgettext("ui", "未指派"), ""} | groups]
+  end
 
   defp dirty?(params),
     do: Enum.any?(~w(title description labels), &(String.trim(params[&1] || "") != ""))

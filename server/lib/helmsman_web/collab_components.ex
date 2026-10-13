@@ -380,10 +380,10 @@ defmodule HelmsmanWeb.CollabComponents do
           patch={Url.put_params(@uri, %{run: item.run_id})}
           class="font-medium text-fg hover:text-brand-fg hover:underline"
         >
-          {item.agent}
+          {item_name(item)}
         </.link>
         <span :if={!(@uri && item.run_id && item.result != "skipped")}>
-          <span class="font-medium">{item.agent}</span><span :if={item.result == "skipped"}>：{dispatch_reason(
+          <span class="font-medium">{item_name(item)}</span><span :if={item.result == "skipped"}>：{dispatch_reason(
             item.agent,
             item.reason
           )}</span>
@@ -393,6 +393,10 @@ defmodule HelmsmanWeb.CollabComponents do
     </ul>
     """
   end
+
+  # A squad's leader run reads「web-team（keel/lead）」.
+  defp item_name(%{squad: squad, agent: agent}) when is_binary(squad), do: "#{squad}（#{agent}）"
+  defp item_name(item), do: item.agent
 
   attr :entry, :map, required: true
   attr :dom_id, :string, required: true
@@ -455,6 +459,13 @@ defmodule HelmsmanWeb.CollabComponents do
       end
     end)
   end
+
+  defp mention_note(%{name: name, kind: kind}, %{kind: :squad, result: {:skipped, _}} = entry)
+       when kind in ["squad", :squad],
+       do:
+         dgettext("ui", "@ 不会启动它：%{reason}",
+           reason: HelmsmanWeb.TaskData.unavailable_text(name, entry)
+         )
 
   defp mention_note(%{kind: kind}, _availability) when kind not in ["agent", :agent], do: nil
 

@@ -53,10 +53,27 @@ defmodule HelmsmanWeb.TaskComponents do
   attr :agents, :map, default: %{}
   attr :compact, :boolean, default: false
   attr :class, :any, default: nil
+  attr :slug, :string, default: nil, doc: "workspace slug: a squad links to its page"
 
   def actor_ref(%{actor: nil} = assigns) do
     ~H"""
     <span class={["text-fg-subtle", @class]}>—</span>
+    """
+  end
+
+  def actor_ref(%{slug: slug, actor: %{kind: kind, name: name}} = assigns)
+      when is_binary(slug) and kind in ["squad", :squad] do
+    assigns = assign(assigns, :path, HelmsmanWeb.Url.squad_path(slug, name))
+
+    ~H"""
+    <.link navigate={@path} class="min-w-0" data-squad-link>
+      <.actor_chip
+        id={@id}
+        actor={chip_actor(@actor, @agents)}
+        compact={@compact}
+        class={@class}
+      />
+    </.link>
     """
   end
 
@@ -71,10 +88,11 @@ defmodule HelmsmanWeb.TaskComponents do
     """
   end
 
-  defp chip_actor(%{name: name, kind: kind}, agents) when kind in ["agent", :agent],
-    do: Map.merge(%{name: name, kind: kind}, Map.get(agents, name, %{}))
+  defp chip_actor(%{name: name, kind: kind} = actor, agents)
+       when kind in ["agent", :agent, "squad", :squad],
+       do: Map.merge(Map.take(actor, [:name, :kind, :state]), Map.get(agents, name, %{}))
 
-  defp chip_actor(%{name: name, kind: kind}, _agents), do: %{name: name, kind: kind}
+  defp chip_actor(actor, _agents), do: Map.take(actor, [:name, :kind, :state])
 
   @doc """
   One history entry (oldest first in the timeline): actor, action (创建了任务, 重新验收

@@ -620,7 +620,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   defp availability(scope) do
     case RunData.availability(scope) do
-      {:ok, availability} -> availability
+      {:ok, availability} -> TaskData.with_squads(scope, availability)
       {:error, _} -> %{}
     end
   end
@@ -858,6 +858,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       {:ok, entry} ->
         socket
         |> assign(:feedback_panel, nil)
+        |> put_dispatch_flash(squad_dispatch(entry))
         |> refresh()
         |> push_event("hm:scroll-to", %{id: "feedback-#{entry.seq}"})
 
@@ -887,6 +888,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
       {:error, reason} ->
         update_feedback_panel(socket, &%{&1 | top: feedback_error(reason), errors: %{}})
     end
+  end
+
+  # What an @squad of the record started (add-squads-autopilots-ui D6); the other
+  # triggers show on the record only.
+  defp squad_dispatch(entry) do
+    for %{squad: squad} = item <- Map.get(entry, :dispatch) || [], is_binary(squad), do: item
   end
 
   defp feedback_error(:forbidden), do: dgettext("ui", "没有权限执行此操作")
@@ -1136,6 +1143,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
                   :if={!@can_edit?}
                   actor={@task.assignee}
                   agents={@agents}
+                  slug={@slug}
                 />
                 <.field_error error={@field_errors["assignee"]} />
               </.property_row>
@@ -1297,6 +1305,30 @@ defmodule HelmsmanWeb.TaskLive.Show do
     </.confirm_dialog>
     """
   end
+
+  defp assign_confirm_text(%{agent: squad, availability: %{kind: :squad, result: :ok} = entry}) do
+    case entry.runtime do
+      %{status: "offline", daemon_name: machine} ->
+        dgettext(
+          "ui",
+          "%{squad} 的 leader %{leader} 的运行时（%{machine}）当前离线，运行会排队，等它上线后开始",
+          squad: squad,
+          leader: entry.leader,
+          machine: machine
+        )
+
+      _ ->
+        dgettext(
+          "ui",
+          "开始后 %{squad} 的 leader %{leader} 会排队运行，由它决定谁来做；暂不开始只指派，不启动运行",
+          squad: squad,
+          leader: entry.leader
+        )
+    end
+  end
+
+  defp assign_confirm_text(%{agent: squad, availability: %{kind: :squad} = entry}),
+    do: dgettext("ui", "%{reason}。仍可指派，但不会启动运行", reason: TaskData.unavailable_text(squad, entry))
 
   defp assign_confirm_text(%{agent: agent, availability: %{result: :ok, runtime: runtime}}) do
     case runtime do
@@ -1657,8 +1689,22 @@ defmodule HelmsmanWeb.TaskLive.Show do
         })
       end)
 
-    [none | same ++ other]
+    [none | Enum.sort_by(same ++ other, &group_rank(&1[:group]))]
   end
+
+  @groups ["human", "agent", "squad"]
+  defp group_rank(group), do: Enum.find_index(@groups, &(group_label(&1) == group)) || 0
+
+  defp group_label("human"), do: dgettext("ui", "人")
+  defp group_label("agent"), do: "Agent"
+  defp group_label("squad"), do: dgettext("ui", "小队")
+
+  defp kind_icon("agent"), do: "lucide-bot"
+  defp kind_icon("squad"), do: "lucide-users"
+  defp kind_icon(_kind), do: "lucide-user"
+
+  defp kind_group(kind) when kind in ["agent", "squad"], do: group_label(kind)
+  defp kind_group(_kind), do: group_label("human")
 
   defp assignee_items(options, task, availability) do
     current = task.assignee && task.assignee.name
@@ -1676,7 +1722,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
           %{
             id: assignee_item_id(actor.name),
             label: actor.name,
-            icon: if(to_string(actor.kind) == "agent", do: "lucide-bot", else: "lucide-user"),
+            icon: kind_icon(to_string(actor.kind)),
+            group: kind_group(to_string(actor.kind)),
             checked: current == actor.name,
             on_select: "set_field",
             value: %{field: "assignee", value: actor.name, version: task.lock_version}
@@ -1690,9 +1737,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
   # item's description (design D11).
   defp availability_item(_name, nil), do: %{}
 
-  defp availability_item(name, %{result: {:skipped, _} = result}),
+  defp availability_item(name, %{result: {:skipped, _}} = entry),
     do: %{
-      description: RunComponents.unavailable_reason(name, result),
+      description: TaskData.unavailable_text(name, entry),
       attrs: %{"data-unavailable" => "true"}
     }
 

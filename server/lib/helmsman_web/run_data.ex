@@ -177,7 +177,9 @@ defmodule HelmsmanWeb.RunData do
   regardless of its status; never retry for a design run.
   """
   def can?(scope, :retry, summary),
-    do: not design?(summary) and Runs.can?(scope, :retry, summary)
+    do:
+      not design?(summary) and not HelmsmanWeb.RunComponents.autopilot_run?(summary) and
+        Runs.can?(scope, :retry, summary)
 
   def can?(scope, :cancel, summary), do: Runs.can?(scope, :cancel, summary)
 

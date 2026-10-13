@@ -47,6 +47,11 @@ defmodule HelmsmanWeb.Url do
 
   defp encode_segment(segment), do: URI.encode(segment, &URI.char_unreserved?/1)
 
+  @doc "The squad page of `name` (same encoding as `agent_path/2`)."
+  @spec squad_path(String.t(), String.t()) :: String.t()
+  def squad_path(slug, name),
+    do: String.replace_prefix(agent_path(slug, name), "/w/#{slug}/agents/", "/w/#{slug}/squads/")
+
   @doc "The conversation page (用对话创建 Agent) of the workspace `slug`."
   @spec agent_design_path(String.t()) :: String.t()
   def agent_design_path(slug), do: "/w/#{slug}/agent-design"

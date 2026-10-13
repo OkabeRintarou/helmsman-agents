@@ -124,6 +124,14 @@ defmodule HelmsmanWeb.RunLive.Show do
     <.property_list>
       <.property_row label={dgettext("ui", "任务")} data-task>
         <.task_id_link :if={@run.task} ident={@run.task} workspace={@slug} />
+        <span :if={!@run.task and autopilot_run?(@run)} class="text-fg-muted" data-no-task>
+          {dgettext("ui", "无任务（自动化）")}
+        </span>
+      </.property_row>
+      <.property_row :if={@run[:squad]} label={dgettext("ui", "小队")} data-squad>
+        <.link navigate={Url.squad_path(@slug, @run.squad.name)} class="text-fg hover:underline">
+          {@run.squad.name}
+        </.link>
       </.property_row>
       <.property_row label="Agent" data-agent>
         <.link navigate={Url.agent_path(@slug, @run.agent)} class="text-fg hover:underline">
@@ -143,7 +151,15 @@ defmodule HelmsmanWeb.RunLive.Show do
       <.property_row label={dgettext("ui", "触发")} data-triggers>
         <ul class="flex flex-col gap-0.5">
           <li :for={t <- @run.triggers} class="text-body text-fg">
-            {trigger_label(t)}
+            <.link
+              :if={autopilot_path(t, @slug)}
+              navigate={autopilot_path(t, @slug)}
+              class="hover:underline"
+              data-autopilot-link
+            >
+              {trigger_label(t)}
+            </.link>
+            <span :if={!autopilot_path(t, @slug)}>{trigger_label(t)}</span>
             <span :if={t[:at]} class="text-caption text-fg-muted">
               {Calendar.strftime(t.at, "%m-%d %H:%M")}
             </span>
@@ -182,6 +198,12 @@ defmodule HelmsmanWeb.RunLive.Show do
         :if={@run.failure_reason}
         label={dgettext("ui", "失败原因")}
         value={failure_label(@run.failure_reason)}
+      />
+      <.property_row
+        :if={@run.status in ["failed", "cancelled"] and autopilot_run?(@run)}
+        label={dgettext("ui", "重试")}
+        value={not_retryable_autopilot()}
+        data-not-retryable
       />
       <.property_row
         :if={@run[:retry_of_id] || @run[:retry_run_id]}

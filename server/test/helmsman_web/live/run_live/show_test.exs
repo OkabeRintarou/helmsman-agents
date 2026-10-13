@@ -197,4 +197,57 @@ defmodule HelmsmanWeb.RunLive.ShowTest do
       refute has_element?(view, "#run-retry")
     end
   end
+
+  # add-squads-autopilots-ui D7: a run-only autopilot run has no task and no 重试; an
+  # autopilot that no longer exists (or is not in this workspace) reads as deleted (R4).
+  test "仅运行模式的运行: no task, not retryable; a missing autopilot reads as deleted", ctx do
+    run =
+      run_fixture(ctx.agent, %{
+        status: :failed,
+        failure_reason: :cli_error,
+        finished_at: DateTime.utc_now(),
+        triggers: [
+          trigger("autopilot", ctx.workspace, ctx.alice, ctx.agent, %{
+            "autopilot_id" => 3,
+            "autopilot_run_id" => 9,
+            "source" => "schedule"
+          })
+        ],
+        root_initiator_user_id: ctx.alice.id
+      })
+
+    {:ok, view, _html} =
+      live(log_in_user(ctx.conn, ctx.alice), "/w/#{ctx.workspace.slug}/runs/#{run.id}")
+
+    assert has_element?(view, "#run-properties [data-no-task]", "无任务（自动化）")
+    assert has_element?(view, "#run-properties [data-not-retryable]", "请在自动化页「立即运行」")
+    assert has_element?(view, "#run-properties [data-triggers]", "已删除的自动化（定时）")
+    refute has_element?(view, "#run-properties [data-triggers] [data-autopilot-link]")
+    refute has_element?(view, "#run-retry")
+  end
+
+  # Code review 5 P2-1: an existing autopilot is named, with its source and a link (R4).
+  test "a real autopilot run names and links its autopilot", %{conn: conn} do
+    ctx = Helmsman.AutopilotsFixtures.autopilots_fixture()
+
+    ap =
+      Helmsman.AutopilotsFixtures.autopilot_fixture(ctx.alice_scope, %{
+        name: "weekly-audit",
+        mode: "run_only",
+        project: nil
+      })
+
+    {:ok, record} = Helmsman.Autopilots.run_now(ctx.alice_scope, ap.id)
+    path = "/w/#{ctx.workspace.slug}/runs/#{record.run_id}"
+    {:ok, view, _html} = live(log_in_user(conn, ctx.alice), path)
+
+    assert has_element?(view, "#run-properties [data-triggers]", "自动化 weekly-audit（手动）")
+
+    assert has_element?(
+             view,
+             ~s(#run-properties [data-triggers] a[data-autopilot-link][href="/w/#{ctx.workspace.slug}/autopilots/#{ap.id}"])
+           )
+
+    refute has_element?(view, "#run-retry")
+  end
 end

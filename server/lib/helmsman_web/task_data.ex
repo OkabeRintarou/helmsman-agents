@@ -10,6 +10,7 @@ defmodule HelmsmanWeb.TaskData do
   """
 
   alias Helmsman.{Actors, Agents, Tasks}
+  alias HelmsmanWeb.{RunComponents, SquadComponents, SquadData}
 
   @page_size 50
 
@@ -33,6 +34,53 @@ defmodule HelmsmanWeb.TaskData do
     end
   end
 
+  @doc """
+  The squads of the assignee menu and its confirmation (add-squads-autopilots-ui D6),
+  merged into `availability` (`HelmsmanWeb.RunData.availability/1`, by agent name):
+  `%{name => %{kind: :squad, leader, result: :ok | {:skipped, reason}, refused, runtime}}`
+  for every enabled squad, `runtime` being the leader's (for the offline note).
+  """
+  @spec with_squads(map(), %{String.t() => map()}) :: %{String.t() => map()}
+  def with_squads(scope, availability) do
+    case SquadData.list(scope) do
+      {:ok, squads} ->
+        squad_availability = SquadData.availability(scope)
+
+        for %{disabled: false} = squad <- squads, into: availability do
+          entry = squad_availability[squad.name]
+
+          {squad.name,
+           %{
+             kind: :squad,
+             leader: squad.leader.name,
+             result: squad_result(entry),
+             refused: SquadComponents.refused(entry),
+             runtime: get_in(availability, [squad.leader.name, :runtime])
+           }}
+        end
+
+      _ ->
+        availability
+    end
+  end
+
+  @doc """
+  Why `name` cannot be dispatched, from its `availability` entry (agent or squad, see
+  `with_squads/2`); nil when it can.
+  """
+  def unavailable_text(_name, %{result: :ok}), do: nil
+
+  def unavailable_text(name, %{kind: :squad, result: {:skipped, reason}} = entry),
+    do: SquadComponents.unavailable_reason(name, {:skipped, reason, entry.refused})
+
+  def unavailable_text(name, %{result: result}),
+    do: RunComponents.unavailable_reason(name, result)
+
+  def unavailable_text(_name, _entry), do: nil
+
+  defp squad_result({:skipped, reason, _refused}), do: {:skipped, reason}
+  defp squad_result(_ok), do: :ok
+
   defp actor_view(actor, agents) do
     owner = actor.owner && (actor.owner.display_name || actor.owner.email)
     view = %{name: actor.name, kind: to_string(actor.kind), owner_name: owner}
@@ -46,13 +94,28 @@ defmodule HelmsmanWeb.TaskData do
   @doc """
   The workspace's agents (archived and disabled included) by name, as the extra
   fields of their `actor_chip`: `%{managed?}` plus `owner_name` when the owner has a
-  display name. Task summaries refer to actors by `%{name, kind}` only.
+  display name; squads (disabled included) with their `state`. Task summaries refer to actors by `%{name, kind}` only.
   """
   @spec agent_info(map()) :: %{String.t() => map()}
   def agent_info(scope) do
-    case Agents.list(scope) do
-      {:ok, views} -> Map.new(views, &{&1.name, agent_fields(&1)})
-      {:error, _} -> %{}
+    agents =
+      case Agents.list(scope) do
+        {:ok, views} -> Map.new(views, &{&1.name, agent_fields(&1)})
+        {:error, _} -> %{}
+      end
+
+    Map.merge(squad_info(scope), agents)
+  end
+
+  # Squads by name with their state, so an assigned squad that was disabled shows it
+  # (add-squads-autopilots-ui D5, code-review-1 P2-3).
+  defp squad_info(scope) do
+    case SquadData.list(scope) do
+      {:ok, squads} ->
+        Map.new(squads, &{&1.name, %{state: if(&1.disabled, do: :disabled, else: :active)}})
+
+      _ ->
+        %{}
     end
   end
 

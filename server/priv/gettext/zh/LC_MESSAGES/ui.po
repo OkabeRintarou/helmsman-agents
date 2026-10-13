@@ -142,6 +142,7 @@ msgstr ""
 
 #: lib/helmsman_web/components/core_components.ex
 #: lib/helmsman_web/components/overlay.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "关闭"
 msgstr ""
@@ -188,12 +189,14 @@ msgid "刚刚"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "创建"
 msgstr ""
@@ -204,6 +207,7 @@ msgid "创建第一个任务开始吧"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
@@ -225,9 +229,11 @@ msgid "单选"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/components/overlay.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
@@ -239,6 +245,7 @@ msgstr ""
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/squad_form.ex
 #: lib/helmsman_web/task_collab.ex
 #: lib/helmsman_web/task_local_branch.ex
 #: lib/helmsman_web/task_pull_request.ex
@@ -340,6 +347,7 @@ msgstr ""
 msgid "外接"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/components/status.ex
 #: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
@@ -352,7 +360,15 @@ msgstr ""
 msgid "对比度"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/run_live/show.ex
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/markdown_editor.ex
+#: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
 msgid "小队"
 msgstr ""
@@ -418,6 +434,7 @@ msgstr ""
 msgid "开关"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
@@ -502,6 +519,7 @@ msgid "按钮"
 msgstr ""
 
 #: lib/helmsman_web/agent_design_turn.ex
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/components/status.ex
 #, elixir-autogen, elixir-format
 msgid "排队中"
@@ -594,6 +612,7 @@ msgstr ""
 
 #: lib/helmsman_web/feedback_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
@@ -674,6 +693,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/agent_live/index.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/live/settings_live/github.ex
@@ -772,6 +792,7 @@ msgstr ""
 msgid "组件陈列"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/command_palette.ex
 #, elixir-autogen, elixir-format
 msgid "结果"
@@ -802,8 +823,11 @@ msgstr ""
 msgid "认领后是否立即开始？"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "说明"
 msgstr ""
@@ -865,6 +889,7 @@ msgstr ""
 msgid "还没有数据"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/components/status.ex
 #: lib/helmsman_web/github_components.ex
 #, elixir-autogen, elixir-format
@@ -882,6 +907,7 @@ msgstr ""
 msgid "选择"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
 msgid "配置"
@@ -908,6 +934,8 @@ msgstr ""
 msgid "页面"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
@@ -963,6 +991,7 @@ msgid "放弃填写？"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/general.ex
@@ -971,6 +1000,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/squad_form.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "保存"
@@ -1121,10 +1151,12 @@ msgid "欢迎，%{email}"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/user_live/settings.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "正在保存…"
 msgstr ""
@@ -1137,6 +1169,7 @@ msgstr ""
 msgid "正在创建…"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/user_live/settings.ex
 #, elixir-autogen, elixir-format
 msgid "正在提交…"
@@ -1403,6 +1436,7 @@ msgstr ""
 msgid "历史"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
@@ -1434,6 +1468,7 @@ msgstr ""
 msgid "大写字母开头，2–10 位大写字母或数字，创建后不能修改"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/show.ex
@@ -1469,6 +1504,8 @@ msgstr ""
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "已归档"
 msgstr ""
@@ -1540,6 +1577,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "描述"
 msgstr ""
@@ -1679,11 +1717,15 @@ msgstr ""
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/filter_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/settings_live/errors.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_errors.ex
@@ -1727,7 +1769,9 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/markdown_editor.ex
@@ -1816,6 +1860,7 @@ msgstr ""
 msgid "项目不存在"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "项目已归档"
@@ -1846,11 +1891,13 @@ msgstr ""
 msgid "%{inviter} 邀请你以「%{role}」身份加入 %{workspace}"
 msgstr "%{inviter} 邀请你以「%{role}」身份加入 %{workspace}"
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #, elixir-autogen, elixir-format
 msgid "%{n} 天后"
 msgstr "%{n} 天后"
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #, elixir-autogen, elixir-format
 msgid "%{n} 小时后"
@@ -2040,6 +2087,7 @@ msgstr "吊销 %{name}？"
 msgid "在 Claude Code 中添加 Helmsman："
 msgstr "在 Claude Code 中添加 Helmsman："
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
@@ -2138,8 +2186,11 @@ msgid "待接受的邀请"
 msgstr "待接受的邀请"
 
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/roles.ex
 #: lib/helmsman_web/settings.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "成员"
 msgstr "成员"
@@ -2257,6 +2308,7 @@ msgstr "确认修改"
 #: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "移除"
 msgstr "移除"
@@ -2518,6 +2570,7 @@ msgid "暂时无法连接 GitHub，请稍后重试。"
 msgstr ""
 
 #: lib/helmsman_web/live/admin/github_live.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "来源"
 msgstr ""
@@ -2759,16 +2812,23 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/filter_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/query_components.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "名字"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "启用"
 msgstr ""
@@ -2854,7 +2914,11 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
@@ -3221,11 +3285,14 @@ msgid "停止"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "停用"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "停用 %{name}？"
 msgstr ""
@@ -3361,6 +3428,9 @@ msgstr ""
 
 #: lib/helmsman_web/agent_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "已停用"
 msgstr ""
@@ -3373,6 +3443,7 @@ msgid "已创建 %{name}"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "已启用"
 msgstr ""
@@ -3523,6 +3594,8 @@ msgstr ""
 msgid "授权来源：%{name}"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/agent_live/index.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #, elixir-autogen, elixir-format
@@ -3561,6 +3634,7 @@ msgstr ""
 msgid "推送失败"
 msgstr ""
 
+#: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/task_runs.ex
 #, elixir-autogen, elixir-format
 msgid "收起"
@@ -3689,7 +3763,9 @@ msgid "类型"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "编辑 %{name}"
 msgstr ""
@@ -3713,6 +3789,7 @@ msgstr ""
 #: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/run_live/show.ex
+#: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "触发"
 msgstr ""
@@ -3746,6 +3823,7 @@ msgstr ""
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "谁能触发"
 msgstr ""
@@ -3973,6 +4051,7 @@ msgstr ""
 msgid "执行记录暂不可用"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "授权来源"
@@ -3983,6 +4062,7 @@ msgstr ""
 msgid "第 %{n} 次"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "结束"
@@ -3993,6 +4073,7 @@ msgstr ""
 msgid "跳到最新"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "运行 #%{id}"
@@ -4049,6 +4130,7 @@ msgstr ""
 msgid "%{date}：成功 %{ok}，失败 %{failed}，已停止 %{cancelled}"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "成功"
@@ -4220,6 +4302,7 @@ msgstr ""
 msgid "创建后不能修改"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "删除 %{name}？"
@@ -4255,6 +4338,7 @@ msgstr ""
 msgid "密钥加密保存，保存后不能查看；Agent 在 Agent 设置里选择账号。"
 msgstr ""
 
+#: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "已删除 %{name}"
@@ -6177,6 +6261,7 @@ msgid "用你自己的话说：它做什么、怎么工作、用哪个模型都�
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/index.ex
+#: lib/helmsman_web/live/squad_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "用对话创建"
 msgstr ""
@@ -7096,8 +7181,1016 @@ msgstr ""
 msgid "身份名或 currentUser()"
 msgstr ""
 
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{bytes} / %{max} 字节"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{count} 个成员"
+msgid_plural "%{count} 个成员"
+msgstr[0] ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 的委派运行结束"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name}（只能选你自己的 Agent 作为 leader）"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name}（已停用）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name}：%{note}"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} / %{max} 字节"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 分钟后"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 字节"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 次"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "%{squad} 的 leader %{leader} 会排队运行，由它决定谁来做"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{squad} 的 leader %{leader} 的运行时（%{machine}）当前离线，运行会排队，等它上线后开始"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "CLI 缺省模型"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "Leader 收到交给小队的任务，决定谁来做、怎么拆；它不能创建 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "Webhook 内容（来自外部，不可信）"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "cron %{expr}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "cron 表达式"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "leader 不是托管 Agent"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "leader 已停用"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "leader 已归档"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "leader 已归档：小队不能被触发，请换一个 leader"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "webhook 已开启"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "{{date}} 换成触发日期（自动化时区里的 YYYY-MM-DD），{{source}} 换成触发方式（schedule / manual / webhook）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "上一次还在进行时跳过本次"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "上一次还在进行，已跳过"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "上一次还在进行，已跳过这一次"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "上移"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "下一次触发会失败"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "下一次触发会失败：%{reasons}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "下次运行"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "下移"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "不定时"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "不定时：只能手动或通过 webhook 触发"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "不建任务：Agent 看完写结论，不推送任何改动"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "不是 JSON，按文本显示"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "不是 JSON，按文本显示（已截断）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "不是有效的 cron 表达式（标准 5 段：分 时 日 月 周）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "不能启动 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "不能触发 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 4 KB"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "不选项目"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "丢失请轮换令牌。"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "两次之间至少 5 分钟"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "人"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "仅手动"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "仅运行"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "仅运行模式只能选托管 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "令牌"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "以 %{name} 的权限运行"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "以 %{squad} 的 leader 身份"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "任务 / 运行"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务已撤销"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务已被删除"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务被拒绝"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务被改派"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "你无权触发"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "你无权触发 %{names}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "你无权触发 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "你无权触发 %{target}"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "你能否触发"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "保存后，定时与 webhook 触发以你的权限运行（你是授权来源）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "修改模式、目标、项目、说明、标题模板、时区或「允许建任务」后，排队中的那次请求（如有）会作废。"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "停用后，排队中的 leader 运行会被取消、进行中的会被停止；它不能再被指派或 @，已指派给它的任务保留。"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "允许建任务"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "关闭 webhook"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "关闭 webhook？"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "关闭后令牌立即失效，外部系统不能再触发这个自动化。"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "分钟须为 0–59"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "创建者"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "删除后不再触发，触发历史一并删除；已建的任务与运行保留。"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "即将"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "只读成员不能启用或停用自动化"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "可以：把任务指派给它或 @%{name}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "可选。项目绑定了仓库时，在基础分支的只读检出里运行"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "否"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "启用 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "启用后，定时与 webhook 触发以你的权限运行。"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "启用后，定时与 webhook 触发改为以你的权限运行（当前以 %{name} 的权限运行）。"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周一"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周三"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周二"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周五"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周六"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周四"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "周日"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "在项目里建一张任务交给目标，之后走普通任务流程；要改代码选这个"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "外部系统可以用 POST 请求触发这个自动化。"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "委派完成"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "定时"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "小队已停用"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "展开"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/squad_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "已保存 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "已保存 %{name}，下一次：%{at}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已停用 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已关闭 webhook"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "已删除的自动化（%{source}）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "已取消"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "已取消旧 leader 在 %{tasks} 上排队的运行，可以重新指派或 @%{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已启用 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已启用 %{name}；停用期间错过的工作不会补派"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已完成"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已开始"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "已手动停用"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "已把 %{name} 从成员中移除：它现在是 leader"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已排队：上一次还在进行，结束后执行这一次"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "已派发给 %{squad}（leader %{leader}）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "已跳过"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "建任务"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "开启 webhook"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "开启后，定时与 webhook 触发改为以你的权限运行"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "开始后 %{squad} 的 leader %{leader} 会排队运行，由它决定谁来做；暂不开始只指派，不启动运行"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "当前以 %{initiator} 的权限运行；保存后改为以你（%{me}）的权限运行"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "手动"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "手动 · %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "手动附加的说明"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "托管 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "把任务交给小队，由 leader 决定谁来做、怎么拆"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "授权来源已离开工作区"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "授权来源已离开工作区，已停用"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "授权来源无权触发目标"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "授权来源无权触发目标，已停用"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "接下来 5 次"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "接下来 5 次："
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "擅长什么（给 leader 看），例如：写前端"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "新建小队"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "新建自动化"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "新的 webhook 令牌"
+msgstr ""
+
+#: lib/helmsman_web/live/run_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "无任务（自动化）"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "无（已离开）"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "旧令牌已失效。"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "旧令牌立即失效，使用它的外部系统需要换成新令牌；之后 webhook 触发以你的权限运行。"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "时刻"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "时区"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "时间"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "是"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "最多 %{n} 个成员"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "最近结果"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "服务停机错过"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "未知的时区"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "标准 5 段：分 时 日 月 周"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "标题模板"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "模式"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "每 %{n} 分钟"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "每%{days} %{time}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "每个工作区最多 100 个自动化"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "每个工作日"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "每个工作日 %{time}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "每周"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "每天"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "每天 %{time}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "每小时"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "每小时的第几分钟"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "每小时第 %{m} 分"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "每月 %{d} 日 %{time}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "每次投递用不同的 X-Delivery-Id；重复的投递 ID 只触发一次。"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有启动 %{squad}：你无权触发 %{names}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有启动 %{squad}：小队已停用"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "添加成员"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "目标"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "目标已停用"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "目标已归档"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "目标已归档，已停用"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "目标所在机器的守护进程版本过旧，不能在仓库里运行"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "目标没有绑定运行时"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "目标的运行时已禁用"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "示例"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "立即运行"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "立即运行 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "立即运行失败：%{reason}"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "等上一次结束后执行最新的一次"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "缺省推理强度"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "能触发这个小队的成员 %{able} / %{total}"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "能触发这个小队的成员 %{able} / %{total}：%{names} 只允许所属用户触发"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/nav.ex
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "自动化"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "自动化 %{name}（%{source}）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "自动化已停用"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "自动化已被删除"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "自动化把一段说明交给 Agent 或小队去做：可以按计划定时触发、手动立即运行，或由外部系统通过 webhook 触发。「建任务」模式在项目里建一张任务；「仅运行」模式不建任务，Agent 看完写结论。"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "自动化的运行不能重试，请在自动化页「立即运行」"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "自定义 cron"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "至少选择一天"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "被更新的请求取代"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "触发历史"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "触发方式"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "触发记录"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "计划"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "计划时刻"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "说明（分工与工作方式）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "请输入 cron 表达式"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "请输入有效的时刻"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "跳过"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "轮换 webhook 令牌？"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "轮换令牌"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "轮换后，定时与 webhook 触发改为以你的权限运行"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "载入最新"
 msgstr ""
@@ -7131,4 +8224,148 @@ msgstr ""
 #: lib/helmsman_web/filter_form.ex
 #, elixir-autogen, elixir-format
 msgid "你已有同名的筛选器"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "运行中的 Agent 可以在工作区里新建任务（不能修改已有任务）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "运行失败"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "运行被人停止"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "返回小队列表"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "还没有小队"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "还没有成员。成员可以是人或托管 Agent；同一个 CLI 可以有多个成员，各用不同的模型与指令"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "还没有自动化"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "还没有触发记录"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "这个小队刚被他人修改"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "这个小队已不存在"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "这个自动化刚被他人修改"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/index.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "这个自动化已不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "这个自动化已停用：这是一次试运行，成功不会自动启用。"
+msgstr ""
+
+#: lib/helmsman_web/squad_components.ex
+#, elixir-autogen, elixir-format
+msgid "这些成员只允许所属用户（或指定成员）触发，工作区里多数人因此无法触发这个小队"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "连续失败"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "连续失败 5 次后停用"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "选择 Agent 或小队"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "选择一个托管 Agent"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "选择人或托管 Agent"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "选择项目"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "配置已修改"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "重叠策略"
+msgstr ""
+
+#: lib/helmsman_web/live/autopilot_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "附加说明（可选）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目已归档，已停用"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "须为托管 Agent（仅运行模式不能选小队）"
+msgstr ""
+
+#: lib/helmsman_web/cron_text.ex
+#, elixir-autogen, elixir-format
+msgid "（%{tz}）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "（你的时间 %{time}）"
+msgstr ""
+
+#: lib/helmsman_web/autopilot_form.ex
+#, elixir-autogen, elixir-format
+msgid "（已离开的成员）"
 msgstr ""

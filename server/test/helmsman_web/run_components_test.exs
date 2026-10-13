@@ -204,4 +204,105 @@ defmodule HelmsmanWeb.RunComponentsTest do
     assert RunComponents.trigger_kind(%{kind: "steer"}) == "插话"
     assert RunComponents.trigger_kind(%{kind: "requested"}) == "回调提出方"
   end
+
+  describe "squads and autopilots (add-squads-autopilots-ui D7)" do
+    import Phoenix.LiveViewTest
+
+    @scope %{workspace: %{slug: "acme"}}
+
+    defp card(run) do
+      base = %{
+        id: 7,
+        agent: "keel/fe",
+        status: "queued",
+        triggers: [],
+        failure_reason: nil,
+        inserted_at: ~U[2026-10-14 01:00:00Z]
+      }
+
+      render_component(&RunComponents.run_card/1,
+        id: "run-7",
+        run: Map.merge(base, run),
+        scope: @scope
+      )
+    end
+
+    test "trigger kinds and labels" do
+      delegated = %{
+        kind: "delegated",
+        by: %{name: "keel/lead", kind: "agent"},
+        instructions: "实现登录页"
+      }
+
+      assert RunComponents.trigger_label(delegated) == "keel/lead 委派"
+
+      done = %{kind: "delegate_done", by: nil, member: %{name: "keel/fe", kind: "agent"}}
+      assert RunComponents.trigger_label(done) == "keel/fe 的委派运行结束"
+      assert RunComponents.trigger_kind(done) == "委派完成"
+
+      auto = %{
+        kind: "autopilot",
+        by: nil,
+        autopilot: %{id: 3, name: "weekly-audit"},
+        source: "schedule"
+      }
+
+      assert RunComponents.trigger_label(auto) == "自动化 weekly-audit（定时）"
+      assert RunComponents.trigger_label(%{auto | source: "manual"}) == "自动化 weekly-audit（手动）"
+
+      assert RunComponents.trigger_label(%{auto | source: "webhook"}) ==
+               "自动化 weekly-audit（webhook）"
+
+      assert RunComponents.trigger_label(%{auto | autopilot: nil}) == "已删除的自动化（定时）"
+      assert RunComponents.autopilot_path(auto, "acme") == "/w/acme/autopilots/3"
+      assert RunComponents.autopilot_path(%{auto | autopilot: nil}, "acme") == nil
+    end
+
+    test "leader 的运行：卡片标出小队" do
+      html =
+        card(%{
+          agent: "keel/lead",
+          squad: %{id: 1, name: "web-team"},
+          triggers: [%{kind: "assign", by: %{name: "alice", kind: "human"}}]
+        })
+
+      assert html =~ "以 web-team 的 leader 身份"
+      assert html =~ ~s(href="/w/acme/squads/web-team")
+      assert html =~ "alice 指派"
+    end
+
+    test "委派的卡片：悬停可见指示" do
+      html =
+        card(%{
+          triggers: [
+            %{kind: "delegated", by: %{name: "keel/lead", kind: "agent"}, instructions: "实现登录页"}
+          ]
+        })
+
+      assert html =~ "keel/lead 委派"
+      assert html =~ "实现登录页"
+    end
+
+    test "自动化的运行：链接、不能重试" do
+      auto = %{
+        kind: "autopilot",
+        by: nil,
+        autopilot: %{id: 3, name: "weekly-audit"},
+        source: "schedule"
+      }
+
+      html = card(%{status: "failed", failure_reason: "cli_error", triggers: [auto]})
+
+      assert html =~ ~s(href="/w/acme/autopilots/3")
+      assert html =~ "自动化 weekly-audit（定时）"
+      assert html =~ "自动化的运行不能重试，请在自动化页「立即运行」"
+
+      deleted = card(%{triggers: [%{auto | autopilot: nil}]})
+      assert deleted =~ "已删除的自动化（定时）"
+      refute deleted =~ "/autopilots/"
+
+      run = %{id: 1, status: "failed", retry_run_id: nil, triggers: [auto]}
+      refute RunComponents.retryable?(%Helmsman.Accounts.Scope{}, run)
+    end
+  end
 end

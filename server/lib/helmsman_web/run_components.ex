@@ -12,7 +12,8 @@ defmodule HelmsmanWeb.RunComponents do
   ## Dispatch outcomes (D12)
 
   @known_reasons ~w(not_started task_closed unauthorized agent_disabled agent_archived no_runtime
-                    runtime_disabled daemon_outdated loop_detected chain_too_long rate_limited)a
+                    runtime_disabled daemon_outdated loop_detected chain_too_long rate_limited
+                    squad_disabled)a
 
   @doc """
   The flash of a dispatch outcome (`%Helmsman.Runs.Outcome{}` or a map with `agent`,
@@ -21,6 +22,45 @@ defmodule HelmsmanWeb.RunComponents do
   `{:info | :warning, text}`. An unknown result is logged and shown as assigned.
   """
   def dispatch_message(%{agent: agent, result: result} = outcome) do
+    case Map.get(outcome, :squad) do
+      squad when is_binary(squad) -> squad_message(squad, agent, outcome)
+      _ -> agent_message(agent, result, outcome)
+    end
+  end
+
+  # A squad's leader run (add-squads-autopilots-ui D6): `agent` is the leader.
+  defp squad_message(squad, leader, %{result: result} = outcome) do
+    case {to_atom(result), to_atom(Map.get(outcome, :reason))} do
+      {:queued, _} ->
+        {:info, dgettext("ui", "已派发给 %{squad}（leader %{leader}）", squad: squad, leader: leader)}
+
+      {:merged, _} ->
+        agent_message(leader, result, outcome)
+
+      {:skipped, reason} when reason != :not_started ->
+        {:warning, squad_not_started(squad, leader, reason, Map.get(outcome, :refused) || [])}
+
+      _ ->
+        agent_message(squad, result, outcome)
+    end
+  end
+
+  defp squad_not_started(squad, _leader, :unauthorized, refused) do
+    names = if refused == [], do: squad, else: Enum.join(refused, "、")
+    dgettext("ui", "没有启动 %{squad}：你无权触发 %{names}", squad: squad, names: names)
+  end
+
+  defp squad_not_started(squad, _leader, :squad_disabled, _refused),
+    do: dgettext("ui", "没有启动 %{squad}：小队已停用", squad: squad)
+
+  defp squad_not_started(squad, leader, reason, _refused) do
+    case reason_text(leader, reason) do
+      nil -> dgettext("ui", "没有启动 %{agent}", agent: squad)
+      text -> dgettext("ui", "没有启动 %{agent}：%{reason}", agent: squad, reason: text)
+    end
+  end
+
+  defp agent_message(agent, result, outcome) do
     case to_atom(result) do
       :queued ->
         {:info, dgettext("ui", "已派发给 %{agent}", agent: agent)}
@@ -153,6 +193,9 @@ defmodule HelmsmanWeb.RunComponents do
   defp kind_name("steer"), do: dgettext("ui", "插话")
   defp kind_name("unblocked"), do: dgettext("ui", "依赖满足")
   defp kind_name("delegate"), do: dgettext("ui", "委派")
+  defp kind_name("delegated"), do: dgettext("ui", "委派")
+  defp kind_name("delegate_done"), do: dgettext("ui", "委派完成")
+  defp kind_name("autopilot"), do: dgettext("ui", "自动化")
   defp kind_name("design"), do: dgettext("ui", "创建对话")
   defp kind_name(_), do: dgettext("ui", "其他触发")
 
@@ -167,12 +210,49 @@ defmodule HelmsmanWeb.RunComponents do
     end
   end
 
+  # The leader is woken up when a member's delegated run ends (add-squads-autopilots-ui D7).
+  def trigger_label(%{kind: kind} = trigger) when kind in ["delegate_done", :delegate_done] do
+    case trigger[:member] do
+      %{name: name} -> dgettext("ui", "%{name} 的委派运行结束", name: name)
+      _ -> trigger_kind(trigger)
+    end
+  end
+
+  def trigger_label(%{kind: kind} = trigger) when kind in ["autopilot", :autopilot] do
+    source = autopilot_source(trigger[:source])
+
+    case trigger[:autopilot] do
+      %{name: name} -> dgettext("ui", "自动化 %{name}（%{source}）", name: name, source: source)
+      _ -> dgettext("ui", "已删除的自动化（%{source}）", source: source)
+    end
+  end
+
   def trigger_label(trigger) do
     case trigger[:by] do
       %{name: name} -> "#{name} #{trigger_kind(trigger)}"
       _ -> trigger_kind(trigger)
     end
   end
+
+  defp autopilot_source(source) when source in ["schedule", :schedule], do: dgettext("ui", "定时")
+  defp autopilot_source(source) when source in ["manual", :manual], do: dgettext("ui", "手动")
+  defp autopilot_source(source) when source in ["webhook", :webhook], do: "webhook"
+  defp autopilot_source(_source), do: dgettext("ui", "触发")
+
+  @doc "The page of the autopilot that started a run (its trigger), or nil (none, deleted)."
+  def autopilot_path(%{kind: kind, autopilot: %{id: id}}, slug)
+      when kind in ["autopilot", :autopilot],
+      do: "/w/#{slug}/autopilots/#{id}"
+
+  def autopilot_path(_trigger, _slug), do: nil
+
+  @doc "Why an autopilot's run has no 重试."
+  def not_retryable_autopilot,
+    do: dgettext("ui", "自动化的运行不能重试，请在自动化页「立即运行」")
+
+  @doc "Whether a run was started by an autopilot (run only: no task, never retried)."
+  def autopilot_run?(run),
+    do: Enum.any?(Map.get(run, :triggers) || [], &(to_string(&1[:kind]) == "autopilot"))
 
   @doc "The card's trigger text: the first trigger, plus「等 n 条触发」with more."
   def trigger_summary([]), do: ""
@@ -339,10 +419,28 @@ defmodule HelmsmanWeb.RunComponents do
         >
           {@run.agent}
         </.link>
+        <.link
+          :if={@run[:squad]}
+          navigate={Url.squad_path(@slug, @run.squad.name)}
+          class="truncate text-caption text-fg-muted hover:underline"
+          data-run-squad
+        >
+          {dgettext("ui", "以 %{squad} 的 leader 身份", squad: @run.squad.name)}
+        </.link>
         <span class="ml-auto shrink-0 font-mono text-caption text-fg-subtle">#{@run.id}</span>
       </div>
       <div :if={@first} class="hm-tooltip-host relative flex w-fit" tabindex="0" data-run-triggers>
-        <span class="text-caption text-fg-muted">{trigger_summary(@run.triggers)}</span>
+        <.link
+          :if={autopilot_path(@first, @slug)}
+          navigate={autopilot_path(@first, @slug)}
+          class="text-caption text-fg-muted hover:underline"
+          data-autopilot-link
+        >
+          {trigger_summary(@run.triggers)}
+        </.link>
+        <span :if={!autopilot_path(@first, @slug)} class="text-caption text-fg-muted">
+          {trigger_summary(@run.triggers)}
+        </span>
         <span role="tooltip" class={[tooltip_class(:bottom), "max-w-80"]} data-run-triggers-tip>
           <span :for={t <- @run.triggers} class="block">
             {trigger_label(t)}<span :if={t[:at]}> · {Calendar.strftime(t.at, "%m-%d %H:%M")}</span><span :if={
@@ -401,6 +499,12 @@ defmodule HelmsmanWeb.RunComponents do
         </.link>
         <span :if={@run.status == "cancelling"} class="text-warning-fg">
           {dgettext("ui", "正在停止…")}
+        </span>
+        <span
+          :if={@run.status in ["failed", "cancelled"] and autopilot_run?(@run)}
+          data-run-not-retryable
+        >
+          {not_retryable_autopilot()}
         </span>
       </div>
       <div :if={@log || @can_cancel || @can_retry} class="flex items-center gap-1">

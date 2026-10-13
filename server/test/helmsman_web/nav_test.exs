@@ -139,7 +139,11 @@ defmodule HelmsmanWeb.NavTest do
   test "Agents is in the Agent 团队 group for every role, current on detail pages" do
     for role <- [:viewer, :member, :admin] do
       groups = Nav.items_for(%{@scope | role: role}, "/w/acme/agents/keel/dev")
-      assert %{label: "Agent 团队", items: [agents]} = Enum.find(groups, &(&1.id == :agents))
+      # add-squads-autopilots-ui: 小队 and 自动化 follow Agents.
+      assert %{label: "Agent 团队", items: [agents, squads | _]} =
+               Enum.find(groups, &(&1.id == :agents))
+
+      assert squads.id == :squads and not squads.current?
       assert agents.label == "Agents"
       assert agents.path == "/w/acme/agents"
       assert agents.current?
@@ -243,5 +247,16 @@ defmodule HelmsmanWeb.NavTest do
 
       assert for(g <- groups, i <- g.items, i.current?, do: i.id) == [:projects]
     end
+  end
+
+  # add-squads-autopilots-ui D1
+  test "小队 and 自动化 in the Agent 团队 group" do
+    ids =
+      Nav.items_for(@scope, "/w/acme/squads")
+      |> Enum.flat_map(& &1.items)
+      |> Enum.map(& &1.id)
+
+    assert :squads in ids
+    assert :autopilots in ids
   end
 end
