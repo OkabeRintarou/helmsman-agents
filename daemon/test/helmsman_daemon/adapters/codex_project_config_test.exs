@@ -8,6 +8,39 @@ defmodule HelmsmanDaemon.Adapters.CodexProjectConfigTest do
     :ok
   end
 
+  test "start and resume trust only this cwd through thread config in either home mode", %{
+    tmp_dir: dir
+  } do
+    cwd = Path.join(dir, "repo with . and \"quotes\"")
+    File.mkdir_p!(Path.join(cwd, ".git"))
+    home = System.fetch_env!("CODEX_HOME")
+    config = Path.join(home, "config.toml")
+
+    File.write!(
+      config,
+      "# preserve user configuration\n[projects.\"/other\"]\ntrust_level = \"untrusted\"\n"
+    )
+
+    before = {File.read!(config), File.stat!(config).mtime}
+
+    for mode <- [:user, :private], session <- [nil, "session-1"] do
+      daemon_config = if mode == :private, do: "[codex]\nhome = #{JSON.encode!(home)}\n", else: ""
+      File.write!(Path.join(dir, "config.toml"), daemon_config)
+      run = %{spec(1) | resume_session_id: session}
+      assert {:ok, launch} = Codex.prepare(run, dir, cwd)
+      request = launch.stdin |> List.last() |> JSON.decode!()
+      assert request["method"] == if(session, do: "thread/resume", else: "thread/start")
+      assert request["params"]["cwd"] == cwd
+
+      assert request["params"]["config"]["projects"] == %{
+               cwd => %{"trust_level" => "trusted"}
+             }
+
+      refute Enum.any?(launch.argv, &String.contains?(&1, "projects"))
+      assert {File.read!(config), File.stat!(config).mtime} == before
+    end
+  end
+
   test "rejects config in cwd, git root and worktree root but excludes parents above root", %{
     tmp_dir: dir
   } do

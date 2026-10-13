@@ -24,7 +24,10 @@ defmodule HelmsmanDaemon.CodexSmokeTest do
     {:ok, env: Map.put(Env.child(), "TEST_GATEWAY_KEY", "SMOKE_SENTINEL")}
   end
 
-  test "real Codex succeeds, resumes and stops with a loopback provider", %{env: env} do
+  test "real Codex succeeds, resumes and stops in a git worktree without rewriting config", %{
+    env: env,
+    tmp_dir: dir
+  } do
     assert {:ok, _} = Codex.detect()
     run = spec(10)
 
@@ -41,10 +44,39 @@ defmodule HelmsmanDaemon.CodexSmokeTest do
         limits: %{run.limits | timeout_ms: 120_000, idle_timeout_ms: 120_000}
     }
 
+    # Preserve bytes and timestamp as a real user-home copy would. The provider
+    # remains loopback-only; this test never reads the developer's Codex home.
+    config = Path.join(Config.home(), "config.toml")
+    copy = Path.join(dir, "config-copy.toml")
+    File.touch!(config, {{2020, 1, 1}, {0, 0, 0}})
+    assert {_, 0} = System.cmd("cp", ["-p", config, copy])
+    File.chmod!(copy, 0o600)
+    File.rename!(copy, config)
+    snapshot = {File.read!(config), File.stat!(config).mtime}
+
+    repo = Path.join(dir, "repo")
+    cwd = Path.join([Paths.home(), "scratch", run.workspace.slug, run.task.ident])
+    File.mkdir_p!(Path.dirname(cwd))
+    git!(nil, ["init", "-q", repo])
+
+    git!(repo, [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@invalid",
+      "commit",
+      "--allow-empty",
+      "-qm",
+      "initial"
+    ])
+
+    git!(repo, ["worktree", "add", "-qb", "task", cwd])
+
     {first, _} = execute(run, env)
     assert first.status == :succeeded
     assert is_binary(first.session_id) and first.session_id != ""
     assert first.summary =~ "OK"
+    assert_config_unchanged(config, snapshot)
 
     {second, _} =
       execute(
@@ -60,11 +92,27 @@ defmodule HelmsmanDaemon.CodexSmokeTest do
     assert second.status == :succeeded
     assert second.session_id == first.session_id
     assert second.summary =~ "OK"
+    assert_config_unchanged(config, snapshot)
 
     {cancelled, _} =
       execute(%{run | run_id: 13, prompt: "Run sleep 30, then reply DONE."}, env, true)
 
     assert cancelled.status == :cancelled
+    assert_config_unchanged(config, snapshot)
+  end
+
+  defp git!(cwd, args) do
+    options = if cwd, do: [cd: cwd, stderr_to_stdout: true], else: [stderr_to_stdout: true]
+    {output, status} = System.cmd("git", args, options)
+    assert status == 0, output
+  end
+
+  defp assert_config_unchanged(path, {bytes, mtime}) do
+    # Boolean assertions avoid printing config (provider headers/keys) on failure.
+    same_content? = File.read!(path) == bytes
+    same_mtime? = File.stat!(path).mtime == mtime
+    assert same_content?, "Codex changed config.toml contents"
+    assert same_mtime?, "Codex changed config.toml modification time"
   end
 
   defp execute(run, env, stop? \\ false) do

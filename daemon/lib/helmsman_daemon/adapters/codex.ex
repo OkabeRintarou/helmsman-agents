@@ -93,7 +93,12 @@ defmodule HelmsmanDaemon.Adapters.Codex do
         "cwd" => work_dir,
         "approvalPolicy" => "never",
         "sandbox" => "danger-full-access",
-        "config" => %{"mcp_servers" => servers}
+        "config" => %{
+          "mcp_servers" => servers,
+          # Codex 0.162.1 otherwise persists Git project trust on thread/start.
+          # Thread overrides prevent that write; app-server CLI -c does not.
+          "projects" => %{work_dir => %{"trust_level" => "trusted"}}
+        }
       }
       |> optional("model", Provider.model(spec.agent))
 
