@@ -12,7 +12,8 @@ config :helmsman, Helmsman.RateLimit,
   magic_link_ip: {1_000_000, :timer.minutes(1)},
   magic_link_email: {1_000_000, :timer.minutes(10)},
   password_ip: {1_000_000, :timer.minutes(1)},
-  register_ip: {1_000_000, :timer.hours(1)}
+  register_ip: {1_000_000, :timer.hours(1)},
+  public_api_ip: {1_000_000, :timer.minutes(1)}
 
 # Configure your database
 #

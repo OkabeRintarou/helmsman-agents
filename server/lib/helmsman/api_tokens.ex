@@ -204,14 +204,21 @@ defmodule Helmsman.ApiTokens do
   revoked nor expired, and its user must still be a member of its
   workspace; the role returned is the current one. Returns
   `{:error, :unauthorized}` otherwise, and `{:error, :insufficient_scope}`
-  for a valid token without `required_scope`.
+  for a valid token without `required_scope`. A list of scopes is met by
+  any one of them (REST reads accept `api:read` or `api:write`).
   """
-  @spec authenticate(String.t(), ApiToken.scope()) ::
+  @spec authenticate(String.t(), ApiToken.scope() | [ApiToken.scope(), ...]) ::
           {:ok, authenticated()} | {:error, :unauthorized | :insufficient_scope}
-  def authenticate(token, required_scope) when is_binary(token) and required_scope in @scopes do
+  def authenticate(token, required_scope) when is_binary(token) and required_scope in @scopes,
+    do: authenticate(token, [required_scope])
+
+  def authenticate(token, [_ | _] = required_scopes) when is_binary(token) do
+    unless Enum.all?(required_scopes, &(&1 in @scopes)),
+      do: raise(ArgumentError, "unknown token scope in #{inspect(required_scopes)}")
+
     with true <- well_formed?(token),
          %{token: api_token} = found <- Repo.one(authenticate_query(hash_token(token))) do
-      if required_scope in api_token.scopes,
+      if Enum.any?(required_scopes, &(&1 in api_token.scopes)),
         do: {:ok, found},
         else: {:error, :insufficient_scope}
     else
@@ -245,12 +252,32 @@ defmodule Helmsman.ApiTokens do
   window resets (at least 1).
   """
   @spec check_rate_limit(ApiToken.t()) :: :ok | {:error, {:rate_limited, pos_integer()}}
-  def check_rate_limit(%ApiToken{id: id}) do
+  def check_rate_limit(%ApiToken{} = token) do
+    case hit_rate_limit(token) do
+      {:ok, _quota} -> :ok
+      {:error, {:rate_limited, retry_after, _quota}} -> {:error, {:rate_limited, retry_after}}
+    end
+  end
+
+  @type quota :: %{limit: pos_integer(), remaining: non_neg_integer()}
+
+  @doc """
+  Like `check_rate_limit/1`, also returning the quota of the window for
+  the REST rate limit headers (`add-rest-api` decision 10): the limit and
+  the requests left after this one (0 when refused).
+  """
+  @spec hit_rate_limit(ApiToken.t()) ::
+          {:ok, quota()} | {:error, {:rate_limited, pos_integer(), quota()}}
+  def hit_rate_limit(%ApiToken{id: id}) do
     limit = Application.get_env(:helmsman, :api_token_rate_limit, @default_rate_limit)
 
     case RateLimit.hit({:api_token, id}, @rate_window_ms, limit) do
-      {:allow, _count} -> :ok
-      {:deny, retry_after_ms} -> {:error, {:rate_limited, max(1, ceil(retry_after_ms / 1000))}}
+      {:allow, count} ->
+        {:ok, %{limit: limit, remaining: max(limit - count, 0)}}
+
+      {:deny, retry_after_ms} ->
+        {:error,
+         {:rate_limited, max(1, ceil(retry_after_ms / 1000)), %{limit: limit, remaining: 0}}}
     end
   end
 

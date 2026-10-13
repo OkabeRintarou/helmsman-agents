@@ -185,6 +185,14 @@ defmodule HelmsmanMCP.Present do
   end
 
   @doc """
+  An execution event of a run (`Helmsman.Runs.event_view/1`): `seq`,
+  `kind`, `at` and its whitelisted `data`.
+  """
+  @spec run_event(map()) :: map()
+  def run_event(%{seq: seq, type: type, data: data, at: at}),
+    do: %{seq: seq, kind: to_string(type), at: time(at), data: data}
+
+  @doc """
   Puts the dispatch outcomes of a task write (`Helmsman.Runs.Outcome`) in
   `result` as `dispatch`, when there are any.
   """

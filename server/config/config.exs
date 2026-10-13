@@ -32,7 +32,8 @@ config :helmsman, Helmsman.RateLimit,
   register_ip: {10, :timer.hours(1)},
   daemon_device_ip: {10, :timer.minutes(1)},
   daemon_device_user: {20, :timer.minutes(1)},
-  autopilot_webhook: {10, :timer.minutes(1)}
+  autopilot_webhook: {10, :timer.minutes(1)},
+  public_api_ip: {120, :timer.minutes(1)}
 
 # Requests per minute per API token (designs/03 §2).
 config :helmsman, :api_token_rate_limit, 600
@@ -152,7 +153,9 @@ config :tailwind,
 # Configure Elixir's Logger
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id]
+  # REST (`add-rest-api` decision 1): the token, its workspace and the
+  # identity a request acts as.
+  metadata: [:request_id, :workspace_id, :token_id, :api_actor]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason

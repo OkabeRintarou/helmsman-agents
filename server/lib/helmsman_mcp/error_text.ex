@@ -320,6 +320,20 @@ defmodule HelmsmanMCP.ErrorText do
     {:ok, "Run #{args["run_id"] || ""} has already ended; there is nothing to stop."}
   end
 
+  # `Helmsman.Runs.Retry.retry/2`, reached by REST (`add-rest-api`
+  # decision 7).
+  def format(:not_ended, _ctx),
+    do: {:ok, "Only a failed or cancelled run can be retried."}
+
+  def format(:not_retryable, _ctx),
+    do: {:ok, "This run cannot be retried (a design run: send the turn again instead)."}
+
+  def format(reason, _ctx) when reason in [:agent_archived, :no_runtime, :runtime_disabled],
+    do: {:ok, "The run cannot be retried: #{not_dispatched(reason)}."}
+
+  def format(:rate_limited, _ctx),
+    do: {:ok, "The run cannot be retried: #{not_dispatched(:rate_limited)}."}
+
   def format({:already_retried, id}, _ctx) do
     {:ok, "This run was already retried by run #{id}. Look at that run instead (list_runs)."}
   end

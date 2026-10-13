@@ -151,6 +151,16 @@ defmodule HelmsmanMCP.ErrorTextTest do
              {:ok, "name: must be at most 64 characters\nworktree: is invalid"}
   end
 
+  # add-rest-api decision 5: REST maps the same reasons
+  # (HelmsmanWeb.API.ErrorMapperTest).
+  test "every domain error reason has a text" do
+    for {label, reason, tool} <- Helmsman.DomainErrorReasons.all() do
+      ctx = %{ctx(%{}, :member) | tool: tool || "identify"}
+      assert {:ok, text} = ErrorText.format(reason, ctx), "no text for #{label}"
+      assert text != "", label
+    end
+  end
+
   test "an unknown reason has no text" do
     assert ErrorText.format(:whatever, ctx()) == :error
   end

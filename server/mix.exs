@@ -95,6 +95,7 @@ defmodule Helmsman.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:anubis_mcp, "~> 2.1.0"},
+      {:open_api_spex, "~> 3.21"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:helmsman_protocol, path: "../protocol"},

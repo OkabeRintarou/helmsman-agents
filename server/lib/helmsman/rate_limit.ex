@@ -9,6 +9,10 @@ defmodule Helmsman.RateLimit do
     * `:magic_link_email` - magic link requests per normalized email
     * `:password_ip` - password log in attempts per client IP
     * `:register_ip` - registration submissions per client IP
+    * `:daemon_device_ip` / `:daemon_device_user` - daemon device code
+      requests per client IP / per user
+    * `:public_api_ip` - requests to the public REST endpoints
+      (`/api/v1/workflow.md`, `/api/v1/openapi.json`) per client IP
     * `:autopilot_webhook` - authenticated webhook requests per autopilot
       (`add-autopilots` decision 14)
   """
@@ -22,6 +26,7 @@ defmodule Helmsman.RateLimit do
           | :register_ip
           | :daemon_device_ip
           | :daemon_device_user
+          | :public_api_ip
           | :autopilot_webhook
 
   @doc """

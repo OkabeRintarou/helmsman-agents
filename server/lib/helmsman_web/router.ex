@@ -22,8 +22,36 @@ defmodule HelmsmanWeb.Router do
     plug :store_invitation_return_to
   end
 
+  # REST (`add-rest-api` decision 1): JSON in and out, an API token, the
+  # token's workspace in the path. Reads accept api:read or api:write.
+  # 406 for an Accept header JSON does not satisfy, with the REST error body.
   pipeline :api do
-    plug :accepts, ["json"]
+    plug HelmsmanWeb.API.Accepts, ["json"]
+    plug HelmsmanWeb.API.RequireJSONBody
+  end
+
+  pipeline :api_markdown do
+    plug HelmsmanWeb.API.Accepts, ["json", "md"]
+  end
+
+  pipeline :api_read do
+    plug HelmsmanWeb.Plugs.BearerAuth, scope: ["api:read", "api:write"], via: :api
+    plug HelmsmanWeb.API.WorkspaceSlug
+  end
+
+  pipeline :api_write do
+    plug HelmsmanWeb.Plugs.BearerAuth, scope: ["api:write"], via: :api
+    plug HelmsmanWeb.API.WorkspaceSlug
+  end
+
+  pipeline :api_public do
+    plug HelmsmanWeb.API.PublicRateLimit
+    plug OpenApiSpex.Plug.PutApiSpec, module: HelmsmanWeb.API.ApiSpec
+  end
+
+  # Errors on unknown /api paths are JSON whatever the Accept header.
+  pipeline :api_fallback do
+    plug :put_format, "json"
   end
 
   pipeline :daemon_api do
@@ -57,10 +85,67 @@ defmodule HelmsmanWeb.Router do
     forward "/", Anubis.Server.Transport.StreamableHTTP.Plug, server: HelmsmanMCP.Server
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", HelmsmanWeb do
-  #   pipe_through :api
-  # end
+  scope "/api/v1", HelmsmanWeb.API do
+    pipe_through [:api_markdown, :api_public]
+
+    get "/workflow.md", PublicController, :workflow
+  end
+
+  scope "/api/v1", HelmsmanWeb.API do
+    pipe_through [:api, :api_public]
+
+    get "/openapi.json", PublicController, :openapi
+  end
+
+  scope "/api/v1/w/:slug", HelmsmanWeb.API do
+    pipe_through [:api, :api_read]
+
+    get "/me", MeController, :show
+    get "/me/tasks", MeController, :tasks
+    get "/actors", ActorsController, :index
+    get "/agents", ActorsController, :agents
+    get "/projects", ProjectsController, :index
+    get "/projects/:key", ProjectsController, :show
+    get "/projects/:key/tasks", TasksController, :index
+    get "/tasks/:id", TasksController, :show
+    get "/tasks/:id/feedback", FeedbackController, :index
+    get "/tasks/:id/feedback/:seq", FeedbackController, :show
+    get "/tasks/:id/runs", TasksController, :runs
+    get "/search", SearchController, :index
+    get "/runs/:id", RunsController, :show
+    get "/runs/:id/events", RunsController, :events
+    get "/query", QueryController, :index
+    get "/filters", FiltersController, :index
+    get "/filters/:id", FiltersController, :show
+    get "/filters/:id/run", FiltersController, :run
+  end
+
+  scope "/api/v1/w/:slug", HelmsmanWeb.API do
+    pipe_through [:api, :api_write]
+
+    post "/projects", ProjectsController, :create
+    patch "/projects/:key", ProjectsController, :update
+    post "/projects/:key/tasks", TasksController, :create
+    patch "/tasks/:id", TasksController, :update
+    post "/tasks/:id/transition", TasksController, :transition
+    post "/tasks/:id/feedback", FeedbackController, :create
+    patch "/tasks/:id/feedback/:seq", FeedbackController, :update
+    post "/tasks/:id/links", LinksController, :create
+    delete "/tasks/:id/links/:type/:to", LinksController, :delete
+    post "/runs", RunsController, :create
+    post "/runs/:id/cancel", RunsController, :cancel
+    post "/runs/:id/retry", RunsController, :retry
+    post "/filters", FiltersController, :create
+    patch "/filters/:id", FiltersController, :update
+    delete "/filters/:id", FiltersController, :delete
+    post "/autopilots/:id/run", AutopilotsController, :run
+  end
+
+  scope "/api", HelmsmanWeb.API do
+    pipe_through :api_fallback
+
+    match :*, "/*path", FallbackController, :not_found
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:helmsman, :dev_routes) do

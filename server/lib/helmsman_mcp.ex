@@ -6,5 +6,19 @@ defmodule HelmsmanMCP do
   Depends only on the domain layer; the web layer routes `/mcp` here.
   """
 
-  use Boundary, deps: [Helmsman], exports: [Server, Sessions, Supervisor]
+  use Boundary,
+    deps: [Helmsman],
+    # The REST API (`add-rest-api` decision 2) calls the tools directly.
+    exports: [
+      Server,
+      Sessions,
+      Supervisor,
+      Tools,
+      {Tools, except: []},
+      Tool,
+      Context,
+      Rejected,
+      Present,
+      Args
+    ]
 end

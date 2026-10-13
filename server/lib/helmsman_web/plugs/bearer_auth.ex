@@ -4,11 +4,17 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   REST endpoints (designs/03 §2, §5).
 
       plug HelmsmanWeb.Plugs.BearerAuth, scope: "mcp", via: :mcp
+      plug HelmsmanWeb.Plugs.BearerAuth, scope: ["api:read", "api:write"], via: :api
 
+  `:scope` is one scope or a list of which the token needs any one.
   Every request checks the token against the database (revoked, expired,
   user no longer a member → 401 with `WWW-Authenticate: Bearer`; missing
   scope → 403), counts against the token's rate limit (→ 429 with
   `Retry-After`) and records the token's last use at most once a minute.
+  With `via: :api` the errors use the REST error body
+  (`HelmsmanWeb.ErrorMapper`; missing scope → 403 `insufficient_scope`)
+  and every response has `x-ratelimit-limit` / `x-ratelimit-remaining`;
+  `via: :mcp` responses are unchanged.
   On success `conn.assigns.current_scope` holds the user, the workspace,
   the current role, `via` and the token; the actor is resolved per write
   with `Helmsman.Actors.resolve_writer/2`.
@@ -27,41 +33,49 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   alias Helmsman.ApiTokens
   alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Runs.RunTokens
+  alias HelmsmanWeb.ErrorMapper
 
   @impl true
   def init(opts) do
-    scope = Keyword.fetch!(opts, :scope)
+    scopes = opts |> Keyword.fetch!(:scope) |> List.wrap()
     via = Keyword.fetch!(opts, :via)
 
-    unless scope in ApiToken.scopes() do
-      raise ArgumentError, "unknown token scope: #{inspect(scope)}"
+    if scopes == [] or Enum.any?(scopes, &(&1 not in ApiToken.scopes())) do
+      raise ArgumentError, "unknown token scope: #{inspect(opts[:scope])}"
     end
 
     unless via in [:mcp, :api] do
       raise ArgumentError, "via must be :mcp or :api, got: #{inspect(via)}"
     end
 
-    %{scope: scope, via: via}
+    %{scopes: scopes, via: via}
   end
 
   @impl true
-  def call(conn, %{scope: required_scope, via: via}) do
+  def call(conn, %{scopes: required_scopes, via: via}) do
     with {:ok, token} <- bearer_token(conn),
-         {:ok, scope} <- authenticate(token, required_scope, via) do
-      assign(conn, :current_scope, scope)
+         {:ok, scope, quota} <- authenticate(token, required_scopes, via) do
+      if via == :api do
+        Logger.metadata(workspace_id: scope.workspace.id, token_id: scope.token.id)
+      end
+
+      conn
+      |> put_quota(via, quota)
+      |> assign(:current_scope, scope)
     else
       {:error, :unauthorized} ->
         conn
         |> put_resp_header("www-authenticate", "Bearer")
-        |> halt_with(401, "unauthorized")
+        |> halt_with(via, 401, "unauthorized", %{})
 
       {:error, :insufficient_scope} ->
-        halt_with(conn, 403, "forbidden")
+        halt_with(conn, via, 403, "insufficient_scope", %{required: required_scopes})
 
-      {:error, {:rate_limited, retry_after}} ->
+      {:error, {:rate_limited, retry_after, quota}} ->
         conn
         |> put_resp_header("retry-after", Integer.to_string(retry_after))
-        |> halt_with(429, "rate_limited")
+        |> put_quota(via, quota)
+        |> halt_with(via, 429, "rate_limited", %{})
     end
   end
 
@@ -75,15 +89,18 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
     end
   end
 
-  defp authenticate("hmr_" <> _ = token, _required_scope, :mcp) do
-    with {:ok, scope} <- RunTokens.scope(token),
-         :ok <- RunTokens.check_rate_limit(scope.run),
-         do: {:ok, scope}
+  defp authenticate("hmr_" <> _ = token, _required_scopes, :mcp) do
+    with {:ok, scope} <- RunTokens.scope(token) do
+      case RunTokens.check_rate_limit(scope.run) do
+        :ok -> {:ok, scope, nil}
+        {:error, {:rate_limited, retry_after}} -> {:error, {:rate_limited, retry_after, nil}}
+      end
+    end
   end
 
-  defp authenticate("hm_" <> _ = token, required_scope, via) do
-    with {:ok, found} <- ApiTokens.authenticate(token, required_scope),
-         :ok <- ApiTokens.check_rate_limit(found.token) do
+  defp authenticate("hm_" <> _ = token, required_scopes, via) do
+    with {:ok, found} <- ApiTokens.authenticate(token, required_scopes),
+         {:ok, quota} <- ApiTokens.hit_rate_limit(found.token) do
       :ok = ApiTokens.touch_last_used(found.token)
 
       {:ok,
@@ -95,13 +112,29 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
          via: via,
          run: nil,
          token: found.token
-       }}
+       }, quota}
     end
   end
 
-  defp authenticate(_token, _required_scope, _via), do: {:error, :unauthorized}
+  defp authenticate(_token, _required_scopes, _via), do: {:error, :unauthorized}
 
-  defp halt_with(conn, status, error) do
+  # `add-rest-api` decision 10: REST responses show the token's quota.
+  defp put_quota(conn, :api, %{limit: limit, remaining: remaining}) do
+    conn
+    |> put_resp_header("x-ratelimit-limit", Integer.to_string(limit))
+    |> put_resp_header("x-ratelimit-remaining", Integer.to_string(remaining))
+  end
+
+  defp put_quota(conn, _via, _quota), do: conn
+
+  # MCP keeps its short body; REST uses the error body of
+  # `HelmsmanWeb.ErrorMapper` (`add-rest-api` decision 1).
+  defp halt_with(conn, :api, status, code, detail),
+    do: ErrorMapper.send_error(conn, {status, ErrorMapper.body(code, detail)})
+
+  defp halt_with(conn, :mcp, status, code, _detail) do
+    error = if code == "insufficient_scope", do: "forbidden", else: code
+
     conn
     |> put_resp_content_type("application/json")
     |> send_resp(status, Jason.encode!(%{error: error}))

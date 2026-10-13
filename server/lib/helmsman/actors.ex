@@ -406,6 +406,43 @@ defmodule Helmsman.Actors do
     end
   end
 
+  @type reader_source :: :requested | :default | :human
+
+  @doc """
+  Resolves the current identity of a REST read (`add-rest-api` decision
+  3), in the order of `resolve_writer/2`: `requested` (the request's
+  `X-Helmsman-Actor`), the token's default agent, then the user's human
+  identity. A requested name or default agent must be an agent the
+  token's user owns, else `{:error, :forbidden}`; unlike writes, a
+  disabled one is accepted (a disabled identity can still read).
+
+  Reads without locks, so it may run outside a transaction. Returns the
+  actor and where it came from.
+  """
+  @spec resolve_reader(Scope.t(), String.t() | nil) ::
+          {:ok, Actor.t(), reader_source()} | {:error, :forbidden | :not_found}
+  def resolve_reader(%Scope{via: :api, workspace: workspace, user: user} = scope, requested)
+      when is_binary(requested) or is_nil(requested) do
+    cond do
+      is_binary(requested) ->
+        workspace.id |> name_query(requested) |> Repo.one() |> own_reader(user, :requested)
+
+      match?(%ApiToken{default_agent_id: id} when not is_nil(id), scope.token) ->
+        workspace.id |> get(scope.token.default_agent_id) |> own_reader(user, :default)
+
+      true ->
+        case get_human(workspace.id, user.id) do
+          nil -> {:error, :not_found}
+          human -> {:ok, human, :human}
+        end
+    end
+  end
+
+  defp own_reader(%Actor{kind: :agent, owner_id: owner_id} = actor, %User{id: owner_id}, source),
+    do: {:ok, actor, source}
+
+  defp own_reader(_actor, _user, _source), do: {:error, :forbidden}
+
   defp own_agent(%Scope{user: %User{id: user_id}}, actor, source) do
     case actor do
       %Actor{kind: :agent, owner_id: ^user_id, disabled_at: nil} -> {:ok, actor, source}

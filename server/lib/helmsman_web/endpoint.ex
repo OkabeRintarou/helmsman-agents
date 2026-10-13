@@ -53,7 +53,8 @@ defmodule HelmsmanWeb.Endpoint do
   plug HelmsmanWeb.GitHubWebhookPlug
   plug HelmsmanWeb.AutopilotWebhookPlug
 
-  plug Plug.Parsers,
+  # Plug.Parsers; on /api paths its errors render as JSON.
+  plug HelmsmanWeb.API.BodyParser,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
