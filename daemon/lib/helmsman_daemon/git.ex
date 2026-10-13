@@ -39,10 +39,30 @@ defmodule HelmsmanDaemon.Git do
        Keyword.take(context.opts, [:on_start])}
   end
 
+  @doc """
+  Options for fetch / ls-remote / push against a user's local repository. The
+  other side's settings travel in its own command line: git drops repository
+  environment such as `GIT_CONFIG_PARAMETERS` for local transports.
+  """
+  def local_transport(context, :upload),
+    do: ["--upload-pack=" <> remote_git(context) <> " -c core.hooksPath=/dev/null upload-pack"]
+
+  def local_transport(context, :receive),
+    do: [
+      "--receive-pack=" <>
+        remote_git(context) <>
+        " -c receive.denyCurrentBranch=refuse -c core.hooksPath=/dev/null receive-pack"
+    ]
+
+  defp remote_git(context) do
+    executable = Keyword.get(context.opts, :executable, System.find_executable("git")) || "git"
+    "'" <> String.replace(executable, "'", "'\\''") <> "'"
+  end
+
   def run(args, cwd, context) do
     case command(args, cwd, context) do
       {nil, _} -> {:error, {:missing, "git executable not found; git >= 2.30 is required"}}
-      {argv, opts} -> sanitize_result(Exec.command(argv, opts), context.token)
+      {argv, opts} -> sanitize_result(Exec.command(argv, opts), context)
     end
   end
 
@@ -92,6 +112,8 @@ defmodule HelmsmanDaemon.Git do
     |> network_env(context, network?)
   end
 
+  defp network_env(env, %{token: nil}, true), do: env
+
   defp network_env(env, context, true),
     do:
       Map.merge(env, %{
@@ -119,18 +141,36 @@ defmodule HelmsmanDaemon.Git do
       Regex.match?(~r/\[rejected\]|non-fast-forward|fetch first/i, output) ->
         :rejected
 
+      checked_out?(output) ->
+        :rejected
+
       true ->
         :other
     end
   end
 
+  @doc "A local receive-pack refused to update a branch checked out in one of its worktrees."
+  def checked_out?(output),
+    do: Regex.match?(~r/\[remote rejected\][^\n]*\(branch is currently checked out\)/, output)
+
   def redact(output),
     do: Regex.replace(~r{([A-Za-z][A-Za-z0-9+.-]*://)[^\s/'"<>]*@}, output, "\\1")
 
-  defp sanitize_result({:ok, output}, token), do: {:ok, sanitize(output, token)}
+  defp sanitize_result({:ok, output}, context), do: {:ok, sanitize(output, context)}
 
-  defp sanitize_result({:error, {reason, output}}, token),
-    do: {:error, {reason, sanitize(output, token)}}
+  defp sanitize_result({:error, {reason, output}}, context),
+    do: {:error, {reason, sanitize(output, context)}}
 
-  defp sanitize(output, token), do: output |> redact() |> String.replace(token, "[REDACTED]")
+  # `:redact` replaces machine-only text, such as a local repository's path,
+  # in every output: it can reach run events and errors seen by members.
+  defp sanitize(output, context) do
+    output = redact(output)
+
+    output =
+      if context.token, do: String.replace(output, context.token, "[REDACTED]"), else: output
+
+    context.opts
+    |> Keyword.get(:redact, [])
+    |> Enum.reduce(output, fn {text, label}, acc -> String.replace(acc, text, label) end)
+  end
 end

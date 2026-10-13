@@ -7,6 +7,7 @@ defmodule HelmsmanDaemon do
     Detector,
     Env,
     Janitor,
+    LocalMergeCheck,
     Paths,
     Runs,
     StateStore
@@ -26,6 +27,7 @@ defmodule HelmsmanDaemon do
       {DynamicSupervisor, strategy: :one_for_one, name: HelmsmanDaemon.RunSupervisor},
       {Runs, opts},
       {Cleanup, opts},
+      {LocalMergeCheck, opts},
       {Connection, opts},
       {Janitor, opts}
     ]

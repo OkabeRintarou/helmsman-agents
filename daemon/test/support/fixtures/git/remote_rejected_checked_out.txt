@@ -1,0 +1,4 @@
+remote: error: refusing to update checked out branch: refs/heads/hm/7/bos-12        
+To /home/alice/code/app
+ ! [remote rejected] HEAD -> hm/7/bos-12 (branch is currently checked out)
+error: failed to push some refs to '/home/alice/code/app'

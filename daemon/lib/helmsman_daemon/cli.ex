@@ -1,13 +1,19 @@
 defmodule HelmsmanDaemon.CLI do
   @moduledoc "Foreground daemon and local device management commands."
-  alias HelmsmanDaemon.{Config, Credentials, Detector, Login}
+  alias HelmsmanDaemon.{Config, Credentials, Detector, LocalRepos, Login, Paths}
   @background "后台服务随后续版本提供"
 
   def main(args), do: System.stop(run(args))
 
   def run(args, opts \\ []) do
     case OptionParser.parse(args,
-           strict: [server: :string, force: :boolean, foreground: :boolean]
+           strict: [
+             server: :string,
+             force: :boolean,
+             foreground: :boolean,
+             name: :string,
+             workspace: :keep
+           ]
          ) do
       {flags, command, []} -> dispatch(command, flags, opts)
       _ -> usage()
@@ -55,7 +61,56 @@ defmodule HelmsmanDaemon.CLI do
     2
   end
 
+  defp dispatch(["repos", "add", path], flags, opts) do
+    if flags[:name] && Enum.uniq(Keyword.keys(flags)) -- [:name, :workspace] == [] do
+      Paths.ensure!()
+
+      case LocalRepos.add(path, flags[:name], Keyword.get_values(flags, :workspace), opts) do
+        :ok ->
+          IO.puts("Added local repository #{flags[:name]}")
+          print_repos(opts)
+
+        {:error, message} ->
+          IO.puts(message)
+          1
+      end
+    else
+      usage()
+    end
+  end
+
+  defp dispatch(["repos", "remove", name], [], opts) do
+    Paths.ensure!()
+
+    case LocalRepos.remove(name, opts) do
+      :ok ->
+        IO.puts("Removed local repository #{name}")
+        0
+
+      {:error, message} ->
+        IO.puts(message)
+        1
+    end
+  end
+
+  defp dispatch(["repos", "list"], [], opts) do
+    Paths.ensure!()
+    print_repos(opts)
+  end
+
   defp dispatch(_, _, _), do: usage()
+
+  defp print_repos(opts) do
+    case LocalRepos.list_lines(opts) do
+      {:ok, lines} ->
+        Enum.each(lines, &IO.puts/1)
+        0
+
+      {:error, message} ->
+        IO.puts(message)
+        1
+    end
+  end
 
   defp print_clis do
     Enum.each(Detector.scan(), fn cli ->
@@ -94,7 +149,8 @@ defmodule HelmsmanDaemon.CLI do
 
   defp usage do
     IO.puts(
-      "Usage: helmsman login --server URL [--force] | logout | runtimes | daemon start [--foreground]"
+      "Usage: helmsman login --server URL [--force] | logout | runtimes | daemon start [--foreground]" <>
+        " | repos add PATH --name NAME --workspace SLUG... | repos remove NAME | repos list"
     )
 
     2

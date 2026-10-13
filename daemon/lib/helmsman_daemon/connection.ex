@@ -2,7 +2,18 @@ defmodule HelmsmanDaemon.Connection do
   @moduledoc "Authenticated Channel connection, reconciliation and ordered report retries."
   use Slipstream
   require Logger
-  alias HelmsmanDaemon.{Cleanup, Config, Credentials, Detector, Login, Runs}
+
+  alias HelmsmanDaemon.{
+    Cleanup,
+    Config,
+    Credentials,
+    Detector,
+    LocalMergeCheck,
+    LocalRepos,
+    Login,
+    Runs
+  }
+
   alias HelmsmanProtocol.ErrorReply
   alias HelmsmanProtocol.Messages
   alias HelmsmanProtocol.Reply
@@ -26,6 +37,11 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   def claim, do: GenServer.cast(__MODULE__, :claim)
+
+  @doc "Sends a `repo_status` report when joined; dropped otherwise (the next check resends)."
+  def repo_status(%Report.RepoStatus{} = payload),
+    do: GenServer.cast(__MODULE__, {:repo_status, payload})
+
   def active_runs, do: Runs.active()
 
   @impl true
@@ -48,7 +64,9 @@ defmodule HelmsmanDaemon.Connection do
             control_refs: %{},
             cleanup_refs: %{},
             protocol_version: Keyword.get(opts, :protocol_version, HelmsmanProtocol.version()),
-            stopping?: false
+            stopping?: false,
+            config_stamp: nil,
+            reported_served: nil
           )
 
         Process.send_after(self(), :periodic, Keyword.get(opts, :heartbeat_interval_ms, 30_000))
@@ -59,6 +77,7 @@ defmodule HelmsmanDaemon.Connection do
           Keyword.get(opts, :rotation_interval_ms, 3_600_000)
         )
 
+        Process.send_after(self(), :config_check, config_interval(opts))
         {:ok, socket, {:continue, :connect}}
 
       {:error, reason} ->
@@ -105,16 +124,75 @@ defmodule HelmsmanDaemon.Connection do
 
   @impl true
   def handle_connect(socket) do
+    {local, socket} = local_repositories(socket)
+
     payload = %Report.Join{
       protocol: socket.assigns.protocol_version,
       machine: Login.machine(),
       clis: Detector.inventory(),
       max_concurrency: Config.get().max_concurrency,
-      active_runs: Runs.active()
+      active_runs: Runs.active(),
+      local_repositories: local
     }
 
-    {:ok, {"join", wire}} = Messages.encode(payload)
+    {:ok, {"join", wire}} = Messages.encode(payload, socket.assigns.protocol_version)
     {:ok, join(assign(socket, :reconnect_attempt, 0), topic(socket), wire)}
+  end
+
+  defp local_repositories(socket) do
+    if socket.assigns.protocol_version >= HelmsmanProtocol.local_repositories_version() do
+      served = served_ids(socket)
+
+      socket =
+        socket
+        |> assign(:config_stamp, config_stamp())
+        |> assign(:reported_served, served)
+
+      {LocalRepos.report(served), socket}
+    else
+      {nil, socket}
+    end
+  end
+
+  # Workspaces from the latest reply (state/workspaces.json), else those chosen at login.
+  defp served_ids(socket) do
+    case LocalRepos.served() do
+      nil ->
+        case Enum.map(socket.assigns.credentials.workspaces, & &1["id"]) do
+          [] -> nil
+          ids -> ids
+        end
+
+      served ->
+        Enum.map(served, & &1.id)
+    end
+  end
+
+  defp config_stamp do
+    case File.stat(LocalRepos.config_path(), time: :posix) do
+      {:ok, stat} -> {stat.mtime, stat.size, stat.inode}
+      _ -> nil
+    end
+  end
+
+  defp config_interval(opts), do: Keyword.get(opts, :config_check_interval_ms, 30_000)
+
+  # Records the served workspaces and the merge watch lists of a join / sync reply;
+  # a changed set of served workspaces is reported again with `sync`.
+  defp apply_local(socket, reply) do
+    case LocalRepos.write_served(reply.runtimes) do
+      :ok -> :ok
+      _ -> Logger.error("Could not write #{LocalRepos.served_path()}")
+    end
+
+    if reply.local_repositories, do: LocalMergeCheck.update(reply.local_repositories)
+
+    if socket.assigns.protocol_version >= HelmsmanProtocol.local_repositories_version() and
+         served_ids(socket) != socket.assigns.reported_served and
+         match?({:ok, [_ | _]}, LocalRepos.entries()),
+       do: GenServer.cast(self(), :sync)
+
+    socket
   end
 
   @impl true
@@ -124,6 +202,7 @@ defmodule HelmsmanDaemon.Connection do
         terminate_ids(reply.terminate_run_ids)
         next = socket |> assign(:joined?, true) |> assign(:runtimes, reply.runtimes)
         Cleanup.joined(socket.assigns.protocol_version)
+        next = apply_local(next, reply)
         send(self(), :rotation_check_now)
         {:ok, next |> maybe_claim() |> pump_all()}
 
@@ -239,6 +318,13 @@ defmodule HelmsmanDaemon.Connection do
   def handle_cast(:claim, socket), do: {:noreply, maybe_claim(socket)}
   def handle_cast(:sync, socket), do: {:noreply, sync(socket)}
 
+  def handle_cast({:repo_status, payload}, socket) do
+    if socket.assigns.joined? and
+         socket.assigns.protocol_version >= HelmsmanProtocol.local_repositories_version(),
+       do: {:noreply, control(socket, "repo_status", payload)},
+       else: {:noreply, socket}
+  end
+
   @impl true
   def handle_info(:reconnect, %{assigns: %{stopping?: false}} = socket),
     do: connect_socket(socket)
@@ -269,6 +355,17 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   def handle_info(:rotation_check_now, socket), do: {:noreply, rotate(socket)}
+
+  def handle_info(:config_check, socket) do
+    Process.send_after(self(), :config_check, config_interval(socket.assigns.opts))
+
+    if socket.assigns.joined? and
+         socket.assigns.protocol_version >= HelmsmanProtocol.local_repositories_version() and
+         config_stamp() != socket.assigns.config_stamp,
+       do: {:noreply, sync(socket)},
+       else: {:noreply, socket}
+  end
+
   def handle_info({:retry, id}, socket), do: {:noreply, pump(socket, id)}
 
   def handle_info({:push_timeout, ref}, socket) do
@@ -366,7 +463,7 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   defp push_entry(socket, entry) do
-    case Messages.encode(entry.payload) do
+    case Messages.encode(entry.payload, socket.assigns.protocol_version) do
       {:ok, {event, wire}} ->
         case push(socket, topic(socket), event, wire) do
           {:ok, ref} ->
@@ -428,10 +525,13 @@ defmodule HelmsmanDaemon.Connection do
 
   defp sync(socket) do
     if socket.assigns.joined? do
+      {local, socket} = local_repositories(socket)
+
       payload = %Report.Sync{
         machine: Login.machine(),
         clis: Detector.inventory(),
-        max_concurrency: Config.get().max_concurrency
+        max_concurrency: Config.get().max_concurrency,
+        local_repositories: local
       }
 
       control(socket, "sync", payload)
@@ -441,7 +541,7 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   defp control(socket, event, payload) do
-    {:ok, {^event, wire}} = Messages.encode(payload)
+    {:ok, {^event, wire}} = Messages.encode(payload, socket.assigns.protocol_version)
 
     case push(socket, topic(socket), event, wire) do
       {:ok, ref} ->
@@ -486,7 +586,10 @@ defmodule HelmsmanDaemon.Connection do
   defp apply_control(event, {:ok, %{terminate_run_ids: ids} = reply}, socket)
        when event in ["sync", "heartbeat"] do
     terminate_ids(ids)
-    if event == "sync", do: assign(socket, :runtimes, reply.runtimes), else: socket
+
+    if event == "sync",
+      do: socket |> assign(:runtimes, reply.runtimes) |> apply_local(reply),
+      else: socket
   end
 
   defp apply_control("rotate_token", {:ok, %Reply.RotateToken{token: token}}, socket) do

@@ -101,6 +101,35 @@ defmodule HelmsmanDaemon.GitTest do
            ) == {"secret\n", 0}
   end
 
+  test "a local checked-out task branch rejection is a conflict; other remote rejections are not" do
+    recorded =
+      File.read!(Path.expand("../support/fixtures/git/remote_rejected_checked_out.txt", __DIR__))
+
+    assert Git.classify(recorded) == :rejected
+    assert Git.checked_out?(recorded)
+
+    for other <- [
+          " ! [remote rejected] HEAD -> hm/7/bos-12 (unpacker error)",
+          " ! [remote rejected] HEAD -> main (protected branch hook declined)",
+          " ! [remote rejected] HEAD -> hm/7/bos-12 (hook declined)\n(branch is currently checked out)"
+        ] do
+      assert Git.classify(other) == :other
+      refute Git.checked_out?(other)
+    end
+  end
+
+  test "a context without a token adds no askpass or token to network commands", %{
+    tmp_dir: root
+  } do
+    context = Git.context(Paths.run(1), nil, base_env: %{"HOME" => root})
+    {_argv, opts} = Git.command(["fetch"], root, context)
+    env = Map.new(tl(opts[:env]))
+    refute Map.has_key?(env, "GIT_ASKPASS")
+    refute Map.has_key?(env, "HELMSMAN_GIT_TOKEN")
+    assert {:error, {_, output}} = Git.run(["fetch", Path.join(root, "missing")], root, context)
+    assert is_binary(output)
+  end
+
   test "git errors classify recorded rejection, authentication and transport outputs" do
     samples = [
       {" ! [rejected]        HEAD -> hm/1/bos-1 (fetch first)\nerror: failed to push some refs",

@@ -1,23 +1,33 @@
 defmodule HelmsmanDaemon.GitWorkspace do
   @moduledoc "Repository-cache and task-worktree preparation, without starting an Agent."
-  alias HelmsmanDaemon.{Git, Paths, RepoCache}
+  alias HelmsmanDaemon.{Git, LocalRepos, Paths, RepoCache}
 
-  @derive {Inspect, only: [:path, :cache, :remote_base, :remote_branch?, :events]}
-  defstruct [:path, :cache, :git, :remote_base, :remote_branch?, events: []]
+  @derive {Inspect,
+           only: [:path, :cache, :origin, :local, :remote_base, :remote_branch?, :events]}
+  defstruct [
+    :path,
+    :cache,
+    :git,
+    :origin,
+    :local,
+    :remote_base,
+    :remote_branch?,
+    :delivery_note,
+    events: []
+  ]
 
   def prepare(spec, run_dir, opts \\ []) do
     timeout = Keyword.get(opts, :prepare_timeout_ms, 480_000)
     deadline = System.monotonic_time(:millisecond) + timeout
     identity = Git.identity(spec.agent.name, Keyword.get(opts, :server_url, "http://localhost"))
     git_opts = Keyword.merge(opts, deadline: deadline, identity: identity)
-    git = Git.context(run_dir, spec.repo.git_token, git_opts)
     path = worktree_path(spec)
-    cache = cache_path(spec.repo.clone_url, spec.repo.github_repository_id, opts)
-    state = %__MODULE__{path: path, cache: cache, git: git}
-    Git.write_askpass(git)
-    checked!(Git.check_version(git))
+    state = source(spec, run_dir, git_opts, path)
+    checked!(Git.check_version(state.git))
 
-    prepare = fn -> RepoCache.with_repo_lock(cache, fn -> prepare_locked(state, spec) end) end
+    prepare = fn ->
+      RepoCache.with_repo_lock(state.cache, fn -> prepare_locked(state, spec) end)
+    end
 
     if Keyword.get(opts, :worktree_locked?, false),
       do: prepare.(),
@@ -31,6 +41,76 @@ defmodule HelmsmanDaemon.GitWorkspace do
 
     {:git_prepare, _reason, output} ->
       {:error, {:workspace_prepare, output}}
+  end
+
+  # The run spec only names a local repository; no token or askpass is involved.
+  # Its path is resolved from config.toml under the cache lock (`resolve_local/2`).
+  defp source(%{repo: %{kind: :local, name: name}}, run_dir, opts, path) do
+    unless LocalRepos.valid_name?(name),
+      do:
+        throw(
+          {:git_prepare, :local_repository,
+           "local repository #{name} is not configured on this machine"}
+        )
+
+    %__MODULE__{
+      path: path,
+      cache: LocalRepos.cache_path(name),
+      git: Git.context(run_dir, nil, opts),
+      local: %{name: name}
+    }
+  end
+
+  defp source(spec, run_dir, opts, path) do
+    git = Git.context(run_dir, spec.repo.git_token, opts)
+    Git.write_askpass(git)
+
+    %__MODULE__{
+      path: path,
+      cache: cache_path(spec.repo.clone_url, spec.repo.github_repository_id, opts),
+      git: git,
+      origin: spec.repo.clone_url
+    }
+  end
+
+  @doc "Transport options for commands that reach the repository's origin."
+  def transport(%__MODULE__{local: nil}, _direction), do: []
+  def transport(%__MODULE__{git: git}, direction), do: Git.local_transport(git, direction)
+
+  @doc """
+  Re-reads config.toml before an access to a local repository (decision 8): the
+  name must still be configured with the same path and shared with the run's
+  workspace. Returns the state with the path, its redaction and the workspace.
+  """
+  def resolve_local(%__MODULE__{local: %{name: name}} = state, workspace_id) do
+    case LocalRepos.resolve(name, workspace_id, state.git.opts) do
+      {:ok, %{path: path}} when is_nil(state.origin) or path == state.origin ->
+        redact = [{path, "<local repository #{name}>"}]
+
+        {:ok,
+         %{
+           state
+           | origin: path,
+             local: %{name: name, path: path, workspace_id: workspace_id},
+             git: %{state.git | opts: Keyword.put(state.git.opts, :redact, redact)}
+         }}
+
+      {:ok, _moved} ->
+        {:error, "local repository #{name} now points to another path on this machine"}
+
+      {:error, message} ->
+        {:error, message}
+    end
+  end
+
+  @doc "Whether the local repository is still shared as when the run resolved it."
+  def local_access(%__MODULE__{local: nil}), do: :ok
+
+  def local_access(%__MODULE__{local: local} = state) do
+    case resolve_local(state, local.workspace_id) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 
   def worktree_path(spec) do
@@ -63,7 +143,8 @@ defmodule HelmsmanDaemon.GitWorkspace do
     do: raise(ArgumentError, "repository URL must be HTTPS without credentials")
 
   defp prepare_locked(state, spec) do
-    state = initialize(state, spec.repo.clone_url)
+    state = locked_source(state, spec)
+    state = initialize(state, state.origin)
     state = fetch(state, spec.run_id)
     state = ensure_worktree(state, spec.repo)
     state = remove_index_lock(state)
@@ -95,6 +176,17 @@ defmodule HelmsmanDaemon.GitWorkspace do
     {:ok, state}
   end
 
+  # Resolved only once the cache lock is held: the owner may revoke sharing
+  # while this run waits for another run's lock.
+  defp locked_source(%{local: nil} = state, _spec), do: state
+
+  defp locked_source(state, spec) do
+    case resolve_local(%{state | origin: nil}, spec.workspace.id) do
+      {:ok, state} -> state
+      {:error, message} -> throw({:git_prepare, :local_repository, message})
+    end
+  end
+
   defp initialize(state, url) do
     if File.exists?(state.cache) do
       unless String.trim(run!(state, ["rev-parse", "--is-bare-repository"], state.cache)) ==
@@ -110,11 +202,12 @@ defmodule HelmsmanDaemon.GitWorkspace do
     old_url = String.trim(run!(state, ["remote", "get-url", "origin"], state.cache))
 
     unsafe_url? =
-      predicate!(
-        state,
-        ["config", "--local", "--get-regexp", "^remote\\.origin\\.url$", ".*@.*"],
-        state.cache
-      )
+      is_nil(state.local) and
+        predicate!(
+          state,
+          ["config", "--local", "--get-regexp", "^remote\\.origin\\.url$", ".*@.*"],
+          state.cache
+        )
 
     state =
       if unsafe_url?,
@@ -124,7 +217,7 @@ defmodule HelmsmanDaemon.GitWorkspace do
     state =
       if unsafe_url? or old_url != url do
         run!(state, ["remote", "set-url", "origin", url], state.cache)
-        event(state, :info, "repository URL changed: #{old_url} → #{Git.redact(url)}")
+        origin_changed(state, old_url, url)
       else
         state
       end
@@ -143,6 +236,18 @@ defmodule HelmsmanDaemon.GitWorkspace do
 
     state
   end
+
+  # Local paths are visible only to the machine's owner and workspace admins.
+  defp origin_changed(%{local: nil} = state, old_url, url),
+    do: event(state, :info, "repository URL changed: #{old_url} → #{Git.redact(url)}")
+
+  defp origin_changed(state, _old_path, _path),
+    do:
+      event(
+        state,
+        :info,
+        "local repository #{state.local.name} now points to another path in the machine configuration"
+      )
 
   defp remove_credentials(state) do
     case Git.run(
@@ -167,7 +272,16 @@ defmodule HelmsmanDaemon.GitWorkspace do
   end
 
   defp fetch(state, run_id) do
-    args = ["fetch", "--prune", "origin"] ++ Keyword.get(state.git.opts, :fetch_args, [])
+    # The owner may revoke sharing at any moment; config.toml needs no cache lock.
+    case local_access(state) do
+      :ok -> :ok
+      {:error, message} -> throw({:git_prepare, :local_repository, message})
+    end
+
+    args =
+      ["fetch"] ++
+        transport(state, :upload) ++
+        ["--prune", "origin"] ++ Keyword.get(state.git.opts, :fetch_args, [])
 
     case Git.run(args, state.cache, state.git) do
       {:ok, _} -> state
@@ -176,7 +290,7 @@ defmodule HelmsmanDaemon.GitWorkspace do
   end
 
   defp retry_fetch(state, run_id, args, reason, output) do
-    if Git.classify(output) == :authentication do
+    if is_binary(state.git.token) and Git.classify(output) == :authentication do
       renew = Keyword.get(state.git.opts, :renew_token, fn _ -> {:error, :unavailable} end)
 
       case renew.(run_id) do

@@ -45,7 +45,8 @@ defmodule Helmsman.CommittedData do
       end
 
       Repo.query!(
-        "DELETE FROM oban_jobs WHERE worker LIKE 'Helmsman.Runs.Workers.%' " <>
+        "DELETE FROM oban_jobs WHERE (worker LIKE 'Helmsman.Runs.Workers.%' " <>
+          "OR worker = 'Helmsman.LocalRepositories.Workers.RecordBranch') " <>
           "AND (args->>'run_id')::bigint IN (#{run_ids})",
         [workspace_ids, user_ids]
       )
@@ -82,6 +83,29 @@ defmodule Helmsman.CommittedData do
         "DELETE FROM device_codes WHERE user_id = ANY($1) OR workspace_ids && $2",
         [user_ids, workspace_ids]
       )
+
+      # Local repositories (add-local-repositories) refer to daemons and are
+      # referred to by projects and task branches.
+      local_repository_ids =
+        "SELECT id FROM local_repositories WHERE workspace_id = ANY($1) OR daemon_id IN " <>
+          "(SELECT id FROM daemons WHERE user_id = ANY($2))"
+
+      Repo.query!(
+        "DELETE FROM task_local_branches WHERE workspace_id = ANY($1) OR " <>
+          "local_repository_id IN (#{local_repository_ids})",
+        [workspace_ids, user_ids]
+      )
+
+      Repo.query!(
+        "UPDATE projects SET local_repository_id = NULL WHERE local_repository_id IN " <>
+          "(#{local_repository_ids})",
+        [workspace_ids, user_ids]
+      )
+
+      Repo.query!("DELETE FROM local_repositories WHERE id IN (#{local_repository_ids})", [
+        workspace_ids,
+        user_ids
+      ])
 
       Repo.query!("DELETE FROM daemons WHERE user_id = ANY($1)", [user_ids])
 

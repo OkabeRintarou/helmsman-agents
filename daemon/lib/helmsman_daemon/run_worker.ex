@@ -12,6 +12,7 @@ defmodule HelmsmanDaemon.RunWorker do
     GitFinalizer,
     GitWorkspace,
     LineBuffer,
+    LocalMergeCheck,
     Paths,
     ProcGroup,
     RepoCache,
@@ -133,6 +134,9 @@ defmodule HelmsmanDaemon.RunWorker do
 
     RepoCache.release(state.worktree_lock)
     state = %{state | result: result, finalized?: true, worktree_lock: nil}
+
+    if state.spec.repo.kind == :local,
+      do: LocalMergeCheck.after_run(state.spec.workspace.id, state.spec.repo.name)
 
     state =
       if Process.get({GitFinalizer, :terminated}, false),

@@ -85,7 +85,8 @@ defmodule Helmsman.DaemonE2E do
   @doc """
   Starts the daemon through `test/support/e2e_bootstrap.exs`, with test-only
   run options in a JSON file and its file IPC directory shared under `home`.
-  `options` contains `:heartbeat_interval_ms` and `:run_worker_opts`.
+  `options` contains `:heartbeat_interval_ms`, `:run_worker_opts` and,
+  optionally, `:config_check_interval_ms` and `:merge_check_interval_ms`.
   """
   def start_e2e_daemon(home, options, env \\ []) do
     control_dir = Path.join(home, "e2e-control")
@@ -96,6 +97,8 @@ defmodule Helmsman.DaemonE2E do
       options_path,
       Jason.encode!(%{
         "heartbeat_interval_ms" => Map.get(options, :heartbeat_interval_ms, 30_000),
+        "config_check_interval_ms" => Map.get(options, :config_check_interval_ms),
+        "merge_check_interval_ms" => Map.get(options, :merge_check_interval_ms),
         "run_worker_opts" =>
           options
           |> Map.get(:run_worker_opts, [])

@@ -54,31 +54,29 @@ defmodule HelmsmanDaemon.GitFinalizer do
 
   defp finalize(state, spec, reporter, end_at) do
     state = auto_commit(state, spec)
+    scope = local_scope(state)
 
     {outcome, state} =
-      if GitWorkspace.ancestor?(state, "HEAD", state.remote_base) do
-        {:none, state}
-      else
-        base =
-          if state.remote_branch?,
-            do: state.remote_base,
-            else: run!(state, ["merge-base", "HEAD", state.remote_base])
+      cond do
+        GitWorkspace.ancestor?(state, "HEAD", state.remote_base) ->
+          {:none, state}
 
-        head = run!(state, ["rev-parse", "HEAD"])
-        {commits, state} = commits(state, base)
+        # Revoked before delivery: never touch the user's repository; the commits
+        # stay in the task worktree and the ledger for a later run.
+        match?({:error, _}, scope) ->
+          {{:failed, elem(scope, 1)}, state}
 
-        payload = %{
-          "branch" => spec.repo.branch,
-          "base_sha" => base,
-          "head_sha" => head,
-          "rescue_branch" => nil,
-          "commits" => commits
-        }
-
-        push(state, spec, reporter, payload, spec.repo.branch, 0, false, end_at)
+        true ->
+          deliver(state, spec, reporter, end_at)
       end
 
-    state = refresh_and_reconcile(state, spec, reporter, end_at)
+    state =
+      if scope == :ok, do: refresh_and_reconcile(state, spec, reporter, end_at), else: state
+
+    settle(state, spec, outcome, end_at)
+  end
+
+  defp settle(state, spec, outcome, end_at) do
     ledger = GitLedger.read(spec)
 
     outcome =
@@ -86,11 +84,42 @@ defmodule HelmsmanDaemon.GitFinalizer do
         do: {:failed, "push acknowledgement timed out"},
         else: outcome
 
-    if outcome in [:none, :pushed] or match?({:conflict, _}, outcome) do
+    if outcome in [:none, :pushed] or match?({:conflict, _, _}, outcome) do
       unless GitWorkspace.dirty?(state), do: GitLedger.write(spec, %{ledger | "inherit" => []})
     end
 
     {outcome, state}
+  end
+
+  # Every fetch, ls-remote and push of a local repository re-reads config.toml first.
+  defp local_scope(state) do
+    case GitWorkspace.local_access(state) do
+      :ok ->
+        :ok
+
+      {:error, message} ->
+        {:error, message <> "; not delivered, commits are kept in the task worktree"}
+    end
+  end
+
+  defp deliver(state, spec, reporter, end_at) do
+    base =
+      if state.remote_branch?,
+        do: state.remote_base,
+        else: run!(state, ["merge-base", "HEAD", state.remote_base])
+
+    head = run!(state, ["rev-parse", "HEAD"])
+    {commits, state} = commits(state, base)
+
+    payload = %{
+      "branch" => spec.repo.branch,
+      "base_sha" => base,
+      "head_sha" => head,
+      "rescue_branch" => nil,
+      "commits" => commits
+    }
+
+    push(state, spec, reporter, payload, spec.repo.branch, 0, false, end_at)
   end
 
   defp auto_commit(state, spec) do
@@ -146,12 +175,20 @@ defmodule HelmsmanDaemon.GitFinalizer do
   end
 
   defp push_attempt(state, spec, reporter, payload, target, attempt, end_at) do
+    case local_scope(state) do
+      :ok -> push_command(state, spec, reporter, payload, target, attempt, end_at)
+      {:error, message} -> {{:failed, message}, state}
+    end
+  end
+
+  defp push_command(state, spec, reporter, payload, target, attempt, end_at) do
     entry = intent(spec, payload, target)
 
     args =
       ["push"] ++
+        GitWorkspace.transport(state, :receive) ++
         Keyword.get(state.git.opts, :push_args, []) ++
-        [spec.repo.clone_url, "HEAD:refs/heads/" <> target]
+        [state.origin, "HEAD:refs/heads/" <> target]
 
     case Git.run(args, state.path, state.git) do
       {:ok, _} ->
@@ -165,7 +202,7 @@ defmodule HelmsmanDaemon.GitFinalizer do
   defp push_error(state, spec, reporter, target, attempt, entry, output, end_at) do
     payload = Map.take(entry, ~w(branch base_sha head_sha rescue_branch commits))
 
-    probe = remote_head(state, spec, target, payload["head_sha"], end_at)
+    probe = remote_head(state, target, payload["head_sha"], end_at)
 
     cond do
       probe == :landed ->
@@ -173,6 +210,7 @@ defmodule HelmsmanDaemon.GitFinalizer do
 
       Git.classify(output) == :rejected and target == spec.repo.branch ->
         discard_intent(spec, entry)
+        state = checked_out_note(state, spec, output)
         rescue_branch = spec.repo.branch <> "-run-#{spec.run_id}"
 
         push(
@@ -194,6 +232,18 @@ defmodule HelmsmanDaemon.GitFinalizer do
     end
   end
 
+  defp checked_out_note(%{local: %{name: name}} = state, spec, output) do
+    if Git.checked_out?(output),
+      do: %{
+        state
+        | delivery_note:
+            "The task branch #{spec.repo.branch} is checked out in #{name}; check out another branch there so the next delivery can update it."
+      },
+      else: state
+  end
+
+  defp checked_out_note(state, _spec, _output), do: state
+
   defp retry(state, spec, reporter, payload, target, attempt, renew?, end_at) do
     if attempt < 2 do
       delay = Enum.at(Keyword.get(state.git.opts, :push_backoff_ms, [5_000, 15_000]), attempt)
@@ -207,6 +257,9 @@ defmodule HelmsmanDaemon.GitFinalizer do
 
     push(state, spec, reporter, payload, target, attempt + 1, renew?, end_at)
   end
+
+  defp token(%{local: local} = state, _spec, _reporter, _renew?, _end_at) when not is_nil(local),
+    do: {:ok, state}
 
   defp token(state, spec, reporter, renew?, end_at) do
     expires = Keyword.get(state.git.opts, :token_expires_at, spec.repo.git_token_expires_at)
@@ -251,7 +304,12 @@ defmodule HelmsmanDaemon.GitFinalizer do
 
   defp pushed(state, spec, reporter, entry, end_at) do
     state = acknowledge(state, spec, reporter, entry, end_at)
-    outcome = if entry["rescue_branch"], do: {:conflict, entry["rescue_branch"]}, else: :pushed
+
+    outcome =
+      if entry["rescue_branch"],
+        do: {:conflict, entry["rescue_branch"], state.delivery_note},
+        else: :pushed
+
     {outcome, state}
   end
 
@@ -359,16 +417,35 @@ defmodule HelmsmanDaemon.GitFinalizer do
   end
 
   defp fetch_and_reconcile(state, spec, reporter, end_at) do
-    case Git.run(["fetch", "--prune", "origin"], state.cache, state.git) do
+    if local_scope(state) == :ok,
+      do: fetch_then_reconcile(state, spec, reporter, end_at),
+      else: state
+  end
+
+  defp fetch_then_reconcile(state, spec, reporter, end_at) do
+    case Git.run(
+           ["fetch"] ++ GitWorkspace.transport(state, :upload) ++ ["--prune", "origin"],
+           state.cache,
+           state.git
+         ) do
       {:ok, _} -> reconcile(state, spec, reporter, end_at)
       _ -> state
     end
   end
 
-  defp remote_head(state, spec, target, head, end_at) do
+  # Without access the push may or may not have landed: keep the intention.
+  defp remote_head(state, target, head, end_at) do
+    if local_scope(state) == :ok, do: probe_head(state, target, head, end_at), else: :unknown
+  end
+
+  defp probe_head(state, target, head, end_at) do
     probe = %{state.git | opts: Keyword.put(state.git.opts, :deadline, end_at)}
 
-    case Git.run(["ls-remote", spec.repo.clone_url, "refs/heads/" <> target], state.path, probe) do
+    args =
+      ["ls-remote"] ++
+        GitWorkspace.transport(state, :upload) ++ [state.origin, "refs/heads/" <> target]
+
+    case Git.run(args, state.path, probe) do
       {:ok, output} -> if List.first(String.split(output)) == head, do: :landed, else: :absent
       _ -> :unknown
     end
@@ -429,9 +506,15 @@ defmodule HelmsmanDaemon.GitFinalizer do
         {:failed, error} ->
           {:push_failed, "push failed: #{error}"}
 
-        {:conflict, rescue_branch} ->
+        {:conflict, rescue_branch, note} ->
           {:push_conflict,
-           "push to #{branch} was rejected; changes were pushed to #{rescue_branch}"}
+           Enum.join(
+             Enum.reject(
+               ["push to #{branch} was rejected; changes were pushed to #{rescue_branch}", note],
+               &is_nil/1
+             ),
+             "\n"
+           )}
 
         _ ->
           {nil, nil}

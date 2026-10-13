@@ -15,10 +15,14 @@ run_worker_opts =
     {key, options["run_worker_opts"][Atom.to_string(key)]}
   end
 
-opts = [
-  run_worker_opts: run_worker_opts,
-  heartbeat_interval_ms: Map.get(options, "heartbeat_interval_ms", 30_000)
-]
+opts =
+  [
+    run_worker_opts: run_worker_opts,
+    heartbeat_interval_ms: Map.get(options, "heartbeat_interval_ms", 30_000)
+  ] ++
+    for key <- [:config_check_interval_ms, :merge_check_interval_ms],
+        is_integer(options[Atom.to_string(key)]),
+        do: {key, options[Atom.to_string(key)]}
 
 opts =
   case System.get_env("HELMSMAN_E2E_CODEX_CLI") do
