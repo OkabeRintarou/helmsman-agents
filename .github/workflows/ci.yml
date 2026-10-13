@@ -121,10 +121,12 @@ jobs:
           path: |
             ${{ matrix.project }}/deps
             ${{ matrix.project }}/_build
-          key: ${{ matrix.project }}-dialyzer-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', format('{0}/mix.lock', matrix.project)) }}
+          key: ${{ matrix.project }}-dialyzer-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', format('{0}/mix.lock', matrix.project), 'protocol/lib/**') }}
       - uses: actions/cache@v4
         with:
           path: ${{ matrix.project }}/priv/plts
-          key: ${{ matrix.project }}-plt-${{ runner.os }}-${{ hashFiles('.tool-versions', format('{0}/mix.lock', matrix.project)) }}
+          # protocol is a path dependency of server and daemon: its source must
+          # invalidate their dependency PLTs.
+          key: ${{ matrix.project }}-plt-${{ runner.os }}-${{ hashFiles('.tool-versions', format('{0}/mix.lock', matrix.project), 'protocol/lib/**') }}
       - run: mix deps.get
       - run: mix dialyzer --format github
