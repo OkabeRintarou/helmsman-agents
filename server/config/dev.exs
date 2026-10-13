@@ -2,6 +2,18 @@ import Config
 
 # Configure your database. DATABASE_URL, when set, replaces the
 # default connection parameters (which match docker-compose.yml).
+# A linked git worktree (its `.git` is a file) gets its own database,
+# so migrations run in a worktree never touch the main checkout's.
+dev_database =
+  case File.read(Path.expand("../../.git", __DIR__)) do
+    {:ok, "gitdir: " <> _} ->
+      worktree = Path.expand("../..", __DIR__) |> Path.basename()
+      "helmsman_dev_" <> String.replace(worktree, ~r/[^A-Za-z0-9_]/, "_")
+
+    _ ->
+      "helmsman_dev"
+  end
+
 if database_url = System.get_env("DATABASE_URL") do
   config :helmsman, Helmsman.Repo, url: database_url
 else
@@ -9,7 +21,7 @@ else
     username: "postgres",
     password: "postgres",
     hostname: "localhost",
-    database: "helmsman_dev"
+    database: dev_database
 end
 
 # Field encryption key for development only (not secret); production reads
