@@ -124,6 +124,10 @@ defmodule Helmsman.DaemonE2E do
 
   defp start_daemon_process(home, env, mix_args, mix_env \\ "test") do
     executable = System.find_executable("mix") || flunk("mix is required for daemon e2e tests")
+    # Tests may override HOME for the daemon; keep Mix and Hex where they are
+    # installed so `mix` does not ask to install Hex (CI sets neither variable).
+    mix_home = System.get_env("MIX_HOME") || Path.join(System.user_home!(), ".mix")
+    hex_home = System.get_env("HEX_HOME") || Path.join(System.user_home!(), ".hex")
 
     port =
       Port.open({:spawn_executable, executable}, [
@@ -137,7 +141,9 @@ defmodule Helmsman.DaemonE2E do
          [
            {~c"MIX_ENV", String.to_charlist(mix_env)},
            {~c"HELMSMAN_HOME", String.to_charlist(home)},
-           {~c"HELMSMAN_FAKE_CLI", String.to_charlist(fake_cli())}
+           {~c"HELMSMAN_FAKE_CLI", String.to_charlist(fake_cli())},
+           {~c"MIX_HOME", String.to_charlist(mix_home)},
+           {~c"HEX_HOME", String.to_charlist(hex_home)}
          ] ++ env}
       ])
 
