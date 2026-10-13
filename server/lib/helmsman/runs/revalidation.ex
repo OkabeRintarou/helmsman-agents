@@ -15,13 +15,20 @@ defmodule Helmsman.Runs.Revalidation do
   membership rows. Invalid triggers are dropped; none left is
   `:unauthorized`. A run without any such trigger is checked with its
   `root_initiator_user_id`.
+
+  First of all, the triggers settled by steering are removed
+  (`Helmsman.Runs.Steering.prune/2`, `add-run-steering` decision 7) with
+  the facts the caller read into `steers` (`Steering.facts/1`, after it
+  holds the task lock and saw no active run on the task); nothing but
+  neutral markers left is `{:obsolete, :steered}`, some removed is
+  `{:pruned, …}` unless another check fails.
   """
 
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.Runtime
-  alias Helmsman.Runs.{Run, Triggers}
+  alias Helmsman.Runs.{Run, Steering, Triggers}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Membership
 
@@ -30,7 +37,8 @@ defmodule Helmsman.Runs.Revalidation do
           required(:agent) => Actor.t(),
           required(:profile) => AgentProfile.t() | nil,
           required(:task) => Task.t() | nil,
-          required(:runtime) => Runtime.t() | nil
+          required(:runtime) => Runtime.t() | nil,
+          optional(:steers) => Steering.facts()
         }
   @type obsolete_why ::
           :agent_disabled
@@ -39,23 +47,72 @@ defmodule Helmsman.Runs.Revalidation do
           | :runtime_changed
           | :task_closed
           | :reassigned
+          | :steered
+  @type changes :: %{
+          triggers: [map()],
+          root_initiator_user_id: pos_integer(),
+          causal_agent_ids: [pos_integer()]
+        }
   @type result ::
           :ok
           | {:obsolete, obsolete_why()}
           | :unauthorized
-          | {:pruned,
-             %{
-               triggers: [map()],
-               root_initiator_user_id: pos_integer(),
-               causal_agent_ids: [pos_integer()]
-             }}
+          | {:pruned, changes()}
 
   @doc "Checks `run` against the `locked` rows; see the module documentation."
   @spec check(Run.t(), locked()) :: result()
   def check(%Run{} = run, locked) do
+    case Steering.prune(run, Map.get(locked, :steers, %{})) do
+      :unchanged ->
+        check_valid(run, locked)
+
+      {:obsolete, _run_ids} ->
+        {:obsolete, :steered}
+
+      {:pruned, changes} ->
+        case check_valid(struct!(run, changes), locked) do
+          :ok -> {:pruned, changes}
+          result -> result
+        end
+    end
+  end
+
+  defp check_valid(run, locked) do
     case obsolete(run, locked) do
       nil -> authorization(run, locked)
       why -> {:obsolete, why}
+    end
+  end
+
+  @doc """
+  The changes of a run whose triggers become `kept` (`add-run-lifecycle`
+  decision 4): the earliest kept trigger with an authorization source
+  gives `root_initiator_user_id`, the causal chain is the union of the
+  kept sources' chains and the agent. Without any source left, both stay.
+  """
+  @spec derive(Run.t(), [map()]) :: changes()
+  def derive(%Run{} = run, kept) do
+    case Enum.filter(kept, &source?/1) do
+      [] ->
+        %{
+          triggers: kept,
+          root_initiator_user_id: run.root_initiator_user_id,
+          causal_agent_ids: run.causal_agent_ids
+        }
+
+      [first | _] = sources ->
+        causal =
+          sources
+          |> Enum.flat_map(&(&1["causal_agent_ids"] || []))
+          |> Enum.concat([run.agent_id])
+          |> Enum.uniq()
+          |> Enum.sort()
+
+        %{
+          triggers: kept,
+          root_initiator_user_id: first["initiator_user_id"],
+          causal_agent_ids: causal
+        }
     end
   end
 
@@ -119,20 +176,8 @@ defmodule Helmsman.Runs.Revalidation do
       _sources when length(kept) == length(run.triggers) ->
         :ok
 
-      [first | _] = sources ->
-        causal =
-          sources
-          |> Enum.flat_map(&(&1["causal_agent_ids"] || []))
-          |> Enum.concat([run.agent_id])
-          |> Enum.uniq()
-          |> Enum.sort()
-
-        {:pruned,
-         %{
-           triggers: kept,
-           root_initiator_user_id: first["initiator_user_id"],
-           causal_agent_ids: causal
-         }}
+      _sources ->
+        {:pruned, derive(run, kept)}
     end
   end
 

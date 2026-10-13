@@ -19,8 +19,10 @@ defmodule Helmsman.Runs.Claim do
        agent's concurrency limit), the task row and the runtime row. A row
        held by a writer leaves the candidate queued; a membership row that
        does not exist is read as no longer a member;
-    6. `Helmsman.Runs.Revalidation`: invalid → `cancelled` (`obsolete` /
-       `unauthorized`); triggers pruned → written back;
+    6. `Helmsman.Runs.Revalidation`, with the steering facts read now
+       (`Helmsman.Runs.Steering.facts/1`, `add-run-steering` decision 7):
+       invalid → `cancelled` (`obsolete` / `unauthorized`); triggers
+       pruned or settled → written back;
     6a. a run there only for assignment triggers
        (`Helmsman.Runs.Triggers.dependency_gated?/1`) on a task with a
        `depends_on`: the graph lock is tried (`Locks.try_graph/1`; taken:
@@ -57,7 +59,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Locks
   alias Helmsman.Repo
   alias Helmsman.Runs
-  alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec, Triggers}
+  alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec, Steering, Triggers}
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -153,6 +155,8 @@ defmodule Helmsman.Runs.Claim do
   defp candidates(_runtime_ids, _seen, limit) when limit <= 0, do: []
 
   defp candidates(runtime_ids, seen, limit) do
+    test_hook(:claim_candidates)
+
     Repo.all(
       from(r in Run,
         where:
@@ -173,7 +177,9 @@ defmodule Helmsman.Runs.Claim do
          {:ok, locked} <- lock_rows(run, state.daemon.user_id),
          true <- agent_free?(locked.profile),
          true <- state.accounts? or not bound_to_account?(locked.profile) do
-      decide(run, locked, state)
+      # Read after the task lock and the check that the task has no active
+      # run: the run a trigger waits for has ended, its facts are final.
+      decide(run, Map.put(locked, :steers, Steering.facts(run.triggers)), state)
     else
       _skip -> state
     end
@@ -258,18 +264,25 @@ defmodule Helmsman.Runs.Claim do
   defp decide(run, locked, state) do
     if Map.get(locked.members, state.daemon.user_id) in @member_roles do
       case Runs.revalidate(run, locked) do
-        :ok -> with_dependencies(run, locked, [], state)
-        {:pruned, changes} -> with_dependencies(run, locked, Map.to_list(changes), state)
-        {:obsolete, _why} -> cancel!(run, :obsolete, state)
-        :unauthorized -> cancel!(run, :unauthorized, state)
+        :ok ->
+          with_dependencies(run, locked, [], state)
+
+        {:pruned, changes} ->
+          with_dependencies(run, locked, Map.to_list(changes), state)
+
+        {:obsolete, why} ->
+          cancel!(run, :obsolete, state, Lifecycle.obsolete_error(run, why, locked))
+
+        :unauthorized ->
+          cancel!(run, :unauthorized, state, [])
       end
     else
       state
     end
   end
 
-  defp cancel!(run, reason, state) do
-    Lifecycle.end!(run, :cancelled, failure_reason: reason)
+  defp cancel!(run, reason, state, changes) do
+    Lifecycle.end!(run, :cancelled, [failure_reason: reason] ++ changes)
     state
   end
 

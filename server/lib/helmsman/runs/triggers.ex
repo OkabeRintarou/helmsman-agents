@@ -14,6 +14,7 @@ defmodule Helmsman.Runs.Triggers do
   (`add-continuation-triggers` decision 8): neutral markers are left out;
   what is left is not empty and every entry is an assignment (`assign`,
   `reopen`, `resubmit`) or an `answer` recorded with `assignee_bound: true`.
+  A `steer` is not (`add-run-steering` decision 5).
 
   Used when a run is claimed or started (an assignee change makes such a
   run obsolete) and when an `answer` is enqueued.
@@ -55,9 +56,13 @@ defmodule Helmsman.Runs.Triggers do
     end
   end
 
-  defp neutral?(%{"kind" => "retry", "auto" => true}), do: true
-  defp neutral?(%{"kind" => "unblocked"}), do: true
-  defp neutral?(_trigger), do: false
+  @doc """
+  Whether `trigger` is a neutral marker: an automatic retry or `unblocked`.
+  """
+  @spec neutral?(map()) :: boolean()
+  def neutral?(%{"kind" => "retry", "auto" => true}), do: true
+  def neutral?(%{"kind" => "unblocked"}), do: true
+  def neutral?(_trigger), do: false
 
   defp assignment?(%{"kind" => kind}) when kind in @assignment_kinds, do: true
   defp assignment?(_trigger), do: false

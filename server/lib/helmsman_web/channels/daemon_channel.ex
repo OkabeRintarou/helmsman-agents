@@ -16,11 +16,19 @@ defmodule HelmsmanWeb.DaemonChannel do
            Daemons.register(socket.assigns.daemon_id, socket.assigns.auth_epoch, report) do
       socket = assign(socket, :protocol, report.protocol)
 
+      active_ids = Enum.map(report.active_runs, & &1.run_id)
+
       {:ok, %{terminate_run_ids: terminate, cancel_run_ids: cancel}} =
-        Runs.reconcile(daemon_ctx(socket), Enum.map(report.active_runs, & &1.run_id), :join)
+        Runs.reconcile(daemon_ctx(socket), active_ids, :join)
 
       # After the join reply.
       if cancel != [], do: send(self(), {:push_cancels, cancel})
+
+      # `add-run-steering` decision 8: unacknowledged pushes again.
+      case Runs.unacked_steers(daemon_ctx(socket), active_ids) do
+        [] -> :ok
+        steers -> send(self(), {:push_steers, steers})
+      end
 
       {:ok,
        wire_reply(
@@ -241,7 +249,14 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
-  # `steer_ack` comes with `add-run-steering`.
+  # `add-run-steering` decision 6.
+  defp handle_report("steer_ack", report, socket) do
+    case Runs.steer_ack(daemon_ctx(socket), report.run_id, report.feedback_id) do
+      :ok -> respond("steer_ack", %Reply.Empty{}, socket)
+      {:error, reason} -> run_error(reason, socket)
+    end
+  end
+
   defp handle_report(_name, _report, socket), do: {:reply, {:error, error(:not_found)}, socket}
 
   defp run_error(:reauthorized, socket), do: unauthorized_reply(socket)
@@ -288,6 +303,16 @@ defmodule HelmsmanWeb.DaemonChannel do
     {:noreply, socket}
   end
 
+  def handle_info({:steer_run, run_id, feedback_id, text}, socket) do
+    push_steer({run_id, feedback_id, text}, socket)
+    {:noreply, socket}
+  end
+
+  def handle_info({:push_steers, steers}, socket) do
+    Enum.each(steers, &push_steer(&1, socket))
+    {:noreply, socket}
+  end
+
   def handle_info({:daemon_config_changed}, socket) do
     push_message(%Push.ConfigChanged{}, socket)
     {:noreply, socket}
@@ -323,6 +348,9 @@ defmodule HelmsmanWeb.DaemonChannel do
 
   defp disconnect(socket),
     do: HelmsmanWeb.Endpoint.broadcast(HelmsmanWeb.DaemonSocket.id(socket), "disconnect", %{})
+
+  defp push_steer({run_id, feedback_id, text}, socket),
+    do: push_message(%Push.Steer{run_id: run_id, feedback_id: feedback_id, text: text}, socket)
 
   defp push_message(message, socket) do
     {:ok, {name, payload}} = Messages.encode(message, socket.assigns.protocol)

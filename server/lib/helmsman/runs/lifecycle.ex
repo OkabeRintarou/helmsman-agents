@@ -22,7 +22,7 @@ defmodule Helmsman.Runs.Lifecycle do
   alias Helmsman.Events
   alias Helmsman.Repo
   alias Helmsman.Runs
-  alias Helmsman.Runs.{Revalidation, Run, RunEvent, RunTokens}
+  alias Helmsman.Runs.{Revalidation, Run, RunEvent, RunTokens, Steering}
   alias Helmsman.Runs.Workers.{Retry, SideEffect}
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
@@ -171,7 +171,15 @@ defmodule Helmsman.Runs.Lifecycle do
       Locking.hook(:starting_locked)
 
       with {:ok, run} <- lock_run(ctx, snapshot.id) do
-        locked = %{members: members, agent: agent, profile: profile, task: task, runtime: runtime}
+        locked = %{
+          members: members,
+          agent: agent,
+          profile: profile,
+          task: task,
+          runtime: runtime,
+          steers: Steering.facts(run.triggers)
+        }
+
         decide_starting(run, locked, ctx.user_id)
       end
     end
@@ -216,8 +224,8 @@ defmodule Helmsman.Runs.Lifecycle do
       {:pruned, changes} ->
         start!(run, Map.to_list(changes))
 
-      {:obsolete, _why} ->
-        end!(run, :failed, failure_reason: :obsolete)
+      {:obsolete, why} ->
+        end!(run, :failed, [failure_reason: :obsolete] ++ obsolete_error(run, why, locked))
         {:ok, {:abort, "obsolete"}}
 
       :unauthorized ->
@@ -234,6 +242,19 @@ defmodule Helmsman.Runs.Lifecycle do
        do: {:ok, {:abort, abort_reason(run)}}
 
   defp decide_starting(_run, _locked, _user_id), do: {:error, :wrong_state}
+
+  @doc false
+  # The error text of a run made obsolete by steering (`add-run-steering`
+  # decision 7), as a keyword list of changes.
+  @spec obsolete_error(Run.t(), Revalidation.obsolete_why(), Revalidation.locked()) :: keyword()
+  def obsolete_error(run, :steered, locked) do
+    case Steering.prune(run, Map.get(locked, :steers, %{})) do
+      {:obsolete, run_ids} -> [error: Steering.obsolete_error(run_ids)]
+      _other -> []
+    end
+  end
+
+  def obsolete_error(_run, _why, _locked), do: []
 
   defp abort_reason(%Run{status: :cancelled}), do: "cancelled"
   defp abort_reason(%Run{failure_reason: nil}), do: "cancelled"
@@ -360,8 +381,9 @@ defmodule Helmsman.Runs.Lifecycle do
   `cancelled` whatever was reported, keeping its failure reason. Records
   the summary, usage, error and session (`push_failed` without a push
   record: `push_status = failed`), revokes the token, and inserts
-  the `fallback` job (`succeeded` with a task) or the automatic retry job
-  (decision 25). The same end reported again is `:ok`; another end is
+  the `fallback` job (`succeeded` with a task), the `steer_settle` job
+  (`succeeded` with an acknowledged steering push, `add-run-steering`
+  decision 7) or the automatic retry job (decision 25). The same end reported again is `:ok`; another end is
   `:wrong_state`.
   """
   @spec finish(daemon_ctx(), Report.Finished.t()) :: :ok | {:error, error()}
@@ -403,6 +425,10 @@ defmodule Helmsman.Runs.Lifecycle do
 
     if run.status == :succeeded and run.task_id,
       do: {:ok, _job} = Oban.insert(SideEffect.new(%{run_id: run.id, kind: "fallback"}))
+
+    # `add-run-steering` decision 7: settle the triggers waiting for it.
+    if (run.status == :succeeded and run.task_id) && Steering.acked?(run),
+      do: {:ok, _job} = Oban.insert(SideEffect.new(%{run_id: run.id, kind: "steer_settle"}))
 
     maybe_retry(run)
     {:ok, :ok}

@@ -51,6 +51,11 @@ defmodule Helmsman.CommittedData do
         [workspace_ids, user_ids]
       )
 
+      Repo.query!(
+        "DELETE FROM run_steers WHERE workspace_id = ANY($1) OR run_id IN (#{run_ids})",
+        [workspace_ids, user_ids]
+      )
+
       Repo.query!("DELETE FROM run_tokens WHERE run_id IN (#{run_ids})", [
         workspace_ids,
         user_ids

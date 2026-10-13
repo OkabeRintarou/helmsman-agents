@@ -56,6 +56,8 @@ defmodule Helmsman.Feedback.Entry do
     field :supersedes_seq, :integer, virtual: true
     field :superseded_by_seq, :integer, virtual: true
     field :dispatch_view, {:array, :map}, virtual: true, default: []
+    # `add-run-steering` decision 10: the run it was pushed into, if any.
+    field :steer, :map, virtual: true
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end

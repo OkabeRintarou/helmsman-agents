@@ -441,6 +441,25 @@ defmodule Helmsman.Runs.ContinuationPromptTest do
                "Reply with add_feedback. You were asked to reply, not to take over #{ident}."
   end
 
+  # add-run-steering 1.3 (decision 13): run-steering「兜底的提示词」.
+  test "steer fallback (scenario)", ctx do
+    f = feedback(ctx, "Use the other API\nand keep tests")
+    ident = ctx.task.ident
+
+    assert why(ctx, [t(ctx, "steer", %{"feedback_id" => f.id, "steer_run_id" => 7})]) ==
+             "- #{ctx.alice_actor.name} wrote #{ident}##{f.seq} while your run 7 was in " <>
+               "progress; that run did not finish with it. Act on it now unless you already " <>
+               "have:\n> Use the other API\n> and keep tests"
+  end
+
+  test "a mention marked with steer_run_id keeps its line", ctx do
+    f = feedback(ctx, "@keel/dev please look")
+    plain = why(ctx, [t(ctx, "mention", %{"feedback_id" => f.id})])
+
+    assert why(ctx, [t(ctx, "mention", %{"feedback_id" => f.id, "steer_run_id" => 7})]) ==
+             plain
+  end
+
   test "a revised record is quoted in its current version", ctx do
     f = feedback(ctx, "first")
     {:ok, revised} = Feedback.revise(ctx.alice_scope, Feedback.view(f).id, %{content: "second"})

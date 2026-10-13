@@ -921,6 +921,12 @@ defmodule Helmsman.Runs do
   defdelegate cancel_for_initiator(workspace_id, user_id), to: Helmsman.Runs.Stop
   defdelegate retry(scope, run_id), to: Helmsman.Runs.Retry
 
+  ## Steering (add-run-steering)
+
+  defdelegate steer_ack(daemon_ctx, run_id, feedback_id), to: Helmsman.Runs.Steering, as: :ack
+  defdelegate unacked_steers(daemon_ctx, run_ids), to: Helmsman.Runs.Steering, as: :unacked
+  defdelegate steerable(scope, ident), to: Helmsman.Runs.Steering
+
   ## Git (add-daemon-git-workspace)
 
   defdelegate prefetch_push_tokens(daemon_ctx), to: Helmsman.Runs.GitRepo

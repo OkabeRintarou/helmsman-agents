@@ -29,7 +29,7 @@ defmodule Helmsman.Feedback do
   alias Helmsman.Feedback.{Entry, Id, Mentions}
   alias Helmsman.Policy
   alias Helmsman.Repo
-  alias Helmsman.Runs.Outcome
+  alias Helmsman.Runs.{Outcome, Steering}
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Workspaces
@@ -42,7 +42,14 @@ defmodule Helmsman.Feedback do
           trigger: String.t(),
           result: String.t(),
           reason: String.t() | nil,
-          run_id: pos_integer() | nil
+          run_id: pos_integer() | nil,
+          steer_run_id: pos_integer() | nil
+        }
+  @type steer_view :: %{
+          run_id: pos_integer(),
+          agent: String.t(),
+          sent_at: DateTime.t(),
+          acked_at: DateTime.t() | nil
         }
   @type view :: %{
           id: String.t(),
@@ -56,6 +63,7 @@ defmodule Helmsman.Feedback do
           supersedes: String.t() | nil,
           superseded_by: String.t() | nil,
           dispatch: [dispatch_item()],
+          steer: steer_view() | nil,
           at: DateTime.t()
         }
 
@@ -73,6 +81,12 @@ defmodule Helmsman.Feedback do
   outcomes are kept on the record (`dispatch` in `view/1`). Returns the new
   entry (`load/2` done); `{:error, :busy}` when the trigger targets kept
   changing (`Helmsman.Dispatch.Targets`).
+
+  `steer_run_id` (optional; people only) names a run of this task to send
+  the record into while it runs (`Helmsman.Runs.Steering`,
+  `add-run-steering` decision 3); field errors on it when it is not a
+  positive integer, the actor is not a person, or the run is not one of
+  this task's.
   """
   @spec add(Scope.t(), String.t(), map()) ::
           {:ok, Entry.t()} | {:error, Changeset.t() | :forbidden | :not_found | :no_actor}
@@ -80,42 +94,72 @@ defmodule Helmsman.Feedback do
 
   def add(%Scope{workspace: %Workspace{}} = scope, ident, attrs)
       when is_binary(ident) and is_map(attrs) do
+    {steer, attrs} = pop_steer(attrs)
+
     with {:ok, input} <- normalize(attrs),
+         {:ok, steer_run_id} <- Steering.check_request(scope, steer),
          {:ok, ident, _key, _seq} <- Ident.parse(ident) do
-      Workspaces.write_transaction(scope, :add_feedback, &add_locked(&1, ident, input))
+      Workspaces.write_transaction(
+        scope,
+        :add_feedback,
+        &add_locked(&1, ident, input, steer_run_id)
+      )
     end
   end
 
+  defp pop_steer(attrs) do
+    {atom, attrs} = Map.pop(attrs, :steer_run_id)
+    {string, attrs} = Map.pop(attrs, "steer_run_id")
+    {atom || string, attrs}
+  end
+
   # Lock order: maintenance lock, membership row (write_transaction),
-  # trigger targets, task row (`Helmsman.Dispatch.Targets`).
-  defp add_locked(scope, ident, input) do
+  # trigger targets (with the steered run's agent), task row
+  # (`Helmsman.Dispatch.Targets`).
+  defp add_locked(scope, ident, input, steer_run_id) do
     workspace_id = scope.workspace.id
 
-    with {:ok, task, plan} <-
+    with {:ok, task, {plan, steer}} <-
            Targets.with_locked(
              workspace_id,
-             fn -> Continuation.guess(workspace_id, ident, input.content) end,
+             fn ->
+               Continuation.guess(workspace_id, ident, input.content) ++
+                 Steering.guess(workspace_id, steer_run_id)
+             end,
              fn -> lock_task(workspace_id, ident) end,
-             &Continuation.plan_feedback(scope, &1, input, nil)
+             &plan_add(scope, &1, input, steer_run_id)
            ),
-         :ok <- Policy.authorize(scope, :write_task, task) do
+         :ok <- Policy.authorize(scope, :write_task, task),
+         {:ok, run} <- steer do
       {:ok, {entry, task}} =
         insert_locked(task, scope, input, mentions: plan.feedback.mentions, notify: false)
 
-      outcomes = Continuation.run_feedback(scope, plan, task, entry)
+      outcomes = Steering.run_feedback(scope, plan, task, entry, run)
       {entry, task} = finish_locked(task, entry, outcomes)
       notify_task(task)
       {:ok, entry}
     end
   end
 
+  defp plan_add(scope, task, input, steer_run_id) do
+    {targets, plan} = Continuation.plan_feedback(scope, task, input, nil)
+    steer = Steering.target(task, steer_run_id)
+    {targets ++ Steering.target_ids(steer), {plan, steer}}
+  end
+
   @doc """
   Validates feedback input (`kind`, `content`; atom or string keys)
-  without touching the database. `kind` is `nil` when not given.
+  without touching the database. `kind` is `nil` when not given. A
+  `steer_run_id` is refused: only `add/3` takes one.
   """
   @spec normalize(map()) :: {:ok, input()} | {:error, Changeset.t()}
   def normalize(attrs) when is_map(attrs) do
     changeset = Entry.changeset(%Entry{kind: nil}, attrs)
+
+    changeset =
+      if is_nil(attrs[:steer_run_id] || attrs["steer_run_id"]),
+        do: changeset,
+        else: Changeset.add_error(changeset, :steer_run_id, "can only be given with new feedback")
 
     if changeset.valid? do
       {:ok,
@@ -463,8 +507,9 @@ defmodule Helmsman.Feedback do
 
   @doc """
   Loads what `view/1` needs into `entries` of the task `ident`: the
-  author, the mentioned names and the numbers of the linked records. At
-  most three queries, whatever the number of entries.
+  author, the mentioned names, the numbers of the linked records and the
+  steering state (`Helmsman.Runs.Steering.views/1`). At most four
+  queries, whatever the number of entries.
   """
   @spec load([Entry.t()] | Entry.t(), String.t()) :: [Entry.t()]
   def load(%Entry{} = entry, ident), do: load([entry], ident)
@@ -480,6 +525,7 @@ defmodule Helmsman.Feedback do
       end
 
     seqs = linked_seqs(entries)
+    steers = entries |> Enum.map(& &1.id) |> Steering.views()
 
     Enum.map(entries, fn entry ->
       %{
@@ -488,7 +534,8 @@ defmodule Helmsman.Feedback do
           mention_names: entry.mentions |> Enum.map(&names[&1]) |> Enum.reject(&is_nil/1),
           dispatch_view: Enum.map(entry.dispatch, &dispatch_view(&1, names)),
           supersedes_seq: seqs[entry.supersedes_id],
-          superseded_by_seq: seqs[entry.superseded_by_id]
+          superseded_by_seq: seqs[entry.superseded_by_id],
+          steer: steers[entry.id]
       }
     end)
   end
@@ -502,7 +549,8 @@ defmodule Helmsman.Feedback do
       trigger: item["trigger"],
       result: item["result"],
       reason: item["reason"],
-      run_id: item["run_id"]
+      run_id: item["run_id"],
+      steer_run_id: item["steer_run_id"]
     }
   end
 
@@ -549,6 +597,7 @@ defmodule Helmsman.Feedback do
       supersedes: entry.supersedes_seq && Id.build(ident, entry.supersedes_seq),
       superseded_by: entry.superseded_by_seq && Id.build(ident, entry.superseded_by_seq),
       dispatch: entry.dispatch_view,
+      steer: entry.steer,
       at: entry.inserted_at
     }
   end

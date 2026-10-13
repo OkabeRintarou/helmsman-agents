@@ -37,7 +37,8 @@ defmodule Helmsman.Dispatch.Continuation do
           required(:kind) => :reopen | :resubmit | :requested | :answer | :mention,
           required(:agent_id) => pos_integer(),
           optional(:extra) => map(),
-          optional(:question) => Entry.t()
+          optional(:question) => Entry.t(),
+          optional(:steer_run_id) => pos_integer()
         }
   @type feedback_plan :: %{mentions: [pos_integer()], items: [item()]}
   @type plan :: %{transition: [item()], feedback: feedback_plan() | nil}
@@ -252,16 +253,28 @@ defmodule Helmsman.Dispatch.Continuation do
   @doc """
   Runs the plan of a feedback write after `entry` was inserted; `task` is
   the task after the write (its `open_question` decides `answer`).
-  """
-  @spec run_feedback(Scope.t(), plan(), Task.t(), Entry.t() | nil) :: [Outcome.t()]
-  def run_feedback(_scope, %{feedback: nil}, _task, _entry), do: []
-  def run_feedback(_scope, _plan, _task, nil), do: []
 
-  def run_feedback(scope, %{feedback: %{items: items}}, task, %Entry{} = entry) do
-    items = Enum.reject(items, &(&1.kind == :answer and task.open_question))
+  Options: `steer: {agent_id, run_id}` — the triggers for that agent wait
+  for the run they were sent into (`steer_run_id` on the trigger and the
+  outcome; `add-run-steering` decision 3, step 4).
+  """
+  @spec run_feedback(Scope.t(), plan(), Task.t(), Entry.t() | nil, keyword()) :: [Outcome.t()]
+  def run_feedback(scope, plan, task, entry, opts \\ [])
+  def run_feedback(_scope, %{feedback: nil}, _task, _entry, _opts), do: []
+  def run_feedback(_scope, _plan, _task, nil, _opts), do: []
+
+  def run_feedback(scope, %{feedback: %{items: items}}, task, %Entry{} = entry, opts) do
+    items =
+      items
+      |> Enum.reject(&(&1.kind == :answer and task.open_question))
+      |> Enum.map(&steer_item(&1, opts[:steer]))
+
     {outcomes, _task} = fire_all(scope, task, items, entry.id)
     outcomes
   end
+
+  defp steer_item(%{agent_id: id} = item, {id, run_id}), do: Map.put(item, :steer_run_id, run_id)
+  defp steer_item(item, _steer), do: item
 
   # A refused trigger chain leaves a system comment on the task
   # (`Helmsman.Runs.check_chain/3`), which moves its feedback counters: the
@@ -285,9 +298,12 @@ defmodule Helmsman.Dispatch.Continuation do
     cond do
       is_nil(profile) -> nil
       item.kind == :requested and not profile.wake_on_requested -> nil
-      true -> enqueue(scope, task, item, {agent, profile}, feedback_id)
+      true -> scope |> enqueue(task, item, {agent, profile}, feedback_id) |> steered(item)
     end
   end
+
+  defp steered(outcome, %{steer_run_id: id}), do: %{outcome | steer_run_id: id}
+  defp steered(outcome, _item), do: outcome
 
   defp enqueue(scope, task, item, {agent, profile}, feedback_id) do
     case source(scope, task, item, agent) do
@@ -299,7 +315,7 @@ defmodule Helmsman.Dispatch.Continuation do
             kind: item.kind,
             instructions: nil,
             feedback_id: feedback_id,
-            extra: Map.merge(item.extra, extra)
+            extra: item.extra |> Map.merge(extra) |> Map.merge(steer_extra(item))
           }
 
           target = %{agent: agent, profile: profile, task: task, lane: lane}
@@ -311,6 +327,9 @@ defmodule Helmsman.Dispatch.Continuation do
         Outcome.skipped(agent, item.kind, reason)
     end
   end
+
+  defp steer_extra(%{steer_run_id: id}), do: %{"steer_run_id" => id}
+  defp steer_extra(_item), do: %{}
 
   defp source(_scope, %Task{status: status}, %{kind: :requested}, _agent)
        when status in @closed,

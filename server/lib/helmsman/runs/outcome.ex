@@ -5,12 +5,14 @@ defmodule Helmsman.Runs.Outcome do
   the run waits for the task's dependencies (`:deferred`, created or
   merged, with the unsatisfied prerequisites in `blocked_by`;
   `add-dependency-dispatch` decision 4), or no run was created
-  (`:skipped`, with the `reason`).
+  (`:skipped`, with the `reason`). `steer_run_id`: the trigger waits for
+  the run it was sent into (`add-run-steering` decision 5).
   """
 
   alias Helmsman.Actors.Actor
 
-  @type trigger :: :assign | :manual | :reopen | :resubmit | :requested | :answer | :mention
+  @type trigger ::
+          :assign | :manual | :reopen | :resubmit | :requested | :answer | :mention | :steer
   @type result :: :queued | :merged | :deferred | :skipped
   @type reason ::
           :not_started
@@ -31,7 +33,8 @@ defmodule Helmsman.Runs.Outcome do
           result: result(),
           reason: reason() | nil,
           blocked_by: [String.t()] | nil,
-          run_id: pos_integer() | nil
+          run_id: pos_integer() | nil,
+          steer_run_id: pos_integer() | nil
         }
 
   @enforce_keys [:agent, :trigger, :result]
@@ -41,7 +44,8 @@ defmodule Helmsman.Runs.Outcome do
             result: nil,
             reason: nil,
             blocked_by: nil,
-            run_id: nil
+            run_id: nil,
+            steer_run_id: nil
 
   @doc "A skipped outcome for `agent`."
   @spec skipped(Actor.t(), trigger(), reason()) :: t()
@@ -81,9 +85,12 @@ defmodule Helmsman.Runs.Outcome do
 
   @doc """
   The stored form, on the feedback that caused the trigger
-  (`add-continuation-triggers` decision 10).
+  (`add-continuation-triggers` decision 10); `steer_run_id` only when set.
   """
   @spec stored(t()) :: map()
+  def stored(%__MODULE__{steer_run_id: id} = outcome) when is_integer(id),
+    do: outcome |> Map.put(:steer_run_id, nil) |> stored() |> Map.put("steer_run_id", id)
+
   def stored(%__MODULE__{} = outcome) do
     stored = %{
       "agent_id" => outcome.agent_id,

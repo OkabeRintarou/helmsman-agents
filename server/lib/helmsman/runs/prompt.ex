@@ -202,6 +202,20 @@ defmodule Helmsman.Runs.Prompt do
     ])
   end
 
+  # `add-run-steering` decision 13.
+  defp trigger_line(%{"kind" => "steer"} = trigger, _run, ctx) do
+    lead = "- #{by(trigger, ctx)} wrote"
+
+    tail =
+      "while your run #{trigger["steer_run_id"]} was in progress; that run did not " <>
+        "finish with it. Act on it now unless you already have:"
+
+    case Map.get(ctx[:feedback] || %{}, trigger["feedback_id"]) do
+      %{id: id, content: content} -> join(["#{lead} #{id} #{tail}", blockquote(content)])
+      nil -> "#{lead} a feedback record #{tail}"
+    end
+  end
+
   defp trigger_line(%{"kind" => "mention"} = trigger, _run, ctx) do
     join([
       quoted("- #{by(trigger, ctx)} mentioned you in", trigger["feedback_id"], ctx),
@@ -232,7 +246,7 @@ defmodule Helmsman.Runs.Prompt do
   # `<text> <IDENT>#<n>:` and the quote (a record is never deleted).
   defp quoted(text, feedback_id, ctx) do
     case Map.get(ctx[:feedback] || %{}, feedback_id) do
-      %{id: id, content: content} -> join(["#{text} #{id}:", quote_text(content)])
+      %{id: id, content: content} -> join(["#{text} #{id}:", blockquote(content)])
       nil -> text <> " a feedback record."
     end
   end
@@ -240,12 +254,18 @@ defmodule Helmsman.Runs.Prompt do
   # `<label> <IDENT>#<n>:` and the quote, or nothing.
   defp quote_lines(label, feedback_id, ctx) do
     case Map.get(ctx[:feedback] || %{}, feedback_id) do
-      %{id: id, content: content} -> ["#{label} #{id}:", quote_text(content)]
+      %{id: id, content: content} -> ["#{label} #{id}:", blockquote(content)]
       nil -> []
     end
   end
 
-  defp quote_text(content) do
+  @doc """
+  `content` quoted (`add-continuation-triggers` decision 9): each line
+  after `> `; over #{@max_quote_bytes} bytes it is cut and a last quoted
+  line says to read the full text with `get_task`.
+  """
+  @spec blockquote(String.t()) :: String.t()
+  def blockquote(content) do
     {text, truncated?} = truncate(content)
     lines = text |> String.split(~r/\r?\n/) |> Enum.map_join("\n", &("> " <> &1))
     if truncated?, do: lines <> "\n> …(truncated; read the full text with get_task)", else: lines
