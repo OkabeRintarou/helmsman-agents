@@ -125,9 +125,15 @@ defmodule Helmsman.Runs.Spec do
   end
 
   # `add-local-repositories` decision 13: the name only, no path or token.
+  # `add-autopilots` decision 13: a run-only autopilot run gets a read-only
+  # checkout (`mode: :snapshot`, no task branch); the claim reply is encoded
+  # for the daemon's protocol, and a daemon older than
+  # `HelmsmanProtocol.snapshot_version/0` already failed the claim
+  # (`Runs.Claim`).
   defp repo_spec(%{kind: :local} = repo) do
     %{
       kind: :local,
+      mode: Map.get(repo, :mode, :task),
       name: repo.local_repository.name,
       base_branch: repo.base_branch,
       branch: repo.branch,
@@ -138,6 +144,7 @@ defmodule Helmsman.Runs.Spec do
   defp repo_spec(repo) do
     %{
       kind: :github,
+      mode: Map.get(repo, :mode, :task),
       github_repository_id: repo.repository.github_id,
       clone_url: GitRepo.clone_url(repo.repository),
       base_branch: repo.base_branch,

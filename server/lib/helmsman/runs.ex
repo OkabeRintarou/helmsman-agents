@@ -881,11 +881,23 @@ defmodule Helmsman.Runs do
   @doc """
   Whether `scope` may stop (`:cancel`) or retry (`:retry`) the run of
   `summary` (`summary/1`), by the rule of `Helmsman.Policy` for
-  `:cancel_run` / `:retry_run`, without looking at its status. Pure.
+  `:cancel_run` / `:retry_run`, without looking at its status. A run
+  started by an autopilot (`autopilot` trigger) is never retryable. Pure.
   """
   @spec can?(Scope.t(), :cancel | :retry, summary()) :: boolean()
-  def can?(%Scope{} = scope, action, %{initiator: initiator, agent_owner_id: owner_id})
+  def can?(%Scope{} = scope, action, %{initiator: initiator, agent_owner_id: owner_id} = summary)
       when action in [:cancel, :retry] do
+    if action == :retry and autopilot_summary?(summary),
+      do: false,
+      else: can_run?(scope, action, initiator, owner_id)
+  end
+
+  # `add-autopilots` decision 11: a run-only autopilot run is never retried
+  # (`not_retryable`); "run now" starts another one.
+  defp autopilot_summary?(summary),
+    do: Enum.any?(Map.get(summary, :triggers, []), &(&1[:kind] == "autopilot"))
+
+  defp can_run?(scope, action, initiator, owner_id) do
     resource = %{initiator_id: initiator && initiator.id, agent_owner_id: owner_id}
     Policy.authorize(scope, :"#{action}_run", resource) == :ok
   end
@@ -929,7 +941,9 @@ defmodule Helmsman.Runs do
   @doc """
   The summary of a run (decision 14, `add-run-lifecycle` decision 19):
   `%{id, task, agent, agent_owner_id, lane, status, triggers: [%{kind,
-  by, at, instructions}] (a retry marker also has `auto` and `retry_of`),
+  by, at, instructions}] (a retry marker also has `auto` and `retry_of`;
+  `delegate_done` has `member`; `autopilot` has `autopilot: %{id, name}`,
+  nil once deleted, and `source`: "schedule" | "manual" | "webhook"),
   failure_reason, priority, attempt, daemon, provider_account_name (the
   account the claim used; nil: none or deleted), initiator: %{id, name},
   retry_of_id, retry_run_id, events_seq, summary, usage,
@@ -966,6 +980,7 @@ defmodule Helmsman.Runs do
 
     retries = Retry.targets(runs)
     squads = squad_names(runs |> Enum.map(& &1.squad_id) |> Enum.reject(&is_nil/1))
+    lookups = %{actors: actors, autopilots: autopilot_names(runs)}
 
     Enum.map(runs, fn run ->
       %{
@@ -976,7 +991,7 @@ defmodule Helmsman.Runs do
         agent_owner_id: run.agent.owner_id,
         lane: Atom.to_string(run.lane),
         status: Atom.to_string(run.status),
-        triggers: Enum.map(run.triggers, &trigger_view(&1, actors)),
+        triggers: Enum.map(run.triggers, &trigger_view(&1, run.workspace_id, lookups)),
         failure_reason: run.failure_reason && Atom.to_string(run.failure_reason),
         priority: run.priority,
         attempt: run.attempt,
@@ -1018,6 +1033,34 @@ defmodule Helmsman.Runs do
         )
       )
 
+  # `add-autopilots` decision 11: the autopilot that started a run-only
+  # run, keyed by `{workspace_id, id}` so that a run never names another
+  # workspace's autopilot; absent when it was deleted since.
+  defp autopilot_names(runs) do
+    keys =
+      for run <- runs,
+          %{"kind" => "autopilot", "autopilot_id" => id} <- run.triggers,
+          is_integer(id),
+          uniq: true,
+          do: {run.workspace_id, id}
+
+    if keys == [] do
+      %{}
+    else
+      ids = keys |> Enum.map(&elem(&1, 1)) |> Enum.uniq()
+      workspace_ids = keys |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+      Map.new(
+        Repo.all(
+          from(a in Helmsman.Autopilots.Autopilot,
+            where: a.id in ^ids and a.workspace_id in ^workspace_ids,
+            select: {{a.workspace_id, a.id}, a.name}
+          )
+        )
+      )
+    end
+  end
+
   defp names(Daemon, ids),
     do: Map.new(Repo.all(from(d in Daemon, where: d.id in ^ids, select: {d.id, d.name})))
 
@@ -1029,10 +1072,10 @@ defmodule Helmsman.Runs do
   defp names(User, ids),
     do: Map.new(Repo.all(from(u in User, where: u.id in ^ids, select: {u.id, u.display_name})))
 
-  defp trigger_view(trigger, actors) do
+  defp trigger_view(trigger, workspace_id, lookups) do
     view = %{
       kind: trigger["kind"],
-      by: actor_ref(actors[trigger["by_actor_id"]]),
+      by: actor_ref(lookups.actors[trigger["by_actor_id"]]),
       at: parse_at(trigger["at"]),
       instructions: trigger["instructions"]
     }
@@ -1041,8 +1084,18 @@ defmodule Helmsman.Runs do
       "retry" -> Map.merge(view, %{auto: trigger["auto"] == true, retry_of: trigger["retry_of"]})
       # `add-squads` decision 9: the member whose delegated run ended.
       "delegate_done" -> Map.put(view, :member, view.by)
+      "autopilot" -> Map.merge(view, autopilot_view(trigger, workspace_id, lookups.autopilots))
       _other -> view
     end
+  end
+
+  defp autopilot_view(trigger, workspace_id, names) do
+    id = trigger["autopilot_id"]
+
+    %{
+      autopilot: (name = names[{workspace_id, id}]) && %{id: id, name: name},
+      source: trigger["source"]
+    }
   end
 
   defp actor_ref(nil), do: nil

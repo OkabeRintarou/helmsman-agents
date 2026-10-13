@@ -136,6 +136,12 @@ defmodule HelmsmanDaemon.RunWorker do
     end
   end
 
+  # A read-only checkout is never committed, pushed or reported: it is removed.
+  def handle_continue(:finalize, %{git_workspace: %{snapshot?: true}} = state) do
+    GitWorkspace.discard(state.git_workspace)
+    {:noreply, %{state | finalized?: true}}
+  end
+
   def handle_continue(:finalize, state) do
     {result, events} =
       GitFinalizer.finish(
@@ -170,6 +176,7 @@ defmodule HelmsmanDaemon.RunWorker do
       end
     end
 
+    discard_snapshot(state)
     Workspace.cleanup(state.spec.run_id)
     if state.worktree_lock, do: RepoCache.release(state.worktree_lock)
     unless state.preserve_record?, do: StateStore.delete(state.spec.run_id)
@@ -180,6 +187,23 @@ defmodule HelmsmanDaemon.RunWorker do
 
   defp prepare_workspace(%{spec: %{repo: nil}} = state, run_dir),
     do: {Workspace.prepare(state.spec, run_dir), state}
+
+  defp prepare_workspace(%{spec: %{repo: %{mode: :snapshot}}} = state, run_dir) do
+    opts =
+      Keyword.merge(state.opts,
+        server_url: server_url(state),
+        renew_token: fn id -> GitFinalizer.renew(id, state.reporter, 30_000) end
+      )
+
+    case Workspace.prepare_git(state.spec, run_dir, opts) do
+      {:ok, workspace} ->
+        {{:ok, workspace.path},
+         %{state | git_workspace: workspace, prepare_events: workspace.events}}
+
+      error ->
+        {error, state}
+    end
+  end
 
   defp prepare_workspace(state, run_dir) do
     lock = RepoCache.acquire_worktree(GitWorkspace.worktree_path(state.spec))
@@ -1004,8 +1028,16 @@ defmodule HelmsmanDaemon.RunWorker do
   defp retry_report(_, state), do: state
 
   defp cleanup(state) do
+    discard_snapshot(state)
     Workspace.cleanup(state.spec.run_id)
     unless state.preserve_record?, do: StateStore.delete(state.spec.run_id)
     {:stop, :normal, state}
   end
+
+  # Covers the paths that never reach `:finalize`: no CLI was started, or the
+  # worker ends early. Removing the checkout twice is harmless.
+  defp discard_snapshot(%{git_workspace: %{snapshot?: true} = workspace, finalized?: false}),
+    do: GitWorkspace.discard(workspace)
+
+  defp discard_snapshot(_state), do: :ok
 end

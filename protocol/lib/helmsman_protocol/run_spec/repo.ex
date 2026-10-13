@@ -5,6 +5,10 @@ defmodule HelmsmanProtocol.RunSpec.Repo do
   `kind` exists from protocol 3; a missing `kind` means `github`. GitHub
   repositories carry the clone URL and push token; local repositories only carry
   their machine-side `name` and never a path, URL or token.
+
+  `mode` exists from protocol 6; a missing `mode` means `task`. A `snapshot`
+  repository is a read-only checkout of `base_branch`: it has no task `branch`
+  and no `rescue_branches`.
   """
   use HelmsmanProtocol.Schema
   alias HelmsmanProtocol.Schema
@@ -12,11 +16,12 @@ defmodule HelmsmanProtocol.RunSpec.Repo do
   @github_only [:github_repository_id, :clone_url, :git_token, :git_token_expires_at]
 
   field(:kind, {:enum, [:github, :local]}, nullable: true)
+  field(:mode, {:enum, [:task, :snapshot]}, nullable: true, default: :task)
   field(:name, :string, nullable: true, min_bytes: 1, max_bytes: 255)
   field(:github_repository_id, :pos_integer, nullable: true)
   field(:clone_url, :string, nullable: true, min_bytes: 1)
   field(:base_branch, :string, min_bytes: 1)
-  field(:branch, :string, min_bytes: 1)
+  field(:branch, :string, nullable: true, min_bytes: 1)
   list(:rescue_branches, :string)
   field(:git_token, :string, nullable: true, min_bytes: 1)
   field(:git_token_expires_at, :datetime, nullable: true)
@@ -41,7 +46,16 @@ defmodule HelmsmanProtocol.RunSpec.Repo do
   defp decode(attrs, mode), do: Schema.decode(__MODULE__, __schema__(), attrs, mode)
 
   @doc false
-  def validate(%{kind: nil} = repo), do: {:ok, %{repo | kind: :github}}
+  def validate(%{kind: nil} = repo), do: validate(%{repo | kind: :github})
+  def validate(%{mode: nil} = repo), do: validate(%{repo | mode: :task})
+  def validate(%{mode: :task, branch: nil}), do: Schema.invalid(["branch"], :required)
+
+  def validate(%{mode: :snapshot, branch: branch}) when not is_nil(branch),
+    do: Schema.invalid(["branch"], :not_allowed)
+
+  def validate(%{mode: :snapshot, rescue_branches: [_ | _]}),
+    do: Schema.invalid(["rescue_branches"], :not_allowed)
+
   def validate(repo), do: {:ok, repo}
 
   defp precheck(attrs, mode) do

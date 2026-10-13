@@ -45,7 +45,7 @@ defmodule HelmsmanProtocol.LocalRepositoriesTest do
 
     test "github repos keep the version 1 wire shape and old payloads decode as github" do
       {:ok, claim} = Reply.Claim.from_wire(%{"runs" => [Fixtures.run_spec()]})
-      v1_repo = Map.drop(Fixtures.repo(), ["kind", "name"])
+      v1_repo = Map.drop(Fixtures.repo(), ["kind", "mode", "name"])
 
       for version <- 1..(@v - 1) do
         assert {:ok, %{"runs" => [%{"repo" => ^v1_repo}]}} =

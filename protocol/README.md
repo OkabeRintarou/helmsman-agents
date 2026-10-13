@@ -6,12 +6,12 @@
 
 连接 `wss://<server>/daemon/socket/websocket`，令牌通过 `x-helmsman-token` 请求头传递，不能放在 URL 中。
 每个守护进程只加入 `daemon:<daemon_id>`，路径、请求头及 topic 由 `HelmsmanProtocol` 提供。
-`join.protocol` 声明守护进程版本；当前版本为 5，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。Phoenix 的 `vsn` 是序列化版本。
+`join.protocol` 声明守护进程版本；当前版本为 6，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。只读检出（`RunSpec.repo.mode`）从 `HelmsmanProtocol.snapshot_version/0`（6）起支持。Phoenix 的 `vsn` 是序列化版本。
 
 所有枚举严格校验：未知消息、事件、provider、状态、失败原因或错误码均被拒绝。
 新增枚举值或消息、删除或改变字段的类型和语义必须升版本；新增可选字段可不升版本，接收方忽略未知字段。
 服务端记录 join 的守护进程版本，只向它发送该版本支持的消息、字段与枚举值。
-`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–4；目标版本中不存在的消息（如低于 3 的 `repo_status`、低于 4 的 `cleanup_check`）同样返回该错误。
+`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–6；目标版本中不存在的消息（如低于 3 的 `repo_status`、低于 4 的 `cleanup_check`）同样返回该错误。
 新守护进程连接旧服务端被 join 拒绝后停止重连。
 
 ## 使用
@@ -76,11 +76,12 @@ Finished 中只有 failed 可且必须带 failure_reason；summary ≤ 4096 字�
 
 run_id；workspace（id, slug）；task（ident, title，整体可空）；
 agent（name, provider, model, effort, custom_args, env, extra_mcp_servers, provider_account（可空））；prompt；resume_session_id（可空）；
-repo（kind, name, github_repository_id, clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at，整体可空）；
+repo（kind, mode, name, github_repository_id, clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at，整体可空）；
 mcp（url, token）；limits（timeout_ms, idle_timeout_ms）；trigger（kind, reason, feedback_id）。
 
 repo.kind 为 github / local，缺省（版本 1–2 的负载）按 github 解码。github 时 github_repository_id、clone_url、git_token、git_token_expires_at 必填；
 local 时 name 必填，上述四项必须为空（否则 `:not_allowed`）。按低于 3 的版本编码时 github 仓库省略 kind 与 name，local 仓库返回 `{:error, {:not_in_version, v}}`。
+repo.mode 为 task / snapshot，缺省（版本 1–5 的负载）按 task 解码。task 时 branch 必填；snapshot（只读检出基础分支）时 branch 必须为空、rescue_branches 必须为空列表（否则 `:not_allowed`）。按低于 6 的版本编码时 task 仓库省略 mode，snapshot 仓库返回 `{:error, {:not_in_version, v}}`。
 custom_args 为最多 64 项的字符串列表，每项 1–4096 字节，不做 shell 拆分。
 model、effort 为可空字符串，非空值 1–128 字节；env 为字符串 map；extra_mcp_servers 为 JSON 对象。
 provider_account 非空时含 base_url（1–2048 字节）、api_key（1–8192 字节）和 models（字符串 map，最多 8 项，值 1–128 字节）。

@@ -162,8 +162,18 @@ defmodule HelmsmanProtocol.Messages do
 
   defp encode_run(run, version) do
     with {:ok, run} <- encode_account(run, version),
-         {:ok, run} <- encode_headers(run, version) do
+         {:ok, run} <- encode_headers(run, version),
+         {:ok, run} <- encode_mode(run, version) do
       encode_repo(run, version)
+    end
+  end
+
+  defp encode_mode(run, version) do
+    cond do
+      version >= HelmsmanProtocol.snapshot_version() -> {:ok, run}
+      is_nil(run["repo"]) -> {:ok, run}
+      run["repo"]["mode"] == "snapshot" -> {:error, {:not_in_version, version}}
+      true -> {:ok, drop_in(run, "repo", "mode")}
     end
   end
 

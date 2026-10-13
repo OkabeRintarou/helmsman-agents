@@ -1,9 +1,24 @@
 defmodule HelmsmanDaemon.GitWorkspace do
-  @moduledoc "Repository-cache and task-worktree preparation, without starting an Agent."
+  @moduledoc """
+  Repository-cache and task-worktree preparation, without starting an Agent.
+
+  A `snapshot` repository (`add-autopilots` decision 13) is a detached
+  read-only checkout of `origin/<base_branch>` in the run's own directory:
+  no task worktree lock, no pending-push ledger, and `discard/1` removes it.
+  """
   alias HelmsmanDaemon.{Git, LocalRepos, Paths, RepoCache}
 
   @derive {Inspect,
-           only: [:path, :cache, :origin, :local, :remote_base, :remote_branch?, :events]}
+           only: [
+             :path,
+             :cache,
+             :origin,
+             :local,
+             :remote_base,
+             :remote_branch?,
+             :snapshot?,
+             :events
+           ]}
   defstruct [
     :path,
     :cache,
@@ -13,6 +28,7 @@ defmodule HelmsmanDaemon.GitWorkspace do
     :remote_base,
     :remote_branch?,
     :delivery_note,
+    snapshot?: false,
     events: []
   ]
 
@@ -21,17 +37,25 @@ defmodule HelmsmanDaemon.GitWorkspace do
     deadline = System.monotonic_time(:millisecond) + timeout
     identity = Git.identity(spec.agent.name, Keyword.get(opts, :server_url, "http://localhost"))
     git_opts = Keyword.merge(opts, deadline: deadline, identity: identity)
-    path = worktree_path(spec)
-    state = source(spec, run_dir, git_opts, path)
+    snapshot? = snapshot?(spec)
+    path = if snapshot?, do: snapshot_path(run_dir), else: worktree_path(spec)
+    state = %{source(spec, run_dir, git_opts, path) | snapshot?: snapshot?}
     checked!(Git.check_version(state.git))
 
     prepare = fn ->
       RepoCache.with_repo_lock(state.cache, fn -> prepare_locked(state, spec) end)
     end
 
-    if Keyword.get(opts, :worktree_locked?, false),
-      do: prepare.(),
-      else: RepoCache.with_worktree_lock(path, prepare)
+    cond do
+      snapshot? ->
+        RepoCache.with_repo_lock(state.cache, fn -> prepare_snapshot_locked(state, spec) end)
+
+      Keyword.get(opts, :worktree_locked?, false) ->
+        prepare.()
+
+      true ->
+        RepoCache.with_worktree_lock(path, prepare)
+    end
   rescue
     error in [ArgumentError, File.Error] ->
       {:error, {:workspace_prepare, Git.redact(Exception.message(error))}}
@@ -113,6 +137,35 @@ defmodule HelmsmanDaemon.GitWorkspace do
     end
   end
 
+  @doc "Whether the run spec asks for a read-only checkout."
+  def snapshot?(%{repo: %{mode: :snapshot}}), do: true
+  def snapshot?(_spec), do: false
+
+  @doc "The read-only checkout of a run, inside its private run directory."
+  def snapshot_path(run_dir), do: Path.join(run_dir, "checkout")
+
+  @doc """
+  Removes a read-only checkout and its registration in the repository cache,
+  under the cache lock. Idempotent and never fails: whatever git cannot
+  remove is deleted from disk and pruned.
+  """
+  def discard(%__MODULE__{snapshot?: true} = state) do
+    deadline = System.monotonic_time(:millisecond) + 60_000
+    git = %{state.git | opts: Keyword.put(state.git.opts, :deadline, deadline)}
+
+    RepoCache.with_repo_lock(state.cache, fn ->
+      if File.exists?(state.path) and File.dir?(state.cache),
+        do: Git.run(["worktree", "remove", "--force", state.path], state.cache, git)
+
+      File.rm_rf(state.path)
+      if File.dir?(state.cache), do: Git.run(["worktree", "prune"], state.cache, git)
+    end)
+
+    :ok
+  end
+
+  def discard(_state), do: :ok
+
   def worktree_path(spec) do
     Path.join([
       Paths.home(),
@@ -174,6 +227,26 @@ defmodule HelmsmanDaemon.GitWorkspace do
       end
 
     {:ok, state}
+  end
+
+  # Stale registrations of checkouts whose directory is gone (a crashed
+  # daemon's run directory was deleted) are pruned before adding this one.
+  defp prepare_snapshot_locked(state, spec) do
+    state = locked_source(state, spec)
+    state = initialize(state, state.origin)
+    state = fetch(state, spec.run_id)
+    run!(state, ["worktree", "prune"], state.cache)
+    base = "refs/remotes/origin/" <> spec.repo.base_branch
+
+    unless exists?(state, base),
+      do: fail!("base branch #{spec.repo.base_branch} not found on the remote")
+
+    File.rm_rf!(state.path)
+    Paths.private_dir!(Path.dirname(state.path))
+    run!(state, ["worktree", "add", "--detach", state.path, base], state.cache)
+    Paths.private_dir!(state.path)
+    head = String.trim(run!(state, ["rev-parse", "--verify", "HEAD"]))
+    {:ok, %{state | remote_base: head, remote_branch?: false}}
   end
 
   # Resolved only once the cache lock is held: the owner may revoke sharing

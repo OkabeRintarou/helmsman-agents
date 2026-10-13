@@ -6,7 +6,9 @@ defmodule HelmsmanProtocolTest do
     assert HelmsmanProtocol.providers() == ~w(claude codex copilot cursor)a
     assert HelmsmanProtocol.local_repositories_version() < HelmsmanProtocol.cleanup_version()
     assert HelmsmanProtocol.cleanup_version() == 4
-    assert HelmsmanProtocol.provider_account_headers_version() == HelmsmanProtocol.version()
+    assert HelmsmanProtocol.provider_account_headers_version() == 5
+    assert HelmsmanProtocol.snapshot_version() == 6
+    assert HelmsmanProtocol.snapshot_version() == HelmsmanProtocol.version()
 
     assert HelmsmanProtocol.provider_account_version() <
              HelmsmanProtocol.local_repositories_version()

@@ -15,14 +15,6 @@ defmodule Helmsman.Autopilots.Views do
 
   @default_limit 50
   @max_limit 100
-  # The protocol version that can check a repository out read-only
-  # (decision 13).
-  @snapshot_version 6
-
-  @doc "The protocol version a daemon needs for a run-only run in a repository."
-  @spec snapshot_version() :: pos_integer()
-  def snapshot_version, do: @snapshot_version
-
   def list(%Scope{} = scope) do
     with :ok <- Policy.authorize(scope, :view_agents) do
       autopilots =
@@ -182,7 +174,9 @@ defmodule Helmsman.Autopilots.Views do
           )
         )
 
-    if is_integer(version) and version < @snapshot_version, do: [:daemon_too_old], else: []
+    if is_integer(version) and version < HelmsmanProtocol.snapshot_version(),
+      do: [:daemon_too_old],
+      else: []
   end
 
   defp daemon_warnings(_a, _target, _project), do: []

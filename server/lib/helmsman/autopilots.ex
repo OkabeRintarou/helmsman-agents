@@ -456,7 +456,7 @@ defmodule Helmsman.Autopilots do
 
   @doc "The protocol version a daemon needs for a run-only run in a repository."
   @spec snapshot_version() :: pos_integer()
-  defdelegate snapshot_version(), to: Views
+  defdelegate snapshot_version(), to: HelmsmanProtocol
 
   @doc false
   # The runs `runs` ended (`Helmsman.Runs.after_ended/1`, in the

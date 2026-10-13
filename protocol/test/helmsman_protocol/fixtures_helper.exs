@@ -61,6 +61,7 @@ defmodule HelmsmanProtocol.Fixtures do
   def local_repo do
     %{
       "kind" => "local",
+      "mode" => "task",
       "name" => "app",
       "github_repository_id" => nil,
       "clone_url" => nil,
@@ -104,6 +105,7 @@ defmodule HelmsmanProtocol.Fixtures do
   def repo do
     %{
       "kind" => "github",
+      "mode" => "task",
       "name" => nil,
       "github_repository_id" => 123_456_789,
       "clone_url" => "https://github.com/acme/repo.git",
