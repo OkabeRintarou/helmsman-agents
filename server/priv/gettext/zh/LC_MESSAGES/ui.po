@@ -17,11 +17,13 @@ msgid "%{date}：%{value}"
 msgstr ""
 
 #: lib/helmsman_web/components/actor.ex
+#: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "%{name} 正在处理"
 msgstr ""
 
 #: lib/helmsman_web/components/actor.ex
+#: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "%{name} 等 %{count} 个正在处理"
 msgstr ""
@@ -322,6 +324,7 @@ msgid "外接"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "失败"
 msgstr ""
@@ -349,6 +352,7 @@ msgid "已保存"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "已停止"
 msgstr ""
@@ -2897,6 +2901,7 @@ msgstr ""
 msgid "还没有登录过的机器"
 msgstr ""
 
+#: lib/helmsman_web/run_actions.ex
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "%{agent} 已停用"
@@ -2907,6 +2912,7 @@ msgstr ""
 msgid "%{agent} 已在触发链上，为防止循环没有启动"
 msgstr ""
 
+#: lib/helmsman_web/run_actions.ex
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "%{agent} 已归档"
@@ -3926,4 +3932,39 @@ msgstr ""
 #: lib/helmsman_web/run_log.ex
 #, elixir-autogen, elixir-format
 msgid "（输出已截断）"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{agent} 正在运行，等它结束后再验收"
+msgstr ""
+
+#: lib/helmsman_web/agent_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{date}：成功 %{ok}，失败 %{failed}，已停止 %{cancelled}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "成功"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "费用"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "输入 token"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "输出 token"
+msgstr ""
+
+#: lib/helmsman_web/agent_components.ex
+#, elixir-autogen, elixir-format
+msgid "近 %{n} 天每天的运行数"
 msgstr ""

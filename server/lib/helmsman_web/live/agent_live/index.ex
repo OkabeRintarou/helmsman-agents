@@ -2,7 +2,7 @@ defmodule HelmsmanWeb.AgentLive.Index do
   @moduledoc """
   `/w/:slug/agents` (spec web-agents Agent 列表页, design D3, D4): every agent of the
   workspace with its status, `?owner=me`, `?archived=1` and the new-agent panel
-  (`?panel=new`).
+  (`?panel=new-agent`; `?panel=new` is the shell's 新建任务).
 
   Subscribes to the workspace's runs and the agents' presence before reading (D9a);
   `{:agents_changed}`, `{:runtimes_changed}` (forwarded by the shell) and
@@ -65,7 +65,7 @@ defmodule HelmsmanWeb.AgentLive.Index do
       )
       |> render_rows()
 
-    {:noreply, open_form(socket, params["panel"] == "new" and socket.assigns.can_create?)}
+    {:noreply, open_form(socket, params["panel"] == "new-agent" and socket.assigns.can_create?)}
   end
 
   defp open_form(socket, false), do: assign(socket, :agent_form, nil)
@@ -160,7 +160,7 @@ defmodule HelmsmanWeb.AgentLive.Index do
     assigns =
       assign(assigns,
         slug: assigns.current_scope.workspace.slug,
-        new_path: Url.put_params(assigns.uri || "", %{panel: "new"}),
+        new_path: Url.put_params(assigns.uri || "", %{panel: "new-agent"}),
         close_path: Url.drop_params(assigns.uri || "", ["panel"])
       )
 

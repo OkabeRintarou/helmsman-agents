@@ -1,7 +1,7 @@
 defmodule HelmsmanWeb.AgentForm do
   @moduledoc """
   The new / edit panel of managed agents (add-agents-runs-ui D5; spec web-agents 新建与编辑
-  Agent). The state is a plain map kept by the page (`AgentLive.Index` for `?panel=new`,
+  Agent). The state is a plain map kept by the page (`AgentLive.Index` for `?panel=new-agent`,
   `AgentLive.Show` for `?panel=edit`); the page forwards the `agent_form_*` events here.
 
   * Only changed fields are submitted: an edit diffs against the view the panel opened

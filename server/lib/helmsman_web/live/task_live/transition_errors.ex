@@ -61,6 +61,10 @@ defmodule HelmsmanWeb.TaskLive.TransitionErrors do
     {{:field, :comment}, text}
   end
 
+  # A run is still working on the task (web-runs 运行进行中时的验收).
+  def message({:run_active, %{agent: agent}}, _label),
+    do: {:top, run_active_text(agent)}
+
   # Only a programming error sends a reason that is not a map.
   def message({:invalid_feedback, _detail} = reason, label) do
     Logger.error("Task transition #{label} failed: #{inspect(reason)}")
@@ -71,6 +75,11 @@ defmodule HelmsmanWeb.TaskLive.TransitionErrors do
     Logger.error("Task transition #{label} failed: #{inspect(reason)}")
     {:top, dgettext("ui", "操作失败，请稍后重试")}
   end
+
+  @doc "Why 验收 waits while `agent` is running on the task."
+  @spec run_active_text(String.t()) :: String.t()
+  def run_active_text(agent),
+    do: dgettext("ui", "%{agent} 正在运行，等它结束后再验收", agent: agent)
 
   defp format(value) when is_binary(value), do: value
   defp format(value), do: inspect(value)

@@ -1,110 +1,28 @@
 defmodule HelmsmanWeb.TaskLive.RunLogTest do
   @moduledoc """
-  Spec web-runs 执行记录、运行页、停止与重试 (design D9, D9a, D10) against the functions of
-  add-run-lifecycle (`Runs.list_events/3`, `can?/3`, `cancel/2`, `retry/2`, the summary's
-  `initiator`), stood in for by `StubRuns` until that change is merged. Changes the
-  application environment, so not async.
+  Spec web-runs 执行记录、运行页、停止与重试 (design D9, D9a, D10) with the run driven
+  through the daemon side of add-run-lifecycle (`Helmsman.RunLifecycleFixtures`). The
+  barrier test sets `:run_log_hook`, so not async.
   """
   use HelmsmanWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
   import HelmsmanWeb.PortalHelpers
   import Helmsman.RunsFixtures
+  import Helmsman.RunLifecycleFixtures
+  import HelmsmanWeb.LiveHelpers
 
-  alias Helmsman.{Events, Runs, Tasks}
-
-  defmodule StubRuns do
-    @moduledoc false
-    # Events of each run in :persistent_term; the summary gets `initiator` and
-    # `agent_owner_id`, and members get `error`.
-    alias Helmsman.Runs
-
-    def events(id), do: :persistent_term.get({__MODULE__, id}, [])
-    def put_events(id, events), do: :persistent_term.put({__MODULE__, id}, events)
-    def pruned(id), do: :persistent_term.put({__MODULE__, :pruned, id}, true)
-
-    def get(scope, id) do
-      with {:ok, summary} <- Runs.get(scope, id) do
-        run = Helmsman.Repo.get!(Helmsman.Runs.Run, id) |> Helmsman.Repo.preload(:agent)
-
-        {:ok,
-         Map.merge(summary, %{
-           initiator: %{id: run.root_initiator_user_id, name: "alice"},
-           agent_owner_id: run.agent.owner_id,
-           retry_run_id: nil,
-           error: if(scope.role in [:owner, :admin, :member], do: "boom")
-         })}
-      end
-    end
-
-    def list_open(scope, {:task, ident}, _opts) do
-      {:ok, runs} = Runs.list_for_task(scope, ident)
-      runs = Enum.map(runs, &elem(__MODULE__.get(scope, &1.id), 1))
-      pending = Enum.filter(runs, &(&1.status in ~w(queued deferred)))
-      active = Enum.filter(runs, &(&1.status in ~w(claimed running cancelling)))
-      {:ok, %{active: active, pending: pending, pending_total: length(pending)}}
-    end
-
-    def list_finished(_scope, _target, _opts), do: {:ok, %{runs: [], total: 0}}
-
-    def list_events(_scope, id, opts) do
-      all = events(id)
-      last = all |> Enum.map(& &1.seq) |> Enum.max(fn -> 0 end)
-      limit = opts[:limit] || 500
-
-      events =
-        cond do
-          opts[:latest] ->
-            Enum.take(all, -limit)
-
-          opts[:before_seq] ->
-            all |> Enum.filter(&(&1.seq < opts[:before_seq])) |> Enum.take(-limit)
-
-          true ->
-            all |> Enum.filter(&(&1.seq > (opts[:after_seq] || 0))) |> Enum.take(limit)
-        end
-
-      if :persistent_term.get({__MODULE__, :pruned, id}, false),
-        do: {:ok, %{events: [], pruned: true, last_seq: last}},
-        else: {:ok, %{events: events, pruned: false, last_seq: last}}
-    end
-
-    def can?(scope, _action, summary),
-      do:
-        scope.role in [:owner, :admin] or
-          scope.user.id in [summary.initiator.id, summary.agent_owner_id]
-
-    def cancel(_scope, id), do: :persistent_term.get({__MODULE__, :cancel}, {:ok, %{id: id}})
-    def retry(_scope, id), do: :persistent_term.get({__MODULE__, :retry}, {:ok, %{id: id}})
-  end
+  alias Helmsman.{Agents, Events, Repo, Runs, Tasks}
+  alias Helmsman.Runs.RunEvent
 
   setup %{conn: conn} do
-    previous = Application.get_env(:helmsman, HelmsmanWeb.RunData)
-    Application.put_env(:helmsman, HelmsmanWeb.RunData, runs: StubRuns)
-
-    on_exit(fn ->
-      if previous,
-        do: Application.put_env(:helmsman, HelmsmanWeb.RunData, previous),
-        else: Application.delete_env(:helmsman, HelmsmanWeb.RunData)
-
-      Application.delete_env(:helmsman, :run_log_hook)
-
-      for {key, _} <- :persistent_term.get(),
-          match?({StubRuns, _}, key) or match?({StubRuns, _, _}, key),
-          do: :persistent_term.erase(key)
-    end)
+    on_exit(fn -> Application.delete_env(:helmsman, :run_log_hook) end)
 
     ctx = dispatch_fixture()
     {bob, _} = member_scope_fixture(ctx.workspace)
     {vic, _} = member_scope_fixture(ctx.workspace, :viewer)
     {:ok, task} = Tasks.create(ctx.alice_scope, ctx.project.key, %{title: "修复登录"})
-
-    run =
-      run_fixture(ctx.agent, %{
-        task_id: task.id,
-        status: :running,
-        root_initiator_user_id: ctx.alice.id
-      })
+    run = running_run!(ctx.agent, %{task_id: task.id, root_initiator_user_id: ctx.alice.id})
 
     Map.merge(ctx, %{
       conn: conn,
@@ -116,13 +34,11 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     })
   end
 
-  defp event(seq, type \\ "text", data \\ nil),
-    do: %{
-      seq: seq,
-      type: type,
-      data: data || %{"text" => "第 #{seq} 条"},
-      at: ~U[2026-10-12 08:00:00Z]
-    }
+  defp put_events(ctx, range), do: append!(ctx.agent, ctx.run.id, Enum.to_list(range))
+
+  # The wire form of an event, as in a `{:run_events, id, views}` notification.
+  defp view_of(seq),
+    do: %{seq: seq, type: "text", data: %{"text" => "第 #{seq} 条"}, at: DateTime.utc_now()}
 
   defp open_log(ctx, user \\ nil, run \\ nil),
     do: live(log_in_user(ctx.conn, user || ctx.alice), "#{ctx.path}?run=#{(run || ctx.run).id}")
@@ -137,29 +53,47 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
 
   describe "opening (D9)" do
     test "an event committed between the check and the subscription is in the read", ctx do
-      StubRuns.put_events(ctx.run.id, Enum.map(1..10, &event/1))
+      put_events(ctx, 1..10)
       run_id = ctx.run.id
+      agent = ctx.agent
 
+      # Called after the check and before the subscription: the 11th is committed then,
+      # and its notification goes to nobody.
       Application.put_env(:helmsman, :run_log_hook, fn ^run_id ->
-        StubRuns.put_events(run_id, Enum.map(1..11, &event/1))
+        append!(agent, run_id, [11])
       end)
 
       {:ok, view, _html} = open_log(ctx)
       assert open?(view, "run-log-modal")
       assert has_event?(view, 11)
 
-      push_events(ctx.run, [event(12)])
-      push_events(ctx.run, [event(13)])
+      put_events(ctx, 12..12)
+      put_events(ctx, 13..13)
       render(view)
       for seq <- 1..13, do: assert(has_event?(view, seq))
     end
 
     test "a gap in the pushes is read from the database", ctx do
-      StubRuns.put_events(ctx.run.id, Enum.map(1..12, &event/1))
+      put_events(ctx, 1..12)
       {:ok, view, _html} = open_log(ctx)
-      StubRuns.put_events(ctx.run.id, Enum.map(1..15, &event/1))
 
-      send(view.pid, {:run_events, ctx.run.id, [event(15)]})
+      # 13 and 14 are saved without a notification reaching the page; 15 is reported.
+      Repo.insert_all(
+        RunEvent,
+        for(
+          seq <- 13..14,
+          do: %{
+            run_id: ctx.run.id,
+            seq: seq,
+            type: "text",
+            data: %{"text" => "第 #{seq} 条"},
+            at: DateTime.utc_now()
+          }
+        )
+      )
+
+      set_run!(ctx.run.id, events_seq: 14)
+      put_events(ctx, 15..15)
       html = view |> portal("run-log-modal") |> LazyHTML.to_html()
 
       positions =
@@ -169,10 +103,10 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     end
 
     test "overlapping events show once", ctx do
-      StubRuns.put_events(ctx.run.id, Enum.map(1..3, &event/1))
+      put_events(ctx, 1..3)
       {:ok, view, _html} = open_log(ctx)
 
-      push_events(ctx.run, [event(2), event(3), event(4)])
+      push_events(ctx.run, [view_of(2), view_of(3), view_of(4)])
       html = view |> portal("run-log-modal") |> LazyHTML.to_html()
       assert length(String.split(html, ~s(id="run-event-3"))) == 2
       assert has_event?(view, 4)
@@ -197,7 +131,7 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     end
 
     test "a viewer sees the summary only and never subscribes to run:<id>", ctx do
-      StubRuns.put_events(ctx.run.id, [event(1)])
+      put_events(ctx, 1..1)
       {:ok, view, _html} = open_log(ctx, ctx.vic)
 
       assert in_portal?(view, "run-log-modal", "#run-log-head")
@@ -207,14 +141,15 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     end
 
     test "pruned events", ctx do
-      StubRuns.pruned(ctx.run.id)
+      finish!(ctx.agent, ctx.run.id)
+      set_run!(ctx.run.id, events_pruned_at: DateTime.utc_now())
       {:ok, view, _html} = open_log(ctx)
       assert in_portal?(view, "run-log-modal", "#run-log-pruned", "30 天后清理")
     end
   end
 
   test "closing removes run from the address, unsubscribes and drops later events", ctx do
-    StubRuns.put_events(ctx.run.id, [event(1)])
+    put_events(ctx, 1..1)
     {:ok, view, _html} = open_log(ctx)
     assert view.pid in subscribers(ctx.run)
 
@@ -222,12 +157,12 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     refute open?(view, "run-log-modal")
     refute view.pid in subscribers(ctx.run)
 
-    send(view.pid, {:run_events, ctx.run.id, [event(2)]})
+    send(view.pid, {:run_events, ctx.run.id, [view_of(2)]})
     refute has_event?(view, 2)
   end
 
   test "800 events: the latest 500, then the earlier ones on top", ctx do
-    StubRuns.put_events(ctx.run.id, Enum.map(1..800, &event/1))
+    put_events(ctx, 1..800)
     {:ok, view, _html} = open_log(ctx)
 
     assert has_event?(view, 301)
@@ -241,7 +176,7 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     assert :binary.match(html, ~s(id="run-event-300")) <
              :binary.match(html, ~s(id="run-event-301"))
 
-    push_events(ctx.run, [event(801)])
+    put_events(ctx, 801..801)
     assert has_event?(view, 801)
     assert has_event?(view, 1)
   end
@@ -252,12 +187,11 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
   end
 
   test "events trimmed by new ones can be loaded again (code-review-2)", ctx do
-    StubRuns.put_events(ctx.run.id, Enum.map(1..500, &event/1))
+    put_events(ctx, 1..500)
     {:ok, view, _html} = open_log(ctx)
     refute in_portal?(view, "run-log-modal", "#run-log-earlier")
 
-    StubRuns.put_events(ctx.run.id, Enum.map(1..501, &event/1))
-    push_events(ctx.run, [event(501)])
+    put_events(ctx, 501..501)
     refute has_event?(view, 1)
     assert in_portal?(view, "run-log-modal", "#run-log-earlier")
 
@@ -266,44 +200,39 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
   end
 
   test "after 800 then 801 the trimmed 301 comes back without duplicates", ctx do
-    StubRuns.put_events(ctx.run.id, Enum.map(1..800, &event/1))
+    put_events(ctx, 1..800)
     {:ok, view, _html} = open_log(ctx)
     assert List.first(event_ids(view)) == 301
 
-    StubRuns.put_events(ctx.run.id, Enum.map(1..801, &event/1))
-    push_events(ctx.run, [event(801)])
+    put_events(ctx, 801..801)
     assert List.first(event_ids(view)) == 302
 
     render_click(view, "run_log_earlier", %{})
     ids = event_ids(view)
     assert ids == Enum.to_list(1..801)
 
-    push_events(ctx.run, [event(802)])
+    put_events(ctx, 802..802)
     assert event_ids(view) == Enum.to_list(1..802)
   end
 
   test "every event type renders, tool outputs named after their call", ctx do
-    StubRuns.put_events(ctx.run.id, [
-      event(1, "text", %{"text" => "**完成**了"}),
-      event(2, "thinking", %{"text" => "想一想"}),
-      event(3, "tool_call", %{"call_id" => "c1", "name" => "bash", "input" => "ls"}),
-      event(4, "tool_result", %{
-        "call_id" => "c1",
-        "output" => "a.txt",
-        "is_error" => true,
-        "truncated" => true
-      }),
-      event(5, "tool_result", %{
-        "call_id" => "zz",
-        "output" => "?",
-        "is_error" => false,
-        "truncated" => false
-      }),
-      event(6, "result", %{"text" => "结果", "success" => true}),
-      event(7, "error", %{"reason" => "provider_quota", "message" => "quota"}),
-      event(8, "status", %{"level" => "warning", "message" => "慢"}),
-      event(9, "session", %{"session_id" => "s-1"}),
-      event(10, "usage", %{"input_tokens" => 1200, "output_tokens" => 340, "cost_usd" => nil})
+    append!(ctx.agent, ctx.run.id, [
+      event(1, :text, %{text: "**完成**了"}),
+      event(2, :thinking, %{text: "想一想"}),
+      event(3, :tool_call, %{call_id: "c1", name: "bash", input: "ls"}),
+      event(4, :tool_result, %{call_id: "c1", output: "a.txt", is_error: true, truncated: true}),
+      event(5, :tool_result, %{call_id: "zz", output: "?", is_error: false, truncated: false}),
+      event(6, :result, %{text: "结果", success: true}),
+      event(7, :error, %{reason: :provider_quota, message: "quota"}),
+      event(8, :status, %{level: :warning, message: "慢"}),
+      event(9, :session, %{session_id: "s-1"}),
+      event(10, :usage, %{
+        input_tokens: 1200,
+        output_tokens: 340,
+        cache_read_tokens: nil,
+        cache_write_tokens: nil,
+        cost_usd: nil
+      })
     ])
 
     {:ok, view, _html} = open_log(ctx)
@@ -321,7 +250,16 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     assert in_portal?(view, m, "#run-event-9", "s-1")
     assert in_portal?(view, m, "#run-event-10 [data-usage]", "1.2k / 340")
     assert in_portal?(view, m, ~s(#run-log-events[phx-hook$="RunLogScroll"]))
-    # A failed run's head shows the error to members.
+  end
+
+  test "a failed run's head shows the error to members only", ctx do
+    finish!(ctx.agent, ctx.run.id, :failed, %{failure_reason: :provider_quota, error: "额度 boom"})
+
+    {:ok, view, _html} = open_log(ctx, ctx.bob)
+    assert in_portal?(view, "run-log-modal", "#run-log-head", "额度 boom")
+
+    {:ok, view, _html} = open_log(ctx, ctx.vic)
+    refute in_portal?(view, "run-log-modal", "#run-log-head", "额度 boom")
   end
 
   describe "the run page (D10)" do
@@ -355,6 +293,11 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
       view |> element("#{card}-cancel") |> render_click()
       assert in_portal?(view, "stop-run", "#stop-run-description", "已有的改动会保留")
       render_click(view, "cancel_run", %{"id" => ctx.run.id})
+      assert has_element?(view, ~s(#{card} [data-run-status="cancelling"]))
+      refute has_element?(view, "#{card}-cancel")
+
+      finish!(ctx.agent, ctx.run.id, :cancelled)
+      eventually(fn -> has_element?(view, ~s(#{card} [data-run-status="cancelled"])) end)
 
       {:ok, view, _html} = live(log_in_user(ctx.conn, ctx.bob), ctx.path)
       refute has_element?(view, "#{card}-cancel")
@@ -365,24 +308,33 @@ defmodule HelmsmanWeb.TaskLive.RunLogTest do
     test "refusals are explained", ctx do
       {:ok, view, _html} = live(log_in_user(ctx.conn, ctx.alice), ctx.path)
 
-      :persistent_term.put({StubRuns, :cancel}, {:error, :already_finished})
+      finish!(ctx.agent, ctx.run.id, :failed, %{failure_reason: :provider_quota})
       assert render_click(view, "cancel_run", %{"id" => ctx.run.id}) =~ "运行已经结束"
 
-      for {reason, text} <- [
-            {{:already_retried, 99}, "这次运行已经重试过（#99）"},
-            {:task_closed, "任务已验收或撤销，不能重试"},
-            {:agent_disabled, "Agent 已停用"}
-          ] do
-        :persistent_term.put({StubRuns, :retry}, {:error, reason})
-        assert render_click(view, "retry_run", %{"id" => ctx.run.id}) =~ text
-      end
-
-      :persistent_term.put({StubRuns, :retry}, {:ok, %{id: 1}})
       assert render_click(view, "retry_run", %{"id" => ctx.run.id}) =~ "已重新排队"
+      [_, retried] = runs_of(ctx.task.id)
+
+      # While the retry is queued, retrying again returns it; once claimed it is refused.
+      assert render_click(view, "retry_run", %{"id" => ctx.run.id}) =~ "已重新排队"
+      assert claim!(ctx.agent) == [retried.id]
+
+      assert render_click(view, "retry_run", %{"id" => ctx.run.id}) =~
+               "这次运行已经重试过（##{retried.id}）"
+
+      other = running_run!(ctx.agent, %{task_id: ctx.task.id})
+      finish!(ctx.agent, other.id, :failed, %{failure_reason: :provider_quota})
+
+      {:ok, _} = Agents.disable(ctx.alice_scope, "keel/dev")
+      assert render_click(view, "retry_run", %{"id" => other.id}) =~ "keel/dev 已停用"
+      {:ok, _} = Agents.enable(ctx.alice_scope, "keel/dev")
+
+      {:ok, _} = Tasks.transition(ctx.alice_scope, ctx.task.ident, :cancelled)
+      assert render_click(view, "retry_run", %{"id" => other.id}) =~ "任务已验收或撤销，不能重试"
     end
 
     test "a failed run that was not retried offers 重试 on the run page", ctx do
-      failed = run_fixture(ctx.agent, %{status: :failed, failure_reason: :provider_quota})
+      failed = running_run!(ctx.agent)
+      finish!(ctx.agent, failed.id, :failed, %{failure_reason: :provider_quota})
 
       {:ok, view, _html} =
         live(log_in_user(ctx.conn, ctx.alice), "/w/#{ctx.workspace.slug}/runs/#{failed.id}")

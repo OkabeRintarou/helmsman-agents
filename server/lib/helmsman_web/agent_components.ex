@@ -145,4 +145,106 @@ defmodule HelmsmanWeb.AgentComponents do
     do: dgettext("ui", "指定成员：%{names}", names: Enum.join(names, "、"))
 
   def access_label(_view, _names), do: dgettext("ui", "仅所属用户")
+
+  @doc """
+  Daily runs of the 用量 tab (spec web-agents Agent 详情页, design D4): one stacked bar a
+  day, succeeded / failed / cancelled from the bottom (`days` of
+  `Helmsman.Runs.usage_for_agent/3`). Every non-empty day has a `<title>` with the three
+  counts; an empty period draws only the baseline.
+  """
+  attr :days, :list, required: true
+  attr :id, :string, required: true
+
+  def usage_bars(assigns) do
+    {bar, gap, height} = {8, 2, 48}
+    max = assigns.days |> Enum.map(&day_total/1) |> Enum.max(fn -> 0 end)
+    width = max(length(assigns.days) * (bar + gap) - gap, 1)
+
+    bars =
+      for {day, i} <- Enum.with_index(assigns.days), day_total(day) > 0 do
+        %{
+          id: "#{assigns.id}-#{day.date}",
+          x: i * (bar + gap),
+          title:
+            dgettext("ui", "%{date}：成功 %{ok}，失败 %{failed}，已停止 %{cancelled}",
+              date: Date.to_iso8601(day.date),
+              ok: day.succeeded,
+              failed: day.failed,
+              cancelled: day.cancelled
+            ),
+          parts:
+            stack(
+              [
+                {day.succeeded, "fill-success"},
+                {day.failed, "fill-danger"},
+                {day.cancelled, "fill-fg-subtle"}
+              ],
+              max,
+              height - 1
+            )
+        }
+      end
+
+    assigns = assign(assigns, width: width, height: height, bar: bar, bars: bars)
+
+    ~H"""
+    <svg
+      id={@id}
+      viewBox={"0 0 #{@width} #{@height}"}
+      width={@width}
+      height={@height}
+      role="img"
+      aria-label={dgettext("ui", "近 %{n} 天每天的运行数", n: length(@days))}
+      class="max-w-full"
+    >
+      <line
+        x1="0"
+        x2={@width}
+        y1={@height - 0.5}
+        y2={@height - 0.5}
+        class="stroke-border-strong"
+        stroke-width="1"
+      />
+      <g :for={b <- @bars} id={b.id} data-usage-day>
+        <title>{b.title}</title>
+        <rect
+          :for={p <- b.parts}
+          x={b.x}
+          y={p.y}
+          width={@bar}
+          height={p.h}
+          class={p.class}
+        />
+      </g>
+    </svg>
+    """
+  end
+
+  defp day_total(day), do: day.succeeded + day.failed + day.cancelled
+
+  # Segments from the baseline up; each non-zero count gets at least one pixel.
+  defp stack(counts, max, room) do
+    {parts, _top} =
+      Enum.reduce(counts, {[], room}, fn
+        {0, _class}, acc ->
+          acc
+
+        {n, class}, {parts, top} ->
+          h = max(round(n / max * room), 1)
+          {[%{y: top - h, h: h, class: class} | parts], top - h}
+      end)
+
+    Enum.reverse(parts)
+  end
+
+  @doc "An integer with thousands separators: 1,234,567."
+  def thousands(nil), do: "0"
+
+  def thousands(n) when is_integer(n) do
+    n
+    |> Integer.to_string()
+    |> String.reverse()
+    |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
+    |> String.reverse()
+  end
 end

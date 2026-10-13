@@ -54,6 +54,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
              member_names: member_names(scope),
              can_run?: Policy.authorize(scope, :run_agent) == :ok,
              availability: nil,
+             usage: nil,
              runs: %{
                active: [],
                pending: [],
@@ -113,6 +114,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
 
     socket =
       socket
+      |> load_usage()
       |> open_form(params["panel"] == "edit" and can_edit?(socket.assigns))
       |> open_run_panel(params["panel"] == "run" and run_state(socket.assigns) == :enabled)
 
@@ -266,6 +268,16 @@ defmodule HelmsmanWeb.AgentLive.Show do
     end
   end
 
+  # The 用量 tab reads its data only while it is shown (R6).
+  defp load_usage(%{assigns: %{tab: "usage", agent: %{kind: "managed"}}} = socket) do
+    case RunData.usage(socket.assigns.current_scope, socket.assigns.name) do
+      {:ok, usage} -> assign(socket, :usage, usage)
+      {:error, _} -> assign(socket, :usage, nil)
+    end
+  end
+
+  defp load_usage(socket), do: socket
+
   defp grow(socket, key) do
     state = Map.update!(socket.assigns.runs, key, &(&1 + @page))
     socket |> assign(:runs, state) |> load_runs()
@@ -358,7 +370,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
     end
   end
 
-  # The views returned by the agent functions lack the R7 fields RunData adds.
+  # The views returned by the agent functions lack the run counts of `Agents.get/2`.
   defp complete(socket, view) do
     case RunData.agent(socket.assigns.current_scope, view.name) do
       {:ok, agent} -> agent
@@ -375,7 +387,8 @@ defmodule HelmsmanWeb.AgentLive.Show do
     do: {:noreply, Throttle.schedule(socket, :reload_runs)}
 
   def handle_info(:reload_runs, socket),
-    do: {:noreply, socket |> Throttle.done(:reload_runs) |> reload() |> load_runs()}
+    do:
+      {:noreply, socket |> Throttle.done(:reload_runs) |> reload() |> load_runs() |> load_usage()}
 
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, put_agent(socket, socket.assigns.agent)}
@@ -399,6 +412,68 @@ defmodule HelmsmanWeb.AgentLive.Show do
   end
 
   ## Rendering
+
+  attr :usage, :map, default: nil
+
+  defp usage_tab(%{usage: %{totals: %{runs: n}}} = assigns) when n > 0 do
+    ~H"""
+    <div id="agent-usage" class="flex flex-col gap-4 py-2">
+      <.usage_bars id="agent-usage-bars" days={@usage.days} />
+      <div class="flex items-center gap-4 text-caption text-fg-muted">
+        <span class="inline-flex items-center gap-1">
+          <span class="size-2 rounded-badge bg-success"></span>{dgettext("ui", "成功")}
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <span class="size-2 rounded-badge bg-danger"></span>{dgettext("ui", "失败")}
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <span class="size-2 rounded-badge bg-fg-subtle"></span>{dgettext("ui", "已停止")}
+        </span>
+      </div>
+      <dl id="agent-usage-totals" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <.usage_total id="agent-usage-runs" label={dgettext("ui", "运行")}>
+          {thousands(@usage.totals.runs)}
+        </.usage_total>
+        <.usage_total id="agent-usage-input" label={dgettext("ui", "输入 token")}>
+          {thousands(@usage.totals.input_tokens)}
+        </.usage_total>
+        <.usage_total id="agent-usage-output" label={dgettext("ui", "输出 token")}>
+          {thousands(@usage.totals.output_tokens)}
+        </.usage_total>
+        <.usage_total
+          :if={is_number(@usage.totals.cost_usd)}
+          id="agent-usage-cost"
+          label={dgettext("ui", "费用")}
+        >
+          {RunComponents.cost_text(@usage.totals.cost_usd)}
+        </.usage_total>
+      </dl>
+    </div>
+    """
+  end
+
+  defp usage_tab(assigns) do
+    ~H"""
+    <div id="agent-usage">
+      <p id="agent-usage-empty" class="py-6 text-center text-body text-fg-muted">
+        {dgettext("ui", "近 30 天没有运行")}
+      </p>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :label, :string, required: true
+  slot :inner_block, required: true
+
+  defp usage_total(assigns) do
+    ~H"""
+    <div id={@id} class="rounded-field border border-border px-3 py-2">
+      <dt class="text-caption text-fg-muted">{@label}</dt>
+      <dd class="text-title font-semibold tabular-nums text-fg">{render_slot(@inner_block)}</dd>
+    </div>
+    """
+  end
 
   defp tab_path(uri, "runs"), do: Url.drop_params(uri, ["tab"])
   defp tab_path(uri, tab), do: Url.put_params(uri, %{tab: tab})
@@ -575,9 +650,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
             </p>
           </div>
 
-          <div :if={@tab == "usage"} id="agent-usage">
-            <p class="py-6 text-center text-body text-fg-muted">{dgettext("ui", "近 30 天没有运行")}</p>
-          </div>
+          <.usage_tab :if={@tab == "usage"} usage={@usage} />
         </section>
 
         <aside id="agent-properties" aria-label={dgettext("ui", "属性")}>

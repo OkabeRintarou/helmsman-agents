@@ -840,6 +840,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
         slug: slug,
         primary: primary,
         secondary: secondary,
+        working: TaskRuns.working_agents(assigns.task_runs),
+        verify_lock: verify_lock(assigns.task_runs),
         assignees: assignee_options(assigns.assignable, assigns.task.assignee),
         availability: assigns.availability,
         open_question:
@@ -862,6 +864,11 @@ defmodule HelmsmanWeb.TaskLive.Show do
                 <.icon name="lucide-circle-question-mark" class="size-3.5" />{dgettext("ui", "待回答")}
               </.badge>
             </a>
+            <.working_chip
+              id="task-working"
+              agents={@working}
+              on_click={working_click(@task_runs, @uri)}
+            />
             <span id="task-status"><.status_badge status={@task.status} /></span>
             <div :if={@secondary != []} class="flex items-center gap-2 max-sm:hidden">
               <.transition_button :for={button <- @secondary} button={button} from={@task.status} />
@@ -877,7 +884,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
             >
               <:trigger><.icon name="lucide-ellipsis" class="size-4" /></:trigger>
             </.dropdown>
-            <.transition_button :for={button <- @primary} button={button} from={@task.status} />
+            <.transition_button
+              :for={button <- @primary}
+              button={button}
+              from={@task.status}
+              lock={@verify_lock}
+            />
           </:actions>
         </.page_header>
       </:header>
@@ -1095,20 +1107,33 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   attr :button, :map, required: true
   attr :from, :string, required: true
+  attr :lock, :string, default: nil, doc: "why 验收 is unavailable (a run is active)"
 
   defp transition_button(assigns) do
+    assigns = assign(assigns, :reason, if(assigns.button.to == "verified", do: assigns.lock))
+
     ~H"""
     <.button
       id={"transition-#{@button.to}"}
       size="sm"
       variant={if(@button.primary?, do: "primary", else: "secondary")}
       data-kind={@button.kind}
+      disabled_reason={@reason}
       phx-click={transition_click(@button, @from)}
     >
       {@button.label}
     </.button>
     """
   end
+
+  # 验收 waits for the active runs (design D8): the first one's agent explains why.
+  defp verify_lock(%{active: [%{agent: agent} | _]}), do: TransitionErrors.run_active_text(agent)
+  defp verify_lock(_state), do: nil
+
+  defp working_click(%{active: [%{id: id} | _]}, uri),
+    do: JS.patch(HelmsmanWeb.Url.put_params(uri, %{run: id}))
+
+  defp working_click(_state, _uri), do: nil
 
   defp transition_click(%{kind: :direct, to: to}, from),
     do: JS.push("transition", value: %{to: to, from: from})

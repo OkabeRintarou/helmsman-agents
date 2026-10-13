@@ -6,11 +6,16 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
   Live updates never reload the table: a summary that passes the current filters is
   moved to the top, one that does not is removed (`HelmsmanWeb.TaskLive.Filter`).
+
+  Rows carry `working`, the agents with a run in progress on the task (add-agents-runs-ui
+  D15, R5), read once per loaded page. A run change of a loaded task (`workspace:<id>:runs`)
+  re-reads only those tasks, coalesced by `HelmsmanWeb.Throttle`, and re-inserts the rows
+  whose agents changed; runs of tasks that are not loaded are ignored.
   """
   use HelmsmanWeb, :live_view
 
   alias Helmsman.{Events, Policy, Projects, Tasks}
-  alias HelmsmanWeb.{Filters, FormErrors, TaskComponents, TaskData, Url}
+  alias HelmsmanWeb.{Filters, FormErrors, RunData, TaskComponents, TaskData, Throttle, Url}
   alias HelmsmanWeb.TaskLive.Filter
 
   @impl true
@@ -23,7 +28,10 @@ defmodule HelmsmanWeb.TaskLive.Index do
         {:error, :not_found} -> raise HelmsmanWeb.NotFoundError
       end
 
-    if connected?(socket), do: Events.subscribe(Events.topic(:project, project.id))
+    if connected?(socket) do
+      Events.subscribe(Events.topic(:project, project.id))
+      Events.subscribe(Events.topic(:workspace_runs, scope.workspace.id))
+    end
 
     {:ok,
      socket
@@ -36,6 +44,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
        assignable: TaskData.assignable(scope),
        can_manage?: Policy.authorize(scope, :update_project) == :ok,
        shown: MapSet.new(),
+       working: %{},
+       working_pending: MapSet.new(),
        cursor: nil,
        has_more: false,
        panel: nil,
@@ -95,9 +105,12 @@ defmodule HelmsmanWeb.TaskLive.Index do
     opts = Filter.domain_opts(filters)
     {:ok, rows, has_more, cursor} = TaskData.page(scope, project.key, opts, nil)
     summaries = Enum.map(rows, &Tasks.summary/1)
+    working = read_working(scope, summaries)
+    summaries = Enum.map(summaries, &with_working(&1, working))
 
     socket
     |> assign(
+      working: working,
       filters: filters,
       has_more: has_more,
       cursor: cursor,
@@ -148,6 +161,9 @@ defmodule HelmsmanWeb.TaskLive.Index do
     {:ok, rows, has_more, cursor} = TaskData.page(scope, project.key, opts, socket.assigns.cursor)
 
     summaries = Enum.map(rows, &Tasks.summary/1)
+    working = read_working(scope, summaries)
+    summaries = Enum.map(summaries, &with_working(&1, working))
+    socket = assign(socket, :working, Map.merge(socket.assigns.working, working))
 
     socket =
       Enum.reduce(summaries, socket, fn summary, socket ->
@@ -182,6 +198,16 @@ defmodule HelmsmanWeb.TaskLive.Index do
     socket = merge_labels(socket, [summary])
 
     if Filter.match?(summary, socket.assigns.filters) do
+      # A task entering the list may already have runs in progress: its runs were not
+      # followed while it was out, so they are read now (code-review-4).
+      socket =
+        if MapSet.member?(socket.assigns.shown, summary.id),
+          do: socket,
+          else:
+            put_working(socket, summary.id, read_working(socket.assigns.current_scope, [summary]))
+
+      summary = with_working(summary, socket.assigns.working)
+
       {:noreply,
        socket
        |> stream_delete(:tasks, summary)
@@ -191,10 +217,29 @@ defmodule HelmsmanWeb.TaskLive.Index do
       socket =
         socket
         |> stream_delete(:tasks, summary)
+        |> forget_working(summary.id)
         |> assign(:shown, MapSet.delete(socket.assigns.shown, summary.id))
 
       {:noreply, refill(socket)}
     end
+  end
+
+  def handle_info({:run_updated, %{task: ident}}, socket) when is_binary(ident) do
+    if MapSet.member?(socket.assigns.shown, ident) do
+      pending = MapSet.put(socket.assigns.working_pending, ident)
+
+      {:noreply,
+       socket |> assign(:working_pending, pending) |> Throttle.schedule(:reload_working)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info(:reload_working, socket) do
+    socket = Throttle.done(socket, :reload_working)
+    idents = socket.assigns.working_pending |> MapSet.intersection(socket.assigns.shown)
+    socket = assign(socket, :working_pending, MapSet.new())
+    {:noreply, refresh_working(socket, MapSet.to_list(idents))}
   end
 
   def handle_info({:projects_changed}, socket) do
@@ -202,6 +247,59 @@ defmodule HelmsmanWeb.TaskLive.Index do
       {:ok, project} -> {:noreply, assign(socket, project: project, page_title: project.name)}
       {:error, _} -> {:noreply, socket}
     end
+  end
+
+  def handle_info(_message, socket), do: {:noreply, socket}
+
+  # The agents working on each task of `summaries` (R5): one query.
+  defp read_working(_scope, []), do: %{}
+
+  defp read_working(scope, summaries) do
+    case RunData.active_agents(scope, Enum.map(summaries, & &1.id)) do
+      {:ok, working} -> working
+      {:error, _} -> %{}
+    end
+  end
+
+  defp put_working(socket, ident, fresh),
+    do: assign(socket, :working, socket.assigns.working |> Map.delete(ident) |> Map.merge(fresh))
+
+  # A row that leaves the list keeps no run state: it is read again if it comes back.
+  defp forget_working(socket, ident) do
+    assign(socket,
+      working: Map.delete(socket.assigns.working, ident),
+      working_pending: MapSet.delete(socket.assigns.working_pending, ident)
+    )
+  end
+
+  defp with_working(summary, working),
+    do: Map.put(summary, :working, Map.get(working, summary.id, []))
+
+  # Re-reads the agents of `idents` and re-inserts the rows whose agents changed.
+  defp refresh_working(socket, []), do: socket
+
+  defp refresh_working(socket, idents) do
+    %{current_scope: scope, working: working} = socket.assigns
+
+    fresh =
+      case RunData.active_agents(scope, idents) do
+        {:ok, map} -> map
+        {:error, _} -> Map.take(working, idents)
+      end
+
+    changed = Enum.filter(idents, &(Map.get(fresh, &1, []) != Map.get(working, &1, [])))
+    working = working |> Map.drop(idents) |> Map.merge(fresh)
+    socket = assign(socket, :working, working)
+
+    Enum.reduce(changed, socket, fn ident, socket ->
+      case Tasks.get(scope, ident) do
+        {:ok, task} ->
+          stream_insert(socket, :tasks, with_working(Tasks.summary(task), working))
+
+        {:error, _} ->
+          socket
+      end
+    end)
   end
 
   # Every loaded row left the filter but more may match after the cursor: load the
@@ -222,6 +320,11 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
     assign(socket, :label_options, labels)
   end
+
+  defp working_label([name]), do: dgettext("ui", "%{name} 正在处理", name: name)
+
+  defp working_label([name | rest]),
+    do: dgettext("ui", "%{name} 等 %{count} 个正在处理", name: name, count: length(rest) + 1)
 
   @impl true
   def render(assigns) do
@@ -309,7 +412,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
         rows={@streams.tasks}
         label={dgettext("ui", "%{project} 的任务", project: @project.name)}
         row_click={&JS.navigate("/w/#{@slug}/t/#{&1.id}")}
-        row_version={& &1.updated_at}
+        row_version={&{&1.updated_at, &1[:working]}}
         has_more={@has_more}
         load_more="load_more"
       >
@@ -322,6 +425,13 @@ defmodule HelmsmanWeb.TaskLive.Index do
         <:col :let={task} label={dgettext("ui", "标题")}>
           <span class="inline-flex min-w-0 items-center gap-1.5">
             <span class="truncate text-fg">{task.title}</span>
+            <.icon
+              :if={(task[:working] || []) != []}
+              name="lucide-loader"
+              class="size-3.5 flex-none text-brand motion-safe:animate-spin"
+              label={working_label(task.working)}
+              data-working
+            />
             <.tooltip :if={task.open_question} text={dgettext("ui", "待回答")} class="flex-none">
               <.icon
                 name="lucide-circle-question-mark"

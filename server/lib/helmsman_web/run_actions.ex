@@ -33,7 +33,7 @@ defmodule HelmsmanWeb.RunActions do
          {:ok, _run} <- RunData.cancel(socket.assigns.current_scope, id) do
       reload.(socket)
     else
-      {:error, reason} -> socket |> put_flash(:error, error_text(reason, socket)) |> reload.()
+      {:error, reason} -> socket |> put_flash(:error, refusal(reason, id, socket)) |> reload.()
       :error -> socket
     end
   end
@@ -43,7 +43,7 @@ defmodule HelmsmanWeb.RunActions do
          {:ok, _run} <- RunData.retry(socket.assigns.current_scope, id) do
       socket |> put_flash(:info, dgettext("ui", "已重新排队")) |> reload.()
     else
-      {:error, reason} -> socket |> put_flash(:error, error_text(reason, socket)) |> reload.()
+      {:error, reason} -> socket |> put_flash(:error, refusal(reason, id, socket)) |> reload.()
       :error -> socket
     end
   end
@@ -57,16 +57,31 @@ defmodule HelmsmanWeb.RunActions do
 
   defp put_flash(socket, kind, text), do: Phoenix.LiveView.put_flash(socket, kind, text)
 
-  @doc "Text of a refused stop or retry."
-  def error_text(reason, socket \\ nil)
+  # The agent's name is read only for the refusals that name it.
+  defp refusal(reason, id, socket) when reason in [:agent_disabled, :agent_archived] do
+    agent =
+      case RunData.run(socket.assigns.current_scope, id) do
+        {:ok, run} -> run.agent
+        _ -> nil
+      end
+
+    error_text(reason, agent)
+  end
+
+  defp refusal(reason, _id, _socket), do: error_text(reason)
+
+  @doc "Text of a refused stop or retry (`agent`: the run's agent, for the agent refusals)."
+  def error_text(reason, agent \\ nil)
   def error_text(:already_finished, _), do: dgettext("ui", "运行已经结束")
 
   def error_text({:already_retried, id}, _),
     do: dgettext("ui", "这次运行已经重试过（#%{id}）", id: id)
 
   def error_text(:task_closed, _), do: dgettext("ui", "任务已验收或撤销，不能重试")
-  def error_text(:agent_disabled, _), do: dgettext("ui", "Agent 已停用")
-  def error_text(:agent_archived, _), do: dgettext("ui", "Agent 已归档")
+  def error_text(:agent_disabled, nil), do: dgettext("ui", "Agent 已停用")
+  def error_text(:agent_disabled, agent), do: dgettext("ui", "%{agent} 已停用", agent: agent)
+  def error_text(:agent_archived, nil), do: dgettext("ui", "Agent 已归档")
+  def error_text(:agent_archived, agent), do: dgettext("ui", "%{agent} 已归档", agent: agent)
   def error_text(:forbidden, _), do: dgettext("ui", "没有权限执行此操作")
   def error_text(:not_found, _), do: dgettext("ui", "运行不存在")
   def error_text(_reason, _), do: dgettext("ui", "操作失败，请稍后重试")

@@ -84,6 +84,22 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
   end
 
   describe "new" do
+    test "新建 Agent opens only the agent form, not the shell's 新建任务", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents)
+      assert has_element?(view, ~s(#agents-new[href="#{ctx.agents}?panel=new-agent"]))
+
+      view |> element("#agents-new") |> render_click()
+      assert_patch(view, ctx.agents <> "?panel=new-agent")
+      assert open?(view, "agent-panel")
+      refute open?(view, "new-task-dialog")
+    end
+
+    test "the shell's ?panel=new opens 新建任务, not the agent form", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new")
+      assert open?(view, "new-task-dialog")
+      refute open?(view, "agent-panel")
+    end
+
     test "creating goes to the new agent with the defaults", ctx do
       {:ok, view, _html} = open(ctx, :alice, ctx.agents)
       view |> element("#agents-new") |> render_click()
@@ -102,7 +118,7 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
     end
 
     test "the runtime menu lists only the user's runtimes of the CLI", ctx do
-      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new")
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new-agent")
       assert option_texts(view, "#agent-runtime") == ["不绑定", "mbp · 在线"]
 
       render_change(view, "agent_form_change", %{"agent" => new_params(ctx)})
@@ -129,7 +145,7 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
     end
 
     test "models come from the runtime, free text without a list", ctx do
-      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new")
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new-agent")
       render_change(view, "agent_form_change", %{"agent" => new_params(ctx)})
       assert option_texts(view, "#agent-model") == ["CLI 缺省", "opus", "sonnet"]
 
@@ -141,7 +157,7 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
     end
 
     test "a name already taken", ctx do
-      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new")
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new-agent")
 
       render_submit(view, "agent_form_submit", %{
         "agent" => new_params(ctx, %{"name" => "keel/dev", "description" => "保留"})

@@ -1,85 +1,58 @@
 defmodule HelmsmanWeb.TaskLive.RunsWindowTest do
   @moduledoc """
-  Spec web-runs 排队运行很多 (design D8, D8a) against the read functions of
-  add-run-read-models (R9, R10), stood in for by `StubRuns` until that change is merged.
-  Changes the application environment, so not async.
+  Spec web-runs 排队运行很多 (design D8, D8a) on real runs: a task with 51 pending runs
+  (one per agent, the pending runs of a task being unique per agent and lane).
   """
   use HelmsmanWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
+  import Helmsman.AgentsFixtures
   import Helmsman.RunsFixtures
+  import Helmsman.RunLifecycleFixtures
+  import HelmsmanWeb.LiveHelpers
 
   alias Helmsman.Tasks
 
-  defmodule StubRuns do
-    @moduledoc false
-    # R9 for a task returns every pending run (add-run-read-models decision 9).
-    def list_open(_scope, {:task, _ident}, _opts) do
-      pending = :persistent_term.get({__MODULE__, :pending})
-
-      {:ok,
-       %{
-         active: :persistent_term.get({__MODULE__, :active}),
-         pending: pending,
-         pending_total: length(pending)
-       }}
-    end
-
-    def list_finished(_scope, _target, _opts), do: {:ok, %{runs: [], total: 0}}
-  end
-
   setup %{conn: conn} do
-    previous = Application.get_env(:helmsman, HelmsmanWeb.RunData)
-    Application.put_env(:helmsman, HelmsmanWeb.RunData, runs: StubRuns)
-
-    on_exit(fn ->
-      if previous,
-        do: Application.put_env(:helmsman, HelmsmanWeb.RunData, previous),
-        else: Application.delete_env(:helmsman, HelmsmanWeb.RunData)
-    end)
-
     ctx = dispatch_fixture()
     {:ok, task} = Tasks.create(ctx.alice_scope, ctx.project.key, %{title: "很多排队"})
-    Map.merge(ctx, %{conn: conn, task: task, path: "/w/#{ctx.workspace.slug}/t/#{task.ident}"})
-  end
+    runtime_id = profile(ctx.agent).runtime_id
 
-  defp summary(id, status, agent) do
-    %{
-      id: id,
-      task: nil,
-      agent: agent,
-      lane: "work",
-      status: status,
-      triggers: [],
-      failure_reason: nil,
-      priority: 2,
-      inserted_at: DateTime.add(~U[2026-10-12 08:00:00.000000Z], id),
-      updated_at: ~U[2026-10-12 08:00:00.000000Z]
-    }
-  end
+    agents =
+      [ctx.agent] ++
+        for n <- 2..51 do
+          managed_agent_fixture(ctx.alice_scope, %{name: "agent-#{n}", runtime_id: runtime_id})
+          agent_actor(ctx.workspace, "agent-#{n}")
+        end
 
-  defp stub_runs(active, pending) do
-    :persistent_term.put({StubRuns, :active}, active)
-    :persistent_term.put({StubRuns, :pending}, pending)
+    runs = for agent <- agents, do: run_fixture(agent, %{task_id: task.id})
+
+    Map.merge(ctx, %{
+      conn: conn,
+      task: task,
+      runs: runs,
+      path: "/w/#{ctx.workspace.slug}/t/#{task.ident}"
+    })
   end
 
   test "51 pending runs all show, on mount and after a refresh", ctx do
-    stub_runs([], Enum.map(1..51, &summary(&1, "queued", "agent-#{&1}")))
     {:ok, view, _html} = live(log_in_user(ctx.conn, ctx.alice), ctx.path)
 
-    for id <- 1..51, do: assert(has_element?(view, "#run-card-#{id}"))
+    for run <- ctx.runs, do: assert(has_element?(view, "#run-card-#{run.id}"))
 
-    # One starts: 50 pending + 1 active, still complete.
-    stub_runs(
-      [summary(1, "running", "agent-1")],
-      Enum.map(2..51, &summary(&1, "queued", "agent-#{&1}"))
-    )
+    # keel/dev's run is claimed (the daemon takes one at a time): 50 pending + 1 active,
+    # still complete after the reload.
+    [first | rest] = ctx.runs
+    set_run!(first.id, priority: 3)
+    daemon = daemon_of(ctx.agent)
+    Helmsman.Repo.update!(Ecto.Changeset.change(daemon, max_concurrency: 1))
+    assert first.id in claim!(ctx.agent)
 
-    send(view.pid, :reload_runs)
+    eventually(fn ->
+      has_element?(view, ~s(#run-card-#{first.id} [data-run-status="claimed"]))
+    end)
 
-    assert has_element?(view, ~s(#run-card-1 [data-run-status="running"]))
-
-    for id <- 2..51,
-        do: assert(has_element?(view, ~s(#run-card-#{id} [data-run-status="queued"])))
+    for run <- rest,
+        do: assert(has_element?(view, ~s(#run-card-#{run.id} [data-run-status="queued"])))
   end
 end
