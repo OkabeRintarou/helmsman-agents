@@ -272,14 +272,20 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
 
       html =
         render_submit(view, "agent_form_submit", %{
-          "agent" => %{"env_add" => %{"1" => %{"name" => "HELMSMAN_X", "value" => "x1"}}}
+          "agent" => %{
+            "env_add" => %{
+              "1" => %{"name" => "HELMSMAN_X", "value" => "secret-value-not-in-page-7Qz"}
+            }
+          }
         })
 
       assert open?(view, "agent-panel")
       assert in_panel?(view, "#agent-secrets-error", "HELMSMAN_X")
-      refute html =~ "x1"
-      refute view |> portal("agent-panel") |> LazyHTML.to_html() =~ "x1"
-      refute :sys.get_state(view.pid) |> inspect(limit: :infinity) =~ ~s("x1")
+      refute html =~ "secret-value-not-in-page-7Qz"
+      refute view |> portal("agent-panel") |> LazyHTML.to_html() =~ "secret-value-not-in-page-7Qz"
+
+      refute :sys.get_state(view.pid) |> inspect(limit: :infinity) =~
+               ~s("secret-value-not-in-page-7Qz")
     end
 
     test "secret inputs are empty password fields in ignored containers of the panel's generation",
