@@ -10,8 +10,10 @@ defmodule HelmsmanWeb.TaskLive.LocalBranchTest do
   import HelmsmanWeb.PortalHelpers
   import HelmsmanWeb.LiveHelpers
   import Helmsman.AgentsFixtures
+  import Helmsman.GitHubFixtures
   import Helmsman.LocalRepositoriesFixtures
   import Helmsman.ProjectsFixtures
+  import Helmsman.PullRequestFixtures, only: [pr_row: 2]
   import Helmsman.RunsFixtures
 
   alias Helmsman.{Events, LocalRepositories, Repo, Tx}
@@ -522,6 +524,37 @@ defmodule HelmsmanWeb.TaskLive.LocalBranchTest do
                "#new-task-other-machine",
                "这个项目的仓库 api 在 bob-pc 上"
              )
+    end
+  end
+
+  # add-local-repositories-ui D7, D9 (spec web-local-repositories 本地模式的验收预告与 PR 界面).
+  describe "coexisting with the PR UI (4.1)" do
+    test "没有 PR 卡片 in the local mode", ctx do
+      deliver(ctx)
+      {:ok, view, _html} = open(ctx)
+
+      assert has_element?(view, "#task-local-branch")
+      refute has_element?(view, "#task-pr")
+    end
+
+    test "a pull request left from the GitHub binding is not shown", ctx do
+      installation = installation_fixture(ctx.workspace)
+      repository = repository_fixture(installation, %{owner: "acme", name: "app"})
+      deliver(ctx)
+
+      pr_row(
+        %{workspace: ctx.workspace, task: ctx.task, repository: repository, branch: ctx.branch},
+        number: 7,
+        head_sha: @a
+      )
+
+      {:ok, view, html} = open(ctx)
+
+      # The project is bound to the local repository: the old pull request is no longer
+      # Helmsman's (add-pr-reconcile-merge decision 20) and `PullRequests.get/2` has none.
+      assert has_element?(view, "#task-local-branch")
+      refute has_element?(view, "#task-pr")
+      refute html =~ "acme/app#7"
     end
   end
 

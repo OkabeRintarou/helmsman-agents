@@ -186,7 +186,11 @@ defmodule HelmsmanWeb.LocalRepositoryComponents do
   attr :cooldown?, :boolean, default: false
 
   def local_branch_card(assigns) do
-    assigns = assign(assigns, card_assigns(assigns.branch, assigns.project))
+    assigns =
+      assigns
+      |> assign(card_assigns(assigns.branch, assigns.project))
+      # The same look as the PR card's 已合并 (D7).
+      |> assign(:merged_state, HelmsmanWeb.GitHubComponents.pr_state("merged"))
 
     ~H"""
     <section
@@ -200,8 +204,8 @@ defmodule HelmsmanWeb.LocalRepositoryComponents do
           {dgettext("ui", "本地分支")}
         </h2>
         <span :if={@branch} id="task-local-branch-state">
-          <.badge :if={@merged?} tone={:success}>
-            <.icon name="lucide-git-merge" class="size-3.5" />{dgettext("ui", "已合并")}
+          <.badge :if={@merged?} tone={@merged_state.tone} data-tone={@merged_state.tone}>
+            <.icon name={@merged_state.icon} class="size-3.5" />{@merged_state.label}
           </.badge>
           <.badge :if={!@merged?} tone={:muted}>{dgettext("ui", "未合并")}</.badge>
         </span>

@@ -4855,7 +4855,6 @@ msgid "已保存仓库设置"
 msgstr ""
 
 #: lib/helmsman_web/github_components.ex
-#: lib/helmsman_web/local_repository_components.ex
 #: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "已合并"

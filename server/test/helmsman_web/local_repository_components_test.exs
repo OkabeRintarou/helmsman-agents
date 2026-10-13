@@ -116,6 +116,47 @@ defmodule HelmsmanWeb.LocalRepositoryComponentsTest do
     end
   end
 
+  describe "local_branch_card/1" do
+    defp branch(state) do
+      %{
+        branch: "hm/7/bos-12",
+        head_sha: String.duplicate("a1b2c3d4", 5),
+        state: state,
+        merged_at: ~U[2026-10-13 08:00:00Z],
+        merged_by: nil,
+        merge_note: nil,
+        base_branch: "main",
+        updated_at: ~U[2026-10-13 07:00:00Z],
+        local_repository: repo(%{})
+      }
+    end
+
+    defp state_badge(html),
+      do: html |> LazyHTML.from_fragment() |> LazyHTML.query("#task-local-branch-state > span")
+
+    test "已合并 takes the PR card's 已合并 tone (4.2)" do
+      %{tone: tone} = HelmsmanWeb.GitHubComponents.pr_state("merged")
+      assert tone == :review
+
+      html = render_component(&C.local_branch_card/1, branch: branch("merged"))
+      badge = state_badge(html)
+
+      assert LazyHTML.attribute(badge, "data-tone") == ["review"]
+      assert [class] = LazyHTML.attribute(badge, "class")
+      assert class =~ "text-review-fg"
+      assert class =~ "tint-review"
+      assert LazyHTML.text(badge) =~ "已合并"
+    end
+
+    test "未合并 stays muted" do
+      html = render_component(&C.local_branch_card/1, branch: branch("open"))
+      badge = state_badge(html)
+
+      assert LazyHTML.text(badge) =~ "未合并"
+      refute LazyHTML.attribute(badge, "class") |> hd() =~ "review"
+    end
+  end
+
   describe "review_commands/2" do
     @branch %{branch: "hm/7/bos-12", base_branch: "main", state: "open"}
 

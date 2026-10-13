@@ -611,18 +611,37 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
               <thead class="text-left text-caption text-fg-muted">
                 <tr class="border-b border-border">
                   <th class="px-3 py-2 font-medium">{dgettext("ui", "名字")}</th>
-                  <th class="px-3 py-2 font-medium">{dgettext("ui", "机器")}</th>
+                  <th class="hidden px-3 py-2 font-medium md:table-cell">
+                    {dgettext("ui", "机器")}
+                  </th>
                   <th :if={@all?} class="px-3 py-2 font-medium">{dgettext("ui", "所属用户")}</th>
                   <th class="px-3 py-2 font-medium">{dgettext("ui", "路径")}</th>
-                  <th class="px-3 py-2 font-medium">{dgettext("ui", "默认分支")}</th>
-                  <th class="px-3 py-2 font-medium">{dgettext("ui", "状态")}</th>
+                  <th class="hidden px-3 py-2 font-medium md:table-cell">
+                    {dgettext("ui", "默认分支")}
+                  </th>
+                  <th class="hidden px-3 py-2 font-medium md:table-cell">
+                    {dgettext("ui", "状态")}
+                  </th>
                   <th class="px-3 py-2 font-medium">{dgettext("ui", "项目")}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
                 <tr :for={l <- @local_repositories} id={"local-repository-#{l.id}"}>
-                  <td class="px-3 py-2 font-mono text-fg" data-name>{l.name}</td>
-                  <td class="px-3 py-2 text-fg" data-machine>{l.daemon_name}</td>
+                  <td class="px-3 py-2 align-top md:align-middle">
+                    <span class="font-mono text-fg" data-name>{l.name}</span>
+                    <%!-- Narrow screens: the machine and status columns fold in here. --%>
+                    <span class="mt-1 flex flex-col items-start gap-1 md:hidden">
+                      <span class="text-caption text-fg-muted">{l.daemon_name}</span>
+                      <LocalRepositoryComponents.status_badge
+                        id={"local-repository-#{l.id}-status-compact"}
+                        repository={l}
+                        reason
+                      />
+                    </span>
+                  </td>
+                  <td class="hidden px-3 py-2 text-fg md:table-cell" data-machine>
+                    {l.daemon_name}
+                  </td>
                   <td :if={@all?} class="px-3 py-2 text-fg-muted" data-owner>{l.owner.name}</td>
                   <td class="max-w-64 px-3 py-2">
                     <span :if={l.path} class="flex min-w-0 items-center gap-1">
@@ -640,10 +659,13 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
                       />
                     </span>
                   </td>
-                  <td class="px-3 py-2 font-mono text-fg-muted" data-default-branch>
+                  <td
+                    class="hidden px-3 py-2 font-mono text-fg-muted md:table-cell"
+                    data-default-branch
+                  >
                     {l.default_branch || "—"}
                   </td>
-                  <td class="px-3 py-2">
+                  <td class="hidden px-3 py-2 md:table-cell">
                     <LocalRepositoryComponents.status_badge
                       id={"local-repository-#{l.id}-status"}
                       repository={l}

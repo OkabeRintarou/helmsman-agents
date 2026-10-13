@@ -1085,8 +1085,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
               @task.assignee != nil and Map.has_key?(@availability, @task.assignee.name)
             }
           />
-          <TaskPullRequest.card state={@task_pr} task={@task} runs={@task_runs} />
           <TaskLocalBranch.card state={@local_branch} />
+          <TaskPullRequest.card state={@task_pr} task={@task} runs={@task_runs} />
           <section aria-labelledby="task-history-title">
             <h2 id="task-history-title" class="mb-1 text-label font-medium text-fg-muted">
               {dgettext("ui", "历史")}
