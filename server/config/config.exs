@@ -52,7 +52,9 @@ config :helmsman, Oban,
        {"* * * * *", Helmsman.Runs.Workers.Sweep},
        {"45 4 * * *", Helmsman.Runs.Workers.PruneEvents},
        {"*/15 * * * *", Helmsman.GitHub.Workers.ReconcileSweep},
-       {"*/10 * * * *", Helmsman.Dispatch.Workers.DependencySweep}
+       {"*/10 * * * *", Helmsman.Dispatch.Workers.DependencySweep},
+       {"* * * * *", Helmsman.AgentDesigns.Sweep},
+       {"20 * * * *", Helmsman.AgentDesigns.Expire}
      ]}
   ]
 

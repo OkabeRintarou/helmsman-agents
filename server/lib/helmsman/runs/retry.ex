@@ -44,18 +44,23 @@ defmodule Helmsman.Runs.Retry do
     provider_rate_limit: {1, 300}
   }
 
-  @doc "Whether the failed `run` is retried automatically (decision 14)."
+  @doc """
+  Whether the failed `run` is retried automatically (decision 14). A
+  design run never is (`add-agent-conversation` decision 10).
+  """
   @spec automatic?(Run.t()) :: boolean()
-  def automatic?(%Run{status: :failed, failure_reason: :lease_expired}), do: true
+  def automatic?(%Run{} = run), do: not Runs.design_run?(run) and retryable?(run)
 
-  def automatic?(%Run{status: :failed, failure_reason: reason, auto_retries: retries}) do
+  defp retryable?(%Run{status: :failed, failure_reason: :lease_expired}), do: true
+
+  defp retryable?(%Run{status: :failed, failure_reason: reason, auto_retries: retries}) do
     case Map.fetch(@automatic, reason) do
       {:ok, {limit, _delay}} -> retries < limit
       :error -> false
     end
   end
 
-  def automatic?(_run), do: false
+  defp retryable?(_run), do: false
 
   ## Automatic
 
@@ -240,7 +245,8 @@ defmodule Helmsman.Runs.Retry do
   decision 14), without a limit on the number. Errors: `:not_found`,
   `:forbidden`, `:not_ended` (not `failed` or `cancelled`),
   `:agent_disabled`, `:agent_archived`, `:no_runtime`, `:runtime_disabled`,
-  `:task_closed`, `{:already_retried, id}` (its retry is no longer queued;
+  `:task_closed`, `:not_retryable` (a design run,
+  `add-agent-conversation` decision 10), `{:already_retried, id}` (its retry is no longer queued;
   a queued one is returned) and `:rate_limited`.
 
   Lock order: actor, profile, task (`FOR UPDATE`), runtime, run.
@@ -274,6 +280,7 @@ defmodule Helmsman.Runs.Retry do
     run = lock_original(snapshot)
 
     with :ok <- Policy.authorize(scope, :retry_run, Stop.policy_resource(run)),
+         :ok <- not_design(run),
          :ok <- ended(run),
          nil <- unavailable(agent, profile, runtime, run, task) do
       retry_once(run, retried?(run), scope, runtime)
@@ -295,6 +302,10 @@ defmodule Helmsman.Runs.Retry do
     with {:ok, queued} <- requeue(run, auto: false, by_actor_id: by, runtime_id: runtime.id),
          do: {:ok, Runs.summary(queued)}
   end
+
+  # `add-agent-conversation` decision 10: the user sends the turn again.
+  defp not_design(run),
+    do: if(Runs.design_run?(run), do: {:error, :not_retryable}, else: :ok)
 
   defp ended(%Run{status: status}) when status in [:failed, :cancelled], do: :ok
   defp ended(_run), do: {:error, :not_ended}

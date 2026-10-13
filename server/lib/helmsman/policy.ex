@@ -56,7 +56,10 @@ defmodule Helmsman.Policy do
     :change_workspace_slug,
     :update_workspace,
     # the user's own provider accounts (no workspace)
-    :manage_provider_accounts
+    :manage_provider_accounts,
+    # creation conversations and confirming their drafts
+    # (`add-agent-conversation` decision 6)
+    :design_agents
   ]
 
   # Actions with an authorization clause below.
@@ -105,7 +108,9 @@ defmodule Helmsman.Policy do
     :cancel_run,
     :retry_run,
     :write_task,
-    :link_tasks
+    :link_tasks,
+    :design_agents,
+    :design
   ]
 
   # The capability a run token needs for each action it may attempt; any
@@ -124,7 +129,8 @@ defmodule Helmsman.Policy do
     add_feedback: "write_task",
     revise_feedback: "write_task",
     write_task: "write_task",
-    link_tasks: "write_task"
+    link_tasks: "write_task",
+    design: "design"
   }
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -337,6 +343,24 @@ defmodule Helmsman.Policy do
        )
        when via in [nil, :web],
        do: allow_if(is_nil(actor) or actor.kind == :human)
+
+  ## Creation conversations (`add-agent-conversation` decisions 6, 7)
+
+  # Only a person's own web session, member and above: never an API
+  # token, a run or an agent.
+  defp check(
+         %Scope{user: %User{}, via: via, token: nil, run: nil, actor: actor} = scope,
+         :design_agents,
+         _resource
+       )
+       when via in [nil, :web],
+       do: allow_if((is_nil(actor) or actor.kind == :human) and role_at_least?(scope, :member))
+
+  # The draft tools: a run with the `design` capability (the run gate
+  # checked it). Whether the run is still the turn of an open conversation
+  # is checked by `Helmsman.AgentDesigns`.
+  defp check(%Scope{via: :run, run: %Run{capabilities: caps}}, :design, _resource),
+    do: allow_if("design" in caps)
 
   ## Runs (not management actions)
 

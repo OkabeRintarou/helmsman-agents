@@ -22,6 +22,10 @@ defmodule Helmsman.Runs.Revalidation do
   holds the task lock and saw no active run on the task); nothing but
   neutral markers left is `{:obsolete, :steered}`, some removed is
   `{:pruned, …}` unless another check fails.
+
+  A design run whose conversation is no longer open, or whose turn it no
+  longer is (`design: :ended`, read by the caller), is obsolete
+  (`add-agent-conversation` decision 10).
   """
 
   alias Helmsman.Actors.Actor
@@ -38,7 +42,8 @@ defmodule Helmsman.Runs.Revalidation do
           required(:profile) => AgentProfile.t() | nil,
           required(:task) => Task.t() | nil,
           required(:runtime) => Runtime.t() | nil,
-          optional(:steers) => Steering.facts()
+          optional(:steers) => Steering.facts(),
+          optional(:design) => :current | :ended | nil
         }
   @type obsolete_why ::
           :agent_disabled
@@ -48,6 +53,7 @@ defmodule Helmsman.Runs.Revalidation do
           | :task_closed
           | :reassigned
           | :steered
+          | :design_ended
   @type changes :: %{
           triggers: [map()],
           root_initiator_user_id: pos_integer(),
@@ -116,10 +122,15 @@ defmodule Helmsman.Runs.Revalidation do
     end
   end
 
-  defp obsolete(run, %{agent: agent, profile: profile, runtime: runtime, task: task}) do
+  defp obsolete(run, %{agent: agent, profile: profile, runtime: runtime, task: task} = locked) do
     agent_obsolete(agent, profile) || runtime_obsolete(run, profile, runtime) ||
-      task_obsolete(run, task, agent)
+      task_obsolete(run, task, agent) || design_obsolete(locked)
   end
+
+  # `add-agent-conversation` decision 10: a design run is valid only while
+  # it is the turn of an open conversation (`Helmsman.AgentDesigns.turn_state/1`).
+  defp design_obsolete(%{design: :ended}), do: :design_ended
+  defp design_obsolete(_locked), do: nil
 
   defp agent_obsolete(agent, profile) do
     cond do

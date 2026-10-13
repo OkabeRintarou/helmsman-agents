@@ -20,15 +20,20 @@ defmodule Helmsman.Runs.Spec do
   import Ecto.Query, warn: false
 
   alias Helmsman.Actors.Actor
+  alias Helmsman.AgentDesigns.Prompt, as: DesignPrompt
   alias Helmsman.Agents
   alias Helmsman.Feedback.Entry
   alias Helmsman.Feedback.Id, as: FeedbackId
   alias Helmsman.ProviderAccounts.{Headers, ProviderAccount}
   alias Helmsman.Repo
+  alias Helmsman.Runs
   alias Helmsman.Runs.{GitRepo, LocalRepo, Prompt, Run}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
   alias HelmsmanProtocol.RunSpec
+
+  @design_timeout_minutes 15
+  @design_idle_minutes 5
 
   @doc """
   The run description of the claimed `run`, with its `token`, the
@@ -71,17 +76,31 @@ defmodule Helmsman.Runs.Spec do
           extra_mcp_servers: profile.extra_mcp_servers || %{},
           provider_account: provider_account(run.provider_account_id)
         },
-        prompt: Prompt.build(run, ctx),
+        prompt: prompt(run, ctx),
         resume_session_id: resume_session_id,
         repo: repo && repo_spec(repo),
         mcp: %{url: base_url <> "/mcp", token: token},
-        limits: %{
-          timeout_ms: profile.timeout_minutes * 60_000,
-          idle_timeout_ms: profile.idle_timeout_minutes * 60_000
-        },
+        limits: limits(run, profile),
         trigger: main_trigger(run.triggers)
       })
     end
+  end
+
+  # `add-agent-conversation` decision 8: a design run gets the prompt of
+  # its conversation and at most 15 minutes, 5 without output.
+  defp prompt(run, ctx) do
+    if Runs.design_run?(run), do: DesignPrompt.for_run(run), else: Prompt.build(run, ctx)
+  end
+
+  defp limits(run, profile) do
+    {timeout, idle} =
+      if Runs.design_run?(run),
+        do:
+          {min(profile.timeout_minutes, @design_timeout_minutes),
+           min(profile.idle_timeout_minutes, @design_idle_minutes)},
+        else: {profile.timeout_minutes, profile.idle_timeout_minutes}
+
+    %{timeout_ms: timeout * 60_000, idle_timeout_ms: idle * 60_000}
   end
 
   defp provider_account(nil), do: nil

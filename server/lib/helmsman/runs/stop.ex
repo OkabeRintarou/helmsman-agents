@@ -59,21 +59,36 @@ defmodule Helmsman.Runs.Stop do
     end
   end
 
-  defp cancel_locked(%Run{status: status} = run, scope) when status in [:deferred, :queued] do
-    run = Lifecycle.end!(run, :cancelled, cancel_requested_by_id: actor_id(scope))
-    {:ok, Runs.summary(run)}
+  defp cancel_locked(run, scope) do
+    case stop_locked(run, actor_id(scope)) do
+      {:ok, run} -> {:ok, Runs.summary(run)}
+      error -> error
+    end
   end
 
-  defp cancel_locked(%Run{status: status} = run, scope) when status in [:claimed, :running] do
-    run =
-      Lifecycle.update!(run, status: :cancelling, cancel_requested_by_id: actor_id(scope))
+  @doc """
+  Stops the run, locked `FOR UPDATE` by the caller, without any
+  authorization (the caller decided it may: `cancel/2`, or a person
+  stopping the turn of their own creation conversation,
+  `add-agent-conversation` decision 10): pending → `cancelled`, `claimed`
+  or `running` → `cancelling` (its daemon told after the commit),
+  `cancelling` unchanged; ended → `{:error, :already_finished}`.
+  `requested_by` is the actor recorded as asking (nil: none).
+  """
+  @spec stop_locked(Run.t(), pos_integer() | nil) ::
+          {:ok, Run.t()} | {:error, :already_finished}
+  def stop_locked(%Run{status: status} = run, requested_by)
+      when status in [:deferred, :queued],
+      do: {:ok, Lifecycle.end!(run, :cancelled, cancel_requested_by_id: requested_by)}
 
+  def stop_locked(%Run{status: status} = run, requested_by) when status in [:claimed, :running] do
+    run = Lifecycle.update!(run, status: :cancelling, cancel_requested_by_id: requested_by)
     push_cancel(run)
-    {:ok, Runs.summary(run)}
+    {:ok, run}
   end
 
-  defp cancel_locked(%Run{status: :cancelling} = run, _scope), do: {:ok, Runs.summary(run)}
-  defp cancel_locked(_run, _scope), do: {:error, :already_finished}
+  def stop_locked(%Run{status: :cancelling} = run, _requested_by), do: {:ok, run}
+  def stop_locked(_run, _requested_by), do: {:error, :already_finished}
 
   defp actor_id(%Scope{actor: %Actor{id: id}}), do: id
   defp actor_id(_scope), do: nil
@@ -140,6 +155,7 @@ defmodule Helmsman.Runs.Stop do
       )
 
     Enum.each(runs, &Runs.notify_run/1)
+    Runs.after_ended(runs)
     count + stop(Enum.map(active, &elem(&1, 0)), failure_reason: :unauthorized)
   end
 

@@ -5,6 +5,7 @@ defmodule Helmsman do
       Repo,
       RateLimit,
       Vault,
+      AgentDesigns,
       Agents,
       Agents.AgentProfile,
       Daemons,

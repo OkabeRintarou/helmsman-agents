@@ -16,6 +16,7 @@ defmodule Helmsman.Runs.Lifecycle do
   import Ecto.Query, warn: false
 
   alias Helmsman.Actors.Actor
+  alias Helmsman.AgentDesigns
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons
   alias Helmsman.Daemons.{Daemon, Locking, Runtime}
@@ -108,6 +109,7 @@ defmodule Helmsman.Runs.Lifecycle do
     run = update!(run, [status: status, finished_at: DateTime.utc_now()] ++ changes)
     RunTokens.revoke(run.id)
     if active?, do: Runs.after_terminal(run)
+    Runs.after_ended([run])
     run
   end
 
@@ -177,7 +179,8 @@ defmodule Helmsman.Runs.Lifecycle do
           profile: profile,
           task: task,
           runtime: runtime,
-          steers: Steering.facts(run.triggers)
+          steers: Steering.facts(run.triggers),
+          design: AgentDesigns.turn_state(run)
         }
 
         decide_starting(run, locked, ctx.user_id)

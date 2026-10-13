@@ -15,6 +15,7 @@ defmodule Helmsman.Runs do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
+  alias Helmsman.AgentDesigns.SettleTurn
   alias Helmsman.Agents
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.{Daemon, Runtime}
@@ -123,8 +124,8 @@ defmodule Helmsman.Runs do
         trigger: entry,
         root_initiator_user_id: origin.initiator_user_id,
         causal_agent_ids: Enum.uniq(origin.chain ++ [agent.id]),
-        capabilities: capabilities(profile, target.task),
-        priority: priority(target.task)
+        capabilities: capabilities(profile, target.task, [entry]),
+        priority: if(kind == :design, do: 3, else: priority(target.task))
       }
 
       case upsert_pending(attrs, rate_limit?: true) do
@@ -263,13 +264,37 @@ defmodule Helmsman.Runs do
   @doc """
   The capabilities of a run (designs/13 §2.3, decision 5): `read`, with a
   task `write_task`, and `create_tasks` when the agent's profile has it.
+  A design run (`design_run?/1` of its `triggers`) has exactly `read` and
+  `design`, whatever the profile (`add-agent-conversation` decision 7).
   """
-  @spec capabilities(AgentProfile.t(), Task.t() | nil) :: [String.t()]
-  def capabilities(%AgentProfile{capabilities: caps}, task) do
-    ["read"] ++
-      if(task, do: ["write_task"], else: []) ++
-      if("create_tasks" in (caps || []), do: ["create_tasks"], else: [])
+  @spec capabilities(AgentProfile.t(), Task.t() | nil, [map()]) :: [String.t()]
+  def capabilities(profile, task, triggers \\ [])
+
+  def capabilities(%AgentProfile{capabilities: caps}, task, triggers) do
+    if design_run?(triggers) do
+      ["read", "design"]
+    else
+      ["read"] ++
+        if(task, do: ["write_task"], else: []) ++
+        if("create_tasks" in (caps || []), do: ["create_tasks"], else: [])
+    end
   end
+
+  @doc """
+  Whether a run is a design run (a turn of a creation conversation,
+  `add-agent-conversation` decision 3): one of its triggers is `design`.
+  Takes the run or its triggers.
+  """
+  @spec design_run?(Run.t() | [map()]) :: boolean()
+  def design_run?(%Run{triggers: triggers}), do: design_run?(triggers)
+
+  def design_run?(triggers) when is_list(triggers),
+    do: Enum.any?(triggers, &(&1["kind"] == "design"))
+
+  @doc "The conversation of a design run (its trigger's `design_id`), or nil."
+  @spec design_id(Run.t()) :: pos_integer() | nil
+  def design_id(%Run{triggers: triggers}),
+    do: Enum.find_value(triggers, &(&1["kind"] == "design" && &1["design_id"]))
 
   defp priority(%Task{priority: :high}), do: 3
   defp priority(%Task{priority: :medium}), do: 2
@@ -472,8 +497,22 @@ defmodule Helmsman.Runs do
           )
 
         Enum.each(runs, &notify_run/1)
+        after_ended(runs)
         count
     end
+  end
+
+  @doc false
+  # Called in the transaction that ended `runs` (any status before): a
+  # design run gets the settlement of its turn
+  # (`Helmsman.AgentDesigns.SettleTurn`, `add-agent-conversation`
+  # decision 9). Every path that ends a run calls it: `Lifecycle.end!/3`,
+  # `cancel_pending/2` and `Helmsman.Runs.Stop.cancel_for_initiator/2`.
+  @spec after_ended([Run.t()]) :: :ok
+  def after_ended(runs) do
+    runs
+    |> Enum.filter(&design_run?/1)
+    |> Enum.each(fn run -> {:ok, _job} = Oban.insert(SettleTurn.new(%{run_id: run.id})) end)
   end
 
   @doc """

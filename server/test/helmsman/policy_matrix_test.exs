@@ -337,6 +337,17 @@ defmodule Helmsman.PolicyMatrixTest do
             for role <- @roles, kind <- [:human, :agent] do
               {:manage_provider_accounts, role, kind, @none,
                if(kind == :human, do: :ok, else: :forbidden)}
+            end,
+            # design_agents: a person's own web session, member and above
+            # (add-agent-conversation decision 6; tokens and runs in
+            # test/helmsman/policy_test.exs)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:design_agents, role, kind, @none,
+               if(kind == :human and role != :viewer, do: :ok, else: :forbidden)}
+            end,
+            # design: only run scopes with the capability (policy_test.exs)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:design, role, kind, @none, :forbidden}
             end
           ]
           |> List.flatten()

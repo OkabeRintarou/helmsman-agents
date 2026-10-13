@@ -12,7 +12,15 @@ defmodule Helmsman.Runs.Outcome do
   alias Helmsman.Actors.Actor
 
   @type trigger ::
-          :assign | :manual | :reopen | :resubmit | :requested | :answer | :mention | :steer
+          :assign
+          | :manual
+          | :reopen
+          | :resubmit
+          | :requested
+          | :answer
+          | :mention
+          | :steer
+          | :design
   @type result :: :queued | :merged | :deferred | :skipped
   @type reason ::
           :not_started

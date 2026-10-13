@@ -18,6 +18,44 @@ defmodule HelmsmanMCP.ErrorText do
        "Ask a person to do it."}
   end
 
+  # `add-agent-conversation` decision 7: the draft tools.
+  def format({:design, :not_design_run}, %Context{tool: tool}),
+    do: {:ok, "#{tool} is only available in agent design runs."}
+
+  def format({:design, :turn_ended}, _ctx) do
+    {:ok,
+     "This design turn has ended (the user stopped it, changed the draft or closed the " <>
+       "conversation). The draft was not changed; end your reply."}
+  end
+
+  def format(:draft_full, _ctx) do
+    {:ok,
+     "The draft already has #{Helmsman.AgentDesigns.max_agents()} agents. " <>
+       "Withdraw one (withdraw_agent) before proposing another."}
+  end
+
+  def format({:invalid_agent, name, %Ecto.Changeset{} = changeset}, _ctx) do
+    lines =
+      changeset.errors
+      |> Enum.map(fn {field, {message, opts}} ->
+        supported =
+          case opts[:supported] do
+            [_ | _] = values -> " (supported: #{Enum.join(values, ", ")})"
+            _none -> ""
+          end
+
+        "#{field}: #{interpolate({message, opts})}#{supported}"
+      end)
+      |> Enum.uniq()
+
+    {:ok,
+     "#{name || "The agent"} was not changed in the draft. Fix these fields and call " <>
+       "propose_agent again:\n" <> Enum.join(lines, "\n")}
+  end
+
+  def format({:not_in_draft, name}, _ctx),
+    do: {:ok, "#{name} is not in the draft; get_design lists its agents."}
+
   def format(:forbidden, %Context{scope: %{via: :run, run: run}}) do
     caps = Enum.join(run.capabilities, ", ")
 

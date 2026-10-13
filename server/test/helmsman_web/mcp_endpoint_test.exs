@@ -164,8 +164,12 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     tools = Jason.decode!(conn.resp_body)["result"]["tools"]
     assert length(tools) == 23
 
+    # The draft tools are listed only for design runs (add-agent-conversation).
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
-             Enum.sort(Enum.map(HelmsmanMCP.Tools.all(), & &1.name()))
+             Enum.sort(
+               Enum.map(HelmsmanMCP.Tools.all(), & &1.name()) --
+                 HelmsmanMCP.Tools.design_tool_names()
+             )
 
     assert %{"actor" => nil, "source" => "none"} = tool_json(token, sid, "whoami")
 

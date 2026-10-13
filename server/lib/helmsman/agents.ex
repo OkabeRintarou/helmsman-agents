@@ -66,25 +66,84 @@ defmodule Helmsman.Agents do
   end
 
   def create(scope, attrs) do
-    result =
-      Workspaces.write_transaction(scope, :manage_agents, nil, fn scope ->
-        actor = %Actor{workspace_id: scope.workspace.id, kind: :agent, owner_id: scope.user.id}
+    scope
+    |> Workspaces.write_transaction(:manage_agents, nil, &insert_new(&1, attrs))
+    |> scrub_result()
+  end
 
-        with {:ok, actor} <-
-               actor
-               |> Actor.create_changeset(Map.take(string_keys(attrs), ["name"]))
-               |> Repo.insert(),
-             {:ok, profile} <-
-               %AgentProfile{workspace_id: actor.workspace_id, actor_id: actor.id}
-               |> AgentProfile.changeset(attrs, actor)
-               |> Repo.insert() do
-          notify_accounts(actor, nil, profile.provider_account_id)
-          notify(actor)
-          {:ok, hd(views([actor]))}
-        end
+  @doc """
+  Creates the managed agent of `attrs`, owned by `scope.user`, in the
+  caller's transaction, which has authorized `:manage_agents` (or a
+  stronger action) for `scope`: the body of `create/2`. Notifications go
+  out after the commit. `{:error, changeset}` (not scrubbed) on invalid
+  input; a name taken meanwhile is a `name` error, after which the
+  transaction is aborted and must be rolled back.
+  """
+  @spec insert_new(Helmsman.Accounts.Scope.t(), map()) ::
+          {:ok, map()} | {:error, Ecto.Changeset.t()}
+  def insert_new(scope, attrs) do
+    with {:ok, actor} <- scope |> new_actor_changeset(attrs) |> Repo.insert(),
+         {:ok, profile} <-
+           %AgentProfile{workspace_id: actor.workspace_id, actor_id: actor.id}
+           |> AgentProfile.changeset(attrs, actor)
+           |> Repo.insert() do
+      notify_accounts(actor, nil, profile.provider_account_id)
+      notify(actor)
+      {:ok, hd(views([actor]))}
+    end
+  end
+
+  @doc """
+  Checks `attrs` as `create/2` would for `scope.user`, without writing
+  (`add-agent-conversation` decision 7): the same changesets, the runtime
+  and provider account rows locked `FOR SHARE`, and the name looked up in
+  the workspace (case-insensitive) instead of the unique index. Returns
+  every field error at once, on a schemaless changeset whose `errors` keep
+  `{message, opts}` (`errors/1` gives `%{field => [text]}`). Authorizes
+  nothing: the caller has.
+  """
+  @spec validate_new(Helmsman.Accounts.Scope.t(), map()) :: :ok | {:error, Ecto.Changeset.t()}
+  def validate_new(scope, attrs) do
+    actor_cs = new_actor_changeset(scope, attrs)
+    actor = Ecto.Changeset.apply_changes(actor_cs)
+
+    actor_cs =
+      if actor_cs.valid? and name_taken?(scope.workspace.id, actor.name),
+        do: Ecto.Changeset.add_error(actor_cs, :name, "has already been taken"),
+        else: actor_cs
+
+    profile_cs =
+      %AgentProfile{workspace_id: scope.workspace.id}
+      |> AgentProfile.changeset(attrs, actor)
+      |> AgentProfile.scrub()
+
+    case actor_cs.errors ++ profile_cs.errors do
+      [] -> :ok
+      errors -> {:error, %Ecto.Changeset{data: %{}, types: %{}, valid?: false, errors: errors}}
+    end
+  end
+
+  defp new_actor_changeset(scope, attrs) do
+    %Actor{workspace_id: scope.workspace.id, kind: :agent, owner_id: scope.user.id}
+    |> Actor.create_changeset(Map.take(string_keys(attrs), ["name"]))
+  end
+
+  defp name_taken?(workspace_id, name) when is_binary(name),
+    do: Repo.exists?(from a in Actor, where: a.workspace_id == ^workspace_id and a.name == ^name)
+
+  defp name_taken?(_workspace_id, _name), do: false
+
+  @doc """
+  The errors of `changeset` as `%{field => [message]}`, messages
+  interpolated.
+  """
+  @spec errors(Ecto.Changeset.t()) :: %{atom() => [String.t()]}
+  def errors(%Ecto.Changeset{} = changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {message, opts} ->
+      Regex.replace(~r"%{(\w+)}", message, fn _, key ->
+        opts |> Keyword.get(String.to_existing_atom(key), key) |> to_string()
       end)
-
-    scrub_result(result)
+    end)
   end
 
   def update(scope, name, attrs) do

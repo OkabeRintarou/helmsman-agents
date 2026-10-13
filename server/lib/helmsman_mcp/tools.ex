@@ -6,6 +6,7 @@ defmodule HelmsmanMCP.Tools do
     CancelRun,
     CreateProject,
     CreateTask,
+    GetDesign,
     GetProject,
     GetTask,
     Identify,
@@ -17,6 +18,7 @@ defmodule HelmsmanMCP.Tools do
     ListProjects,
     ListRuns,
     ListTasks,
+    ProposeAgent,
     RunAgent,
     SearchTasks,
     TransitionTask,
@@ -24,7 +26,8 @@ defmodule HelmsmanMCP.Tools do
     UpdateFeedback,
     UpdateProject,
     UpdateTask,
-    Whoami
+    Whoami,
+    WithdrawAgent
   }
 
   @tools [
@@ -50,12 +53,23 @@ defmodule HelmsmanMCP.Tools do
     ListAgents,
     RunAgent,
     ListRuns,
-    CancelRun
+    CancelRun,
+    GetDesign,
+    ProposeAgent,
+    WithdrawAgent
   ]
+
+  # The draft tools, listed only for design runs (`add-agent-conversation`
+  # decision 7).
+  @design_tools [GetDesign, ProposeAgent, WithdrawAgent]
 
   @doc "Every tool module."
   @spec all() :: [module()]
   def all, do: @tools
+
+  @doc "The names of the tools listed only for design runs."
+  @spec design_tool_names() :: [String.t()]
+  def design_tool_names, do: Enum.map(@design_tools, & &1.name())
 
   @doc "Finds a tool module by name."
   @spec fetch(String.t()) :: {:ok, module()} | :error

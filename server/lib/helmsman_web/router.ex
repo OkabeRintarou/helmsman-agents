@@ -48,6 +48,7 @@ defmodule HelmsmanWeb.Router do
   pipeline :mcp do
     plug HelmsmanWeb.Plugs.BearerAuth, scope: "mcp", via: :mcp
     plug HelmsmanWeb.Plugs.MCPSessionGuard
+    plug HelmsmanWeb.Plugs.MCPMethod
   end
 
   scope "/mcp" do

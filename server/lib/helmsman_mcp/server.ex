@@ -98,8 +98,8 @@ defmodule HelmsmanMCP.Server do
     do: Map.to_list(Map.take(component, [:name, :title, :description, :mime_type]))
 
   @impl Anubis.Server
-  def server_tools(tools, _frame) do
-    frame =
+  def server_tools(tools, %Frame{} = frame) do
+    registered =
       Enum.reduce(Tools.all(), Frame.new(), fn tool, frame ->
         Frame.register_tool(frame, tool.name(),
           description: tool.description(),
@@ -107,7 +107,26 @@ defmodule HelmsmanMCP.Server do
         )
       end)
 
-    tools ++ Enum.sort_by(Map.values(frame.tools), & &1.name)
+    all = tools ++ Enum.sort_by(Map.values(registered.tools), & &1.name)
+
+    if design_tools?(frame.context),
+      do: all,
+      else: Enum.reject(all, &(&1.name in Tools.design_tool_names()))
+  end
+
+  # `add-agent-conversation` decision 7: the draft tools are listed only
+  # for a design run's token (resolved from the request's own headers).
+  # anubis also looks a called tool up here: a call keeps every tool, so
+  # that calling a draft tool without a design run gets its error text
+  # rather than "tool not found". `HelmsmanWeb.Plugs.MCPMethod` puts the
+  # JSON-RPC method in the `x-helmsman-rpc-method` header.
+  defp design_tools?(%{headers: %{"x-helmsman-rpc-method" => "tools/call"}}), do: true
+
+  defp design_tools?(context) do
+    case request_scope(context) do
+      {:ok, %Scope{via: :run, run: run}} -> "design" in run.capabilities
+      _other -> false
+    end
   end
 
   @impl Anubis.Server

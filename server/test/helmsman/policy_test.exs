@@ -89,4 +89,54 @@ defmodule Helmsman.PolicyTest do
       refute :merge_pull_request in Policy.management_actions()
     end
   end
+
+  describe ":design_agents and :design (add-agent-conversation 1.2, decisions 6, 7)" do
+    defp design_agents(scope), do: Policy.authorize(scope, :design_agents)
+
+    test "a web session of a member, admin or owner passes; a viewer is refused", ctx do
+      for {role, expected} <- [
+            owner: :ok,
+            admin: :ok,
+            member: :ok,
+            viewer: {:error, :forbidden}
+          ] do
+        {_user, scope} = member_scope_fixture(ctx.workspace, role)
+        assert scope.via == :web
+        assert design_agents(scope) == expected, "#{role}"
+      end
+    end
+
+    test "an hm_ token via MCP, an agent identity and a real run scope are refused", ctx do
+      %{api_token: token} = api_token_fixture(ctx.alice_scope)
+      mcp = token_scope_fixture(ctx.alice, ctx.workspace, :mcp, token)
+      assert design_agents(%{mcp | actor: ctx.alice_scope.actor}) == {:error, :forbidden}
+      assert design_agents(%{ctx.alice_scope | actor: ctx.agent}) == {:error, :forbidden}
+
+      for caps <- [["read", "design"], ["read", "write_task", "create_tasks"]] do
+        run = run_fixture(ctx.agent, %{status: :running, capabilities: caps})
+        {scope, _token} = run_scope_fixture(run)
+        assert design_agents(scope) == {:error, :forbidden}
+      end
+
+      assert :design_agents in Policy.management_actions()
+    end
+
+    test ":design: only a run token with the design capability", ctx do
+      design = run_fixture(ctx.agent, %{status: :running, capabilities: ["read", "design"]})
+      {design_scope, _token} = run_scope_fixture(design)
+      assert Policy.authorize(design_scope, :design) == :ok
+
+      task_run =
+        run_fixture(ctx.agent, %{status: :running, capabilities: ["read", "create_tasks"]})
+
+      {task_scope, _token} = run_scope_fixture(task_run)
+      assert Policy.authorize(task_scope, :design) == {:error, :forbidden}
+      assert Policy.authorize(ctx.alice_scope, :design) == {:error, :forbidden}
+
+      # A design run reads but writes no task and creates none.
+      assert Policy.authorize(design_scope, :read_tasks) == :ok
+      assert Policy.authorize(design_scope, :create_task) == {:error, :forbidden}
+      assert Policy.authorize(design_scope, :update_task) == {:error, :forbidden}
+    end
+  end
 end

@@ -44,6 +44,19 @@ defmodule Helmsman.CommittedData do
         )
       end
 
+      # Creation conversations (add-agent-conversation) refer to runs and
+      # agents; their settlement jobs to runs.
+      Repo.query!(
+        "DELETE FROM agent_designs WHERE workspace_id = ANY($1) OR user_id = ANY($2)",
+        [workspace_ids, user_ids]
+      )
+
+      Repo.query!(
+        "DELETE FROM oban_jobs WHERE worker = 'Helmsman.AgentDesigns.SettleTurn' " <>
+          "AND (args->>'run_id')::bigint IN (#{run_ids})",
+        [workspace_ids, user_ids]
+      )
+
       Repo.query!(
         "DELETE FROM oban_jobs WHERE (worker LIKE 'Helmsman.Runs.Workers.%' " <>
           "OR worker = 'Helmsman.LocalRepositories.Workers.RecordBranch') " <>

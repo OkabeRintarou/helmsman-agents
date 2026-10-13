@@ -52,6 +52,7 @@ defmodule Helmsman.Runs.Claim do
   import Ecto.Query, warn: false
 
   alias Helmsman.Actors.Actor
+  alias Helmsman.AgentDesigns
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.{Daemon, DaemonWorkspace, Runtime}
   alias Helmsman.Dispatch.Dependencies
@@ -179,7 +180,15 @@ defmodule Helmsman.Runs.Claim do
          true <- account_supported?(locked.profile, state.protocol) do
       # Read after the task lock and the check that the task has no active
       # run: the run a trigger waits for has ended, its facts are final.
-      decide(run, Map.put(locked, :steers, Steering.facts(run.triggers)), state)
+      # A design run's conversation is read without a lock
+      # (`add-agent-conversation` decision 10).
+      locked =
+        Map.merge(locked, %{
+          steers: Steering.facts(run.triggers),
+          design: AgentDesigns.turn_state(run)
+        })
+
+      decide(run, locked, state)
     else
       _skip -> state
     end
@@ -371,7 +380,7 @@ defmodule Helmsman.Runs.Claim do
           status: :claimed,
           daemon_id: state.daemon.id,
           claimed_at: DateTime.utc_now(),
-          capabilities: Runs.capabilities(locked.profile, locked.task),
+          capabilities: Runs.capabilities(locked.profile, locked.task, run.triggers),
           provider_account_id: locked.profile.provider_account_id
         ] ++ changes
       )
