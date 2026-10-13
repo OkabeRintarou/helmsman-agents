@@ -2,7 +2,7 @@ defmodule HelmsmanDaemon.Connection do
   @moduledoc "Authenticated Channel connection, reconciliation and ordered report retries."
   use Slipstream
   require Logger
-  alias HelmsmanDaemon.{Config, Credentials, Detector, Login, Runs}
+  alias HelmsmanDaemon.{Cleanup, Config, Credentials, Detector, Login, Runs}
   alias HelmsmanProtocol.ErrorReply
   alias HelmsmanProtocol.Messages
   alias HelmsmanProtocol.Reply
@@ -19,6 +19,10 @@ defmodule HelmsmanDaemon.Connection do
     ref = make_ref()
     GenServer.cast(__MODULE__, {:report, id, payload, self(), ref})
     ref
+  end
+
+  def cleanup_check(items) do
+    GenServer.call(__MODULE__, {:cleanup_check, items}, 35_000)
   end
 
   def claim, do: GenServer.cast(__MODULE__, :claim)
@@ -42,6 +46,8 @@ defmodule HelmsmanDaemon.Connection do
             claim_ref: nil,
             rotate_ref: nil,
             control_refs: %{},
+            cleanup_refs: %{},
+            protocol_version: Keyword.get(opts, :protocol_version, HelmsmanProtocol.version()),
             stopping?: false
           )
 
@@ -100,7 +106,7 @@ defmodule HelmsmanDaemon.Connection do
   @impl true
   def handle_connect(socket) do
     payload = %Report.Join{
-      protocol: HelmsmanProtocol.version(),
+      protocol: socket.assigns.protocol_version,
       machine: Login.machine(),
       clis: Detector.inventory(),
       max_concurrency: Config.get().max_concurrency,
@@ -117,6 +123,7 @@ defmodule HelmsmanDaemon.Connection do
       {:ok, reply} ->
         terminate_ids(reply.terminate_run_ids)
         next = socket |> assign(:joined?, true) |> assign(:runtimes, reply.runtimes)
+        Cleanup.joined(socket.assigns.protocol_version)
         send(self(), :rotation_check_now)
         {:ok, next |> maybe_claim() |> pump_all()}
 
@@ -177,6 +184,12 @@ defmodule HelmsmanDaemon.Connection do
   end
 
   defp requeue(socket) do
+    Cleanup.disconnected()
+
+    Enum.each(socket.assigns.cleanup_refs, fn {_, caller} ->
+      GenServer.reply(caller, {:error, :disconnected})
+    end)
+
     queues =
       Enum.reduce(socket.assigns.pending, socket.assigns.queues, fn {_ref, entry}, queues ->
         Map.update(queues, entry.id, [entry], &[entry | &1])
@@ -187,8 +200,24 @@ defmodule HelmsmanDaemon.Connection do
     |> assign(:queues, queues)
     |> assign(:pending, %{})
     |> assign(:control_refs, %{})
+    |> assign(:cleanup_refs, %{})
     |> assign(:claim_ref, nil)
     |> assign(:rotate_ref, nil)
+  end
+
+  @impl true
+  def handle_call({:cleanup_check, items}, caller, socket) do
+    with true <- socket.assigns.joined?,
+         {:ok, report} <- Report.CleanupCheck.new(items: items),
+         {:ok, {"cleanup_check", wire}} <-
+           Messages.encode(report, socket.assigns.protocol_version),
+         {:ok, ref} <- push(socket, topic(socket), "cleanup_check", wire) do
+      arm_timeout(ref, socket)
+      {:noreply, assign(socket, :cleanup_refs, Map.put(socket.assigns.cleanup_refs, ref, caller))}
+    else
+      false -> {:reply, {:error, :disconnected}, socket}
+      error -> {:reply, error, socket}
+    end
   end
 
   @impl true
@@ -244,7 +273,8 @@ defmodule HelmsmanDaemon.Connection do
 
   def handle_info({:push_timeout, ref}, socket) do
     if Map.has_key?(socket.assigns.pending, ref) or
-         Map.has_key?(socket.assigns.control_refs, ref),
+         Map.has_key?(socket.assigns.control_refs, ref) or
+         Map.has_key?(socket.assigns.cleanup_refs, ref),
        do: timeout_reply(ref, socket),
        else: {:noreply, socket}
   end
@@ -259,10 +289,17 @@ defmodule HelmsmanDaemon.Connection do
   @impl true
   def handle_reply(ref, reply, socket) do
     cond do
+      Map.has_key?(socket.assigns.cleanup_refs, ref) -> cleanup_reply(ref, reply, socket)
       Map.has_key?(socket.assigns.pending, ref) -> report_reply(ref, reply, socket)
       Map.has_key?(socket.assigns.control_refs, ref) -> control_reply(ref, reply, socket)
       true -> {:ok, socket}
     end
+  end
+
+  defp cleanup_reply(ref, reply, socket) do
+    {caller, refs} = Map.pop(socket.assigns.cleanup_refs, ref)
+    GenServer.reply(caller, decode_reply("cleanup_check", reply))
+    {:ok, assign(socket, :cleanup_refs, refs)}
   end
 
   defp report_reply(ref, reply, socket) do

@@ -14,6 +14,7 @@ defmodule HelmsmanProtocol.Messages do
     {"git_token", Report.GitToken},
     {"pushed", Report.Pushed},
     {"repo_status", Report.RepoStatus},
+    {"cleanup_check", Report.CleanupCheck},
     {"finished", Report.Finished},
     {"rotate_token", Report.RotateToken}
   ]
@@ -36,10 +37,14 @@ defmodule HelmsmanProtocol.Messages do
     "git_token" => Reply.GitToken,
     "pushed" => Reply.Empty,
     "repo_status" => Reply.Empty,
+    "cleanup_check" => Reply.CleanupCheck,
     "finished" => Reply.Empty,
     "rotate_token" => Reply.RotateToken
   }
-  @since %{"repo_status" => 3}
+  @since %{
+    "repo_status" => HelmsmanProtocol.local_repositories_version(),
+    "cleanup_check" => HelmsmanProtocol.cleanup_version()
+  }
   @messages Map.new(@reports ++ @pushes)
   @names Map.new(@reports ++ @pushes, fn {name, module} -> {module, name} end)
 

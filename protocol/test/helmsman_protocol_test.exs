@@ -4,7 +4,8 @@ defmodule HelmsmanProtocolTest do
 
   test "connection constants and version range" do
     assert HelmsmanProtocol.providers() == ~w(claude codex copilot cursor)a
-    assert HelmsmanProtocol.local_repositories_version() <= HelmsmanProtocol.version()
+    assert HelmsmanProtocol.local_repositories_version() < HelmsmanProtocol.cleanup_version()
+    assert HelmsmanProtocol.cleanup_version() == HelmsmanProtocol.version()
 
     assert HelmsmanProtocol.provider_account_version() <
              HelmsmanProtocol.local_repositories_version()

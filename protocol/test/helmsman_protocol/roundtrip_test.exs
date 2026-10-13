@@ -12,7 +12,9 @@ defmodule HelmsmanProtocol.RoundtripTest do
         {Report.Finished, random_finished()},
         {Report.Events, random_events()},
         {Report.Join, random_join()},
-        {Reply.Join, random_reply()}
+        {Reply.Join, random_reply()},
+        {Report.CleanupCheck, random_cleanup()},
+        {Reply.CleanupCheck, random_cleanup_reply()}
       ]
 
       for {module, payload} <- samples do
@@ -159,6 +161,26 @@ defmodule HelmsmanProtocol.RoundtripTest do
         ]
       )
     )
+  end
+
+  defp random_cleanup do
+    %{
+      "items" =>
+        Enum.map(1..:rand.uniform(10), fn _ -> %{"workspace_id" => id(), "ident" => text()} end)
+    }
+  end
+
+  defp random_cleanup_reply do
+    results =
+      Enum.map(random_cleanup()["items"], fn item ->
+        Map.merge(item, %{
+          "deletable" => :rand.uniform(2) == 1,
+          "base_branch" => maybe(text()),
+          "pushed_heads" => [Base.encode16(:crypto.strong_rand_bytes(20), case: :lower)]
+        })
+      end)
+
+    %{"results" => results}
   end
 
   defp id, do: :rand.uniform(100_000)

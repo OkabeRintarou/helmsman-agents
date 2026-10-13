@@ -4,7 +4,7 @@ defmodule HelmsmanProtocol.MessagesTest do
 
   test "directories contain exactly the specified reports and pushes" do
     assert Messages.daemon_to_server() ==
-             ~w(join sync claim starting started events heartbeat steer_ack git_token pushed repo_status finished rotate_token)
+             ~w(join sync claim starting started events heartbeat steer_ack git_token pushed repo_status cleanup_check finished rotate_token)
 
     assert Messages.server_to_daemon() == ~w(runs_available cancel steer config_changed revoked)
   end

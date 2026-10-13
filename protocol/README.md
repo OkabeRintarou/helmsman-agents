@@ -1,17 +1,17 @@
 # HelmsmanProtocol
 
-服务端与守护进程共享的 v3 协议。只负责字符串键 JSON map 与经过校验的 Elixir 结构之间的转换，无网络、数据库或 JSON 库依赖。
+服务端与守护进程共享的 v4 协议。只负责字符串键 JSON map 与经过校验的 Elixir 结构之间的转换，无网络、数据库或 JSON 库依赖。
 
 ## 连接与版本
 
 连接 `wss://<server>/daemon/socket/websocket`，令牌通过 `x-helmsman-token` 请求头传递，不能放在 URL 中。
 每个守护进程只加入 `daemon:<daemon_id>`，路径、请求头及 topic 由 `HelmsmanProtocol` 提供。
-`join.protocol` 声明守护进程版本；当前版本为 3，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。Phoenix 的 `vsn` 是序列化版本。
+`join.protocol` 声明守护进程版本；当前版本为 4，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。Phoenix 的 `vsn` 是序列化版本。
 
 所有枚举严格校验：未知消息、事件、provider、状态、失败原因或错误码均被拒绝。
 新增枚举值或消息、删除或改变字段的类型和语义必须升版本；新增可选字段可不升版本，接收方忽略未知字段。
 服务端记录 join 的守护进程版本，只向它发送该版本支持的消息、字段与枚举值。
-`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–3；目标版本中不存在的消息（如低于 3 的 `repo_status`）同样返回该错误。
+`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–4；目标版本中不存在的消息（如低于 3 的 `repo_status`、低于 4 的 `cleanup_check`）同样返回该错误。
 新守护进程连接旧服务端被 join 拒绝后停止重连。
 
 ## 使用
@@ -51,6 +51,7 @@ Report 模块在 `HelmsmanProtocol.Report`，Reply 在 `HelmsmanProtocol.Reply`�
 | git_token | daemon → server | GitToken: run_id | GitToken: token, expires_at |
 | pushed | daemon → server | Pushed: run_id, branch, base_sha, head_sha, commits（sha, subject）, rescue_branch（可空） | Empty: 空 |
 | repo_status | daemon → server | RepoStatus（v3）: workspace_id, name, results（branch, head_sha, merged：yes / no / unknown；最多 500 项） | Empty: 空 |
+| cleanup_check | daemon → server | CleanupCheck（v4）: items（1–500 项 workspace_id, ident） | CleanupCheck: results（对应每项 workspace_id, ident, deletable, base_branch（可空）, pushed_heads） |
 | finished | daemon → server | Finished: run_id, status, failure_reason, error, session_id, summary, usage | Empty: 空 |
 | rotate_token | daemon → server | RotateToken: 空 | RotateToken: token |
 | runs_available | server → daemon | RunsAvailable: 空 | 无 |
@@ -68,6 +69,8 @@ join / sync 的 local_repositories 每项（`LocalRepository`）= name, path（�
 按低于 3 的版本编码时，回复省略 local_repositories；join / sync 负载的 local_repositories 非空则返回 `{:error, {:not_in_version, v}}`。
 Finished 中只有 failed 可且必须带 failure_reason；summary ≤ 4096 字节，error ≤ 16384 字节。
 事件连续落库与重复终态接受由服务端处理；协议只校验单批序号。
+
+`cleanup_check` 的请求与成功 / 错误回复按低于 4 的目标版本编码均拒绝；pushed_heads 为 0–200 个 40 位小写十六进制 SHA。
 
 ## RunSpec
 

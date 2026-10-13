@@ -3,7 +3,7 @@ defmodule HelmsmanProtocol do
   Wire protocol shared by the Helmsman server and the Helmsman daemon.
   """
 
-  @version 3
+  @version 4
   @providers ~w(claude codex copilot cursor)a
 
   @doc """
@@ -14,7 +14,7 @@ defmodule HelmsmanProtocol do
   ## Examples
 
       iex> HelmsmanProtocol.version()
-      3
+      4
 
   """
   @spec version() :: pos_integer()
@@ -26,6 +26,10 @@ defmodule HelmsmanProtocol do
   @doc "Protocol version that introduced local repositories and `repo_status`."
   @spec local_repositories_version() :: pos_integer()
   def local_repositories_version, do: 3
+
+  @doc "Protocol version that introduced worktree cleanup checks."
+  @spec cleanup_version() :: pos_integer()
+  def cleanup_version, do: 4
 
   @doc "Returns the oldest protocol version accepted by this build."
   @spec min_version() :: pos_integer()
@@ -41,6 +45,8 @@ defmodule HelmsmanProtocol do
       iex> HelmsmanProtocol.compatible?(3)
       true
       iex> HelmsmanProtocol.compatible?(4)
+      true
+      iex> HelmsmanProtocol.compatible?(5)
       false
   """
   @spec compatible?(term()) :: boolean()

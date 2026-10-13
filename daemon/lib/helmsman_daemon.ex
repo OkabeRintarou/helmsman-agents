@@ -1,6 +1,16 @@
 defmodule HelmsmanDaemon do
   @moduledoc "Helmsman execution daemon; explicitly started by CLI or tests."
-  alias HelmsmanDaemon.{Config, Connection, Detector, Env, Janitor, Paths, Runs, StateStore}
+  alias HelmsmanDaemon.{
+    Cleanup,
+    Config,
+    Connection,
+    Detector,
+    Env,
+    Janitor,
+    Paths,
+    Runs,
+    StateStore
+  }
 
   def start_daemon(opts \\ []) do
     opts = Keyword.put(opts, :codex_hint_once, :atomics.new(1, []))
@@ -15,6 +25,7 @@ defmodule HelmsmanDaemon do
       {Registry, keys: :unique, name: HelmsmanDaemon.RunRegistry},
       {DynamicSupervisor, strategy: :one_for_one, name: HelmsmanDaemon.RunSupervisor},
       {Runs, opts},
+      {Cleanup, opts},
       {Connection, opts},
       {Janitor, opts}
     ]

@@ -11,7 +11,9 @@ defmodule HelmsmanDaemon.GitHelpers do
 
     git =
       Git.context(Paths.run(999), "fixture-token",
-        identity: Git.identity("Fixture", "http://localhost")
+        identity:
+          Git.identity("Fixture", "http://localhost")
+          |> Map.put("GIT_CEILING_DIRECTORIES", Path.expand(root))
       )
 
     Git.write_askpass(git)

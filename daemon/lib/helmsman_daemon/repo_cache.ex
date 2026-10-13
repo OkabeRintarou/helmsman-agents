@@ -29,6 +29,30 @@ defmodule HelmsmanDaemon.RepoCache do
 
   def with_worktree_lock(path, fun), do: with_lock({:hm_worktree, path}, fun)
 
+  @doc "Take both cleanup locks immediately, or skip without waiting."
+  def try_cleanup_locks(path, cache, fun) do
+    locks = [{{:hm_worktree, path}, self()}, {{:hm_repo, cache}, self()}]
+    try_locks(locks, fun)
+  end
+
+  defp try_locks([], fun), do: fun.()
+
+  defp try_locks([lock | rest], fun) do
+    if :global.set_lock(lock, [node()], 0) do
+      previous = command_locks()
+      Process.put({__MODULE__, :locks}, [lock | previous])
+
+      try do
+        try_locks(rest, fun)
+      after
+        Process.put({__MODULE__, :locks}, previous)
+        :global.del_lock(lock, [node()])
+      end
+    else
+      {:error, :busy}
+    end
+  end
+
   def acquire_worktree(path), do: acquire({:hm_worktree, path})
 
   def release(lock) do
