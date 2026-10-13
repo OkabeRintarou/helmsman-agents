@@ -7,6 +7,7 @@ defmodule Helmsman.Daemons do
   alias Helmsman.Daemons.Locking
   alias Helmsman.Daemons.Runtime
   alias Helmsman.Events
+  alias Helmsman.LocalRepositories
   alias Helmsman.Repo
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -306,6 +307,7 @@ defmodule Helmsman.Daemons do
 
         offline(id, ids -- valid, notify: false)
         upsert_runtimes(id, valid, report.clis)
+        LocalRepositories.register_locked(id, valid, local_repositories(report))
 
         # One {:runtimes_changed} per workspace whose runtimes changed,
         # including the ones the daemon no longer serves.
@@ -320,6 +322,15 @@ defmodule Helmsman.Daemons do
       end
     end)
   end
+
+  # Protocol 1–2 joins carry no local repositories: those rows stay as
+  # they are (`add-local-repositories` decision 4). The channel clears the
+  # field of `sync` reports on such connections.
+  defp local_repositories(%{protocol: protocol})
+       when protocol < 3,
+       do: nil
+
+  defp local_repositories(report), do: Map.get(report, :local_repositories)
 
   defp check_concurrency(%{max_concurrency: n}) when is_integer(n) and n in 1..@max_concurrency,
     do: :ok
@@ -426,6 +437,8 @@ defmodule Helmsman.Daemons do
   Sets the daemon's online runtimes in `ids` offline and returns the
   workspaces where one changed. Each of them gets `{:runtimes_changed}`
   after the commit unless `notify: false` (the caller notifies itself).
+  Its online local repositories there go offline too, after the runtimes
+  (`Helmsman.LocalRepositories.offline/2`, which always notifies).
   """
   def offline(id, ids, opts \\ []) do
     changed_ids =
@@ -443,6 +456,7 @@ defmodule Helmsman.Daemons do
       set: [status: "offline", updated_at: now()]
     )
 
+    LocalRepositories.offline(id, ids)
     if Keyword.get(opts, :notify, true), do: Enum.each(changed_ids, &notify_runtime/1)
     changed_ids
   end

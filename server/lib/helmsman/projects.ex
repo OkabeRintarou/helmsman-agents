@@ -14,6 +14,7 @@ defmodule Helmsman.Projects do
   alias Helmsman.GitHub.Installation
   alias Helmsman.GitHub.Repositories
   alias Helmsman.GitHub.Repository
+  alias Helmsman.LocalRepositories
   alias Helmsman.Policy
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
@@ -46,7 +47,7 @@ defmodule Helmsman.Projects do
     with :ok <- Policy.authorize(scope, :read_tasks) do
       case Repo.one(by_key(workspace_id, key)) do
         nil -> {:error, :not_found}
-        project -> {:ok, put_github(project)}
+        project -> {:ok, put_github(project, scope)}
       end
     end
   end
@@ -69,7 +70,7 @@ defmodule Helmsman.Projects do
           do: query,
           else: where(query, [p], is_nil(p.archived_at))
 
-      {:ok, query |> Repo.all() |> put_github()}
+      {:ok, query |> Repo.all() |> put_github(scope)}
     end
   end
 
@@ -159,6 +160,8 @@ defmodule Helmsman.Projects do
 
   Errors: `:not_found` (project or repository), `:repository_unavailable`,
   `:repository_required` (a base branch without a repository),
+  `:repository_already_bound` (binding a repository to a project bound to
+  a local repository, `add-local-repositories` decision 5),
   `{:branch_not_found, branch}`, `{:github_unavailable, _}`,
   `{:rate_limited, _}`, `:stale`, a changeset.
   """
@@ -219,6 +222,7 @@ defmodule Helmsman.Projects do
   defp settle_github_settings(scope, key, attrs, attempts_left) do
     with {:ok, project} <- fetch_project(scope.workspace.id, key),
          {:ok, pair} <- github_pair(project, attrs),
+         :ok <- not_bound_locally(project, pair),
          :ok <- check_pair(scope.workspace.id, pair) do
       result =
         Workspaces.write_transaction(scope, :manage_github, fn scope ->
@@ -233,7 +237,7 @@ defmodule Helmsman.Projects do
           {:error, :stale}
 
         {:ok, project} ->
-          {:ok, put_github(project)}
+          {:ok, put_github(project, scope)}
 
         error ->
           error
@@ -254,6 +258,10 @@ defmodule Helmsman.Projects do
     repository_id = Map.get(attrs, :repository_id, project.repository_id)
 
     case {repository_id, Map.get(attrs, :base_branch, project.base_branch)} do
+      # A local repository keeps its base branch here (not checked on GitHub).
+      {nil, _branch} = pair when project.local_repository_id != nil ->
+        {:ok, pair}
+
       {nil, branch} when branch != nil ->
         if Map.has_key?(attrs, :base_branch),
           do: {:error, :repository_required},
@@ -264,7 +272,7 @@ defmodule Helmsman.Projects do
     end
   end
 
-  defp check_pair(_workspace_id, {nil, nil}), do: :ok
+  defp check_pair(_workspace_id, {nil, _branch}), do: :ok
 
   defp check_pair(workspace_id, {repository_id, branch}) do
     with {:ok, {repository, installation}} <-
@@ -286,6 +294,7 @@ defmodule Helmsman.Projects do
   defp save_github_settings(scope, key, attrs, checked_pair) do
     with {:ok, project} <- lock_project(scope, key),
          {:ok, pair} <- github_pair(project, attrs),
+         :ok <- not_bound_locally(project, pair),
          :ok <- same_pair(pair, checked_pair),
          :ok <- lock_available_repository(scope.workspace.id, pair) do
       {repository_id, branch} = pair
@@ -298,6 +307,12 @@ defmodule Helmsman.Projects do
       |> save()
     end
   end
+
+  defp not_bound_locally(%Project{local_repository_id: id}, {repository_id, _branch})
+       when not is_nil(id) and not is_nil(repository_id),
+       do: {:error, :repository_already_bound}
+
+  defp not_bound_locally(_project, _pair), do: :ok
 
   defp same_pair(pair, pair), do: :ok
   defp same_pair(_pair, _checked), do: {:error, :pair_changed}
@@ -336,8 +351,71 @@ defmodule Helmsman.Projects do
     end
   end
 
-  # Puts the virtual `repository` and `effective_base_branch` fields.
-  defp put_github(projects) when is_list(projects) do
+  ## Local repository (add-local-repositories decision 5)
+
+  @doc """
+  Binds the project `key` to the local repository `local_repository_id`
+  of the workspace, or unbinds it (nil), with the rights of binding a
+  GitHub repository (`:manage_github`). The repository may be offline or
+  unavailable, but not removed (`:not_found`). A project bound to a
+  GitHub repository: `{:error, :repository_already_bound}` (unbind it
+  first). The base branch stays the project's; nil means the local
+  repository's default branch. Lock order: project row, then the local
+  repository row `FOR SHARE`.
+  """
+  @spec bind_local_repository(Scope.t(), String.t(), pos_integer() | nil) ::
+          {:ok, Project.t()} | {:error, error()}
+  def bind_local_repository(%Scope{workspace: %Workspace{}} = scope, key, local_repository_id)
+      when is_binary(key) and (is_nil(local_repository_id) or is_integer(local_repository_id)) do
+    result =
+      Workspaces.write_transaction(scope, :manage_github, fn scope ->
+        with {:ok, project} <- lock_project(scope, key),
+             :ok <- bindable(scope, project, local_repository_id) do
+          project
+          |> Ecto.Changeset.change(local_repository_id: local_repository_id)
+          |> save()
+        end
+      end)
+
+    with {:ok, project} <- result, do: {:ok, put_github(project, scope)}
+  end
+
+  defp bindable(_scope, _project, nil), do: :ok
+
+  defp bindable(_scope, %Project{repository_id: id}, _local_id) when not is_nil(id),
+    do: {:error, :repository_already_bound}
+
+  defp bindable(scope, _project, local_id) do
+    with {:ok, _repo} <- LocalRepositories.lock_bindable(scope.workspace.id, local_id), do: :ok
+  end
+
+  # Puts the virtual `repository`, `local_repository` and
+  # `effective_base_branch` fields; the local repository's path only for
+  # readers who may see it.
+  defp put_github(projects, scope) when is_list(projects) do
+    local_ids =
+      for %Project{local_repository_id: id} <- projects, id != nil, uniq: true, do: id
+
+    locals = if local_ids == [], do: %{}, else: LocalRepositories.views_by_id(local_ids, scope)
+
+    projects
+    |> put_repositories()
+    |> Enum.map(&put_local(&1, Map.get(locals, &1.local_repository_id)))
+  end
+
+  defp put_github(%Project{} = project, scope), do: hd(put_github([project], scope))
+
+  defp put_local(project, nil), do: %{project | local_repository: nil}
+
+  defp put_local(project, local) do
+    %{
+      project
+      | local_repository: local,
+        effective_base_branch: project.base_branch || local.default_branch
+    }
+  end
+
+  defp put_repositories(projects) do
     ids = for %Project{repository_id: id} <- projects, id != nil, uniq: true, do: id
 
     repositories =
@@ -356,8 +434,6 @@ defmodule Helmsman.Projects do
 
     Enum.map(projects, &put_repository(&1, Map.get(repositories, &1.repository_id)))
   end
-
-  defp put_github(%Project{} = project), do: hd(put_github([project]))
 
   defp put_repository(project, nil),
     do: %{project | repository: nil, effective_base_branch: nil}

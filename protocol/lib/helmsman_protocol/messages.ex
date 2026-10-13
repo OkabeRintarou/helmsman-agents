@@ -13,6 +13,7 @@ defmodule HelmsmanProtocol.Messages do
     {"steer_ack", Report.SteerAck},
     {"git_token", Report.GitToken},
     {"pushed", Report.Pushed},
+    {"repo_status", Report.RepoStatus},
     {"finished", Report.Finished},
     {"rotate_token", Report.RotateToken}
   ]
@@ -34,9 +35,11 @@ defmodule HelmsmanProtocol.Messages do
     "steer_ack" => Reply.Empty,
     "git_token" => Reply.GitToken,
     "pushed" => Reply.Empty,
+    "repo_status" => Reply.Empty,
     "finished" => Reply.Empty,
     "rotate_token" => Reply.RotateToken
   }
+  @since %{"repo_status" => 3}
   @messages Map.new(@reports ++ @pushes)
   @names Map.new(@reports ++ @pushes, fn {name, module} -> {module, name} end)
 
@@ -61,7 +64,7 @@ defmodule HelmsmanProtocol.Messages do
 
   @spec encode_reply(String.t(), struct(), integer()) :: {:ok, map()} | {:error, term()}
   def encode_reply(name, reply, target_version \\ HelmsmanProtocol.version()) do
-    if HelmsmanProtocol.compatible?(target_version) do
+    if HelmsmanProtocol.compatible?(target_version) and in_version?(name, target_version) do
       with {:ok, module} <- reply_module(name) do
         encode_reply_payload(module, reply, target_version)
       end
@@ -90,6 +93,7 @@ defmodule HelmsmanProtocol.Messages do
 
   defp encode_message(%{__struct__: module} = value, target_version) do
     with {:ok, name} <- Map.fetch(@names, module),
+         :ok <- since(name, target_version),
          {:ok, validated} <- module.new(Map.from_struct(value)),
          {:ok, wire} <- encode_versioned(validated, target_version) do
       {:ok, {name, wire}}
@@ -101,21 +105,42 @@ defmodule HelmsmanProtocol.Messages do
 
   defp encode_message(_, _), do: Schema.invalid([], :type)
 
+  defp since(name, version),
+    do: if(in_version?(name, version), do: :ok, else: {:error, {:not_in_version, version}})
+
+  defp in_version?(name, version), do: version >= Map.get(@since, name, 1)
+
   defp encode_versioned(%Reply.Claim{} = reply, target_version) do
     wire = Reply.Claim.to_wire(reply)
-    runs = wire["runs"]
 
-    if target_version < HelmsmanProtocol.provider_account_version() do
-      with {:ok, encoded} <- encode_runs(runs, target_version) do
-        {:ok, Map.put(wire, "runs", encoded)}
-      end
-    else
-      {:ok, wire}
+    with {:ok, encoded} <- encode_runs(wire["runs"], target_version) do
+      {:ok, Map.put(wire, "runs", encoded)}
+    end
+  end
+
+  defp encode_versioned(%Reply.Join{} = reply, target_version) do
+    wire = Reply.Join.to_wire(reply)
+
+    if local_repositories?(target_version),
+      do: {:ok, wire},
+      else: {:ok, Map.delete(wire, "local_repositories")}
+  end
+
+  defp encode_versioned(%module{} = report, target_version)
+       when module in [Report.Join, Report.Sync] do
+    wire = module.to_wire(report)
+
+    cond do
+      local_repositories?(target_version) -> {:ok, wire}
+      is_nil(report.local_repositories) -> {:ok, Map.delete(wire, "local_repositories")}
+      true -> {:error, {:not_in_version, target_version}}
     end
   end
 
   defp encode_versioned(%{__struct__: module} = value, _target_version),
     do: {:ok, module.to_wire(value)}
+
+  defp local_repositories?(version), do: version >= HelmsmanProtocol.local_repositories_version()
 
   defp encode_runs(runs, version) do
     Enum.reduce_while(runs, {:ok, []}, fn run, {:ok, acc} ->
@@ -130,10 +155,30 @@ defmodule HelmsmanProtocol.Messages do
     end
   end
 
-  defp encode_run(%{"agent" => %{"provider_account" => nil}} = run, _version),
-    do: {:ok, update_in(run, ["agent"], &Map.delete(&1, "provider_account"))}
+  defp encode_run(run, version) do
+    with {:ok, run} <- encode_account(run, version) do
+      encode_repo(run, version)
+    end
+  end
 
-  defp encode_run(_run, version), do: {:error, {:not_in_version, version}}
+  defp encode_account(run, version) do
+    cond do
+      version >= HelmsmanProtocol.provider_account_version() -> {:ok, run}
+      is_nil(run["agent"]["provider_account"]) -> {:ok, drop_in(run, "agent", "provider_account")}
+      true -> {:error, {:not_in_version, version}}
+    end
+  end
+
+  defp encode_repo(run, version) do
+    cond do
+      local_repositories?(version) -> {:ok, run}
+      is_nil(run["repo"]) -> {:ok, run}
+      run["repo"]["kind"] == "local" -> {:error, {:not_in_version, version}}
+      true -> {:ok, update_in(run, ["repo"], &Map.drop(&1, ["kind", "name"]))}
+    end
+  end
+
+  defp drop_in(map, key, field), do: update_in(map, [key], &Map.delete(&1, field))
 
   defp decode_module(directory, name, payload) do
     case Map.fetch(directory, name) do

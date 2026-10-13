@@ -34,6 +34,9 @@ defmodule Helmsman.Tasks.TaskEvent do
     belongs_to :feedback, Entry
     # The run the entry was made in (an `hmr_` token), if any.
     belongs_to :source_run, Helmsman.Runs.Run
+    # On a move to `verified`: the latest commit delivered to the task
+    # branch (`Helmsman.Tasks.VerifiedSha`).
+    field :verified_sha, :string
     # The ID of `feedback` (`KEY-N#S`), filled in by `Helmsman.Tasks`.
     field :feedback_ident, :string, virtual: true
 

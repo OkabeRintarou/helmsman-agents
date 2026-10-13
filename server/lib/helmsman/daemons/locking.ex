@@ -62,7 +62,15 @@ defmodule Helmsman.Daemons.Locking do
         from r in Runtime, where: r.daemon_id == ^id, select: r.workspace_id, distinct: true
       )
 
-    Enum.sort(Enum.uniq(served ++ existing ++ Keyword.get(opts, :workspace_ids, [])))
+    local =
+      Repo.all(
+        from l in Helmsman.LocalRepositories.LocalRepository,
+          where: l.daemon_id == ^id,
+          select: l.workspace_id,
+          distinct: true
+      )
+
+    Enum.sort(Enum.uniq(served ++ existing ++ local ++ Keyword.get(opts, :workspace_ids, [])))
   end
 
   def lock_members(user_id, ids) do

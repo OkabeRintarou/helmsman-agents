@@ -21,9 +21,13 @@ defmodule Helmsman.Runs.Claim do
        does not exist is read as no longer a member;
     6. `Helmsman.Runs.Revalidation`: invalid → `cancelled` (`obsolete` /
        `unauthorized`); triggers pruned → written back;
-    7. the repository (`Helmsman.Runs.GitRepo`, `add-daemon-git-workspace`
-       decision 2): unavailable → `failed` (`workspace_prepare`); no
-       prefetched push token → left queued;
+    7. the repository: a local repository (`Helmsman.Runs.LocalRepo`,
+       `add-local-repositories` decision 6) on another machine, removed,
+       unavailable or over a connection too old → `failed`
+       (`workspace_prepare`); else the GitHub repository
+       (`Helmsman.Runs.GitRepo`, `add-daemon-git-workspace` decision 2):
+       unavailable → `failed` (`workspace_prepare`); no prefetched push
+       token → left queued;
     8. `claimed`, the daemon, `claimed_at`, the capabilities recomputed,
        the repository and task branch, the agent's provider account, a run
        token and the run description (`Helmsman.Runs.Spec`).
@@ -46,7 +50,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Locks
   alias Helmsman.Repo
   alias Helmsman.Runs
-  alias Helmsman.Runs.{GitRepo, Lifecycle, Run, RunTokens, Spec}
+  alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec}
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -69,12 +73,9 @@ defmodule Helmsman.Runs.Claim do
       with true <- Locks.try_daemon(ctx.daemon_id),
            {:ok, daemon} <- Lifecycle.lock_daemon(ctx) do
         slots = daemon.max_concurrency - active_count(:daemon_id, daemon.id)
-
-        accounts? =
-          Map.get(ctx, :protocol, HelmsmanProtocol.min_version()) >=
-            HelmsmanProtocol.provider_account_version()
-
-        claim_from(daemon, runtime_ids(daemon), slots, {base_url, tokens, accounts?})
+        protocol = Map.get(ctx, :protocol, HelmsmanProtocol.min_version())
+        args = {base_url, tokens, protocol}
+        claim_from(daemon, runtime_ids(daemon), slots, args)
       else
         false -> {:ok, []}
         error -> error
@@ -84,10 +85,11 @@ defmodule Helmsman.Runs.Claim do
 
   defp claim_from(_daemon, ids, slots, _args) when slots <= 0 or ids == [], do: {:ok, []}
 
-  defp claim_from(daemon, ids, slots, {base_url, tokens, accounts?}) do
+  defp claim_from(daemon, ids, slots, {base_url, tokens, protocol}) do
     state = %{
       daemon: daemon,
-      accounts?: accounts?,
+      protocol: protocol,
+      accounts?: protocol >= HelmsmanProtocol.provider_account_version(),
       base_url: base_url,
       tokens: tokens,
       slots: slots,
@@ -265,6 +267,22 @@ defmodule Helmsman.Runs.Claim do
   end
 
   defp with_repo(run, locked, changes, state) do
+    case LocalRepo.resolve(run, locked.task, state.daemon, state.protocol) do
+      :none ->
+        with_github_repo(run, locked, changes, state)
+
+      {:ok, repo} ->
+        changes =
+          changes ++ [local_repository_id: repo.local_repository.id, branch: repo.branch]
+
+        claim!(run, locked, changes, repo, state)
+
+      {:unavailable, message} ->
+        fail_prepare!(run, message, state)
+    end
+  end
+
+  defp with_github_repo(run, locked, changes, state) do
     case GitRepo.resolve(run, locked.task, state.tokens) do
       :none ->
         claim!(run, locked, changes, nil, state)
@@ -277,12 +295,16 @@ defmodule Helmsman.Runs.Claim do
         state
 
       {:unavailable, message} ->
-        run
-        |> Lifecycle.end!(:failed, failure_reason: :workspace_prepare, error: message)
-        |> Lifecycle.maybe_retry()
-
-        state
+        fail_prepare!(run, message, state)
     end
+  end
+
+  defp fail_prepare!(run, message, state) do
+    run
+    |> Lifecycle.end!(:failed, failure_reason: :workspace_prepare, error: message)
+    |> Lifecycle.maybe_retry()
+
+    state
   end
 
   defp claim!(run, locked, changes, repo, state) do

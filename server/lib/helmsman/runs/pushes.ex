@@ -15,6 +15,7 @@ defmodule Helmsman.Runs.Pushes do
 
   alias Helmsman.GitHub
   alias Helmsman.GitHub.Repository
+  alias Helmsman.LocalRepositories.Workers.RecordBranch
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Lifecycle, Run}
@@ -33,7 +34,9 @@ defmodule Helmsman.Runs.Pushes do
   claimed by this daemon and have a repository (`:not_found` otherwise),
   and be `claimed`, `running`, `cancelling` or have ended less than 30
   minutes ago (late wrap-up; `:wrong_state` otherwise). A repository no
-  longer available or GitHub unreachable: `{:unavailable, message}`.
+  longer available or GitHub unreachable: `{:unavailable, message}`. A run
+  of a local repository needs no token: `:not_found`
+  (`add-local-repositories` decision 6).
   """
   @spec git_token(Lifecycle.daemon_ctx(), pos_integer()) ::
           {:ok, %{token: String.t(), expires_at: DateTime.t()}}
@@ -84,7 +87,8 @@ defmodule Helmsman.Runs.Pushes do
   @doc """
   Records a push of the run (decision 5), whatever its status: the push
   happened on the remote. The run must have been claimed by this daemon
-  (`:not_found`) and have a repository (`:wrong_state`). The report must
+  (`:not_found`) and have a repository, GitHub or local (`:wrong_state`).
+  The report must
   name its task branch, a rescue branch `<branch>-run-<n>` of a run of
   the same task claimed by this daemon, 40-character lower-case SHAs, at
   most #{@max_commits} commits with subjects of at most #{@max_subject_bytes} bytes
@@ -94,7 +98,10 @@ defmodule Helmsman.Runs.Pushes do
   with a rescue branch) and the record; the run's status and failure
   reason do not change. The same `head_sha` and rescue branch again: `:ok`
   without a write; others: `:wrong_state`. After the commit the run's
-  topics are notified and `Helmsman.Runs.after_push/1` is called.
+  topics are notified and `Helmsman.Runs.after_push/1` is called. A
+  local-mode push to the task branch also enqueues
+  `Helmsman.LocalRepositories.Workers.RecordBranch` in the same
+  transaction (`add-local-repositories` decision 9).
   """
   @spec pushed(Lifecycle.daemon_ctx(), Report.Pushed.t()) :: :ok | {:error, Lifecycle.error()}
   def pushed(ctx, %Report.Pushed{run_id: run_id} = report) do
@@ -111,7 +118,10 @@ defmodule Helmsman.Runs.Pushes do
     with {:ok, :ok} <- result, do: :ok
   end
 
-  defp with_repository(%Run{repository_id: nil}), do: {:error, :wrong_state}
+  defp with_repository(%Run{repository_id: nil, local_repository_id: nil}),
+    do: {:error, :wrong_state}
+
+  defp with_repository(%Run{repository_id: nil, local_repository_id: id}), do: {:ok, id}
   defp with_repository(%Run{repository_id: id}), do: {:ok, id}
 
   defp validate(run, report, daemon_id) do
@@ -158,6 +168,9 @@ defmodule Helmsman.Runs.Pushes do
         push_commits: Enum.map(report.commits, &%{"sha" => &1.sha, "subject" => &1.subject}),
         pushed_at: DateTime.utc_now()
       )
+
+    if run.local_repository_id && run.push_status == :pushed,
+      do: {:ok, _job} = Oban.insert(RecordBranch.new(%{run_id: run.id}))
 
     Tx.after_commit(fn -> Runs.after_push(run) end)
     {:ok, :ok}

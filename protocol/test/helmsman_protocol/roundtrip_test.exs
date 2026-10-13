@@ -30,7 +30,7 @@ defmodule HelmsmanProtocol.RoundtripTest do
     |> Map.put("prompt", text())
     |> Map.put("resume_session_id", maybe(text()))
     |> Map.put("task", maybe(%{"ident" => text(), "title" => text()}))
-    |> Map.put("repo", maybe(Fixtures.repo()))
+    |> Map.put("repo", maybe(pick([Fixtures.repo(), Fixtures.local_repo()])))
     |> put_in(["agent", "provider"], pick(~w(claude codex copilot cursor)))
     |> put_in(["agent", "model"], maybe(text()))
     |> put_in(["agent", "effort"], maybe(text()))
@@ -99,6 +99,7 @@ defmodule HelmsmanProtocol.RoundtripTest do
 
   defp random_join do
     Fixtures.join()
+    |> Map.put("local_repositories", random_local_repositories())
     |> Map.put("max_concurrency", :rand.uniform(20))
     |> Map.put(
       "active_runs",
@@ -114,8 +115,34 @@ defmodule HelmsmanProtocol.RoundtripTest do
     )
   end
 
+  defp random_local_repositories do
+    maybe(
+      Enum.map(1..(:rand.uniform(4) - 1)//1, fn _ ->
+        available = :rand.uniform(2) == 1
+
+        Fixtures.local_repository()
+        |> Map.merge(%{
+          "name" => text(),
+          "path" => "/srv/" <> text(),
+          "workspaces" => [id()],
+          "default_branch" => maybe(text()),
+          "available" => available,
+          "unavailable_reason" => if(available, do: nil, else: text())
+        })
+      end)
+    )
+  end
+
   defp random_reply do
     Fixtures.join_reply()
+    |> Map.put(
+      "local_repositories",
+      maybe([
+        Fixtures.reply_local_repository()
+        |> Map.put("local_repository_id", id())
+        |> Map.put("watch", Enum.map(1..(:rand.uniform(4) - 1)//1, fn _ -> Fixtures.watch() end))
+      ])
+    )
     |> Map.put("daemon_id", id())
     |> Map.put("terminate_run_ids", if(:rand.uniform(2) == 1, do: [], else: [id(), id()]))
     |> Map.put(

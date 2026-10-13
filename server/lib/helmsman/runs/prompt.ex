@@ -22,7 +22,7 @@ defmodule Helmsman.Runs.Prompt do
 
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
-  alias Helmsman.Runs.{GitRepo, Run, Spec}
+  alias Helmsman.Runs.{GitRepo, LocalRepo, Run, Spec}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
@@ -34,7 +34,7 @@ defmodule Helmsman.Runs.Prompt do
           required(:names) => %{pos_integer() => String.t()},
           required(:retried) => %{pos_integer() => atom() | nil},
           required(:resume?) => boolean(),
-          optional(:repo) => GitRepo.t() | nil,
+          optional(:repo) => GitRepo.t() | LocalRepo.t() | nil,
           optional(:feedback) => %{pos_integer() => %{id: String.t(), content: String.t()}}
         }
 
@@ -269,6 +269,19 @@ defmodule Helmsman.Runs.Prompt do
       "Working directory: an empty scratch directory that is kept for later runs on " <>
         "#{ident}. This project has no repository."
     ]
+
+  # `add-local-repositories` decision 7: the repository's name and
+  # machine, never its path.
+  defp working_directory(run, %Task{}, %{kind: :local} = repo) do
+    [
+      "Working directory: a git worktree of the local repository " <>
+        "#{repo.local_repository.name} on #{repo.daemon_name}, on branch #{repo.branch} " <>
+        "(based on #{repo.base_branch}). Commit your changes, but do not push, switch " <>
+        "branches, or modify any other checkout of this repository; Helmsman delivers the " <>
+        "branch to the repository for local review."
+      | repo_lines(run, repo)
+    ]
+  end
 
   defp working_directory(run, %Task{}, repo) do
     %{owner: owner, name: name} = repo.repository

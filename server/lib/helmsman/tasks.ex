@@ -44,7 +44,8 @@ defmodule Helmsman.Tasks do
     Task,
     TaskEvent,
     TransitionContext,
-    TransitionSteps
+    TransitionSteps,
+    VerifiedSha
   }
 
   alias Helmsman.Workspaces
@@ -851,7 +852,8 @@ defmodule Helmsman.Tasks do
           tests: evidence.tests,
           auto: false,
           feedback_id: entry && entry.id,
-          source_run_id: source_run_id(scope)
+          source_run_id: source_run_id(scope),
+          verified_sha: if(to == :verified, do: VerifiedSha.compute(task))
         })
 
       task = task |> Changeset.change(transition_changes(task, to, scope)) |> Repo.update!()

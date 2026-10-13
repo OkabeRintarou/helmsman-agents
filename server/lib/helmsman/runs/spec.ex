@@ -25,7 +25,7 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Feedback.Id, as: FeedbackId
   alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
-  alias Helmsman.Runs.{GitRepo, Prompt, Run}
+  alias Helmsman.Runs.{GitRepo, LocalRepo, Prompt, Run}
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
   alias HelmsmanProtocol.RunSpec
@@ -33,9 +33,9 @@ defmodule Helmsman.Runs.Spec do
   @doc """
   The run description of the claimed `run`, with its `token`, the
   server's `base_url` (the MCP endpoint is `base_url <> "/mcp"`) and its
-  repository (`GitRepo.resolve/3`; nil: none).
+  repository (`GitRepo.resolve/3` or `LocalRepo.resolve/4`; nil: none).
   """
-  @spec build(Run.t(), String.t(), String.t(), GitRepo.t() | nil) ::
+  @spec build(Run.t(), String.t(), String.t(), GitRepo.t() | LocalRepo.t() | nil) ::
           {:ok, RunSpec.t()} | {:error, term()}
   def build(%Run{} = run, token, base_url, repo \\ nil)
       when is_binary(token) and is_binary(base_url) do
@@ -91,8 +91,20 @@ defmodule Helmsman.Runs.Spec do
     %{base_url: account.base_url, api_key: account.api_key, models: account.models || %{}}
   end
 
+  # `add-local-repositories` decision 13: the name only, no path or token.
+  defp repo_spec(%{kind: :local} = repo) do
+    %{
+      kind: :local,
+      name: repo.local_repository.name,
+      base_branch: repo.base_branch,
+      branch: repo.branch,
+      rescue_branches: repo.rescue_branches
+    }
+  end
+
   defp repo_spec(repo) do
     %{
+      kind: :github,
       github_repository_id: repo.repository.github_id,
       clone_url: GitRepo.clone_url(repo.repository),
       base_branch: repo.base_branch,

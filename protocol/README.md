@@ -1,17 +1,17 @@
 # HelmsmanProtocol
 
-服务端与守护进程共享的 v2 协议。只负责字符串键 JSON map 与经过校验的 Elixir 结构之间的转换，无网络、数据库或 JSON 库依赖。
+服务端与守护进程共享的 v3 协议。只负责字符串键 JSON map 与经过校验的 Elixir 结构之间的转换，无网络、数据库或 JSON 库依赖。
 
 ## 连接与版本
 
 连接 `wss://<server>/daemon/socket/websocket`，令牌通过 `x-helmsman-token` 请求头传递，不能放在 URL 中。
 每个守护进程只加入 `daemon:<daemon_id>`，路径、请求头及 topic 由 `HelmsmanProtocol` 提供。
-`join.protocol` 声明守护进程版本；当前版本为 2，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持。Phoenix 的 `vsn` 是序列化版本。
+`join.protocol` 声明守护进程版本；当前版本为 3，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。Phoenix 的 `vsn` 是序列化版本。
 
 所有枚举严格校验：未知消息、事件、provider、状态、失败原因或错误码均被拒绝。
 新增枚举值或消息、删除或改变字段的类型和语义必须升版本；新增可选字段可不升版本，接收方忽略未知字段。
 服务端记录 join 的守护进程版本，只向它发送该版本支持的消息、字段与枚举值。
-`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–2。
+`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–3；目标版本中不存在的消息（如低于 3 的 `repo_status`）同样返回该错误。
 新守护进程连接旧服务端被 join 拒绝后停止重连。
 
 ## 使用
@@ -40,8 +40,8 @@ Report 模块在 `HelmsmanProtocol.Report`，Reply 在 `HelmsmanProtocol.Reply`�
 
 | 名称 | 方向 | 负载模块与字段 | 成功回复模块与字段 |
 |---|---|---|---|
-| join | daemon → server | Join: protocol, machine, clis, max_concurrency, active_runs | Join: daemon_id, runtimes, terminate_run_ids |
-| sync | daemon → server | Sync: machine, clis, max_concurrency | Join: 同 join |
+| join | daemon → server | Join: protocol, machine, clis, max_concurrency, active_runs, local_repositories（v3，可空） | Join: daemon_id, runtimes, terminate_run_ids, local_repositories（v3，可空） |
+| sync | daemon → server | Sync: machine, clis, max_concurrency, local_repositories（v3，可空） | Join: 同 join |
 | claim | daemon → server | Claim: 空 | Claim: runs（RunSpec 列表） |
 | starting | daemon → server | Starting: run_id | Starting: action（proceed / abort）, reason（abort 必须有） |
 | started | daemon → server | Started: run_id, session_id（可空） | Empty: 空 |
@@ -50,6 +50,7 @@ Report 模块在 `HelmsmanProtocol.Report`，Reply 在 `HelmsmanProtocol.Reply`�
 | steer_ack | daemon → server | SteerAck: run_id, feedback_id | Empty: 空 |
 | git_token | daemon → server | GitToken: run_id | GitToken: token, expires_at |
 | pushed | daemon → server | Pushed: run_id, branch, base_sha, head_sha, commits（sha, subject）, rescue_branch（可空） | Empty: 空 |
+| repo_status | daemon → server | RepoStatus（v3）: workspace_id, name, results（branch, head_sha, merged：yes / no / unknown；最多 500 项） | Empty: 空 |
 | finished | daemon → server | Finished: run_id, status, failure_reason, error, session_id, summary, usage | Empty: 空 |
 | rotate_token | daemon → server | RotateToken: 空 | RotateToken: token |
 | runs_available | server → daemon | RunsAvailable: 空 | 无 |
@@ -62,6 +63,9 @@ machine = machine_id, name, os, arch, daemon_version。
 clis 每项 = provider（claude / codex / copilot / cursor）, version, models, efforts, available, unavailable_reason。
 available 与 unavailable_reason 互斥；version 可空，但 version 为空时 available 必须为 false。unavailable_reason 非空时 1–1024 字节。
 active_runs 每项 = run_id, last_seq；runtimes 每项 = workspace_id, workspace_slug, provider, runtime_id。
+join / sync 的 local_repositories 每项（`LocalRepository`）= name, path（只用于显示）, workspaces（工作区 ID 列表）, default_branch（可空）, available, unavailable_reason；available 与 unavailable_reason 互斥。
+回复的 local_repositories 每项 = workspace_id, name, local_repository_id, watch（branch, head_sha, base_branch；最多 500 项）。
+按低于 3 的版本编码时，回复省略 local_repositories；join / sync 负载的 local_repositories 非空则返回 `{:error, {:not_in_version, v}}`。
 Finished 中只有 failed 可且必须带 failure_reason；summary ≤ 4096 字节，error ≤ 16384 字节。
 事件连续落库与重复终态接受由服务端处理；协议只校验单批序号。
 
@@ -69,9 +73,11 @@ Finished 中只有 failed 可且必须带 failure_reason；summary ≤ 4096 字�
 
 run_id；workspace（id, slug）；task（ident, title，整体可空）；
 agent（name, provider, model, effort, custom_args, env, extra_mcp_servers, provider_account（可空））；prompt；resume_session_id（可空）；
-repo（github_repository_id, clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at，整体可空）；
+repo（kind, name, github_repository_id, clone_url, base_branch, branch, rescue_branches, git_token, git_token_expires_at，整体可空）；
 mcp（url, token）；limits（timeout_ms, idle_timeout_ms）；trigger（kind, reason, feedback_id）。
 
+repo.kind 为 github / local，缺省（版本 1–2 的负载）按 github 解码。github 时 github_repository_id、clone_url、git_token、git_token_expires_at 必填；
+local 时 name 必填，上述四项必须为空（否则 `:not_allowed`）。按低于 3 的版本编码时 github 仓库省略 kind 与 name，local 仓库返回 `{:error, {:not_in_version, v}}`。
 custom_args 为最多 64 项的字符串列表，每项 1–4096 字节，不做 shell 拆分。
 model、effort 为可空字符串，非空值 1–128 字节；env 为字符串 map；extra_mcp_servers 为 JSON 对象。
 provider_account 非空时含 base_url（1–2048 字节）、api_key（1–8192 字节）和 models（字符串 map，最多 8 项，值 1–128 字节）。

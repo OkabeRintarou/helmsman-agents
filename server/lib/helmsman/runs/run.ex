@@ -99,6 +99,8 @@ defmodule Helmsman.Runs.Run do
 
     # The push record (`add-daemon-git-workspace` decision 1).
     belongs_to :repository, Repository
+    # Local repository mode (`add-local-repositories` decision 6).
+    belongs_to :local_repository, Helmsman.LocalRepositories.LocalRepository
     field :branch, :string
     field :base_sha, :string
     field :head_sha, :string

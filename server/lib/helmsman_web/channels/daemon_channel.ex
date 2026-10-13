@@ -4,7 +4,7 @@ defmodule HelmsmanWeb.DaemonChannel do
   messages of `add-run-lifecycle` (decision 18) go to `Helmsman.Runs`.
   """
   use HelmsmanWeb, :channel
-  alias Helmsman.{Daemons, Repo, Runs}
+  alias Helmsman.{Daemons, LocalRepositories, Repo, Runs}
   alias HelmsmanProtocol.{ErrorReply, Messages, Push, Reply}
 
   @impl true
@@ -28,7 +28,8 @@ defmodule HelmsmanWeb.DaemonChannel do
          %Reply.Join{
            daemon_id: socket.assigns.daemon_id,
            runtimes: runtimes,
-           terminate_run_ids: terminate
+           terminate_run_ids: terminate,
+           local_repositories: local_repositories(socket)
          },
          socket
        ), socket}
@@ -88,6 +89,9 @@ defmodule HelmsmanWeb.DaemonChannel do
   end
 
   defp handle_report("sync", report, socket) do
+    report =
+      if local_repositories?(socket), do: report, else: %{report | local_repositories: nil}
+
     case Daemons.register(socket.assigns.daemon_id, socket.assigns.auth_epoch, report) do
       {:ok, runtimes} ->
         respond(
@@ -95,7 +99,8 @@ defmodule HelmsmanWeb.DaemonChannel do
           %Reply.Join{
             daemon_id: socket.assigns.daemon_id,
             runtimes: runtimes,
-            terminate_run_ids: []
+            terminate_run_ids: [],
+            local_repositories: local_repositories(socket)
           },
           socket
         )
@@ -208,6 +213,18 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
+  # `add-local-repositories` decision 13; the message exists from protocol 3.
+  defp handle_report("repo_status", report, socket) do
+    if local_repositories?(socket) do
+      case LocalRepositories.apply_status(daemon_ctx(socket), report) do
+        :ok -> respond("repo_status", %Reply.Empty{}, socket)
+        {:error, reason} -> run_error(reason, socket)
+      end
+    else
+      {:reply, {:error, error(:invalid_payload)}, socket}
+    end
+  end
+
   # `steer_ack` comes with `add-run-steering`.
   defp handle_report(_name, _report, socket), do: {:reply, {:error, error(:not_found)}, socket}
 
@@ -218,6 +235,17 @@ defmodule HelmsmanWeb.DaemonChannel do
 
   defp run_error({:invalid_payload, _detail}, socket),
     do: {:reply, {:error, error(:invalid_payload)}, socket}
+
+  defp local_repositories?(socket),
+    do: socket.assigns.protocol >= HelmsmanProtocol.local_repositories_version()
+
+  # The join / sync reply's local repositories (protocol 3; older
+  # connections get none, and the encoding leaves the field out).
+  defp local_repositories(socket) do
+    if local_repositories?(socket),
+      do: LocalRepositories.reply_entries(socket.assigns.daemon_id),
+      else: nil
+  end
 
   defp daemon_ctx(socket) do
     %{

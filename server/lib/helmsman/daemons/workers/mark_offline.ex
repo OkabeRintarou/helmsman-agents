@@ -1,7 +1,8 @@
 defmodule Helmsman.Daemons.Workers.MarkOffline do
   @moduledoc """
-  Every minute (decision 12): sets the runtimes of revoked daemons and of
-  daemons silent for `Helmsman.Daemons.online_threshold_seconds/0` offline. Candidates are read without locks;
+  Every minute (decision 12): sets the runtimes and local repositories
+  (`add-local-repositories` decision 4) of revoked daemons and of daemons
+  silent for `Helmsman.Daemons.online_threshold_seconds/0` offline. Candidates are read without locks;
   each one is then rechecked under `Helmsman.Daemons.locked/3`, so a report
   that arrived meanwhile wins. A candidate whose lock set keeps changing
   (`:busy`) is left to the next run.
@@ -16,6 +17,7 @@ defmodule Helmsman.Daemons.Workers.MarkOffline do
   alias Helmsman.Daemons.Locking
   alias Helmsman.Daemons.Runtime
   alias Helmsman.Events
+  alias Helmsman.LocalRepositories.LocalRepository
   alias Helmsman.Repo
 
   @impl true
@@ -36,7 +38,11 @@ defmodule Helmsman.Daemons.Workers.MarkOffline do
           exists(
             from r in Runtime,
               where: r.daemon_id == parent_as(:daemon).id and r.status == "online"
-          ),
+          ) or
+            exists(
+              from l in LocalRepository,
+                where: l.daemon_id == parent_as(:daemon).id and l.status == "online"
+            ),
         select: d.id
     )
   end

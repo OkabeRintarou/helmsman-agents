@@ -24,12 +24,65 @@ defmodule HelmsmanProtocol.Fixtures do
 
   def join do
     %{
-      "protocol" => 1,
+      "protocol" => 3,
       "machine" => machine(),
       "clis" => [cli()],
       "max_concurrency" => 2,
-      "active_runs" => [%{"run_id" => 7, "last_seq" => 0}]
+      "active_runs" => [%{"run_id" => 7, "last_seq" => 0}],
+      "local_repositories" => [local_repository()]
     }
+  end
+
+  def local_repository do
+    %{
+      "name" => "app",
+      "path" => "/home/alice/code/app",
+      "workspaces" => [1],
+      "default_branch" => "main",
+      "available" => true,
+      "unavailable_reason" => nil
+    }
+  end
+
+  def watch, do: %{"branch" => "hm/1/t-1", "head_sha" => "abc123", "base_branch" => "main"}
+
+  def reply_local_repository do
+    %{"workspace_id" => 1, "name" => "app", "local_repository_id" => 5, "watch" => [watch()]}
+  end
+
+  def repo_status do
+    %{
+      "workspace_id" => 1,
+      "name" => "app",
+      "results" => [%{"branch" => "hm/1/t-1", "head_sha" => "abc123", "merged" => "yes"}]
+    }
+  end
+
+  def local_repo do
+    %{
+      "kind" => "local",
+      "name" => "app",
+      "github_repository_id" => nil,
+      "clone_url" => nil,
+      "base_branch" => "main",
+      "branch" => "hm/1/t-1",
+      "rescue_branches" => ["hm/1/t-1-run-3"],
+      "git_token" => nil,
+      "git_token_expires_at" => nil
+    }
+  end
+
+  @doc "Wire payload as encoded for an older target version, or :error when not representable."
+  def at_version(name, payload, version) do
+    local? = version >= HelmsmanProtocol.local_repositories_version()
+
+    cond do
+      local? -> payload
+      name == "repo_status" -> :error
+      name in ["join", "sync"] and payload["local_repositories"] != nil -> :error
+      name in ["join", "sync"] -> Map.delete(payload, "local_repositories")
+      true -> payload
+    end
   end
 
   def join_reply do
@@ -43,12 +96,15 @@ defmodule HelmsmanProtocol.Fixtures do
           "runtime_id" => 2
         }
       ],
-      "terminate_run_ids" => [7]
+      "terminate_run_ids" => [7],
+      "local_repositories" => [reply_local_repository()]
     }
   end
 
   def repo do
     %{
+      "kind" => "github",
+      "name" => nil,
       "github_repository_id" => 123_456_789,
       "clone_url" => "https://github.com/acme/repo.git",
       "base_branch" => "main",
@@ -134,6 +190,7 @@ defmodule HelmsmanProtocol.Fixtures do
         "commits" => [%{"sha" => "def", "subject" => "Implement"}],
         "rescue_branch" => nil
       },
+      "repo_status" => repo_status(),
       "finished" => finished(),
       "rotate_token" => %{}
     }
@@ -161,6 +218,7 @@ defmodule HelmsmanProtocol.Fixtures do
       "steer_ack" => %{},
       "git_token" => %{"token" => "push-secret", "expires_at" => "2026-10-12T08:00:00Z"},
       "pushed" => %{},
+      "repo_status" => %{},
       "finished" => %{},
       "rotate_token" => %{"token" => "hmd_secret"}
     }

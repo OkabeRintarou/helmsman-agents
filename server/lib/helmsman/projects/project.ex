@@ -36,10 +36,17 @@ defmodule Helmsman.Projects.Project do
     field :require_ci, :boolean, default: true
     field :delete_branch_after_merge, :boolean, default: true
 
+    # Local repository mode (`add-local-repositories` decision 5): at most
+    # one of `repository_id` and `local_repository_id` is set.
+    field :local_repository_id, :id
+
     # Set by `Helmsman.Projects` reads: `%{owner, name, full_name, available}`
     # or nil, and the effective base branch (the default branch when
     # `base_branch` is nil).
     field :repository, :map, virtual: true
+    # `%{id, name, daemon_id, daemon_name, owner, status, unavailable_reason,
+    # path}` or nil; `path` is nil unless the reader may see it.
+    field :local_repository, :map, virtual: true
     field :effective_base_branch, :string, virtual: true
 
     timestamps(type: :utc_datetime)
