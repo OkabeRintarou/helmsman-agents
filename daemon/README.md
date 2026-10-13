@@ -83,6 +83,18 @@ WantedBy=default.target
 进程组成员身份每 10 秒持久化；CLI 退出后清理全部已知组员，完成后才上报结果。
 无法确认身份或清理超时时保留 state 记录并记录日志，供下次启动恢复；不会向身份不明的 PGID 发信号。
 
+Claude Code uses the daemon user's own Claude configuration (`~/.claude`): login,
+gateway, model, hooks and permissions from user-level settings apply to managed runs.
+Every run starts with `--setting-sources user`, so the repository's
+`.claude/settings.json` and `.claude/settings.local.json` do not load: a repository
+cannot redirect requests or credentials, or add hooks and permissions (in `-p` mode
+Claude Code does not ask whether to trust a directory). The repository's
+`CLAUDE.md` and `.claude/CLAUDE.md` still load, through `--add-dir=<work dir>` with
+`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`. The repository's `.claude/agents/`,
+`.claude/skills/`, `.claude/commands/` and `CLAUDE.local.md` do not load; put what
+managed runs need in the user's `~/.claude/`. `--setting-sources` in Agent
+`custom_args` is removed with a warning. Machine managed settings still apply.
+
 Codex uses `codex app-server` (minimum 0.162.0). By default it uses the daemon's
 inherited `CODEX_HOME`, or `$HOME/.codex`. It reads the owner's existing login,
 provider, gateway and headers in place. The daemon does not create or modify this

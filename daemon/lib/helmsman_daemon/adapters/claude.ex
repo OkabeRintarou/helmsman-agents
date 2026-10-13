@@ -22,7 +22,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
   @minimum Version.parse!("2.1.0")
   @efforts ~w(low medium high xhigh max)
   @models ~w(fable opus sonnet)
-  @valued ~w(--output-format --input-format --permission-mode --session-id --model --effort)
+  @valued ~w(--output-format --input-format --permission-mode --session-id --setting-sources --model --effort)
   @optional ~w(--resume -r)
   @switches ~w(-p --print --verbose --dangerously-skip-permissions --strict-mcp-config --continue -c --include-partial-messages --replay-user-messages --no-session-persistence --fork-session)
   @failures [
@@ -66,7 +66,12 @@ defmodule HelmsmanDaemon.Adapters.Claude do
     end
   end
 
-  def prepare(spec, run_dir, _work_dir) do
+  # `update-claude-setting-sources`: only user-level settings load, so the
+  # repository's `.claude/settings*.json` cannot redirect requests or
+  # credentials; its CLAUDE.md still loads through the additional directory.
+  @claude_md_env {"CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1"}
+
+  def prepare(spec, run_dir, work_dir) do
     path = Path.join(run_dir, "mcp.json")
     extra = spec.agent.extra_mcp_servers
 
@@ -116,7 +121,11 @@ defmodule HelmsmanDaemon.Adapters.Claude do
              "bypassPermissions",
              "--strict-mcp-config",
              "--mcp-config",
-             path
+             path,
+             "--setting-sources",
+             "user",
+             # `=`: `--add-dir` takes several values and would swallow the next one.
+             "--add-dir=" <> work_dir
            ] ++
              provider_args ++
              option("--model", spec.agent.model) ++
@@ -124,7 +133,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
              option("--resume", spec.resume_session_id) ++ custom,
          stdin: frame(spec.prompt),
          close_stdin?: false,
-         env: env,
+         env: [@claude_md_env | env],
          events: events ++ provider_events
        }}
     else
@@ -141,7 +150,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
   defp filter_provider_args([arg | rest], kept, removed) do
     flag = arg |> String.split("=", parts: 2) |> hd()
 
-    if flag in ["--settings", "--setting-sources"] do
+    if flag == "--settings" do
       rest = if String.contains?(arg, "="), do: rest, else: drop_value(rest)
       filter_provider_args(rest, kept, [flag | removed])
     else

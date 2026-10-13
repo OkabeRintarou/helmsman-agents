@@ -41,6 +41,9 @@ defmodule HelmsmanDaemon.Adapters.ClaudePrepareTest do
              "--strict-mcp-config",
              "--mcp-config",
              path,
+             "--setting-sources",
+             "user",
+             "--add-dir=" <> work,
              "--model",
              "sonnet",
              "--effort",
@@ -69,11 +72,12 @@ defmodule HelmsmanDaemon.Adapters.ClaudePrepareTest do
            ]
 
     refute launch.close_stdin?
+    assert launch.env == [{"CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1"}]
   end
 
   test "absent optional values and all conflicting custom arguments" do
     valued =
-      ~w(--output-format --input-format --permission-mode --session-id --model --effort --resume -r)
+      ~w(--output-format --input-format --permission-mode --session-id --setting-sources --model --effort --resume -r)
 
     switches =
       ~w(-p --print --verbose --dangerously-skip-permissions --strict-mcp-config --continue -c --include-partial-messages --replay-user-messages --no-session-persistence --fork-session)
@@ -99,8 +103,34 @@ defmodule HelmsmanDaemon.Adapters.ClaudePrepareTest do
       refute "--model" in launch.argv
       refute "--effort" in launch.argv
       refute "--resume" in launch.argv
+      refute "value" in launch.argv
+      assert Enum.count(launch.argv, &String.starts_with?(&1, "--setting-sources")) == 1
       assert [{:status, %{message: message}}] = launch.events
       assert message =~ flag
+    end
+  end
+
+  test "setting sources from custom arguments are removed in both forms" do
+    run = spec(4)
+    dir = Paths.private_dir!(Paths.run(4))
+
+    for {args, kept} <- [
+          {["--setting-sources", "user,project", "--max-turns", "3"], ["--max-turns", "3"]},
+          {["--setting-sources=project"], []}
+        ] do
+      assert {:ok, launch} =
+               Claude.prepare(%{run | agent: %{run.agent | custom_args: args}}, dir, "/w/T-1")
+
+      index = Enum.find_index(launch.argv, &(&1 == "--mcp-config"))
+
+      assert Enum.slice(launch.argv, index + 2, 3) ==
+               ["--setting-sources", "user", "--add-dir=/w/T-1"]
+
+      assert Enum.drop(launch.argv, index + 5) == kept
+      assert Enum.count(launch.argv, &String.starts_with?(&1, "--setting-sources")) == 1
+      refute Enum.any?(launch.argv, &(&1 in ["user,project", "--setting-sources=project"]))
+      assert [{:status, %{message: message}}] = launch.events
+      assert message =~ "--setting-sources"
     end
   end
 

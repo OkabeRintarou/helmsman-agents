@@ -164,6 +164,28 @@ defmodule HelmsmanDaemon.Adapters.ClaudeRunWorkerTest do
     end
   end
 
+  # update-claude-setting-sources: the variable that loads the repository's
+  # CLAUDE.md wins over the Agent's env.
+  test "the Agent env cannot turn off the repository CLAUDE.md variable", %{tmp_dir: dir} do
+    scenario =
+      ~S(sh printf '{"type":"assistant","message":{"content":[{"type":"text","text":"md=%s"}]}}\n' "$CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD") <>
+        "\n" <>
+        ~S(json {"type":"result","is_error":false,"result":"OK","session_id":"s-1"}) <>
+        "\nawait_stdin_eof\nexit 0\n"
+
+    run = spec(5, scenario!(Path.join(dir, "env"), scenario))
+
+    run = %{
+      run
+      | agent: %{run.agent | env: %{"CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD" => "0"}}
+    }
+
+    start_supervised!({RunWorker, {run, [adapter: ClaudeReplay, reporter: TestReporter]}})
+    {finished, events} = collect(run.run_id, [])
+    assert finished.status == :succeeded
+    assert Enum.any?(events, &(&1.type == :text and &1.data.text == "md=1"))
+  end
+
   defp payloads(id, acc) do
     receive do
       {:report, ^id, %Report.Finished{} = finished, _, _, _} -> Enum.reverse([finished | acc])

@@ -109,9 +109,17 @@ CLAUDE_CODE_OAUTH_REFRESH_TOKEN
     refute raw =~ "null"
     refute raw =~ account().api_key
     refute inspect(launch.argv) =~ account().api_key
-    assert launch.env == [{"HELMSMAN_PROVIDER_API_KEY", account().api_key}]
+
+    assert launch.env == [
+             {"CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1"},
+             {"HELMSMAN_PROVIDER_API_KEY", account().api_key}
+           ]
+
     index = Enum.find_index(launch.argv, &(&1 == "--mcp-config"))
-    assert Enum.slice(launch.argv, index + 2, 2) == ["--settings", path]
+
+    assert Enum.slice(launch.argv, index + 2, 5) ==
+             ["--setting-sources", "user", "--add-dir=" <> dir, "--settings", path]
+
     refute Enum.any?(launch.env, fn {key, _} -> key in ["HOME", "CLAUDE_CONFIG_DIR"] end)
 
     run = %{run | agent: %{run.agent | provider_account: %{account() | models: %{}}}}
@@ -122,7 +130,7 @@ CLAUDE_CODE_OAUTH_REFRESH_TOKEN
     assert empty["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"] == ""
   end
 
-  test "conflicting settings flags and their values are removed only for bound accounts", %{
+  test "--settings is removed only for bound accounts, --setting-sources always", %{
     tmp_dir: dir
   } do
     for flag <- ["--settings", "--setting-sources"], inline? <- [true, false] do
@@ -141,13 +149,22 @@ CLAUDE_CODE_OAUTH_REFRESH_TOKEN
 
     run = %{
       run
-      | agent: %{run.agent | custom_args: ["--settings", "x.json", "--setting-sources=user"]}
+      | agent: %{
+          run.agent
+          | custom_args: ["--settings", "x.json", "--setting-sources=user,project"]
+        }
     }
 
     plain_dir = Paths.private_dir!(Path.join(dir, "plain"))
     assert {:ok, launch} = Claude.prepare(run, plain_dir, dir)
-    assert Enum.take(launch.argv, -3) == ["--settings", "x.json", "--setting-sources=user"]
-    assert launch.env == []
+    assert Enum.take(launch.argv, -2) == ["--settings", "x.json"]
+    assert Enum.count(launch.argv, &String.starts_with?(&1, "--setting-sources")) == 1
+    refute "user,project" in launch.argv
+    assert [{:status, %{message: message}}] = launch.events
+    assert message =~ "--setting-sources"
+    refute message =~ "--settings,"
+    assert launch.env == [{"CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1"}]
+    refute Enum.any?(launch.env, fn {key, _} -> key == "HELMSMAN_PROVIDER_API_KEY" end)
     refute File.exists?(Path.join(plain_dir, "claude-settings.json"))
   end
 
