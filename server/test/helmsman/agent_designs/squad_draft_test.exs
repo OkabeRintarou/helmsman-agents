@@ -40,7 +40,7 @@ defmodule Helmsman.AgentDesigns.SquadDraftTest do
   defp put_squad(ctx, attrs),
     do: AgentDesigns.put_squad(ctx.alice_scope, ctx.id, version(ctx), attrs)
 
-  defp squad_errors({:error, {:invalid, %{"squad" => cs}}}), do: Agents.errors(cs)
+  defp squad_errors({:error, {:invalid_squad, cs}}), do: Agents.errors(cs)
 
   test "starting a squad conversation: the empty squad part and a design run", ctx do
     design = design!(ctx.id)

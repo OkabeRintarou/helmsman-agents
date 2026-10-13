@@ -472,8 +472,8 @@ defmodule Helmsman.AgentDesigns do
   @doc """
   Changes the squad part of a `squad` conversation's draft as the user
   (`add-squads` decision 12): `attrs` as `propose_squad`. Errors:
-  `:turn_running`, `:stale`, `:not_squad`, `{:invalid, %{"squad" =>
-  changeset}}` and those of a locked conversation. The pending edits get
+  `:turn_running`, `:stale`, `:not_squad`, `{:invalid_squad, changeset}`
+  and those of a locked conversation. The pending edits get
   `%{"squad" => true, "fields" => [...]}`.
   """
   @spec put_squad(Scope.t(), term(), integer(), map()) :: {:ok, view()} | {:error, term()}
@@ -499,7 +499,7 @@ defmodule Helmsman.AgentDesigns do
         {:ok, Map.put(draft, "squad", squad), squad, fields}
 
       {:error, cs} ->
-        {:error, {:invalid, %{"squad" => cs}}}
+        {:error, {:invalid_squad, cs}}
     end
   end
 
@@ -548,9 +548,11 @@ defmodule Helmsman.AgentDesigns do
   @doc """
   Creates every agent of the draft, owned by the user (decision 12), in
   one transaction: all of them or none. `{:ok, %{design: view, agents:
-  [agent_view]}}`; `{:error, {:invalid, %{name => changeset}}}` with the
-  errors of every invalid agent; `:empty_draft`, `:turn_running`,
-  `:stale` and those of a locked conversation.
+  [agent_view], squad: squad_view | nil}}`; `{:error, {:invalid, %{name =>
+  changeset}}}` with the errors of every invalid agent (keys are agent
+  names only); in a squad conversation, once every agent is valid,
+  `{:error, {:invalid_squad, changeset}}` for the squad; `:empty_draft`,
+  `:turn_running`, `:stale` and those of a locked conversation.
   """
   @spec confirm(Scope.t(), term(), integer()) :: {:ok, map()} | {:error, term()}
   def confirm(%Scope{} = scope, id, version),
@@ -589,7 +591,7 @@ defmodule Helmsman.AgentDesigns do
            require: true
          ) do
       [] -> :ok
-      errors -> {:error, {:invalid, %{"squad" => squad_changeset(errors)}}}
+      errors -> {:error, {:invalid_squad, squad_changeset(errors)}}
     end
   end
 
@@ -613,14 +615,14 @@ defmodule Helmsman.AgentDesigns do
     case Squads.create(scope, attrs) do
       {:ok, view} -> {:ok, view}
       {:error, :forbidden} -> squad_error([{:leader, {"you may not make it the leader", []}}])
-      {:error, %Ecto.Changeset{} = cs} -> {:error, {:invalid, %{"squad" => cs}}}
+      {:error, %Ecto.Changeset{} = cs} -> {:error, {:invalid_squad, cs}}
       {:error, reason} -> {:error, reason}
     end
   end
 
   defp create_squad(_scope, _design), do: {:ok, nil}
 
-  defp squad_error(errors), do: {:error, {:invalid, %{"squad" => squad_changeset(errors)}}}
+  defp squad_error(errors), do: {:error, {:invalid_squad, squad_changeset(errors)}}
 
   defp squad_changeset(errors),
     do: %Ecto.Changeset{data: %{}, types: %{}, valid?: false, errors: errors}
@@ -928,9 +930,6 @@ defmodule Helmsman.AgentDesigns do
 
         {:ok, design, draft,
          %{squad: squad, trigger_summary: summary, warnings: squad_warnings(draft, summary)}}
-      else
-        {:error, {:invalid, %{"squad" => cs}}} -> {:error, {:invalid_squad, cs}}
-        error -> error
       end
     end)
   end

@@ -38,7 +38,7 @@ defmodule Helmsman.AgentDesigns.ConfirmSquadTest do
 
   defp confirm(ctx), do: AgentDesigns.confirm(ctx.alice_scope, ctx.id, version(ctx))
 
-  defp squad_errors({:error, {:invalid, %{"squad" => cs}}}), do: Agents.errors(cs)
+  defp squad_errors({:error, {:invalid_squad, cs}}), do: Agents.errors(cs)
 
   defp actor(ctx, name), do: Repo.get_by(Actor, workspace_id: ctx.workspace.id, name: name)
 
@@ -113,6 +113,30 @@ defmodule Helmsman.AgentDesigns.ConfirmSquadTest do
     assert %{name: [_]} = squad_errors(confirm(ctx))
     refute actor(ctx, "web-lead")
     assert {:ok, []} = Squads.list(ctx.alice_scope)
+    assert design!(ctx.id).status == :open
+  end
+
+  # An agent may be named `squad`: its errors are keyed by its name, the
+  # squad's come as `{:invalid_squad, changeset}`.
+  test "a draft agent named squad with a taken name: an agent error", ctx do
+    put_agent!(ctx, "squad")
+    put_squad!(ctx, %{name: "web-team", leader: "squad"})
+    managed_agent_fixture(ctx.carol_scope, %{name: "squad"})
+
+    assert {:error, {:invalid, errors}} = confirm(ctx)
+    assert Map.keys(errors) == ["squad"]
+    assert %{name: [_]} = Agents.errors(errors["squad"])
+    refute actor(ctx, "web-team")
+    assert design!(ctx.id).status == :open
+  end
+
+  test "a draft agent named squad in an invalid squad: a squad error", ctx do
+    put_agent!(ctx, "squad")
+    put_squad!(ctx, %{name: "web-team", leader: "squad"})
+    managed_agent_fixture(ctx.carol_scope, %{name: "web-team"})
+
+    assert %{name: [_]} = squad_errors(confirm(ctx))
+    refute actor(ctx, "squad")
     assert design!(ctx.id).status == :open
   end
 
