@@ -3,6 +3,10 @@ defmodule Helmsman.E2E.CodexResumeFailureTest do
   # the local server; the fake CLI records only session and prompt fields.
   use ExUnit.Case, async: false
   @moduletag :e2e
+  if :os.type() != {:unix, :linux} do
+    @moduletag skip: "daemon E2E tests require Linux"
+  end
+
   @moduletag timeout: 180_000
 
   import Helmsman.AccountsFixtures

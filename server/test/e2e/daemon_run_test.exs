@@ -5,6 +5,10 @@ defmodule Helmsman.E2E.DaemonRunTest do
   use ExUnit.Case, async: false
 
   @moduletag :e2e
+  if :os.type() != {:unix, :linux} do
+    @moduletag skip: "daemon E2E tests require Linux"
+  end
+
   @moduletag timeout: 180_000
 
   import Ecto.Query

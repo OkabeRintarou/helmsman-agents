@@ -8,6 +8,10 @@ defmodule Helmsman.E2E.PrMergeTest do
   use Oban.Testing, repo: Helmsman.Repo
 
   @moduletag :e2e
+  if :os.type() != {:unix, :linux} do
+    @moduletag skip: "daemon E2E tests require Linux"
+  end
+
   @moduletag timeout: 300_000
 
   import Ecto.Query

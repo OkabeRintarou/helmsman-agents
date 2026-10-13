@@ -5,6 +5,10 @@ defmodule Helmsman.E2E.LocalRepositoryTest do
   use ExUnit.Case, async: false
 
   @moduletag :e2e
+  if :os.type() != {:unix, :linux} do
+    @moduletag skip: "daemon E2E tests require Linux"
+  end
+
   @moduletag timeout: 300_000
 
   import Helmsman.AccountsFixtures
