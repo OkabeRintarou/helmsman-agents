@@ -43,7 +43,7 @@
 |---|---|---|---|
 | **指派** `assign` | 任务的执行方被设为托管 Agent 或小队（建单时或修改时），任务在 NEW / IN_PROGRESS，且没有勾选「暂不开始」 | work | 完成这个任务 |
 | **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己） | reply | 回应这条 Feedback，**不改变**执行方 |
-| **委派** `delegated` | 小队 leader 调用 `delegate`（16 §1.2） | work | 按 leader 的指示做 |
+| **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行 | work | 按 leader 的指示做；不看依赖 |
 | **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent` | work | 按附带的说明做 |
 | **自动化** | 定时 / 手动 / webhook（16 §2） | work | |
 | **创建对话** `design` | 用户在创建对话里发了一条消息（12 §6） | work（无任务） | 按对话修改草稿并回复；不合并、不自动重试、租约过期不重排，优先级 3（`add-agent-conversation`） |
@@ -58,7 +58,7 @@
 | **回答** `answer` | 新的 `answer` 让 `open_question` 变为 false，而那条 `question` 是托管 Agent 写的 | 与提问那次运行相同 | 带着答案继续（恢复会话）；授权继承**提问所在的运行**（提问的 Agent 不一定是执行方，`add-continuation-triggers` 决策 3） |
 | **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源（建任务时记为 `task_grants` 的 `requested`） |
 | **依赖满足** `unblocked` | 见 §2.4 | work | 不新建运行：把因依赖延后的 `deferred` 运行改为 `queued`，在 `triggers` 末尾追加一条不带授权来源的中性标记（授权仍由原指派类触发承担，领取时照常复核） |
-| **委派完成** `delegate_done` | 委派出去的运行结束 | work | leader 决定下一步 |
+| **委派完成** `delegate_done` | 委派出去的运行结束：成功，或失败且不会自动重试，或被停止而不是人请求的；任务仍在 NEW / IN_PROGRESS、执行方仍是该小队、小队未停用（`add-squads` 决策 9） | work（以小队身份，目标为当前 leader） | leader 决定下一步；授权与链继承发起委派的那次 leader 运行 |
 
 引起延续或提及的身份就是目标 Agent 自己时不触发（例如执行方 Agent 自己把任务改回 IN_PROGRESS）。系统身份写的 Feedback 不引起提及、回答与回调；触发结果保存在引起它的 Feedback 上（`feedback.dispatch`），界面据此把被拒的提及置灰并说明原因。
 
@@ -79,7 +79,7 @@
 - 新发起时按这个用户校验能否触发目标：Agent 按 12 §2.1，小队按 16 §1.1。
 - 领取时重新校验：这个用户仍是工作区成员（member 以上）、仍有权触发该 Agent、Agent 未归档。合并过的运行逐条复核触发的授权来源，丢弃失效的；最早的那条被丢弃时改用剩下最早的一条的授权来源与因果链；全部失效 → 运行取消，原因 `unauthorized`。以小队 leader 身份的运行只校验 leader；成员在被委派时各自校验（16 §1.2）。
 - 授权来源用户被移出（或退出）工作区时，在同一事务里停止以他为授权来源的全部运行，不论 Agent 属于谁、是否还合并了别人的触发：排队中的取消、已领取或运行中的转为 `cancelling` 走正常停止流程，原因 `unauthorized`，不自动重试；降为 viewer 不在此列（`add-run-lifecycle` 决策 26）。
-- **授权记录**（`task_grants`）：执行方被设为托管 Agent、且授权来源有权触发它时，记下「任务 × Agent」的授权来源与因果链——不论是否勾选了「暂不开始」。延续类触发从这里继承授权；执行方变化时该任务原有的指派授权全部作废，无权的指派不留记录（`add-run-dispatch` 决策 6）。托管 Agent 在运行中建任务时另记一条 `requested` 授权（授权来源与因果链取自那次运行），供「回调提出方」继承，不随执行方变化作废；回答继承提问所在的运行，不查授权记录（`add-continuation-triggers` 决策 3、5）。
+- **授权记录**（`task_grants`）：执行方被设为托管 Agent、且授权来源有权触发它时，记下「任务 × Agent」的授权来源与因果链——不论是否勾选了「暂不开始」。延续类触发从这里继承授权；执行方变化时该任务原有的指派授权全部作废，无权的指派不留记录（`add-run-dispatch` 决策 6）。托管 Agent 在运行中建任务时另记一条 `requested` 授权（授权来源与因果链取自那次运行），供「回调提出方」继承，不随执行方变化作废；回答继承提问所在的运行，不查授权记录（`add-continuation-triggers` 决策 3、5）。 执行方是小队时记「任务 × 小队身份」（带 `squad_id`，因果链不含目标），打回 / 重新提交从它继承、目标为小队当前的 leader；leader 运行里建任务的 `requested` 授权带上该运行的 `squad_id`，回调时 leader 仍以小队身份运行。不设 `delegate` 授权：没有延续触发以被委派的成员为目标（`add-squads` 决策 2）。
 
 ### 2.3 运行的能力范围
 
@@ -89,8 +89,8 @@
 |---|---|---|
 | `read` | 总是 | 读工作区里的项目、任务、反馈、检索、BQL |
 | `write_task` | 有任务的运行 | 只对**本次运行的任务**：写 / 修订 Feedback（含 @其他 Agent）、状态迁移、改字段、建 / 删以它为一端的链（不能用 `replaces` 撤销另一张未结束的任务，07 §5） |
-| `create_tasks` | 小队 leader、Agent 配置里勾选了的 | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
-| `delegate` | 小队 leader 运行 | 16 §1.2 |
+| `create_tasks` | 以小队 leader 身份的运行、Agent 配置里勾选了的 | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
+| `delegate` | 以小队 leader 身份的运行（不能由 Agent 配置授予） | 16 §1.2 |
 | `design` | 设计运行（只有它，再加 `read`；不能由 Agent 配置授予） | 读写所在创建对话的草稿（12 §6）；只在这条运行仍是对话的当前轮时有效 |
 
 其余（改别的任务、触发 `run_agent`、停止运行、建项目、任何管理动作）一律不允许，返回 `forbidden` 并说明缺哪个能力。这样一次被提示词注入的运行，影响面限制在它自己的任务上。
@@ -119,7 +119,7 @@
 - 合并时状态取更「急」的：`deferred` 的行并入一个立即可跑的触发（不受依赖约束，或受约束但依赖已满足）后变为 `queued`（例如被阻塞的指派又收到「手动运行」）；`queued` 的行不会因并入受约束的触发而降回 `deferred`，交给领取时的复查。
 - **同一任务同一时刻最多一个运行在执行**（不论哪个 Agent、哪条 lane）：它们共用一个代码分支（15 §2），并发会互相踩。不同任务之间完全并行。
 
-**领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、执行方已换成别人（`work` lane 的指派类）、Agent 已归档、运行时已禁用，以及 §2.2 的授权校验。
+**领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、Agent 已归档、运行时已禁用；触发逐条处理——绑定执行方的触发（指派、打回、重新提交、委派完成，以小队身份的运行绑定该小队；委派绑定它的小队；回答绑定提问所在运行绑定的执行方）在执行方已换成别人时丢弃，再按 §2.2 复核授权并丢弃失效的，一条不剩才取消（`add-squads` 决策 10）。
 
 ## 4. 状态
 
@@ -201,7 +201,7 @@ SELECT r.* FROM runs r
 |---|---|---|
 | NEW → IN_PROGRESS（§7） | `running` 之后 | `task_events` 部分唯一 `(source_run_id) WHERE auto AND from_status = 'new' AND to_status = 'in_progress'` |
 | 兜底回帖（§7） | `succeeded` 之后 | `feedback` 部分唯一 `(source_run_id) WHERE fallback` |
-| 唤醒 leader（`delegate_done`） | 委派运行结束之后 | 触发记录里的 `run_id` |
+| 唤醒 leader（`delegate_done`） | 委派运行进入终态的同一事务里插入（会自动重试的失败、人请求的停止除外；自动重试最终没排上队时由重试任务补插，`add-squads` 决策 9） | `(run_id, delegate_done)` |
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
 | 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
 | 插话结算（§8） | 运行以 `succeeded` 结束、且有已回执的插话 | Oban 唯一键（`steer_settle`） |

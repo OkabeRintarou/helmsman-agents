@@ -34,7 +34,7 @@
 | `env` | 自定义环境变量。**加密存储**（`cloak_ecto`，密钥来自 `HELMSMAN_VAULT_KEY`），保存后界面上只显示变量名；不能覆盖 `HELMSMAN_*`。切换模型供应商不要用它（CLI 的用户配置会盖过它，§2.2），用 `provider_account_id` |
 | `extra_mcp_servers` | 额外的 MCP 服务器（JSON），与 Helmsman 自己的 MCP 一起注入；同样加密 |
 | `wake_on_requested` | 自己提出的任务有进展时是否被唤醒（13 §2.1 的「回调提出方」），缺省 true；随 `add-continuation-triggers` 加列 |
-| `capabilities` | 运行时额外授予的能力，目前只有 `create_tasks`（13 §2.3）；缺省空，小队 leader 自动具备 |
+| `capabilities` | 运行时额外授予的能力，目前只有 `create_tasks`（13 §2.3）；缺省空。以小队 leader 身份的运行不看这一项，自动具备 `create_tasks` 与 `delegate`（`add-squads`） |
 | `archived_at` | 归档后不能再被触发，未结束的运行全部取消；历史保留 |
 
 - Agent 的 actor 名就是它的名字（03 §1 的命名规则），在 @提及、指派、BQL 里都用这个名字。

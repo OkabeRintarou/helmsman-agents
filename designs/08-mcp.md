@@ -70,11 +70,11 @@ end
 | 工具 | 说明 |
 |---|---|
 | `list_my_tasks(status?)` | 当前 actor 作为执行方的任务，外接 Agent 开工时最常用 |
-| `list_agents()` | 本工作区的 Agent 与小队：名字、托管 / 外接、CLI、描述、当前是否忙 |
+| `list_agents()` | 本工作区的 Agent 与小队：名字、托管 / 外接、CLI、描述、当前是否忙；小队另有 leader 与成员（名字、种类、擅长什么）（`add-squads`） |
 | `run_agent(agent, task_id?, instructions?)` | 手动触发一个托管 Agent（13 §2.1「手动」）；受 12 §2.1 约束 |
 | `list_runs(task_id)` `cancel_run(run_id)` | 查看 / 停止运行 |
-| `delegate(task_id, to, instructions)` | 只在小队 leader 的运行里可用：把同一任务委派给小队成员（16 §1.2） |
-| `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` | 只对设计运行（能力 `design`）列出：读写创建对话的草稿，不能创建 Agent（12 §6，`add-agent-conversation`）；小队对话另有 `propose_squad`（16 §1.4） |
+| `delegate(task_id, to, instructions)` | 只对小队 leader 的运行（能力 `delegate`）列出：把本次运行的任务（执行方是这个小队）委派给小队里的托管成员；无权触发该成员时返回 `cannot_invoke`（16 §1.2） |
+| `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` | 只对设计运行（能力 `design`）列出：读写创建对话的草稿，不能创建 Agent（12 §6，`add-agent-conversation`）；小队对话的设计运行另有 `propose_squad`（只在 `squad` 对话里列出，16 §1.4） |
 
 所有写工具都接受可选的 `actor` / `author` 参数（03 §4 第 1 条），正常不需要；运行令牌下被忽略。
 
