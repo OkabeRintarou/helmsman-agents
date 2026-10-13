@@ -1,0 +1,1 @@
+{"type": "session.warning", "data": {"message": "1 MCP server was blocked by policy: 'github-copilot-browser'", "warningType": "mcp"}, "ephemeral": true, "id": "26572f89-c36c-4317-b943-69157cb5c908", "timestamp": "2026-10-13T11:53:21.642Z", "parentId": "52136947-e01a-4008-a1c0-f765aa0d5727"}

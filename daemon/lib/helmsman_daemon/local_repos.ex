@@ -368,8 +368,7 @@ defmodule HelmsmanDaemon.LocalRepos do
   end
 
   defp block(entry) do
-    keys =
-      Enum.map(Enum.sort(Map.keys(entry)), fn key -> "#{key} = #{value(entry[key])}" end)
+    keys = Enum.map(Enum.sort(Map.keys(entry)), fn key -> "#{key} = #{value(entry[key])}" end)
 
     Enum.join(["[[local_repositories]]" | keys], "\n") <> "\n"
   end

@@ -1,0 +1,2 @@
+{"type": "session.mcp_server_status_changed", "data": {"serverName": "github-mcp-server", "status": "pending"}, "ephemeral": true, "id": "9017e9f1-d19c-4536-9498-02c6e8795dc1", "timestamp": "2026-10-13T11:39:29.191Z", "parentId": "6e36bd74-5eaa-4e10-8dea-f2ed5c1acef2"}
+{"type": "session.mcp_server_status_changed", "data": {"serverName": "github-mcp-server", "status": "connected", "configSource": "builtin"}, "ephemeral": true, "id": "8a4cd49d-ecfc-4a24-a25a-01b9bae0d644", "timestamp": "2026-10-13T11:39:30.724Z", "parentId": "6e36bd74-5eaa-4e10-8dea-f2ed5c1acef2"}

@@ -39,8 +39,7 @@ defmodule HelmsmanDaemon.Adapters.ProviderFixtureTest do
         next
       end)
 
-    assert {{:failed, :provider_auth, _}, _} =
-             Codex.finish(0, state)
+    assert {{:failed, :provider_auth, _}, _} = Codex.finish(0, state)
   end
 
   defp values(cli, name) do

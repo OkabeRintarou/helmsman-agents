@@ -1,0 +1,2 @@
+{"type": "session.error", "data": {"errorType": "authentication", "message": "Synthetic authentication error"}}
+{"type": "result", "exitCode": 1, "sessionId": "probe-session", "usage": {}}

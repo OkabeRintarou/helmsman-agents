@@ -41,8 +41,7 @@ defmodule HelmsmanDaemon.LocalMergeCheck do
 
   @impl true
   def handle_cast({:update, repositories}, state) do
-    watch =
-      Map.new(repositories, fn repo -> {{repo.workspace_id, repo.name}, repo.watch} end)
+    watch = Map.new(repositories, fn repo -> {{repo.workspace_id, repo.name}, repo.watch} end)
 
     keys = for {key, [_ | _]} <- watch, do: key
     {:noreply, %{state | watch: watch} |> enqueue(keys) |> start_next()}

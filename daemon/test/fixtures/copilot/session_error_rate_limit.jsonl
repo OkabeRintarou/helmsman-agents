@@ -1,0 +1,2 @@
+{"type": "session.error", "data": {"errorType": "rate_limit", "message": "Synthetic rate_limit error"}}
+{"type": "result", "exitCode": 1, "sessionId": "probe-session", "usage": {}}

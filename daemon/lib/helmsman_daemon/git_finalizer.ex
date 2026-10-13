@@ -70,8 +70,7 @@ defmodule HelmsmanDaemon.GitFinalizer do
           deliver(state, spec, reporter, end_at)
       end
 
-    state =
-      if scope == :ok, do: refresh_and_reconcile(state, spec, reporter, end_at), else: state
+    state = if scope == :ok, do: refresh_and_reconcile(state, spec, reporter, end_at), else: state
 
     settle(state, spec, outcome, end_at)
   end

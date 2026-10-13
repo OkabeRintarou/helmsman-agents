@@ -1,0 +1,2 @@
+{"type": "session.error", "data": {"errorType": "query", "message": "Synthetic query error"}}
+{"type": "result", "exitCode": 1, "sessionId": "probe-session", "usage": {}}

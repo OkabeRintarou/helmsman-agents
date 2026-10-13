@@ -1,0 +1,2 @@
+{"type": "session.mcp_server_status_changed", "data": {"serverName": "helmsman", "status": "pending"}, "ephemeral": true, "id": "08f13ad5-00b4-4cfb-b139-0edba52b520e", "timestamp": "2026-10-13T11:43:41.471Z", "parentId": "1169f2a0-b4e7-4999-a5db-8477ab466cc9"}
+{"type": "session.mcp_server_status_changed", "data": {"serverName": "helmsman", "status": "connected", "configSource": "user"}, "ephemeral": true, "id": "7509df8a-ff4a-460c-98ef-66c10197cf5a", "timestamp": "2026-10-13T11:43:41.526Z", "parentId": "1169f2a0-b4e7-4999-a5db-8477ab466cc9"}

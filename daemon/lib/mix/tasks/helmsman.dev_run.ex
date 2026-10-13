@@ -18,15 +18,15 @@ defmodule Mix.Tasks.Helmsman.DevRun do
   ]
 
   @impl true
-  def run(args), do: run(args, Adapter.registered())
+  def run(args),
+    do: run(args, Enum.uniq(Adapter.registered() ++ [HelmsmanDaemon.Adapters.Copilot]))
 
   @doc false
   def run(args, adapters) do
     if Mix.env() not in [:dev, :test], do: Mix.raise("helmsman.dev_run requires dev or test")
     flags = parse!(args)
 
-    adapter =
-      Enum.find(adapters, &(Atom.to_string(&1.provider()) == flags[:provider]))
+    adapter = Enum.find(adapters, &(Atom.to_string(&1.provider()) == flags[:provider]))
 
     if !adapter, do: Mix.raise("No adapter for #{flags[:provider]}")
     Mix.Task.run("app.start")

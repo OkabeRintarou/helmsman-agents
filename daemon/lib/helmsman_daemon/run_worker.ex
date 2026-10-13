@@ -378,6 +378,8 @@ defmodule HelmsmanDaemon.RunWorker do
   end
 
   defp prepare_adapter(adapter, state, run_dir, work_dir) do
+    Code.ensure_loaded!(adapter)
+
     if function_exported?(adapter, :prepare, 4) do
       adapter.prepare(state.spec, run_dir, work_dir, base_environment(state))
     else
@@ -396,7 +398,11 @@ defmodule HelmsmanDaemon.RunWorker do
         {:status, %{level: :warning, message: "Ignored reserved environment variable #{key}"}}
       end)
 
-    env = base_environment(state) |> Map.merge(Map.new(state.launch.env))
+    env =
+      base_environment(state)
+      |> Map.drop(state.launch.drop_env)
+      |> Map.merge(Map.new(state.launch.env))
+
     {Enum.to_list(env), warnings}
   end
 
@@ -735,7 +741,7 @@ defmodule HelmsmanDaemon.RunWorker do
 
     result =
       if state.stop_reason,
-        do: state.result || stopped_result(state.stop_reason),
+        do: stopped_with_metadata(state, status),
         else: adapter_result(state, status)
 
     buffer =
@@ -785,6 +791,24 @@ defmodule HelmsmanDaemon.RunWorker do
       end
 
     Map.merge(fields, metadata)
+  end
+
+  defp stopped_with_metadata(state, status) do
+    metadata = stopped_metadata(state, status)
+    Map.merge(metadata, state.result || stopped_result(state.stop_reason))
+  end
+
+  defp stopped_metadata(state, status) do
+    {_result, metadata} = state.adapter.finish(status, state.adapter_state)
+    Map.take(metadata, [:session_id, :summary, :usage])
+  rescue
+    _ ->
+      Logger.warning("Adapter could not finalize metadata for stopped run #{state.spec.run_id}")
+      %{}
+  catch
+    _, _ ->
+      Logger.warning("Adapter could not finalize metadata for stopped run #{state.spec.run_id}")
+      %{}
   end
 
   defp stopped_result(:cancel), do: %{status: :cancelled, failure_reason: nil, error: nil}

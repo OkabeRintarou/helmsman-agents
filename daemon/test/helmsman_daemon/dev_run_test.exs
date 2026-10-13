@@ -41,6 +41,49 @@ defmodule HelmsmanDaemon.DevRunTest do
     end
   end
 
+  test "copilot provider, model, effort and resume flags use the same private home", %{
+    tmp_dir: dir
+  } do
+    cli = Path.join(dir, "copilot-cli")
+
+    File.write!(
+      cli,
+      "#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '{\"type\":\"result\",\"sessionId\":\"resumed\",\"exitCode\":0}'\n"
+    )
+
+    File.chmod!(cli, 0o700)
+    previous = Application.get_env(:helmsman_daemon, :copilot_executable)
+    Application.put_env(:helmsman_daemon, :copilot_executable, cli)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:helmsman_daemon, :copilot_executable, previous),
+        else: Application.delete_env(:helmsman_daemon, :copilot_executable)
+    end)
+
+    output =
+      capture_io(fn ->
+        DevRun.run([
+          "--provider",
+          "copilot",
+          "--model",
+          "gpt-5-mini",
+          "--effort",
+          "low",
+          "--prompt",
+          "x",
+          "--resume",
+          "resumed",
+          "--home",
+          dir
+        ])
+      end)
+
+    assert output =~ "succeeded"
+    assert output =~ "resumed"
+    assert File.dir?(Path.join(dir, "copilot-home"))
+  end
+
   test "invalid arguments fail before creating directories" do
     assert_raise Mix.Error, fn -> DevRun.run(["--provider", "claude"]) end
     assert_raise Mix.Error, fn -> DevRun.run(["--provider", "missing", "--prompt", "x"]) end

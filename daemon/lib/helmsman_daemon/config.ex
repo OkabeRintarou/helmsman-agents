@@ -56,8 +56,7 @@ defmodule HelmsmanDaemon.Config do
     with {:ok, _kill} <- HelmsmanDaemon.Exec.resolve_kill(),
          {:ok, _ps} <- HelmsmanDaemon.Exec.resolve_ps(),
          {:ok, config} <- load() do
-      location =
-        Home.location(config.codex_home, Env.child())
+      location = Home.location(config.codex_home, Env.child())
 
       {:ok, Map.put(config, :codex_location, location)}
     else
