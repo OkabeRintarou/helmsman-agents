@@ -3,12 +3,15 @@ defmodule HelmsmanWeb.TaskLive.TransitionsTest do
 
   import Phoenix.LiveViewTest
   import Helmsman.AccountsFixtures
+  import Helmsman.AgentsFixtures, only: [daemon_fixture: 2]
   import Helmsman.ApiTokensFixtures
+  import Helmsman.LocalRepositoriesFixtures
   import Helmsman.ProjectsFixtures
   import Helmsman.WorkspacesFixtures
   import HelmsmanWeb.PortalHelpers
 
-  alias Helmsman.Tasks
+  alias Helmsman.{Projects, Repo, Tasks}
+  alias Helmsman.Tasks.{Task, VerifiedSha}
 
   @panel "transition-panel"
 
@@ -466,6 +469,87 @@ defmodule HelmsmanWeb.TaskLive.TransitionsTest do
                "#task-history > li:last-child [data-actor-kind=agent]",
                "keel/dev"
              )
+    end
+  end
+
+  # add-local-repositories-ui D9 (spec web-local-repositories 本地模式的验收预告与 PR 界面).
+  describe "the local mode's verify preview" do
+    setup ctx do
+      {daemon, _} =
+        daemon_fixture(ctx.scopes.owner.user, %{name: "alice-mbp", workspace_ids: [ctx.ws.id]})
+
+      repo = local_repository_fixture(ctx.ws, daemon)
+      {:ok, project} = Projects.get(ctx.scopes.owner, "BOS")
+      bind_local(project, repo)
+      move(ctx, :alice, "in_progress")
+      move(ctx, :alice, "done")
+      %{repo: repo}
+    end
+
+    test "the commit to record and that Helmsman does not merge", ctx do
+      task_local_branch_fixture(current(ctx), ctx.repo)
+      {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+      open_panel(view, "verified")
+
+      assert in_portal?(view, @panel, "#verify-local-preview [data-commit]", "a1b2c3d")
+      assert in_portal?(view, @panel, "#verify-local-preview [data-after]", "Helmsman 不会合并或删除分支")
+      refute in_portal?(view, @panel, "#verify-merge-preview")
+      refute in_portal?(view, @panel, "#verify-local-preview", "CI")
+    end
+
+    test "without a branch, and with a merged one", ctx do
+      {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+      open_panel(view, "verified")
+      assert in_portal?(view, @panel, "#verify-local-preview", "还没有交付的分支，验收不会记下提交")
+      render_click(view, "close_transition", %{})
+
+      # Opening the panel reads the branch again.
+      task_local_branch_fixture(current(ctx), ctx.repo, %{
+        state: "merged",
+        merged_at: DateTime.utc_now(:second)
+      })
+
+      open_panel(view, "verified")
+      assert in_portal?(view, @panel, "#verify-local-preview [data-after]", "分支已合并进 main")
+    end
+
+    # code-review-1 P2-1: 验收 records only a delivery on the current repository.
+    for merged? <- [false, true] do
+      test "a branch of the repository bound before (merged: #{merged?})", ctx do
+        attrs =
+          if unquote(merged?),
+            do: %{state: "merged", merged_at: DateTime.utc_now(:second)},
+            else: %{}
+
+        task_local_branch_fixture(current(ctx), ctx.repo, attrs)
+        {daemon, _} = daemon_fixture(ctx.scopes.owner.user, %{workspace_ids: [ctx.ws.id]})
+        other = local_repository_fixture(ctx.ws, daemon, %{name: "other"})
+        {:ok, project} = Projects.get(ctx.scopes.owner, "BOS")
+        bind_local(project, other)
+
+        task = Repo.get_by!(Task, ident: "BOS-1", workspace_id: ctx.ws.id)
+        assert VerifiedSha.compute(task) == nil
+
+        {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+        open_panel(view, "verified")
+
+        assert in_portal?(
+                 view,
+                 @panel,
+                 "#verify-local-preview [data-commit]",
+                 "还没有交付到当前绑定仓库的分支，验收不会记下提交"
+               )
+
+        refute in_portal?(view, @panel, "#verify-local-preview", "a1b2c3d")
+        refute in_portal?(view, @panel, "#verify-local-preview", "分支已合并进")
+        assert has_element?(view, "#task-local-branch-rebound")
+      end
+    end
+
+    test "no preview on other panels or GitHub projects", ctx do
+      {:ok, view, _} = live(as(ctx, :bob), ctx.path)
+      open_panel(view, "in_progress")
+      refute in_portal?(view, @panel, "#verify-local-preview")
     end
   end
 end

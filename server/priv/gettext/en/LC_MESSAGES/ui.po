@@ -230,6 +230,7 @@ msgstr ""
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "取消"
 msgstr ""
@@ -595,6 +596,7 @@ msgid "最近访问"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/local_repository_components.ex
 #, elixir-autogen, elixir-format
 msgid "未知"
 msgstr ""
@@ -886,6 +888,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
@@ -1551,6 +1554,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/transition_errors.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/run_actions.ex
+#: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "操作失败，请稍后重试"
 msgstr ""
@@ -1646,6 +1650,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/transition_errors.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/run_actions.ex
+#: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "没有权限执行此操作"
 msgstr ""
@@ -2675,6 +2680,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_components.ex
 #: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/local_repository_components.ex
 #: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "不可用"
@@ -4404,6 +4410,7 @@ msgid "人或独立的 Agent 验收后，CI 通过即合并"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/local_repository_components.ex
 #: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "仓库"
@@ -4515,6 +4522,7 @@ msgid "只解除本工作区与安装 %{account} 的关联，不会在 GitHub �
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/local_repository_components.ex
 #, elixir-autogen, elixir-format
 msgid "可用"
 msgstr ""
@@ -4549,6 +4557,7 @@ msgstr ""
 msgid "在 GitHub 上管理仓库访问"
 msgstr ""
 
+#: lib/helmsman_web/local_repository_components.ex
 #: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "基础分支"
@@ -4725,6 +4734,7 @@ msgid "验收后自动合并"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
 #, elixir-autogen, elixir-format
 msgid "默认分支"
 msgstr ""
@@ -4732,4 +4742,383 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/github.ex
 #, elixir-autogen, elixir-format
 msgid "只有工作区的所有者或管理员可以断开 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 标记为已合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "Helmsman 不在服务端检查分支是否存在；不存在时运行会以『准备工作区』失败"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "不在 %{machine} 上"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "仓库类型"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务分支"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "任务分支 %{branch} 会回到未合并；依赖这个任务的任务将重新等待它合并。"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "会把该仓库当前检出的分支切换为 %{base} 再合并。工作区有冲突的改动、%{base} 已在另一个 worktree 中检出、或这是 bare 仓库时，switch 会失败（不会合错分支）；这些情况请在检出了 %{base} 的那个工作副本里执行 git merge --no-ff %{branch}。"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "先在当前模式下选择『不绑定』并保存，再切换"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "前往运行时"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "原因未知"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "只有 %{machine}（%{owner}）上的运行时能执行这个项目的运行；指派给其他机器上 Agent 的运行会以『准备工作区』失败"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "合并进基础分支"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "在 %{machine} 上仓库 %{name} 的目录中执行"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "在本地审查与合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "在机器上用"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "复制分支名"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "复制完整 SHA"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "复制路径"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "将记下的提交："
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已不是已合并"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "已保存仓库设置"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已合并"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已撤销已合并标记"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已标记为已合并"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "已检测到合并进 %{base}"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "已移除"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已经是已合并"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已请求 %{machine} 重新检查，结果稍后自动出现"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "所在机器离线，运行会等它上线后执行"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "把本机的 git 仓库登记给 Helmsman，项目就可以在这台机器上执行而不经过 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "撤销已合并标记？"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "撤销标记"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "改为确认 %{sha}"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "改绑或解绑后，已交付到原仓库的 hm/… 分支保留在原仓库；进行中任务在机器上的工作目录属于原仓库，下一次运行会以『准备工作区』失败，需要在机器上手工清理。建议先结束进行中的任务。"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "最近交付"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "有新的交付 %{latest}，你确认的是 %{confirmed}；提交会被拒绝"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "未合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "本地仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "本地仓库已被移除"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "本地分支"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "本地模式没有 PR 与自动合并：Agent 的任务分支交付到所选仓库的 hm/<工作区 ID>/<任务> 分支，由人在本地审查与合并；Helmsman 不合并、不删分支。合并后会自动检测，检测不到（压缩、变基合并）时在任务上标记为已合并。"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上已不再对本工作区开放"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上已不再配置"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上有重名的登记"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器报告："
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器报告：%{reason}"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器离线"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器离线或仓库不可用，恢复后会自动检查"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "查看差异"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "查看提交"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "标记为已合并"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "标记为已合并 · %{ident}"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "检查合并状态"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "没有权限标记这个任务"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "用于压缩合并、变基合并、cherry-pick 等检测不到的合并。将记为提交"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "登记；路径只保存在机器上"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "缺省：仓库当前检出的分支"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "该本地仓库已从工作区移除，绑定它的项目无法执行运行"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "说明最多 2000 字"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "说明（可选）"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "路径"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "还没有交付。运行成功收尾后，任务分支会出现在 %{machine} 上的仓库 %{name} 里。"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "还没有交付的分支，验收不会记下提交"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "还没有机器向本工作区登记本地仓库"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "这个任务还没有交付的分支"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "这个项目的仓库 %{name} 在 %{machine} 上，%{agent} 的运行时在 %{other} 上：运行会以『准备工作区』失败。请改派给 %{machine} 上的 Agent。"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "选择本地仓库"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目已改绑：这是交付到原仓库的分支"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "项目已绑定 GitHub 仓库，先解除绑定"
+msgstr ""
+
+#: lib/helmsman_web/local_repository_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目没有设置基础分支、仓库也没有上报默认分支；在项目的『仓库与合并』中设置基础分支后显示审查命令"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "验收后：Helmsman 不会合并或删除分支。在本地合并后会自动检测；检测不到时在『本地分支』卡片上标记为已合并"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "验收后：分支已合并进 %{base}"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "已由自动检测确认合并，不能撤销"
+msgstr ""
+
+#: lib/helmsman_web/task_local_branch.ex
+#, elixir-autogen, elixir-format
+msgid "还没有交付到当前绑定仓库的分支，验收不会记下提交"
 msgstr ""

@@ -2,18 +2,21 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
   @moduledoc """
   `/w/:slug/settings/runtimes` (spec web-runtimes 运行时页, design D7): the user's
   machines (daemons, every workspace) and the workspace's runtimes (mine, or all with
-  `?all=1` for admins). Panels `?panel=rename:<id>` and `?panel=workspaces:<id>`.
+  `?all=1` for admins), then the workspace's local repositories in the same scope
+  (add-local-repositories-ui D4). Panels `?panel=rename:<id>` and `?panel=workspaces:<id>`.
 
-  `{:runtimes_changed}` / `{:daemons_changed}` (forwarded by the shell) reload the lists
-  through `HelmsmanWeb.Throttle`; `:tick` every 30 seconds re-reads the machines so the
-  online dots follow `last_seen_at`. Open panels keep their input across reloads.
+  `{:runtimes_changed}` / `{:daemons_changed}` / `{:local_repositories_changed}` /
+  `{:projects_changed}` (forwarded by the shell) reload the lists through
+  `HelmsmanWeb.Throttle`; `:tick` every 30 seconds re-reads the machines so the online
+  dots follow `last_seen_at` (not the local repositories: the server sets them offline
+  and notifies). Open panels keep their input across reloads.
   """
   use HelmsmanWeb, :live_view
 
   import HelmsmanWeb.AgentComponents
 
-  alias Helmsman.{Daemons, Policy, Runtimes, Workspaces}
-  alias HelmsmanWeb.{FormErrors, RunData, Throttle, Url}
+  alias Helmsman.{Daemons, LocalRepositories, Policy, Projects, Runtimes, Workspaces}
+  alias HelmsmanWeb.{FormErrors, LocalRepositoryComponents, RunData, Throttle, Url}
 
   @tick_ms 30_000
   @member_roles [:owner, :admin, :member]
@@ -34,7 +37,9 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
          panel: nil,
          confirm: nil,
          daemons: [],
-         runtimes: []
+         runtimes: [],
+         local_repositories: [],
+         local_projects: %{}
        )}
     else
       {:ok,
@@ -67,7 +72,34 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
         {:error, _} -> []
       end
 
-    assign(socket, daemons: RunData.daemons(scope), runtimes: runtimes)
+    socket
+    |> assign(daemons: RunData.daemons(scope), runtimes: runtimes)
+    |> load_local()
+  end
+
+  # D4: mine = repositories of my machines; all (admins) = every repository.
+  defp load_local(socket) do
+    scope = socket.assigns.current_scope
+
+    repositories =
+      case LocalRepositories.list(scope) do
+        {:ok, list} when socket.assigns.all? -> list
+        {:ok, list} -> Enum.filter(list, &(&1.owner.user_id == scope.user.id))
+        {:error, _} -> []
+      end
+
+    projects =
+      case Projects.list(scope, include_archived: true) do
+        {:ok, projects} ->
+          projects
+          |> Enum.filter(& &1.local_repository_id)
+          |> Enum.group_by(& &1.local_repository_id, &%{key: &1.key, archived: !!&1.archived_at})
+
+        {:error, _} ->
+          %{}
+      end
+
+    assign(socket, local_repositories: repositories, local_projects: projects)
   end
 
   defp open_panel(socket, panel) do
@@ -234,8 +266,14 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
   end
 
   @impl true
-  def handle_info(message, socket) when message in [{:runtimes_changed}, {:daemons_changed}],
-    do: {:noreply, Throttle.schedule(socket)}
+  def handle_info(message, socket)
+      when message in [
+             {:runtimes_changed},
+             {:daemons_changed},
+             {:local_repositories_changed},
+             {:projects_changed}
+           ],
+      do: {:noreply, Throttle.schedule(socket)}
 
   def handle_info(:reload, socket), do: {:noreply, socket |> Throttle.done() |> load()}
 
@@ -307,6 +345,10 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
 
   defp panel_path(uri, kind, id), do: Url.put_params(uri, %{panel: "#{kind}:#{id}"})
 
+  defp repos_add_command(slug),
+    do:
+      "helmsman repos add <#{dgettext("ui", "路径")}> --name <#{dgettext("ui", "名字")}> --workspace #{slug}"
+
   defp login_command, do: "helmsman login --server #{HelmsmanWeb.Endpoint.url()}"
 
   defp panel_title(%{kind: :rename}), do: dgettext("ui", "改名")
@@ -349,8 +391,8 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
             {dgettext("ui", "在你的电脑上安装 Helmsman 守护进程并登录，它会把检测到的 Agent CLI 登记为运行时")}
           </p>
           <div class="flex w-full max-w-lg flex-col gap-2 text-left">
-            <.command id="login-command" text={login_command()} />
-            <.command id="start-command" text="helmsman daemon start" />
+            <.copy_command id="login-command" text={login_command()} />
+            <.copy_command id="start-command" text="helmsman daemon start" />
           </div>
         </div>
 
@@ -533,6 +575,104 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
             </table>
           </div>
         </section>
+
+        <section :if={!@empty?} id="local-repositories-section" class="mt-8">
+          <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 class="text-title font-semibold text-fg">{dgettext("ui", "本地仓库")}</h2>
+            <p class="text-caption text-fg-muted">
+              {dgettext("ui", "在机器上用")}
+              <code class="font-mono">helmsman repos</code>
+              {dgettext("ui", "登记；路径只保存在机器上")}
+            </p>
+          </div>
+          <div
+            :if={@local_repositories == []}
+            id="local-repositories-empty"
+            class="flex flex-col gap-3 rounded-box border border-border bg-surface px-4 py-4"
+          >
+            <p class="text-body text-fg-muted">
+              {dgettext(
+                "ui",
+                "把本机的 git 仓库登记给 Helmsman，项目就可以在这台机器上执行而不经过 GitHub"
+              )}
+            </p>
+            <.copy_command
+              id="local-repositories-add-command"
+              text={repos_add_command(@current_scope.workspace.slug)}
+              class="max-w-2xl"
+            />
+          </div>
+          <div
+            :if={@local_repositories != []}
+            class="overflow-x-auto rounded-box border border-border bg-surface"
+          >
+            <table id="local-repositories" class="w-full text-body">
+              <caption class="sr-only">{dgettext("ui", "本地仓库")}</caption>
+              <thead class="text-left text-caption text-fg-muted">
+                <tr class="border-b border-border">
+                  <th class="px-3 py-2 font-medium">{dgettext("ui", "名字")}</th>
+                  <th class="px-3 py-2 font-medium">{dgettext("ui", "机器")}</th>
+                  <th :if={@all?} class="px-3 py-2 font-medium">{dgettext("ui", "所属用户")}</th>
+                  <th class="px-3 py-2 font-medium">{dgettext("ui", "路径")}</th>
+                  <th class="px-3 py-2 font-medium">{dgettext("ui", "默认分支")}</th>
+                  <th class="px-3 py-2 font-medium">{dgettext("ui", "状态")}</th>
+                  <th class="px-3 py-2 font-medium">{dgettext("ui", "项目")}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr :for={l <- @local_repositories} id={"local-repository-#{l.id}"}>
+                  <td class="px-3 py-2 font-mono text-fg" data-name>{l.name}</td>
+                  <td class="px-3 py-2 text-fg" data-machine>{l.daemon_name}</td>
+                  <td :if={@all?} class="px-3 py-2 text-fg-muted" data-owner>{l.owner.name}</td>
+                  <td class="max-w-64 px-3 py-2">
+                    <span :if={l.path} class="flex min-w-0 items-center gap-1">
+                      <code
+                        id={"local-repository-#{l.id}-path-text"}
+                        class="min-w-0 truncate font-mono text-label text-fg-muted"
+                        title={l.path}
+                        data-path
+                      >{l.path}</code>
+                      <.copy_button
+                        id={"local-repository-#{l.id}-path"}
+                        text={l.path}
+                        label={dgettext("ui", "复制路径")}
+                        target={"#local-repository-#{l.id}-path-text"}
+                      />
+                    </span>
+                  </td>
+                  <td class="px-3 py-2 font-mono text-fg-muted" data-default-branch>
+                    {l.default_branch || "—"}
+                  </td>
+                  <td class="px-3 py-2">
+                    <LocalRepositoryComponents.status_badge
+                      id={"local-repository-#{l.id}-status"}
+                      repository={l}
+                      reason
+                    />
+                  </td>
+                  <td class="px-3 py-2">
+                    <span :if={@local_projects[l.id]} class="flex flex-wrap gap-1">
+                      <.link
+                        :for={p <- @local_projects[l.id]}
+                        navigate={"/w/#{@current_scope.workspace.slug}/p/#{p.key}"}
+                        class={[
+                          "rounded-badge bg-hover px-1.5 font-mono text-caption hover:underline",
+                          p.archived && "text-fg-subtle line-through",
+                          !p.archived && "text-fg"
+                        ]}
+                        data-project={p.key}
+                        data-archived={to_string(p.archived)}
+                      >
+                        {p.key}
+                      </.link>
+                    </span>
+                    <span :if={!@local_projects[l.id]} class="text-fg-subtle">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
 
       <.side_panel
@@ -621,18 +761,6 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
         {confirm_text(@confirm)}
       </.confirm_dialog>
     </Layouts.app>
-    """
-  end
-
-  attr :id, :string, required: true
-  attr :text, :string, required: true
-
-  defp command(assigns) do
-    ~H"""
-    <div class="flex items-center gap-2 rounded-field border border-border bg-raised px-3 py-2">
-      <code id={"#{@id}-text"} class="min-w-0 flex-1 truncate font-mono text-label text-fg">{@text}</code>
-      <.copy_button id={@id} text={@text} target={"##{@id}-text"} />
-    </div>
     """
   end
 end

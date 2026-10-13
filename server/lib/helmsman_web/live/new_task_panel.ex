@@ -18,7 +18,16 @@ defmodule HelmsmanWeb.NewTaskPanel do
   alias Ecto.Changeset
   alias Helmsman.Accounts.Scope
   alias Helmsman.Tasks
-  alias HelmsmanWeb.{FormErrors, RunComponents, RunData, TaskComponents, TaskData, Url}
+
+  alias HelmsmanWeb.{
+    FormErrors,
+    LocalRepositoryComponents,
+    RunComponents,
+    RunData,
+    TaskComponents,
+    TaskData,
+    Url
+  }
 
   @impl true
   def mount(socket) do
@@ -311,7 +320,18 @@ defmodule HelmsmanWeb.NewTaskPanel do
               checked={@params["start"] != "false"}
             />
             <p
-              :if={start_note(@params["assignee"], @availability[@params["assignee"]])}
+              :if={other_machine(@shell, @params, @availability)}
+              id="new-task-other-machine"
+              class="flex items-start gap-1 text-caption text-warning-fg"
+            >
+              <.icon name="lucide-triangle-alert" class="mt-0.5 size-3.5 flex-none" />
+              {other_machine(@shell, @params, @availability)}
+            </p>
+            <p
+              :if={
+                !other_machine(@shell, @params, @availability) &&
+                  start_note(@params["assignee"], @availability[@params["assignee"]])
+              }
               id="new-task-start-note"
               class="text-caption text-fg-muted"
             >
@@ -354,6 +374,18 @@ defmodule HelmsmanWeb.NewTaskPanel do
       </.side_panel>
     </div>
     """
+  end
+
+  # add-local-repositories-ui D10: the chosen project's local repository is on another
+  # machine than the agent's runtime.
+  defp other_machine(shell, %{"project" => key, "assignee" => agent}, availability) do
+    local =
+      case Enum.find(shell.projects, &(&1.key == key)) do
+        nil -> nil
+        project -> Map.get(project, :local_repository)
+      end
+
+    LocalRepositoryComponents.other_machine(local, agent, availability[agent])
   end
 
   defp start_note(agent, %{result: {:skipped, _} = result}),

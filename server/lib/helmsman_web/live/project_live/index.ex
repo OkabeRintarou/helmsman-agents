@@ -2,13 +2,14 @@ defmodule HelmsmanWeb.ProjectLive.Index do
   @moduledoc """
   Projects page `/w/:slug/projects` (design D4, spec web-projects): project cards
   ordered by key, the 显示已归档 switch (`?archived=1`) and the 新建项目 panel
-  (`?panel=new-project`, admins). Cards reload on `{:projects_changed}`, which the shell
+  (`?panel=new-project`, admins). Cards reload on `{:projects_changed}` and
+  `{:local_repositories_changed}` (the local repository chip's status), which the shell
   forwards from the workspace topic.
   """
   use HelmsmanWeb, :live_view
 
   alias Helmsman.{Policy, Projects}
-  alias HelmsmanWeb.{FormErrors, GitHubComponents, TaskComponents, Url}
+  alias HelmsmanWeb.{FormErrors, GitHubComponents, LocalRepositoryComponents, TaskComponents, Url}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -83,7 +84,11 @@ defmodule HelmsmanWeb.ProjectLive.Index do
   defp upcase(key), do: key |> String.trim() |> String.upcase()
 
   @impl true
-  def handle_info({:projects_changed}, socket), do: {:noreply, load(socket)}
+  def handle_info(message, socket)
+      when message in [{:projects_changed}, {:local_repositories_changed}],
+      do: {:noreply, load(socket)}
+
+  def handle_info(_message, socket), do: {:noreply, socket}
 
   @impl true
   def render(assigns) do
@@ -166,6 +171,11 @@ defmodule HelmsmanWeb.ProjectLive.Index do
               id={"project-#{project.key}-repository"}
               repository={project.repository}
               link={false}
+            />
+            <LocalRepositoryComponents.local_repo_chip
+              :if={project.local_repository}
+              id={"project-#{project.key}-local-repository"}
+              repository={project.local_repository}
             />
             <span class="mt-auto text-caption text-fg-subtle" data-count>
               {dngettext("ui", "%{count} 个任务", "%{count} 个任务", project.task_seq,

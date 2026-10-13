@@ -9,12 +9,17 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
   * Repository options: the workspace's available repositories, plus the bound one when
     it is unavailable (it may be kept, not chosen again).
   * Choosing another repository clears the base branch.
+  * `mode` (add-local-repositories-ui D5): `:github` or `:local` (a repository on a
+    daemon's machine, `local_attrs/1`, saved with `Helmsman.Projects.bind_local_repository/4`).
+    A project bound in one mode cannot switch to the other in the panel (unbind and save
+    first); an unbound one switches freely, which clears the other side's choice and
+    the base branch. The local mode has no merge settings.
   """
   use HelmsmanWeb, :html
 
-  alias Helmsman.GitHub
+  alias Helmsman.{GitHub, LocalRepositories}
   alias Helmsman.Projects.Project
-  alias HelmsmanWeb.FormErrors
+  alias HelmsmanWeb.{FormErrors, LocalRepositoryComponents}
 
   @keys [
     :repository_id,
@@ -33,10 +38,13 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
 
     %{
       key: project.key,
+      mode: mode(values) || :github,
       base: values,
       params: values,
       current: project.repository,
+      current_local: project.local_repository,
       repositories: repositories(scope),
+      locals: locals(scope),
       branches: [],
       errors: %{},
       alert: nil,
@@ -44,8 +52,14 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
     }
   end
 
+  # The mode of bound settings; nil when bound to neither.
+  defp mode(%{local_repository_id: id}) when id != nil, do: :local
+  defp mode(%{repository_id: id}) when id != nil, do: :github
+  defp mode(_values), do: nil
+
   defp values(project) do
     %{
+      local_repository_id: project.local_repository_id,
       repository_id: project.repository_id,
       base_branch: project.base_branch || "",
       merge_policy: project.merge_policy,
@@ -62,8 +76,53 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
     end
   end
 
+  defp locals(scope) do
+    case LocalRepositories.list(scope) do
+      {:ok, locals} -> locals
+      {:error, _} -> []
+    end
+  end
+
   @doc "Reads the repository options again (`{:github_changed}`, a refused repository)."
   def reload_repositories(form, scope), do: %{form | repositories: repositories(scope)}
+
+  @doc """
+  Reads the local repository options again (`{:local_repositories_changed}`, a removed
+  repository); the selection and the base branch stay.
+  """
+  def reload_locals(form, scope), do: %{form | locals: locals(scope)}
+
+  @doc "Whether the panel may switch to `mode`: not while the base is bound in the other."
+  def can_switch?(form, mode), do: mode(form.base) in [nil, mode]
+
+  @doc """
+  Switches the mode (D5) when allowed: the other side's choice and the base branch are
+  cleared, the merge settings are kept.
+  """
+  def set_mode(form, mode) when mode in [:github, :local] do
+    if mode == form.mode or not can_switch?(form, mode) do
+      form
+    else
+      params = %{
+        form.params
+        | repository_id: form.base.repository_id,
+          local_repository_id: form.base.local_repository_id,
+          base_branch: ""
+      }
+
+      %{form | mode: mode, params: params, branches: [], errors: %{}}
+    end
+  end
+
+  @doc "Selects the local repository `id` (nil = 不绑定); another one clears the base branch."
+  def select_local(form, id) do
+    if id == form.params.local_repository_id do
+      form
+    else
+      params = %{form.params | local_repository_id: id, base_branch: ""}
+      %{form | params: params, errors: Map.drop(form.errors, [:local_repository_id])}
+    end
+  end
 
   @doc """
   The project changed elsewhere while the panel is open and not saving: the base becomes
@@ -71,15 +130,53 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
   """
   def rebase(form, %Project{} = project) do
     fresh = values(project)
+    mode = mode(fresh) || form.mode
 
-    params =
-      Map.new(@keys, fn key ->
-        if form.params[key] == form.base[key],
-          do: {key, fresh[key]},
-          else: {key, form.params[key]}
-      end)
+    %{
+      form
+      | mode: mode,
+        base: fresh,
+        params: rebase_params(form, fresh, mode),
+        current: project.repository,
+        current_local: project.local_repository
+    }
+  end
 
-    %{form | base: fresh, params: params, current: project.repository}
+  defp rebase_params(%{mode: mode} = form, fresh, mode) do
+    Map.new([:local_repository_id | @keys], fn key ->
+      if form.params[key] == form.base[key],
+        do: {key, fresh[key]},
+        else: {key, form.params[key]}
+    end)
+  end
+
+  # Bound in the other mode elsewhere: this mode's choice cannot be saved.
+  defp rebase_params(form, fresh, _mode),
+    do:
+      Map.merge(
+        fresh,
+        Map.drop(form.params, [:local_repository_id, :repository_id, :base_branch])
+      )
+
+  @doc """
+  The local save was refused (`:repository_already_bound`) and `project` is the
+  re-read one: the base becomes it, the mode follows it, the choice is reset to it.
+  """
+  def already_bound(form, %Project{} = project) do
+    fresh = values(project)
+
+    %{
+      form
+      | mode: mode(fresh) || form.mode,
+        base: fresh,
+        params: fresh,
+        current: project.repository,
+        current_local: project.local_repository,
+        branches: [],
+        saving?: false,
+        alert: nil,
+        errors: %{repository_id: [dgettext("ui", "项目已绑定 GitHub 仓库，先解除绑定")]}
+    }
   end
 
   @doc """
@@ -107,9 +204,24 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
   end
 
   @doc "Applies the form's `phx-change` params (fields absent from them keep their value)."
+  def change(%{mode: :local} = form, params) when is_map(params) do
+    old = form.params.local_repository_id
+    form = select_local(form, parse_id(params, "local_repository_id", old))
+    p = form.params
+
+    base_branch =
+      cond do
+        p.local_repository_id != old -> ""
+        p.local_repository_id == nil -> ""
+        true -> Map.get(params, "base_branch", p.base_branch)
+      end
+
+    %{form | params: %{p | base_branch: base_branch}}
+  end
+
   def change(form, params) when is_map(params) do
     old = form.params.repository_id
-    form = select_repository(form, parse_id(params, old))
+    form = select_repository(form, parse_id(params, "repository_id", old))
     p = form.params
     moved? = p.repository_id != old
 
@@ -126,8 +238,8 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
     %{form | params: params}
   end
 
-  defp parse_id(params, current) do
-    case Map.fetch(params, "repository_id") do
+  defp parse_id(params, name, current) do
+    case Map.fetch(params, name) do
       {:ok, ""} ->
         nil
 
@@ -159,8 +271,50 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
     end
   end
 
+  @doc """
+  The changed local settings (`:local_repository_id`, `:base_branch`; `""` = the
+  default branch, nil). Unbinding clears the base branch on its own (decision 18).
+  """
+  def local_attrs(form) do
+    for key <- [:local_repository_id, :base_branch],
+        form.params[key] != form.base[key],
+        into: %{} do
+      case {key, form.params[key]} do
+        {:base_branch, branch} -> {key, String.trim(branch || "")}
+        {key, value} -> {key, value}
+      end
+    end
+  end
+
+  @doc """
+  The arguments of `Helmsman.Projects.bind_local_repository/4`: `{id, opts}`, with
+  `base_branch` in `opts` only when it changed (and a repository is chosen).
+  """
+  def local_binding(form) do
+    attrs = local_attrs(form)
+    id = form.params.local_repository_id
+
+    opts =
+      case attrs do
+        %{base_branch: branch} when id != nil -> [base_branch: branch]
+        _ -> []
+      end
+
+    {id, opts}
+  end
+
   @doc "Whether the panel has unsaved changes."
+  def dirty?(%{mode: :local} = form), do: local_changed?(form)
   def dirty?(form), do: attrs(form) != %{}
+
+  # Unbinding clears the base branch: an edited branch alone is not a change then.
+  defp local_changed?(form) do
+    case local_attrs(form) do
+      %{local_repository_id: _} -> true
+      %{base_branch: _} -> form.params.local_repository_id != nil
+      _ -> false
+    end
+  end
 
   @doc "Marks the save as running and clears the previous errors."
   def saving(form), do: %{form | saving?: true, errors: %{}, alert: nil}
@@ -181,9 +335,6 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
     |> reload()
   end
 
-  defp error(form, :not_found),
-    do: form |> field(:repository_id, dgettext("ui", "仓库不存在")) |> reload()
-
   defp error(form, :repository_required),
     do: field(form, :base_branch, dgettext("ui", "先选择仓库"))
 
@@ -195,6 +346,14 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
 
   defp error(_form, :forbidden),
     do: {:close, dgettext("ui", "只有工作区的所有者或管理员可以修改仓库设置")}
+
+  defp error(%{mode: :local} = form, :not_found) do
+    {:form, form, _reload?} = field(form, :local_repository_id, dgettext("ui", "本地仓库已被移除"))
+    {:form, form, true}
+  end
+
+  defp error(form, :not_found),
+    do: form |> field(:repository_id, dgettext("ui", "仓库不存在")) |> reload()
 
   defp error(form, %Ecto.Changeset{} = changeset),
     do: {:form, %{form | errors: FormErrors.messages(changeset)}, false}
@@ -260,8 +419,10 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
         rebinding?:
           form.base.repository_id != nil and form.params.repository_id != form.base.repository_id,
         default_branch: selected && selected.default_branch,
-        changed?: dirty?(form)
+        changed?: dirty?(form),
+        mode: form.mode
       )
+      |> assign_local(form)
 
     ~H"""
     <.side_panel
@@ -285,90 +446,121 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
       >
         <fieldset disabled={@form.saving?} class="flex flex-col gap-4">
           <legend class="mb-2 text-label font-semibold text-fg">{dgettext("ui", "代码仓库")}</legend>
-          <input
-            type="hidden"
-            id="project-github-repository-id"
-            name="project_github[repository_id]"
-            value={@p.repository_id || ""}
-          />
-          <div class="flex flex-col gap-1">
-            <span id="project-github-repository-label" class="text-label font-medium text-fg">
-              {dgettext("ui", "仓库")}
-            </span>
-            <.dropdown
-              id="project-github-repository"
-              label={dgettext("ui", "选择仓库")}
-              items={repository_items(@options, @p.repository_id)}
-              popover_class="w-80"
-              trigger_class="h-8 w-full justify-between border border-border-strong bg-surface px-3"
-              class="w-full"
-            >
-              <:trigger>
-                <span class="flex min-w-0 items-center gap-1.5" id="project-github-repository-value">
-                  <.icon :if={@selected && @selected.private} name="lucide-lock" class="size-3.5" />
-                  <span class="truncate font-mono">
-                    {(@selected && @selected.full_name) || dgettext("ui", "不绑定")}
-                  </span>
-                  <.badge :if={@selected && !@selected.available} tone={:warning}>
-                    {dgettext("ui", "不可用")}
-                  </.badge>
-                </span>
-                <.icon name="lucide-chevrons-up-down" class="size-4 text-fg-muted" />
-              </:trigger>
-            </.dropdown>
-            <p
-              :for={msg <- Map.get(@form.errors, :repository_id, [])}
-              id="project-github-repository-error"
-              class="flex items-center gap-1 text-caption text-danger-fg"
-            >
-              <.icon name="lucide-circle-alert" class="size-3.5" />{msg}
-            </p>
-            <p
-              :if={@no_options?}
-              id="project-github-no-repositories"
-              class="text-caption text-fg-muted"
-            >
-              {dgettext("ui", "先在 GitHub 设置中连接 GitHub")}
-              <.link
-                navigate={"/w/#{@slug}/settings/github"}
-                class="text-brand-fg hover:underline"
+          <.mode_switch form={@form} />
+          <div :if={@mode == :github} id="project-github-github-fields" class="flex flex-col gap-4">
+            <input
+              type="hidden"
+              id="project-github-repository-id"
+              name="project_github[repository_id]"
+              value={@p.repository_id || ""}
+            />
+            <div class="flex flex-col gap-1">
+              <span id="project-github-repository-label" class="text-label font-medium text-fg">
+                {dgettext("ui", "仓库")}
+              </span>
+              <.dropdown
+                id="project-github-repository"
+                label={dgettext("ui", "选择仓库")}
+                items={repository_items(@options, @p.repository_id)}
+                popover_class="w-80"
+                trigger_class="h-8 w-full justify-between border border-border-strong bg-surface px-3"
+                class="w-full"
               >
-                {dgettext("ui", "前往 GitHub 设置")}
-              </.link>
-            </p>
+                <:trigger>
+                  <span class="flex min-w-0 items-center gap-1.5" id="project-github-repository-value">
+                    <.icon :if={@selected && @selected.private} name="lucide-lock" class="size-3.5" />
+                    <span class="truncate font-mono">
+                      {(@selected && @selected.full_name) || dgettext("ui", "不绑定")}
+                    </span>
+                    <.badge :if={@selected && !@selected.available} tone={:warning}>
+                      {dgettext("ui", "不可用")}
+                    </.badge>
+                  </span>
+                  <.icon name="lucide-chevrons-up-down" class="size-4 text-fg-muted" />
+                </:trigger>
+              </.dropdown>
+              <p
+                :for={msg <- Map.get(@form.errors, :repository_id, [])}
+                id="project-github-repository-error"
+                class="flex items-center gap-1 text-caption text-danger-fg"
+              >
+                <.icon name="lucide-circle-alert" class="size-3.5" />{msg}
+              </p>
+              <p
+                :if={@no_options?}
+                id="project-github-no-repositories"
+                class="text-caption text-fg-muted"
+              >
+                {dgettext("ui", "先在 GitHub 设置中连接 GitHub")}
+                <.link
+                  navigate={"/w/#{@slug}/settings/github"}
+                  class="text-brand-fg hover:underline"
+                >
+                  {dgettext("ui", "前往 GitHub 设置")}
+                </.link>
+              </p>
+            </div>
+            <div
+              :if={@rebinding?}
+              id="project-github-rebind-warning"
+              role="status"
+              class="flex items-start gap-2 rounded-field border border-border tint-warning px-3 py-2 text-body text-warning-fg"
+            >
+              <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 flex-none" />
+              {dgettext(
+                "ui",
+                "改绑后，原仓库里已开的 PR 不再由 Helmsman 管理（不再转草稿、关闭或合并），需要在 GitHub 上处理；进行中的任务的下一次运行会在新仓库建分支。"
+              )}
+            </div>
+            <.input
+              id="project-github-base-branch"
+              name="project_github[base_branch]"
+              label={dgettext("ui", "基础分支")}
+              value={@p.base_branch}
+              disabled={@no_repo?}
+              list="project-github-branches"
+              autocomplete="off"
+              placeholder={@default_branch && dgettext("ui", "缺省：%{branch}", branch: @default_branch)}
+              help={dgettext("ui", "留空使用仓库的默认分支；保存时会在 GitHub 上确认分支存在")}
+              errors={Map.get(@form.errors, :base_branch, [])}
+              phx-debounce="200"
+              class="font-mono"
+            />
+            <datalist id="project-github-branches">
+              <option :for={branch <- @form.branches} value={branch} />
+            </datalist>
           </div>
-          <div
-            :if={@rebinding?}
-            id="project-github-rebind-warning"
-            role="status"
-            class="flex items-start gap-2 rounded-field border border-border tint-warning px-3 py-2 text-body text-warning-fg"
-          >
-            <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 flex-none" />
-            {dgettext(
-              "ui",
-              "改绑后，原仓库里已开的 PR 不再由 Helmsman 管理（不再转草稿、关闭或合并），需要在 GitHub 上处理；进行中的任务的下一次运行会在新仓库建分支。"
-            )}
-          </div>
-          <.input
-            id="project-github-base-branch"
-            name="project_github[base_branch]"
-            label={dgettext("ui", "基础分支")}
-            value={@p.base_branch}
-            disabled={@no_repo?}
-            list="project-github-branches"
-            autocomplete="off"
-            placeholder={@default_branch && dgettext("ui", "缺省：%{branch}", branch: @default_branch)}
-            help={dgettext("ui", "留空使用仓库的默认分支；保存时会在 GitHub 上确认分支存在")}
-            errors={Map.get(@form.errors, :base_branch, [])}
-            phx-debounce="200"
-            class="font-mono"
+          <.local_fields
+            :if={@mode == :local}
+            form={@form}
+            options={@local_options}
+            selected={@local_selected}
+            rebinding?={@local_rebinding?}
+            slug={@slug}
+            project={@project}
           />
-          <datalist id="project-github-branches">
-            <option :for={branch <- @form.branches} value={branch} />
-          </datalist>
         </fieldset>
 
-        <fieldset disabled={@form.saving? or @no_repo?} class="flex flex-col gap-4">
+        <div
+          :if={@mode == :local}
+          id="project-github-local-merge"
+          role="note"
+          class="flex items-start gap-2 rounded-field border border-border tint-info px-3 py-2 text-body text-info-fg"
+        >
+          <.icon name="lucide-info" class="mt-0.5 size-4 flex-none" />
+          <span>
+            {dgettext(
+              "ui",
+              "本地模式没有 PR 与自动合并：Agent 的任务分支交付到所选仓库的 hm/<工作区 ID>/<任务> 分支，由人在本地审查与合并；Helmsman 不合并、不删分支。合并后会自动检测，检测不到（压缩、变基合并）时在任务上标记为已合并。"
+            )}
+          </span>
+        </div>
+
+        <fieldset
+          :if={@mode == :github}
+          disabled={@form.saving? or @no_repo?}
+          class="flex flex-col gap-4"
+        >
           <legend class="mb-2 text-label font-semibold text-fg">{dgettext("ui", "合并")}</legend>
           <p :if={@no_repo?} id="project-github-merge-disabled" class="text-caption text-fg-muted">
             {dgettext("ui", "绑定仓库后生效")}
@@ -451,6 +643,253 @@ defmodule HelmsmanWeb.ProjectGitHubForm do
       </:footer>
     </.side_panel>
     """
+  end
+
+  ## Local mode (add-local-repositories-ui D5)
+
+  defp assign_local(assigns, form) do
+    options = local_options(form)
+    selected = Enum.find(options, &(&1.id == form.params.local_repository_id))
+    base_id = form.base.local_repository_id
+
+    assign(assigns,
+      local_options: options,
+      local_selected: selected,
+      local_rebinding?: base_id != nil and form.params.local_repository_id != base_id
+    )
+  end
+
+  @doc """
+  The local repository options: the workspace's repositories, plus the bound one when it
+  was removed (it may be kept, not chosen again).
+  """
+  def local_options(form) do
+    current = form.current_local
+
+    if current && not Enum.any?(form.locals, &(&1.id == current.id)),
+      do: [current | form.locals],
+      else: form.locals
+  end
+
+  attr :form, :map, required: true
+
+  defp mode_switch(assigns) do
+    assigns =
+      assign(assigns,
+        modes: [
+          {:github, "project-github-mode-github", dgettext("ui", "GitHub 仓库"),
+           "lucide-git-branch"},
+          {:local, "project-github-mode-local", dgettext("ui", "本地仓库"), "lucide-hard-drive"}
+        ],
+        locked?: not can_switch?(assigns.form, other(assigns.form.mode))
+      )
+
+    ~H"""
+    <div class="flex flex-col gap-1">
+      <div
+        id="project-github-mode"
+        role="radiogroup"
+        aria-label={dgettext("ui", "仓库类型")}
+        class="inline-flex w-fit rounded-field border border-border bg-raised p-0.5"
+      >
+        <button
+          :for={{mode, id, label, icon} <- @modes}
+          id={id}
+          type="button"
+          role="radio"
+          aria-checked={to_string(@form.mode == mode)}
+          disabled={!can_switch?(@form, mode)}
+          aria-describedby={!can_switch?(@form, mode) && "project-github-mode-locked"}
+          phx-click="project_github_mode"
+          phx-value-mode={mode}
+          class={[
+            "inline-flex h-7 items-center gap-1.5 rounded-field px-3 text-label",
+            @form.mode == mode && "bg-surface text-fg shadow-sm",
+            @form.mode != mode && "text-fg-muted hover:text-fg",
+            "disabled:cursor-not-allowed disabled:text-fg-subtle disabled:hover:text-fg-subtle"
+          ]}
+        >
+          <.icon name={icon} class="size-4" />{label}
+        </button>
+      </div>
+      <p :if={@locked?} id="project-github-mode-locked" class="text-caption text-fg-muted">
+        {dgettext("ui", "先在当前模式下选择『不绑定』并保存，再切换")}
+      </p>
+    </div>
+    """
+  end
+
+  defp other(:github), do: :local
+  defp other(:local), do: :github
+
+  attr :form, :map, required: true
+  attr :options, :list, required: true
+  attr :selected, :map, default: nil
+  attr :rebinding?, :boolean, required: true
+  attr :slug, :string, required: true
+  attr :project, :map, required: true
+
+  defp local_fields(assigns) do
+    p = assigns.form.params
+    selected = assigns.selected
+
+    assigns =
+      assign(assigns,
+        p: p,
+        default_branch: selected && selected.default_branch,
+        note: selected && LocalRepositoryComponents.status_note(selected)
+      )
+
+    ~H"""
+    <div id="project-github-local-fields" class="flex flex-col gap-4">
+      <input
+        type="hidden"
+        id="project-github-local-repository-id"
+        name="project_github[local_repository_id]"
+        value={@p.local_repository_id || ""}
+      />
+      <div class="flex flex-col gap-1">
+        <span id="project-github-local-repository-label" class="text-label font-medium text-fg">
+          {dgettext("ui", "本地仓库")}
+        </span>
+        <.dropdown
+          id="project-github-local-repository"
+          label={dgettext("ui", "选择本地仓库")}
+          items={local_items(@options, @p.local_repository_id)}
+          popover_class="w-80"
+          trigger_class="h-8 w-full justify-between border border-border-strong bg-surface px-3"
+          class="w-full"
+        >
+          <:trigger>
+            <span class="flex min-w-0 items-center gap-1.5" id="project-github-local-repository-value">
+              <.icon :if={@selected} name="lucide-hard-drive" class="size-3.5" />
+              <span class="truncate font-mono">
+                {(@selected && local_label(@selected)) || dgettext("ui", "不绑定")}
+              </span>
+              <.badge
+                :if={@selected && LocalRepositoryComponents.status(@selected) != :online}
+                tone={
+                  @selected
+                  |> LocalRepositoryComponents.status()
+                  |> LocalRepositoryComponents.status_spec()
+                  |> elem(0)
+                }
+              >
+                {@selected
+                |> LocalRepositoryComponents.status()
+                |> LocalRepositoryComponents.status_spec()
+                |> elem(1)}
+              </.badge>
+            </span>
+            <.icon name="lucide-chevrons-up-down" class="size-4 text-fg-muted" />
+          </:trigger>
+        </.dropdown>
+        <p
+          :for={msg <- Map.get(@form.errors, :local_repository_id, [])}
+          id="project-github-local-repository-error"
+          class="flex items-center gap-1 text-caption text-danger-fg"
+        >
+          <.icon name="lucide-circle-alert" class="size-3.5" />{msg}
+        </p>
+        <p :if={@form.locals == []} id="project-github-no-locals" class="text-caption text-fg-muted">
+          {dgettext("ui", "还没有机器向本工作区登记本地仓库")}
+          <.link navigate={"/w/#{@slug}/settings/runtimes"} class="text-brand-fg hover:underline">
+            {dgettext("ui", "前往运行时")}
+          </.link>
+        </p>
+      </div>
+      <div
+        :if={@selected}
+        id="project-github-local-info"
+        class="flex flex-col gap-1 rounded-field border border-border bg-raised px-3 py-2 text-body text-fg-muted"
+      >
+        <code :if={@selected.path} class="break-all font-mono text-label text-fg" data-path>
+          {@selected.path}
+        </code>
+        <p>
+          {dgettext(
+            "ui",
+            "只有 %{machine}（%{owner}）上的运行时能执行这个项目的运行；指派给其他机器上 Agent 的运行会以『准备工作区』失败",
+            machine: @selected.daemon_name,
+            owner: @selected.owner.name
+          )}
+        </p>
+        <p
+          :if={@note}
+          id="project-github-local-status"
+          class="flex items-start gap-1 text-warning-fg"
+        >
+          <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 flex-none" />{@note}
+        </p>
+      </div>
+      <div
+        :if={@rebinding?}
+        id="project-github-local-rebind-warning"
+        role="status"
+        class="flex items-start gap-2 rounded-field border border-border tint-warning px-3 py-2 text-body text-warning-fg"
+      >
+        <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 flex-none" />
+        {dgettext(
+          "ui",
+          "改绑或解绑后，已交付到原仓库的 hm/… 分支保留在原仓库；进行中任务在机器上的工作目录属于原仓库，下一次运行会以『准备工作区』失败，需要在机器上手工清理。建议先结束进行中的任务。"
+        )}
+      </div>
+      <.input
+        id="project-github-local-base-branch"
+        name="project_github[base_branch]"
+        label={dgettext("ui", "基础分支")}
+        value={@p.base_branch}
+        disabled={@p.local_repository_id == nil}
+        list="project-github-local-branches"
+        autocomplete="off"
+        placeholder={
+          if(@default_branch,
+            do: dgettext("ui", "缺省：%{branch}", branch: @default_branch),
+            else: dgettext("ui", "缺省：仓库当前检出的分支")
+          )
+        }
+        help={dgettext("ui", "Helmsman 不在服务端检查分支是否存在；不存在时运行会以『准备工作区』失败")}
+        errors={Map.get(@form.errors, :base_branch, [])}
+        phx-debounce="200"
+        class="font-mono"
+      />
+      <datalist id="project-github-local-branches">
+        <option :if={@default_branch} value={@default_branch} />
+      </datalist>
+    </div>
+    """
+  end
+
+  defp local_label(repository), do: "#{repository.name} · #{repository.daemon_name}"
+
+  defp local_items(options, selected_id) do
+    none = %{
+      id: "project-github-local-repository-none",
+      label: dgettext("ui", "不绑定"),
+      checked: selected_id == nil,
+      on_select: "project_github_local_repository",
+      value: %{id: ""}
+    }
+
+    [
+      none
+      | Enum.map(options, fn repository ->
+          {_tone, status} =
+            repository
+            |> LocalRepositoryComponents.status()
+            |> LocalRepositoryComponents.status_spec()
+
+          %{
+            id: "project-github-local-repository-#{repository.id}",
+            label: local_label(repository),
+            icon: "lucide-hard-drive",
+            description: "#{repository.owner.name} · #{status}",
+            checked: repository.id == selected_id,
+            on_select: "project_github_local_repository",
+            value: %{id: repository.id}
+          }
+        end)
+    ]
   end
 
   defp repository_items(options, selected_id) do

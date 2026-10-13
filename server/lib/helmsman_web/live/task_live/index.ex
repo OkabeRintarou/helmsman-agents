@@ -16,6 +16,11 @@ defmodule HelmsmanWeb.TaskLive.Index do
   merge settings in the 仓库与合并 panel (`?panel=project-github`, add-github-ui D6, D7;
   state in `HelmsmanWeb.ProjectGitHubForm`). Branch suggestions and the save (which checks
   the branch on GitHub) run with `start_async/3`; closing the panel cancels the save.
+
+  A project bound to a local repository shows it in the header instead, and the panel's
+  local mode saves with `Helmsman.Projects.bind_local_repository/4` synchronously (it
+  only touches the database; add-local-repositories-ui D5, D6). `{:local_repositories_changed}`
+  re-reads the project (the chip's status) and the panel's local options.
   """
   use HelmsmanWeb, :live_view
 
@@ -25,6 +30,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
     Filters,
     FormErrors,
     GitHubComponents,
+    LocalRepositoryComponents,
     ProjectGitHubForm,
     RunData,
     TaskComponents,
@@ -267,12 +273,50 @@ defmodule HelmsmanWeb.TaskLive.Index do
     {:noreply, socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)}
   end
 
+  defp github_event("mode", %{"mode" => mode}, socket) when mode in ["github", "local"] do
+    form = ProjectGitHubForm.set_mode(socket.assigns.github, String.to_existing_atom(mode))
+    {:noreply, socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)}
+  end
+
+  defp github_event("local_repository", %{"id" => id}, socket) do
+    id =
+      case Integer.parse(to_string(id)) do
+        {id, ""} -> id
+        _ -> nil
+      end
+
+    {:noreply, assign(socket, :github, ProjectGitHubForm.select_local(socket.assigns.github, id))}
+  end
+
   defp github_event("change", %{"project_github" => params}, socket) do
     form = ProjectGitHubForm.change(socket.assigns.github, params)
     {:noreply, socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)}
   end
 
   # The submit carries the latest fields: a debounced change may not have been sent.
+  defp github_event("save", params, %{assigns: %{github: %{mode: :local}}} = socket) do
+    form = ProjectGitHubForm.change(socket.assigns.github, Map.get(params, "project_github", %{}))
+
+    if ProjectGitHubForm.dirty?(form) do
+      {id, opts} = ProjectGitHubForm.local_binding(form)
+      scope = socket.assigns.current_scope
+
+      case Projects.bind_local_repository(scope, form.key, id, opts) do
+        {:ok, project} ->
+          {:noreply,
+           socket
+           |> assign(project: project, page_title: project.name, panel: nil, github: nil)
+           |> put_flash(:info, dgettext("ui", "已保存仓库设置"))
+           |> push_patch(to: Url.drop_params(socket.assigns.uri, ["panel"]))}
+
+        {:error, reason} ->
+          {:noreply, socket |> assign(:github, form) |> local_save_failed(reason)}
+      end
+    else
+      {:noreply, assign(socket, :github, form)}
+    end
+  end
+
   defp github_event("save", params, socket) do
     form = ProjectGitHubForm.change(socket.assigns.github, Map.get(params, "project_github", %{}))
     socket = socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)
@@ -370,6 +414,37 @@ defmodule HelmsmanWeb.TaskLive.Index do
     end
   end
 
+  # D5: the save's errors in the local mode.
+  defp local_save_failed(socket, reason) when reason in [:repository_already_bound, :not_found] do
+    %{current_scope: scope, github: form, project: project} = socket.assigns
+
+    case {reason, Projects.get(scope, project.key)} do
+      {_reason, {:error, _}} ->
+        close_with_error(socket, dgettext("ui", "项目不存在"))
+
+      {:repository_already_bound, {:ok, project}} ->
+        socket
+        |> assign(
+          project: project,
+          page_title: project.name,
+          github: ProjectGitHubForm.already_bound(form, project)
+        )
+        |> load_branches()
+
+      {:not_found, {:ok, project}} ->
+        {:form, form, _reload?} = ProjectGitHubForm.errors(form, :not_found)
+        form = %{form | current_local: project.local_repository}
+        assign(socket, project: project, github: ProjectGitHubForm.reload_locals(form, scope))
+    end
+  end
+
+  defp local_save_failed(socket, reason) do
+    case ProjectGitHubForm.errors(socket.assigns.github, reason) do
+      {:form, form, _reload?} -> assign(socket, :github, form)
+      {:close, message} -> close_with_error(socket, message)
+    end
+  end
+
   defp close_with_error(socket, message) do
     socket
     |> assign(panel: nil, github: nil)
@@ -437,6 +512,27 @@ defmodule HelmsmanWeb.TaskLive.Index do
          socket
          |> assign(project: project, page_title: project.name)
          |> rebase_github(project)}
+
+      {:error, _} ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:local_repositories_changed}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Projects.get(scope, socket.assigns.project.key) do
+      {:ok, project} ->
+        socket = assign(socket, :project, project)
+
+        case socket.assigns.github do
+          %{} = form ->
+            form = ProjectGitHubForm.reload_locals(form, scope)
+            {:noreply, assign(socket, :github, %{form | current_local: project.local_repository})}
+
+          nil ->
+            {:noreply, socket}
+        end
 
       {:error, _} ->
         {:noreply, socket}
@@ -585,6 +681,13 @@ defmodule HelmsmanWeb.TaskLive.Index do
         <GitHubComponents.repo_chip
           id="project-repository-chip"
           repository={@project.repository}
+          branch={@project.effective_base_branch}
+        />
+      </div>
+      <div :if={@project.local_repository} id="project-local-repository" class="flex px-4 pt-3">
+        <LocalRepositoryComponents.local_repo_chip
+          id="project-local-repository-chip"
+          repository={@project.local_repository}
           branch={@project.effective_base_branch}
         />
       </div>

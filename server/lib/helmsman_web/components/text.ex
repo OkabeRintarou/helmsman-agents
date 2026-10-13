@@ -186,6 +186,26 @@ defmodule HelmsmanWeb.Components.Text do
   end
 
   @doc """
+  A shell command in monospace on one line (truncated) with a copy button; the
+  `<code>` element is `<id>-text`.
+  """
+  attr :id, :string, required: true
+  attr :text, :string, required: true
+  attr :class, :any, default: nil
+
+  def copy_command(assigns) do
+    ~H"""
+    <div class={[
+      "flex items-center gap-2 rounded-field border border-border bg-raised px-3 py-2",
+      @class
+    ]}>
+      <code id={"#{@id}-text"} class="min-w-0 flex-1 truncate font-mono text-label text-fg">{@text}</code>
+      <.copy_button id={@id} text={@text} target={"##{@id}-text"} />
+    </div>
+    """
+  end
+
+  @doc """
   Shows a one-time secret (e.g. a freshly created token) in monospace with a copy button
   and a warning. The page must render it only in the response that created or rotated
   the secret.

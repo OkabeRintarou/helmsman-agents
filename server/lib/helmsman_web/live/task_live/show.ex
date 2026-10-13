@@ -7,6 +7,11 @@ defmodule HelmsmanWeb.TaskLive.Show do
   Every save carries the version the user started from; a stale save reloads the task
   and keeps the draft of the field being edited. Updates from `task:<id>` refresh the
   page without touching the fields being edited (they show 有更新 instead).
+
+  The 本地分支 card, its mark panel and dialog live in `HelmsmanWeb.TaskLocalBranch`
+  (add-local-repositories-ui D7–D11): `{:local_branch_changed, ident}` re-reads the
+  branch, `{:local_repositories_changed}` / `{:projects_changed}` (forwarded by the shell)
+  the project and the branch.
   """
   use HelmsmanWeb, :live_view
 
@@ -19,6 +24,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     FeedbackComponents,
     FeedbackTimeline,
     FormErrors,
+    LocalRepositoryComponents,
     Markdown,
     MarkdownEditor,
     RunActions,
@@ -28,6 +34,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     TaskComponents,
     TaskData,
     TaskEvidence,
+    TaskLocalBranch,
     TaskRuns,
     TaskTransitions,
     Throttle
@@ -85,6 +92,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
      |> cache_rendered()
      |> TaskRuns.init()
      |> TaskRuns.load()
+     |> TaskLocalBranch.load(detail)
      |> RunLog.init()
      |> RunActions.init()
      |> then(
@@ -224,6 +232,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
   def handle_event("run_log_" <> _ = event, params, socket),
     do: {:noreply, RunLog.handle_event(event, params, socket)}
 
+  def handle_event("local_branch_" <> event, params, socket),
+    do: {:noreply, TaskLocalBranch.handle_event(event, params, socket)}
+
   def handle_event(event, params, socket)
       when event in ~w(ask_cancel_run dismiss_cancel_run cancel_run retry_run),
       do: {:noreply, RunActions.handle_event(event, params, socket, &TaskRuns.load/1)}
@@ -323,6 +334,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
           top: nil,
           blocked: nil
         }
+
+        # D9: the 验收 preview shows the branch as it is now.
+        socket = if button.to == "verified", do: TaskLocalBranch.reload(socket), else: socket
 
         {:noreply,
          socket
@@ -465,6 +479,18 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
     do: {:noreply, assign(socket, :availability, availability(socket.assigns.current_scope))}
+
+  def handle_info({:local_branch_changed, _ident}, socket),
+    do: {:noreply, TaskLocalBranch.reload(socket)}
+
+  def handle_info(message, socket)
+      when message in [{:local_repositories_changed}, {:projects_changed}],
+      do: {:noreply, TaskLocalBranch.reload_project(socket)}
+
+  def handle_info(:local_branch_cooldown_over, socket),
+    do: {:noreply, TaskLocalBranch.cooldown_over(socket)}
+
+  def handle_info(_message, socket), do: {:noreply, socket}
 
   ## Helpers
 
@@ -963,7 +989,14 @@ defmodule HelmsmanWeb.TaskLive.Show do
                   :if={@can_edit?}
                   id="assignee-menu"
                   label={dgettext("ui", "执行方")}
-                  items={assignee_items(@assignees, @task, @availability)}
+                  items={
+                    assignee_items(
+                      @assignees,
+                      @task,
+                      @availability,
+                      @local_branch.project && @local_branch.project.local_repository
+                    )
+                  }
                   trigger_class="h-7 px-1.5 -mx-1.5 min-w-0"
                 >
                   <:trigger>
@@ -1012,6 +1045,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
               @task.assignee != nil and Map.has_key?(@availability, @task.assignee.name)
             }
           />
+          <TaskLocalBranch.card state={@local_branch} />
           <section aria-labelledby="task-history-title">
             <h2 id="task-history-title" class="mb-1 text-label font-medium text-fg-muted">
               {dgettext("ui", "历史")}
@@ -1029,6 +1063,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       </div>
       <.transition_panel
         panel={@transition_panel}
+        local_branch={@local_branch}
         task={@task}
         scope={@current_scope}
         session={@transition_session}
@@ -1040,7 +1075,13 @@ defmodule HelmsmanWeb.TaskLive.Show do
         scope={@current_scope}
         candidates={@assignable}
       />
-      <.assign_confirm confirm={@assign_confirm} task={@task} />
+      <.assign_confirm
+        confirm={@assign_confirm}
+        task={@task}
+        local_repository={@local_branch.project && @local_branch.project.local_repository}
+      />
+      <TaskLocalBranch.mark_panel state={@local_branch} />
+      <TaskLocalBranch.unmark_dialog state={@local_branch} />
       <.modal
         id="run-log-modal"
         show={@run_log != nil}
@@ -1057,18 +1098,28 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   attr :confirm, :map, default: nil
   attr :task, :map, required: true
+  attr :local_repository, :map, default: nil
 
   defp assign_confirm(assigns) do
     confirm = assigns.confirm
     available? = confirm != nil and confirm.availability.result == :ok
     agent = confirm && confirm.agent
 
+    other_machine =
+      confirm &&
+        LocalRepositoryComponents.other_machine(
+          assigns.local_repository,
+          agent,
+          confirm.availability
+        )
+
     assigns =
       assign(assigns,
         available?: available?,
         agent: agent,
         value: confirm && %{agent: agent, version: confirm.version},
-        text: confirm && assign_confirm_text(confirm)
+        text: confirm && assign_confirm_text(confirm),
+        other_machine: other_machine
       )
 
     ~H"""
@@ -1086,7 +1137,14 @@ defmodule HelmsmanWeb.TaskLive.Show do
       confirm_value={Map.put(@value || %{}, :start, @available?)}
       on_cancel={JS.push("dismiss_assign")}
     >
-      {@text}
+      <span
+        :if={@other_machine}
+        id="assign-confirm-other-machine"
+        class="flex items-start gap-1.5 text-warning-fg"
+      >
+        <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 flex-none" />{@other_machine}
+      </span>
+      <span :if={!@other_machine}>{@text}</span>
       <:secondary_action
         :if={@available?}
         label={dgettext("ui", "暂不开始")}
@@ -1430,6 +1488,27 @@ defmodule HelmsmanWeb.TaskLive.Show do
   @doc false
   def assignee_item_id(name), do: "assignee-" <> Base.url_encode64(name, padding: false)
 
+  # D10: agents whose runtime is on another machine than the project's local repository
+  # say so and come after the others (still selectable).
+  defp assignee_items(options, task, availability, local) do
+    [none | items] = assignee_items(options, task, availability)
+
+    {other, same} =
+      Enum.split_with(items, fn item ->
+        LocalRepositoryComponents.other_machine(local, item.label, availability[item.label])
+      end)
+
+    other =
+      Enum.map(other, fn item ->
+        Map.merge(item, %{
+          description: dgettext("ui", "不在 %{machine} 上", machine: local.daemon_name),
+          attrs: %{"data-other-machine" => "true"}
+        })
+      end)
+
+    [none | same ++ other]
+  end
+
   defp assignee_items(options, task, availability) do
     current = task.assignee && task.assignee.name
 
@@ -1481,6 +1560,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
   attr :scope, :map, required: true
   attr :session, :integer, default: 0
   attr :candidates, :list, default: []
+  attr :local_branch, :map, default: nil
 
   defp transition_panel(%{panel: nil} = assigns) do
     ~H"""
@@ -1526,6 +1606,10 @@ defmodule HelmsmanWeb.TaskLive.Show do
         <span :if={!passed_tests(@hint)}>{dgettext("ui", "你是执行方：验收需要通过的测试结果。最近一次完成没有附带通过的测试，请在下方填写")}</span>
       </div>
       <p :if={@help} id="transition-help" class="mb-4 text-body text-fg-muted">{@help}</p>
+      <TaskLocalBranch.verify_preview
+        :if={@panel.to == "verified" and @local_branch != nil}
+        state={@local_branch}
+      />
       <.form
         for={%{}}
         as={:transition}

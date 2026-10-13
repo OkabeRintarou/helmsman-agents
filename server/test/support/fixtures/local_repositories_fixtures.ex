@@ -112,6 +112,34 @@ defmodule Helmsman.LocalRepositoriesFixtures do
     )
   end
 
+  @doc """
+  Inserts the local branch of `task` in `repo` (`open`, a 40-hex `head_sha`) directly
+  (add-local-repositories-ui D13).
+  """
+  def task_local_branch_fixture(task, %LocalRepository{} = repo, attrs \\ %{}) do
+    Repo.insert!(
+      struct!(
+        TaskLocalBranch,
+        Map.merge(
+          %{
+            workspace_id: repo.workspace_id,
+            task_id: task.id,
+            local_repository_id: repo.id,
+            branch: GitRepo.branch(repo.workspace_id, task.ident),
+            head_sha: String.duplicate("a1b2c3d4", 5),
+            state: "open"
+          },
+          attrs
+        )
+      )
+    )
+  end
+
+  @doc "Sets columns of the local branch row `branch` directly."
+  def set_local_branch(%TaskLocalBranch{} = branch, changes) do
+    branch |> Ecto.Changeset.change(changes) |> Repo.update!()
+  end
+
   @doc "The task's local branch row, or nil."
   def local_branch(task_id), do: Repo.get_by(TaskLocalBranch, task_id: task_id)
 
