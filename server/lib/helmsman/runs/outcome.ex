@@ -2,13 +2,16 @@ defmodule Helmsman.Runs.Outcome do
   @moduledoc """
   The result of one trigger for one agent (designs/13 §2): the run was
   created (`:queued`), the trigger was added to a queued run (`:merged`),
-  or no run was created (`:skipped`, with the `reason`).
+  the run waits for the task's dependencies (`:deferred`, created or
+  merged, with the unsatisfied prerequisites in `blocked_by`;
+  `add-dependency-dispatch` decision 4), or no run was created
+  (`:skipped`, with the `reason`).
   """
 
   alias Helmsman.Actors.Actor
 
   @type trigger :: :assign | :manual | :reopen | :resubmit | :requested | :answer | :mention
-  @type result :: :queued | :merged | :skipped
+  @type result :: :queued | :merged | :deferred | :skipped
   @type reason ::
           :not_started
           | :task_closed
@@ -27,11 +30,18 @@ defmodule Helmsman.Runs.Outcome do
           trigger: trigger(),
           result: result(),
           reason: reason() | nil,
+          blocked_by: [String.t()] | nil,
           run_id: pos_integer() | nil
         }
 
   @enforce_keys [:agent, :trigger, :result]
-  defstruct agent: nil, agent_id: nil, trigger: nil, result: nil, reason: nil, run_id: nil
+  defstruct agent: nil,
+            agent_id: nil,
+            trigger: nil,
+            result: nil,
+            reason: nil,
+            blocked_by: nil,
+            run_id: nil
 
   @doc "A skipped outcome for `agent`."
   @spec skipped(Actor.t(), trigger(), reason()) :: t()
@@ -45,20 +55,28 @@ defmodule Helmsman.Runs.Outcome do
     }
   end
 
-  @doc "The external form (MCP): `%{agent, trigger, result, reason}`, strings."
+  @doc """
+  The external form (MCP): `%{agent, trigger, result, reason}`, strings;
+  a `:deferred` outcome also has `blocked_by` (task IDs).
+  """
   @spec view(t()) :: %{
-          agent: String.t(),
-          trigger: String.t(),
-          result: String.t(),
-          reason: String.t() | nil
+          required(:agent) => String.t(),
+          required(:trigger) => String.t(),
+          required(:result) => String.t(),
+          required(:reason) => String.t() | nil,
+          optional(:blocked_by) => [String.t()]
         }
   def view(%__MODULE__{} = outcome) do
-    %{
+    view = %{
       agent: outcome.agent,
       trigger: Atom.to_string(outcome.trigger),
       result: Atom.to_string(outcome.result),
       reason: outcome.reason && Atom.to_string(outcome.reason)
     }
+
+    if outcome.result == :deferred,
+      do: Map.put(view, :blocked_by, outcome.blocked_by || []),
+      else: view
   end
 
   @doc """
@@ -67,12 +85,16 @@ defmodule Helmsman.Runs.Outcome do
   """
   @spec stored(t()) :: map()
   def stored(%__MODULE__{} = outcome) do
-    %{
+    stored = %{
       "agent_id" => outcome.agent_id,
       "trigger" => Atom.to_string(outcome.trigger),
       "result" => Atom.to_string(outcome.result),
       "reason" => outcome.reason && Atom.to_string(outcome.reason),
       "run_id" => outcome.run_id
     }
+
+    if outcome.result == :deferred,
+      do: Map.put(stored, "blocked_by", outcome.blocked_by),
+      else: stored
   end
 end

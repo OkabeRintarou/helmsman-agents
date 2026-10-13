@@ -21,6 +21,11 @@ defmodule Helmsman.Runs.Claim do
        does not exist is read as no longer a member;
     6. `Helmsman.Runs.Revalidation`: invalid → `cancelled` (`obsolete` /
        `unauthorized`); triggers pruned → written back;
+    6a. a run there only for assignment triggers
+       (`Helmsman.Runs.Triggers.dependency_gated?/1`) on a task with a
+       `depends_on`: the graph lock is tried (`Locks.try_graph/1`; taken:
+       left queued) and an unsatisfied prerequisite sends it back to
+       `deferred` (`add-dependency-dispatch` decision 7);
     7. the repository: a local repository (`Helmsman.Runs.LocalRepo`,
        `add-local-repositories` decision 6) on another machine, removed,
        unavailable or over a connection too old → `failed`
@@ -47,10 +52,12 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.{Daemon, DaemonWorkspace, Runtime}
+  alias Helmsman.Dispatch.Dependencies
+  alias Helmsman.Links
   alias Helmsman.Locks
   alias Helmsman.Repo
   alias Helmsman.Runs
-  alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec}
+  alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec, Triggers}
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -251,8 +258,8 @@ defmodule Helmsman.Runs.Claim do
   defp decide(run, locked, state) do
     if Map.get(locked.members, state.daemon.user_id) in @member_roles do
       case Runs.revalidate(run, locked) do
-        :ok -> with_repo(run, locked, [], state)
-        {:pruned, changes} -> with_repo(run, locked, Map.to_list(changes), state)
+        :ok -> with_dependencies(run, locked, [], state)
+        {:pruned, changes} -> with_dependencies(run, locked, Map.to_list(changes), state)
         {:obsolete, _why} -> cancel!(run, :obsolete, state)
         :unauthorized -> cancel!(run, :unauthorized, state)
       end
@@ -264,6 +271,32 @@ defmodule Helmsman.Runs.Claim do
   defp cancel!(run, reason, state) do
     Lifecycle.end!(run, :cancelled, failure_reason: reason)
     state
+  end
+
+  # `add-dependency-dispatch` decision 7: a run there only for assignment
+  # triggers, on a task with dependencies, checks them again under the
+  # graph lock, taken without waiting (taken: the run stays queued).
+  # Unsatisfied: back to `deferred`, not claimed.
+  defp with_dependencies(run, locked, changes, state) do
+    triggers = Keyword.get(changes, :triggers, run.triggers)
+
+    if run.task_id && Triggers.dependency_gated?(triggers) &&
+         Links.has_dependencies?(run.task_id) do
+      cond do
+        not Locks.try_graph(run.workspace_id) ->
+          state
+
+        Links.blockers(run.task_id) != [] ->
+          test_hook(:dependencies_rechecked)
+          Lifecycle.update!(run, [status: :deferred] ++ changes)
+          state
+
+        true ->
+          with_repo(run, locked, changes, state)
+      end
+    else
+      with_repo(run, locked, changes, state)
+    end
   end
 
   defp with_repo(run, locked, changes, state) do
@@ -322,6 +355,23 @@ defmodule Helmsman.Runs.Claim do
 
     {:ok, token} = RunTokens.issue(run)
     {:ok, spec} = Spec.build(run, token, state.base_url, repo)
+    # A claimed run makes its task wait (`run`): its dependents are told
+    # (`add-dependency-dispatch` decision 6). After the commit, so that
+    # claiming never waits on another transaction's job insert.
+    Tx.after_commit(fn -> Dependencies.changed(run.task_id) end)
     %{state | slots: state.slots - 1, specs: [spec | state.specs]}
+  end
+
+  # Fault injection for the concurrency tests: compiled in the test
+  # environment only.
+  if Mix.env() == :test do
+    defp test_hook(point) do
+      case Process.get(:helmsman_test_hook) do
+        hook when is_function(hook, 1) -> hook.(point)
+        _ -> :ok
+      end
+    end
+  else
+    defp test_hook(_point), do: :ok
   end
 end

@@ -13,6 +13,7 @@ defmodule Helmsman.Runs.Pushes do
 
   import Ecto.Query, warn: false
 
+  alias Helmsman.Dispatch.Dependencies
   alias Helmsman.GitHub
   alias Helmsman.GitHub.Repository
   alias Helmsman.LocalRepositories.Workers.RecordBranch
@@ -172,6 +173,9 @@ defmodule Helmsman.Runs.Pushes do
     if run.local_repository_id && run.push_status == :pushed,
       do: {:ok, _job} = Oban.insert(RecordBranch.new(%{run_id: run.id}))
 
+    # A new delivery may change whether the task is satisfied
+    # (`add-dependency-dispatch` decision 6).
+    :ok = Dependencies.changed(run.task_id)
     Tx.after_commit(fn -> Runs.after_push(run) end)
     {:ok, :ok}
   end

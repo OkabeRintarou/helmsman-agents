@@ -24,7 +24,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Dispatch
-  alias Helmsman.Dispatch.{Continuation, Targets}
+  alias Helmsman.Dispatch.{Continuation, Dependencies, Targets}
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.Links
@@ -519,13 +519,16 @@ defmodule Helmsman.Tasks do
   is dispatched as in `create/3` (`start` included, which is not a field:
   an edit that only gives `start` changes nothing).
 
+  With an `assignee` key the workspace graph lock is taken before the
+  assignee's rows (`add-dependency-dispatch` decision 4).
+
   `epic` is read as in `create/3` (`""` detaches the task). With an `epic`
   key the workspace graph lock is taken before the task row; after the
   version check the old and the new epic rows are locked `FOR UPDATE` in
   ascending ID order. A change of epic bumps the task's `lock_version`
   and recomputes the old epic as `:step_removed` and the new one as
   `:step_added`; the epics' `lock_version` does not change. Without an
-  `epic` key no graph lock is taken.
+  `epic` or `assignee` key no graph lock is taken.
   """
   @spec update(Scope.t(), String.t(), map(), pos_integer() | nil) ::
           {:ok, Task.t()} | {:error, error()}
@@ -539,7 +542,7 @@ defmodule Helmsman.Tasks do
     Workspaces.write_transaction(scope, :update_task, fn scope ->
       with {:ok, ident, _key, _seq} <- Ident.parse(ident),
            epic_input = fetch_epic(attrs),
-           :ok <- lock_graph_for_epic(scope.workspace.id, epic_input),
+           :ok <- lock_graph_for_update(scope.workspace.id, epic_input, attrs),
            assignee = lock_assignee(scope.workspace.id, attrs),
            _ = test_hook(:assignee_locked),
            {:ok, task} <- lock_task(scope.workspace.id, ident),
@@ -725,6 +728,15 @@ defmodule Helmsman.Tasks do
   defp lock_graph_for_epic(_workspace_id, :keep), do: :ok
   defp lock_graph_for_epic(workspace_id, _epic_input), do: Locks.graph!(workspace_id)
 
+  # An edit also takes it whenever `assignee` is given, before the
+  # assignee's actor row: dispatching the new assignee reads the task's
+  # dependencies under it (`add-dependency-dispatch` decision 4).
+  defp lock_graph_for_update(workspace_id, epic_input, attrs) do
+    if epic_input != :keep or fetch_attr(attrs, :assignee) != :error,
+      do: Locks.graph!(workspace_id),
+      else: :ok
+  end
+
   # For a new task. A task's kind never changes and tasks are never
   # deleted, so the check needs no lock; `Epics.recompute/3` locks the
   # epic row after the insert.
@@ -791,11 +803,15 @@ defmodule Helmsman.Tasks do
 
   defp recompute_epics(_scope, same, same), do: :ok
 
+  # A step attached or detached may change whether its epic is satisfied:
+  # the epics' dependents are checked again after the commit
+  # (`add-dependency-dispatch` decision 6).
   defp recompute_epics(scope, old_epic_id, new_epic_id) do
     attrs = %{actor_id: scope.actor.id, source_run_id: source_run_id(scope)}
     if old_epic_id, do: :ok = Epics.recompute(old_epic_id, :step_removed, attrs)
     if new_epic_id, do: :ok = Epics.recompute(new_epic_id, :step_added, attrs)
-    :ok
+    :ok = Dependencies.changed(old_epic_id)
+    Dependencies.changed(new_epic_id)
   end
 
   ## Transitions

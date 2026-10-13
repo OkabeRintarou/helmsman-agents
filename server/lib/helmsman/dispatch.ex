@@ -12,6 +12,7 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.{Daemon, Runtime}
+  alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Runs
@@ -33,7 +34,10 @@ defmodule Helmsman.Dispatch do
   the assignee's actor and profile rows are locked `FOR SHARE`, the task
   row `FOR UPDATE`.
 
-  Removes the task's `assign` grants; for a managed agent the origin may
+  Removes the task's `assign` grants and cancels (`obsolete`) the runs of
+  other agents on the task deferred by a dependency
+  (`Helmsman.Dispatch.Dependencies.cancel_reassigned/1`); for a managed
+  agent the origin may
   trigger (and the trigger chain allows), records a grant, then dispatches
   unless `start?` is false (`:not_started`) or the task is not `new` or
   `in_progress` (`:task_closed`). Returns the outcomes: `[]` for a person,
@@ -43,6 +47,7 @@ defmodule Helmsman.Dispatch do
           {:ok, [Outcome.t()]}
   def on_assignee_change(%Scope{} = scope, %Task{} = task, _prev_assignee_id, start?) do
     Repo.delete_all(from(g in TaskGrant, where: g.task_id == ^task.id and g.kind == :assign))
+    Dependencies.cancel_reassigned(task)
 
     case managed_agent(task) do
       nil -> {:ok, []}

@@ -23,6 +23,7 @@ defmodule Helmsman.LocalRepositories do
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
   alias Helmsman.Daemons.{Daemon, DaemonWorkspace, Locking}
+  alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Events
   alias Helmsman.LocalRepositories.{LocalRepository, TaskLocalBranch}
   alias Helmsman.Locks
@@ -650,7 +651,7 @@ defmodule Helmsman.LocalRepositories do
     |> Repo.update!()
 
     notify_branch(task)
-    :ok
+    Dependencies.changed(task.id)
   end
 
   defp mark_unmerged_locked(_task, branch, _manual_only?),
@@ -733,8 +734,8 @@ defmodule Helmsman.LocalRepositories do
   Called once after a task's local branch became `merged` committed
   (decision 9). Notifies the task topic and emits the
   `[:helmsman, :local_repositories, :after_merge]` telemetry event
-  (`%{task_id: id}`); `add-dependency-dispatch` releases the deferred
-  runs that depend on the task here.
+  (`%{task_id: id}`). The re-check of the tasks depending on it
+  (`add-dependency-dispatch`) was registered in the transaction.
   """
   @spec after_merge(Task.t()) :: :ok
   def after_merge(%Task{} = task) do
@@ -742,7 +743,12 @@ defmodule Helmsman.LocalRepositories do
     :telemetry.execute([:helmsman, :local_repositories, :after_merge], %{}, %{task_id: task.id})
   end
 
-  defp merged!(task), do: Tx.after_commit(fn -> after_merge(task) end)
+  # The dependents are checked again in the transaction of the merge
+  # (`add-dependency-dispatch` decision 6); the rest after the commit.
+  defp merged!(task) do
+    :ok = Dependencies.changed(task.id)
+    Tx.after_commit(fn -> after_merge(task) end)
+  end
 
   defp notify_branch(task),
     do: Events.after_commit(Events.topic(:task, task.id), {:local_branch_changed, task.ident})

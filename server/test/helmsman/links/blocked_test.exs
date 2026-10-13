@@ -73,9 +73,11 @@ defmodule Helmsman.Links.BlockedTest do
                {:error, {:blocked, ["BOS-2", "BOS-3"]}}
     end
 
-    test "satisfied?/1: done and verified", %{bos: [b1 | _]} do
+    test "satisfied?/1: done and verified (no run, no repository)", %{bos: [b1 | _]} do
       for status <- Task.statuses() do
-        assert Links.satisfied?(%{b1 | status: status}) == status in [:done, :verified]
+        set_status!(b1, status)
+        assert Links.satisfied?(b1) == status in [:done, :verified]
+        assert Links.waiting_for(b1) == if(status in [:done, :verified], do: nil, else: :status)
       end
     end
 

@@ -71,10 +71,13 @@ defmodule HelmsmanMCP.Present do
     })
   end
 
-  @doc "A task link (`Helmsman.Links.for_task/1`)."
+  @doc """
+  A task link (`Helmsman.Links.for_task/1`); `waiting_for` only on an
+  outgoing `depends_on` that is not satisfied.
+  """
   @spec link(map()) :: map()
   def link(%{} = link) do
-    %{
+    view = %{
       type: link.type,
       direction: link.direction,
       task: link.task,
@@ -84,6 +87,11 @@ defmodule HelmsmanMCP.Present do
       actor: actor(link.actor),
       created_at: time(link.created_at)
     }
+
+    case Map.get(link, :waiting_for) do
+      nil -> view
+      waiting_for -> Map.put(view, :waiting_for, waiting_for)
+    end
   end
 
   @doc "A history entry (`Helmsman.Tasks.event_view/1`)."

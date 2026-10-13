@@ -20,6 +20,7 @@ defmodule Helmsman.Links do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
+  alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Events
   alias Helmsman.Links.Link
   alias Helmsman.Locks
@@ -31,13 +32,66 @@ defmodule Helmsman.Links do
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Workspace
 
-  # A prerequisite in one of these statuses is satisfied (this change;
-  # `add-dependency-dispatch` extends the rule here, and only here).
+  # A prerequisite must be in one of these statuses to be satisfied (the
+  # first condition of `waiting_for/1`).
   @satisfied [:done, :verified]
   # A task replaced while in one of these is cancelled.
   @open [:new, :in_progress]
 
+  # The single definition of "satisfied" (`waiting_for/1`), as SQL on the
+  # task `t` given by its `id`, `project_id`, `status` and `kind`.
+  active_sql = fn t ->
+    "EXISTS (SELECT 1 FROM runs ar WHERE ar.task_id = #{t}.id " <>
+      "AND ar.status IN ('claimed', 'running', 'cancelling'))"
+  end
+
+  code_waiting_sql = fn t ->
+    """
+    EXISTS (SELECT 1 FROM projects pj
+      CROSS JOIN LATERAL (SELECT dr.head_sha FROM runs dr
+        WHERE dr.task_id = #{t}.id AND dr.push_status = 'pushed'
+          AND (dr.repository_id = pj.repository_id
+               OR dr.local_repository_id = pj.local_repository_id)
+        ORDER BY dr.claimed_at DESC, dr.id DESC LIMIT 1) d
+      WHERE pj.id = #{t}.project_id
+        AND NOT EXISTS (SELECT 1 FROM (SELECT cp.state, cp.included_sha FROM task_pull_requests cp
+              WHERE cp.task_id = #{t}.id AND cp.repository_id = pj.repository_id
+              ORDER BY cp.id DESC LIMIT 1) c
+            WHERE c.state = 'merged' AND c.included_sha = d.head_sha)
+        AND NOT EXISTS (SELECT 1 FROM task_local_branches lb
+            WHERE lb.task_id = #{t}.id AND lb.local_repository_id = pj.local_repository_id
+              AND lb.state = 'merged' AND lb.head_sha = d.head_sha))
+    """
+  end
+
+  @waiting_for_sql """
+  (SELECT CASE
+     WHEN t.status NOT IN ('done', 'verified') THEN 'status'
+     WHEN #{active_sql.("t")} THEN 'run'
+     WHEN #{code_waiting_sql.("t")} THEN 'merge'
+     WHEN t.kind = 'epic' AND EXISTS (SELECT 1 FROM tasks s
+       WHERE s.epic_id = t.id AND s.status <> 'cancelled'
+         AND (s.status NOT IN ('done', 'verified') OR #{active_sql.("s")}
+              OR #{code_waiting_sql.("s")})) THEN 'steps'
+   END
+   FROM (SELECT ?::bigint AS id, ?::bigint AS project_id, ?::text AS status, ?::text AS kind) t)
+  """
+
+  # Expands to the fragment of `@waiting_for_sql` inside a query.
+  defmacrop waiting_for_sql(id, project_id, status, kind) do
+    quote do
+      fragment(
+        unquote(@waiting_for_sql),
+        unquote(id),
+        unquote(project_id),
+        unquote(status),
+        unquote(kind)
+      )
+    end
+  end
+
   @type type :: Link.type()
+  @type waiting_for :: :status | :run | :merge | :steps | nil
   @type link_view :: %{
           type: String.t(),
           direction: String.t(),
@@ -46,7 +100,8 @@ defmodule Helmsman.Links do
           status: String.t(),
           kind: String.t(),
           actor: %{name: String.t(), kind: String.t()},
-          created_at: DateTime.t()
+          created_at: DateTime.t(),
+          waiting_for: String.t() | nil
         }
   @type error ::
           :no_actor
@@ -196,12 +251,17 @@ defmodule Helmsman.Links do
     end
   end
 
+  # Removing the last unsatisfied dependency releases the deferred runs of
+  # `a` (`add-dependency-dispatch` decision 6).
   defp apply_op(:remove, _scope, a, b, type) do
     {count, _} =
       from(l in Link,
         where: l.from_task_id == ^a.id and l.to_task_id == ^b.id and l.type == ^type
       )
       |> Repo.delete_all()
+
+    if count == 1 and type == :depends_on,
+      do: :ok = Dependencies.release([a.id])
 
     {:ok, count == 1}
   end
@@ -276,15 +336,45 @@ defmodule Helmsman.Links do
   ## Satisfaction and blockers
 
   @doc """
-  Whether the prerequisite `task` is satisfied: it is `done` or
-  `verified`. The single definition, with `unsatisfied_dependency/1`.
+  What the prerequisite `task` is waiting for (designs/07 §3,
+  `add-dependency-dispatch` decision 2): the first of these that does not
+  hold, or nil when it is satisfied.
+
+    1. `:status` - it is not `done` or `verified`;
+    2. `:run` - it has a `claimed`, `running` or `cancelling` run;
+    3. `:merge` - its latest delivery (`push_status = 'pushed'` in the
+       repository its project is bound to now, greatest `(claimed_at,
+       id)`) is not in the base branch: for a GitHub repository its
+       current pull request (newest row of that repository) is `merged`
+       with `included_sha` equal to the delivery's `head_sha`; for a local
+       repository its local branch of that repository is `merged` at that
+       `head_sha`. No binding or no delivery: holds;
+    4. `:steps` - it is an epic and a step not `cancelled` fails 1-3.
+
+  One query. The single SQL definition (`waiting_for_sql/4`) is shared by
+  `satisfied?/1`, `unsatisfied_dependency/1`, `blockers/1`,
+  `put_blocked/1` and the links of `for_task/1`.
   """
-  @spec satisfied?(Task.t()) :: boolean()
-  def satisfied?(%Task{status: status}), do: status in @satisfied
+  @spec waiting_for(Task.t() | pos_integer()) :: waiting_for()
+  def waiting_for(%Task{id: id}), do: waiting_for(id)
+
+  def waiting_for(task_id) when is_integer(task_id) do
+    from(p in Task,
+      as: :prereq,
+      where: p.id == ^task_id,
+      select: waiting_for_sql(p.id, p.project_id, p.status, p.kind)
+    )
+    |> Repo.one()
+    |> to_waiting_for()
+  end
+
+  @doc "Whether the prerequisite `task` is satisfied: `waiting_for/1` is nil."
+  @spec satisfied?(Task.t() | pos_integer()) :: boolean()
+  def satisfied?(task), do: is_nil(waiting_for(task))
 
   @doc """
   The condition "the task bound as `binding` has an outgoing `depends_on`
-  whose prerequisite is not satisfied" (`satisfied?/1`), as an `EXISTS`
+  whose prerequisite is not satisfied" (`waiting_for/1`), as an `EXISTS`
   for the query's own `WHERE` or `SELECT`: lists compute `blocked` in
   their single query.
   """
@@ -305,7 +395,9 @@ defmodule Helmsman.Links do
       join: p in Task,
       as: :prereq,
       on: p.id == l.to_task_id,
-      where: l.type == :depends_on and p.status not in ^@satisfied
+      where:
+        l.type == :depends_on and
+          not is_nil(waiting_for_sql(p.id, p.project_id, p.status, p.kind))
     )
   end
 
@@ -319,6 +411,45 @@ defmodule Helmsman.Links do
       where: l.from_task_id == ^task_id,
       order_by: [asc: p.id],
       select: p.ident
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  The IDs of every `depends_on` prerequisite of the task `task_id`,
+  satisfied or not, by internal ID, at most `limit`.
+  """
+  @spec prerequisites(pos_integer(), pos_integer()) :: [String.t()]
+  def prerequisites(task_id, limit) when is_integer(task_id) and is_integer(limit) do
+    from(l in Link,
+      join: p in Task,
+      on: p.id == l.to_task_id,
+      where: l.from_task_id == ^task_id and l.type == :depends_on,
+      order_by: [asc: p.id],
+      limit: ^limit,
+      select: p.ident
+    )
+    |> Repo.all()
+  end
+
+  @doc "Whether the task `task_id` has an outgoing `depends_on` (no lock)."
+  @spec has_dependencies?(pos_integer()) :: boolean()
+  def has_dependencies?(task_id) when is_integer(task_id),
+    do: Repo.exists?(from(l in Link, where: l.from_task_id == ^task_id and l.type == :depends_on))
+
+  @doc """
+  The IDs of the tasks depending (`depends_on`) directly on one of
+  `task_ids`, ascending.
+  """
+  @spec dependents([pos_integer()]) :: [pos_integer()]
+  def dependents([]), do: []
+
+  def dependents(task_ids) when is_list(task_ids) do
+    from(l in Link,
+      where: l.to_task_id in ^task_ids and l.type == :depends_on,
+      distinct: true,
+      order_by: [asc: l.from_task_id],
+      select: l.from_task_id
     )
     |> Repo.all()
   end
@@ -362,7 +493,9 @@ defmodule Helmsman.Links do
   Every link of `task`, outgoing first, then by type (`depends_on`,
   `replaces`) and by the other task's internal ID: `type`, `direction`
   (`"out"` / `"in"`), the other task's `task` (ID), `title`, `status` and
-  `kind` (`"task"` / `"epic"`), the `actor` who added it and `created_at`.
+  `kind` (`"task"` / `"epic"`), the `actor` who added it, `created_at`
+  and, for an outgoing `depends_on`, `waiting_for` (`waiting_for/1` as a
+  string; nil when satisfied and for every other link).
   """
   @spec for_task(Task.t()) :: [link_view()]
   def for_task(%Task{id: id}) do
@@ -380,13 +513,21 @@ defmodule Helmsman.Links do
       join: a in Actor,
       on: a.id == l.actor_id,
       where: l.from_task_id == ^id or l.to_task_id == ^id,
-      select: {l, p, a}
+      select:
+        {l, p, a,
+         fragment(
+           "CASE WHEN ? = ? AND ? = 'depends_on' THEN ? END",
+           l.from_task_id,
+           type(^id, :integer),
+           l.type,
+           waiting_for_sql(p.id, p.project_id, p.status, p.kind)
+         )}
     )
     |> Repo.all()
-    |> Enum.sort_by(fn {l, p, _a} ->
+    |> Enum.sort_by(fn {l, p, _a, _w} ->
       {if(l.from_task_id == id, do: 0, else: 1), type_rank(l.type), p.id}
     end)
-    |> Enum.map(fn {l, p, a} ->
+    |> Enum.map(fn {l, p, a, waiting_for} ->
       %{
         type: Atom.to_string(l.type),
         direction: if(l.from_task_id == id, do: "out", else: "in"),
@@ -395,12 +536,19 @@ defmodule Helmsman.Links do
         status: Atom.to_string(p.status),
         kind: Atom.to_string(p.kind),
         actor: %{name: a.name, kind: Atom.to_string(a.kind)},
-        created_at: l.inserted_at
+        created_at: l.inserted_at,
+        waiting_for: waiting_for
       }
     end)
   end
 
   defp type_rank(type), do: Enum.find_index(Link.types(), &(&1 == type))
+
+  defp to_waiting_for(nil), do: nil
+  defp to_waiting_for("status"), do: :status
+  defp to_waiting_for("run"), do: :run
+  defp to_waiting_for("merge"), do: :merge
+  defp to_waiting_for("steps"), do: :steps
 
   ## Notifications
 
@@ -413,38 +561,90 @@ defmodule Helmsman.Links do
     do: status_changed(task, event.from_status, event.to_status)
 
   @doc """
-  The single entry point for "a prerequisite's status changed": when
-  `task` moving from `from` to `to` flips `satisfied?/1`, registers for
-  after the commit, for every task depending on it, `{:task_updated,
-  summary}` on its project topic and `{:links_changed, ident}` on its
-  topic. Reads and notifies only: nothing is written, no run is started.
-  Called inside the transaction that changed the status.
+  The single entry point for "a prerequisite's status changed"
+  (`add-dependency-dispatch` decisions 6, 10), inside the transaction that
+  changed it, which holds the workspace graph lock.
+
+  The affected dependents are the tasks depending on `task` and, when it
+  is a step, those depending on its epic: their runs deferred by a
+  dependency are released when every prerequisite is now satisfied
+  (`Dependencies.release/1`).
+
+  After the commit, `{:task_updated, summary}` on the project topic and
+  `{:links_changed, ident}` on the task topic of: the tasks depending on
+  `task` when moving from `from` to `to` flips its satisfaction (into
+  `done` / `verified` with the other conditions of `waiting_for/1`
+  holding, or out of them); with a status change of a step whose epic is `done` or
+  `verified`, the tasks depending on the epic too.
   """
   @spec status_changed(Task.t(), Task.status() | nil, Task.status()) :: :ok
   def status_changed(%Task{} = task, from, to) do
-    if satisfied?(%{task | status: from}) != satisfied?(%{task | status: to}) do
-      from(t in Task,
-        join: l in Link,
-        on: l.from_task_id == t.id,
-        where: l.to_task_id == ^task.id and l.type == :depends_on,
-        order_by: [asc: t.id]
-      )
-      |> Repo.all()
-      |> Tasks.load_summaries()
-      |> Enum.each(fn dependent ->
-        Events.after_commit(
-          Events.topic(:project, dependent.project_id),
-          {:task_updated, Tasks.summary(dependent)}
-        )
+    direct = dependents([task.id])
+    epic = epic_dependents(task, from, to)
+    :ok = Dependencies.release(Enum.uniq(direct ++ epic.all))
 
-        Events.after_commit(
-          Events.topic(:task, dependent.id),
-          {:links_changed, dependent.ident}
-        )
-      end)
+    notify = if satisfaction_flipped?(task, from, to), do: direct, else: []
+    notify_dependents(Enum.uniq(notify ++ epic.notify))
+  end
+
+  defp epic_dependents(%Task{epic_id: nil}, _from, _to), do: %{all: [], notify: []}
+
+  defp epic_dependents(%Task{epic_id: epic_id}, from, to) do
+    all = dependents([epic_id])
+
+    notify =
+      if all != [] and from != to and
+           Repo.exists?(from(e in Task, where: e.id == ^epic_id and e.status in ^@satisfied)),
+         do: all,
+         else: []
+
+    %{all: all, notify: notify}
+  end
+
+  # Into `done` / `verified`: flipped when conditions 2-4 hold now. Out of
+  # them: they held before unless this transaction changed them too (an
+  # epic reopened by a new step), so always (may notify once too often).
+  defp satisfaction_flipped?(task, from, to) do
+    cond do
+      from in @satisfied == to in @satisfied -> false
+      to in @satisfied -> rest_satisfied?(task)
+      true -> true
     end
+  end
 
-    :ok
+  # Conditions 2-4 of `waiting_for/1`, the status read as `done`.
+  defp rest_satisfied?(%Task{id: id}) do
+    from(p in Task,
+      where: p.id == ^id,
+      select: waiting_for_sql(p.id, p.project_id, type(^"done", :string), p.kind)
+    )
+    |> Repo.one()
+    |> is_nil()
+  end
+
+  @doc """
+  Registers, for after the commit, `{:task_updated, summary}` on the
+  project topic and `{:links_changed, ident}` on the task topic of each
+  task of `task_ids`.
+  """
+  @spec notify_dependents([pos_integer()]) :: :ok
+  def notify_dependents([]), do: :ok
+
+  def notify_dependents(task_ids) do
+    from(t in Task, where: t.id in ^task_ids, order_by: [asc: t.id])
+    |> Repo.all()
+    |> Tasks.load_summaries()
+    |> Enum.each(fn dependent ->
+      Events.after_commit(
+        Events.topic(:project, dependent.project_id),
+        {:task_updated, Tasks.summary(dependent)}
+      )
+
+      Events.after_commit(
+        Events.topic(:task, dependent.id),
+        {:links_changed, dependent.ident}
+      )
+    end)
   end
 
   defp notify_links_changed(%Task{} = a, %Task{} = b) do

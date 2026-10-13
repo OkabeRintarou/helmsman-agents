@@ -14,7 +14,7 @@ defmodule Helmsman.Dispatch.TargetsTest do
   alias Helmsman.{Agents, CommittedData, Feedback, Repo, Tasks, Tx}
   alias Helmsman.Dispatch.Targets
   alias Helmsman.Feedback.Entry
-  alias Helmsman.Runs.{Outcome, Run}
+  alias Helmsman.Runs.{Outcome, Run, TaskGrant}
   alias Helmsman.Tasks.Task, as: TaskRow
   alias Helmsman.Tasks.TaskEvent
 
@@ -39,11 +39,32 @@ defmodule Helmsman.Dispatch.TargetsTest do
     ctx
   end
 
-  # Reassigns the task as alice on a connection of its own and commits.
+  # Reassigns the task on a connection of its own and commits. Directly:
+  # `Tasks.update/4` with an assignee waits for the transition's graph
+  # lock since `add-dependency-dispatch` (decision 4), so only a writer
+  # outside it can still interleave here; the retry is kept for that.
   defp reassign!(ctx, name) do
     Task.async(fn ->
       CommittedData.unboxed(fn ->
-        {:ok, _} = Tasks.update(ctx.alice_scope, ctx.task.ident, %{assignee: name})
+        agent = agent_actor(ctx.workspace, name)
+
+        Repo.update_all(from(t in TaskRow, where: t.id == ^ctx.task.id),
+          set: [assignee_id: agent.id]
+        )
+
+        # The grant `Helmsman.Dispatch.on_assignee_change/4` would record.
+        Repo.delete_all(from(g in TaskGrant, where: g.task_id == ^ctx.task.id))
+
+        Repo.insert!(%TaskGrant{
+          workspace_id: ctx.task.workspace_id,
+          task_id: ctx.task.id,
+          agent_id: agent.id,
+          kind: :assign,
+          root_initiator_user_id: ctx.alice.id,
+          causal_agent_ids: [agent.id],
+          granted_by_id: human_actor(ctx.workspace, ctx.alice).id,
+          inserted_at: DateTime.utc_now()
+        })
       end)
     end)
     |> Task.await(10_000)

@@ -17,6 +17,7 @@ defmodule Helmsman.GitHub.PullRequests do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
   alias Helmsman.Config
+  alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.GitHub.{PullRequest, Repositories, Repository}
@@ -160,14 +161,16 @@ defmodule Helmsman.GitHub.PullRequests do
   The dependency hook (decisions 17, 21): called inside the transaction
   that records a pull request of `task_id` merged for the first time, or
   a new `included_sha`, so whatever it writes (`add-dependency-dispatch`
-  inserts its re-check job here) commits or rolls back with that fact.
-  For now it only emits the `[:helmsman, :pull_requests, :after_merge]`
-  telemetry event (handlers run inside the transaction).
+  inserts its re-check job here) commits or rolls back with that fact:
+  the `[:helmsman, :pull_requests, :after_merge]` telemetry event
+  (handlers run inside the transaction) and
+  `Helmsman.Dispatch.Dependencies.changed/1`.
   """
   @spec after_merge(pos_integer()) :: :ok
   def after_merge(task_id) do
     test_hook({:after_merge, task_id})
     :telemetry.execute([:helmsman, :pull_requests, :after_merge], %{}, %{task_id: task_id})
+    Dependencies.changed(task_id)
   end
 
   # Test hook: a failure of the dependency hook rolls the fact back.

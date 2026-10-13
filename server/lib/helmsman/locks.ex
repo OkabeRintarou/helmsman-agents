@@ -70,6 +70,11 @@ defmodule Helmsman.Locks do
   @spec graph!(pos_integer()) :: :ok
   def graph!(workspace_id), do: lock!("pg_advisory_xact_lock", key(:graph, workspace_id))
 
+  @doc "Tries the workspace graph lock without waiting (claiming)."
+  @spec try_graph(pos_integer()) :: boolean()
+  def try_graph(workspace_id),
+    do: try_lock("pg_try_advisory_xact_lock", key(:graph, workspace_id))
+
   @doc "Tries the task lock without waiting."
   @spec try_task(pos_integer()) :: boolean()
   def try_task(task_id), do: try_lock("pg_try_advisory_xact_lock", key(:task, task_id))

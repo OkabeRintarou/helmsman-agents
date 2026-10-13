@@ -18,13 +18,15 @@ defmodule Helmsman.Runs do
   alias Helmsman.Agents
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.{Daemon, Runtime}
+  alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.GitHub.PullRequests
+  alias Helmsman.Links
   alias Helmsman.Policy
   alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
-  alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent}
+  alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent, Triggers}
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Workspaces.Workspace
@@ -91,6 +93,13 @@ defmodule Helmsman.Runs do
   `FOR SHARE`; an offline runtime is fine), the trigger chain
   (`check_chain/3`), then `upsert_pending/2` with the per-task rate limit.
 
+  An assignment trigger (`Helmsman.Runs.Triggers.dependency_gated?/1`) for
+  a task with unsatisfied prerequisites (`Helmsman.Links.blockers/1`)
+  records them as `blocked_by` and asks for a `deferred` run; the outcome
+  is then `:deferred` with `blocked_by` (`add-dependency-dispatch`
+  decision 4). For such a trigger the caller must hold the workspace
+  graph lock, so that a prerequisite cannot become satisfied unseen.
+
   Always returns `{:ok, outcome}`: not dispatching is a result, not a
   failure, so the transaction commits (with the system comment of a
   refused chain).
@@ -102,13 +111,16 @@ defmodule Helmsman.Runs do
     with :ok <- authorized(origin, agent),
          {:ok, runtime} <- available_runtime(profile),
          :ok <- check_chain(origin, agent, target.task) do
+      {entry, status} = gate(trigger_entry(origin, agent, trigger), target.task)
+
       attrs = %{
         workspace_id: agent.workspace_id,
         agent_id: agent.id,
         runtime_id: runtime.id,
         task_id: target.task && target.task.id,
         lane: Map.get(target, :lane, :work),
-        trigger: trigger_entry(origin, agent, trigger),
+        status: status,
+        trigger: entry,
         root_initiator_user_id: origin.initiator_user_id,
         causal_agent_ids: Enum.uniq(origin.chain ++ [agent.id]),
         capabilities: capabilities(profile, target.task),
@@ -126,6 +138,7 @@ defmodule Helmsman.Runs do
              agent_id: agent.id,
              trigger: kind,
              result: result,
+             blocked_by: if(result == :deferred, do: entry["blocked_by"]),
              run_id: run.id
            }}
       end
@@ -133,6 +146,21 @@ defmodule Helmsman.Runs do
       {:skip, reason} -> {:ok, Outcome.skipped(agent, kind, reason)}
     end
   end
+
+  # `add-dependency-dispatch` decision 4: an assignment trigger for a task
+  # with unsatisfied prerequisites records them (`blocked_by`) and asks for
+  # a `deferred` run. The caller holds the workspace graph lock then.
+  defp gate(entry, %Task{id: task_id}) do
+    with true <- Triggers.dependency_gated?([entry]),
+         [_ | _] = blockers <- Links.blockers(task_id) do
+      test_hook(:dependencies_read)
+      {Map.put(entry, "blocked_by", blockers), :deferred}
+    else
+      _ -> {entry, :queued}
+    end
+  end
+
+  defp gate(entry, nil), do: {entry, :queued}
 
   @doc """
   The checks a trigger needs before anything else (decision 6, step 3):
@@ -254,33 +282,40 @@ defmodule Helmsman.Runs do
   creates a run (decision 3, steps 4-6).
 
   `attrs`: `workspace_id`, `agent_id`, `runtime_id`, `task_id` (nil: never
-  merged), `lane`, `trigger` (one entry of `triggers`) or `triggers` (the
+  merged), `lane`, `status` (`:queued`, the default, or `:deferred`, the
+  status asked for: `add-dependency-dispatch` decision 4), `trigger` (one
+  entry of `triggers`) or `triggers` (the
   entries to add), `root_initiator_user_id`, `causal_agent_ids`,
   `capabilities` and `priority`; a retry (`Helmsman.Runs.Retry`) also
   gives `attempt`, `auto_retries`, `retry_of_id` and `not_before`, used
   only by a new run.
 
   1. The pending run of the key is locked `FOR UPDATE`; found → merged
-     (trigger appended, causal chains united, the higher priority), without
-     the rate check. A run being claimed is waited for and then no longer
-     matches.
+     (trigger appended, causal chains united, the higher priority; a
+     `deferred` run asked to be `queued` becomes `queued`, a `queued` one
+     stays `queued`), without the rate check. A run being claimed is
+     waited for and then no longer matches.
   2. Otherwise, with `rate_limit?: true` (the default) and a task, at least
      `config :helmsman, Helmsman.Dispatch, max_runs_per_task_per_hour`
      (default #{@default_rate}) runs created for the task in the last hour
      give `{:skipped, :rate_limited}`.
-  3. `INSERT … ON CONFLICT` on the pending key: `:queued`, or `:merged`
-     when a caller that does not hold the task lock inserted the key first.
+  3. `INSERT … ON CONFLICT` on the pending key, with the same merge rules:
+     `:queued`, or `:merged` when a caller that does not hold the task
+     lock inserted the key first.
 
-  The run's notifications are registered for after the commit.
+  The result is `:deferred` whenever the run is `deferred` afterwards
+  (created or merged). The run's notifications are registered for after
+  the commit; its daemon is told when it is new and `queued` or became
+  `queued`.
   """
   @spec upsert_pending(map(), keyword()) ::
-          {:queued | :merged, Run.t()} | {:skipped, :rate_limited}
+          {:queued | :merged | :deferred, Run.t()} | {:skipped, :rate_limited}
   def upsert_pending(attrs, opts \\ []) do
     case attrs.task_id && lock_pending(attrs) do
       %Run{} = run ->
         merged = merge(run.id, attrs)
-        notify_run(merged)
-        {:merged, merged}
+        notify_run(merged, available: run.status == :deferred and merged.status == :queued)
+        {merge_result(merged), merged}
 
       _none ->
         if Keyword.get(opts, :rate_limit?, true) and over_rate?(attrs.task_id),
@@ -301,6 +336,7 @@ defmodule Helmsman.Runs do
   end
 
   @merge_set """
+  status = CASE WHEN EXCLUDED.status = 'queued' THEN 'queued' ELSE runs.status END,
   triggers = runs.triggers || EXCLUDED.triggers,
   causal_agent_ids = ARRAY(SELECT DISTINCT unnest(runs.causal_agent_ids || EXCLUDED.causal_agent_ids) ORDER BY 1),
   priority = GREATEST(runs.priority, EXCLUDED.priority),
@@ -311,25 +347,36 @@ defmodule Helmsman.Runs do
   INSERT INTO runs (workspace_id, agent_id, runtime_id, task_id, lane, status, triggers,
     root_initiator_user_id, causal_agent_ids, capabilities, priority, inserted_at, updated_at,
     attempt, auto_retries, retry_of_id, not_before)
-  VALUES ($1, $2, $3, $4, $5, 'queued', $6, $7, $8, $9, $10, $11, $11, $12, $13, $14,
+  VALUES ($1, $2, $3, $4, $5, $16, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14,
     coalesce($15::timestamp, $11))
   ON CONFLICT (task_id, agent_id, lane) WHERE status IN ('deferred','queued')
   DO UPDATE SET #{@merge_set}
-  RETURNING id, (xmax = 0)
+  RETURNING id, (xmax = 0), (SELECT r.status FROM runs r WHERE r.id = runs.id)
   """
 
+  # The subquery of RETURNING reads the snapshot taken before the statement:
+  # the merged row's status before the merge (NULL for a new row, and for a
+  # row another transaction committed while this one waited for it).
+
   defp insert(attrs) do
-    %{rows: [[id, inserted?]]} = Repo.query!(@insert_sql, insert_params(attrs))
+    test_hook(:before_insert)
+    %{rows: [[id, inserted?, before]]} = Repo.query!(@insert_sql, insert_params(attrs))
     run = Repo.get!(Run, id)
 
     if inserted? do
-      notify_run(run, available: true)
-      {:queued, run}
+      notify_run(run, available: run.status == :queued)
+      {if(run.status == :deferred, do: :deferred, else: :queued), run}
     else
-      notify_run(run)
-      {:merged, run}
+      # `before` is nil when the conflicting row was committed after this
+      # statement's snapshot (it waited for that insert): it may have been
+      # deferred, so the daemon is told (once too often at worst).
+      notify_run(run, available: before in [nil, "deferred"] and run.status == :queued)
+      {merge_result(run), run}
     end
   end
+
+  defp merge_result(%Run{status: :deferred}), do: :deferred
+  defp merge_result(_run), do: :merged
 
   defp insert_params(attrs) do
     [
@@ -347,7 +394,8 @@ defmodule Helmsman.Runs do
       Map.get(attrs, :attempt, 1),
       Map.get(attrs, :auto_retries, 0),
       Map.get(attrs, :retry_of_id),
-      Map.get(attrs, :not_before)
+      Map.get(attrs, :not_before),
+      attrs |> Map.get(:status, :queued) |> Atom.to_string()
     ]
   end
 
@@ -360,13 +408,21 @@ defmodule Helmsman.Runs do
     Repo.query!(
       """
       UPDATE runs SET
+        status = CASE WHEN $6 = 'queued' THEN 'queued' ELSE runs.status END,
         triggers = runs.triggers || $2,
         causal_agent_ids = ARRAY(SELECT DISTINCT unnest(runs.causal_agent_ids || $3::bigint[]) ORDER BY 1),
         priority = GREATEST(runs.priority, $4),
         updated_at = $5
       WHERE id = $1
       """,
-      [id, triggers(attrs), attrs.causal_agent_ids, attrs.priority, DateTime.utc_now()]
+      [
+        id,
+        triggers(attrs),
+        attrs.causal_agent_ids,
+        attrs.priority,
+        DateTime.utc_now(),
+        attrs |> Map.get(:status, :queued) |> Atom.to_string()
+      ]
     )
 
     Repo.get!(Run, id)
@@ -898,11 +954,28 @@ defmodule Helmsman.Runs do
   judgements, the restart reaping and the start-time checks): wakes the
   pull request reconciliation of its task when the task's project is
   bound to a GitHub repository (`add-pr-reconcile-merge` decision 4,
-  designs/13 §4.4).
+  designs/13 §4.4) and registers the re-check of the tasks depending on
+  it (`Helmsman.Dispatch.Dependencies.changed/1`, `add-dependency-dispatch`
+  decision 6).
   """
   @spec after_terminal(Run.t()) :: :ok
-  def after_terminal(%Run{task_id: task_id}),
-    do: PullRequests.wake_if_bound(task_id)
+  def after_terminal(%Run{task_id: task_id}) do
+    :ok = Dependencies.changed(task_id)
+    PullRequests.wake_if_bound(task_id)
+  end
+
+  # Fault injection for the concurrency tests: compiled in the test
+  # environment only.
+  if Mix.env() == :test do
+    defp test_hook(point) do
+      case Process.get(:helmsman_test_hook) do
+        hook when is_function(hook, 1) -> hook.(point)
+        _ -> :ok
+      end
+    end
+  else
+    defp test_hook(_point), do: :ok
+  end
 
   ## Read models (add-run-read-models)
 

@@ -51,7 +51,8 @@ config :helmsman, Oban,
        {"15 3 * * *", Helmsman.Daemons.Workers.PruneDeviceCodes},
        {"* * * * *", Helmsman.Runs.Workers.Sweep},
        {"45 4 * * *", Helmsman.Runs.Workers.PruneEvents},
-       {"*/15 * * * *", Helmsman.GitHub.Workers.ReconcileSweep}
+       {"*/15 * * * *", Helmsman.GitHub.Workers.ReconcileSweep},
+       {"*/10 * * * *", Helmsman.Dispatch.Workers.DependencySweep}
      ]}
   ]
 

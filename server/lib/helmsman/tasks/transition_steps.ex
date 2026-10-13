@@ -6,7 +6,11 @@ defmodule Helmsman.Tasks.TransitionSteps do
   returning `{:error, reason}` rolls the whole transition back.
 
   Steps, in order: the Epic cascade (`Helmsman.Tasks.Epics.after_transition/3`),
-  then `Helmsman.Links.after_transition/3` (dependents' notifications).
+  then `Helmsman.Links.after_transition/3` (dependents' deferred runs
+  released, their notifications), then
+  `Helmsman.Dispatch.Dependencies.after_transition/3` (a cancelled or
+  verified task's runs deferred by a dependency cancelled), then the pull
+  request reconciliation.
   The triggers of `add-continuation-triggers` run right after the steps
   (`Helmsman.Tasks.transition/4`), not as a step: they are planned before
   the task row is locked.
@@ -20,6 +24,7 @@ defmodule Helmsman.Tasks.TransitionSteps do
   @steps [
     &Helmsman.Tasks.Epics.after_transition/3,
     &Helmsman.Links.after_transition/3,
+    &Helmsman.Dispatch.Dependencies.after_transition/3,
     &Helmsman.GitHub.PullRequests.after_transition/3
   ]
 

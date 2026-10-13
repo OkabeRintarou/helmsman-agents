@@ -98,7 +98,7 @@ defmodule Helmsman.Runs.Prompt do
     do: "This run: task #{ident} (project #{project_key(ident)}): #{title}"
 
   defp why(run, ctx) do
-    lines = Enum.map(run.triggers, &trigger_line(&1, run, ctx))
+    lines = run.triggers |> Enum.map(&trigger_line(&1, run, ctx)) |> Enum.reject(&is_nil/1)
     Enum.join(["Why you were started:" | lines], "\n")
   end
 
@@ -208,6 +208,14 @@ defmodule Helmsman.Runs.Prompt do
       "Reply with add_feedback. You were asked to reply, not to take over #{ident(ctx)}."
     ])
   end
+
+  # `add-dependency-dispatch` decision 11; nothing without prerequisites.
+  defp trigger_line(%{"kind" => "unblocked", "prerequisites" => [_ | _] = idents}, _run, ctx),
+    do:
+      "- The tasks #{ident(ctx)} depends on are finished (their changes, if any, " <>
+        "are merged into the base branch): #{Enum.join(idents, ", ")}. You can start."
+
+  defp trigger_line(%{"kind" => "unblocked"}, _run, _ctx), do: nil
 
   defp trigger_line(%{"kind" => kind} = trigger, _run, ctx),
     do: "- #{by(trigger, ctx)} started you (#{kind})."

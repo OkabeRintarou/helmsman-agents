@@ -85,9 +85,11 @@ defmodule Helmsman.CommittedData do
 
       Repo.query!("DELETE FROM daemons WHERE user_id = ANY($1)", [user_ids])
 
-      # Pull request reconciliation jobs of the workspaces' tasks.
+      # Pull request reconciliation and dependency re-check jobs of the
+      # workspaces' tasks.
       Repo.query!(
-        "DELETE FROM oban_jobs WHERE worker = 'Helmsman.GitHub.Workers.ReconcilePR' " <>
+        "DELETE FROM oban_jobs WHERE worker IN ('Helmsman.GitHub.Workers.ReconcilePR', " <>
+          "'Helmsman.Dispatch.Workers.ReleaseDependents') " <>
           "AND (args->>'task_id')::bigint IN (SELECT id FROM tasks WHERE workspace_id = ANY($1))",
         [workspace_ids]
       )
