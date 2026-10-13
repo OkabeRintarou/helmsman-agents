@@ -13,6 +13,6 @@ defmodule HelmsmanProtocol.RunSpec.Agent do
   use HelmsmanProtocol.Redacted, [
     :env,
     :extra_mcp_servers,
-    {:nested, :provider_account, [:api_key]}
+    {:nested, :provider_account, [:api_key, {:nested, :headers, [:value]}]}
   ]
 end

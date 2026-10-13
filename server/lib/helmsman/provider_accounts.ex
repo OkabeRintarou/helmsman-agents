@@ -30,6 +30,7 @@ defmodule Helmsman.ProviderAccounts do
           cli: String.t(),
           base_url: String.t(),
           models: %{String.t() => String.t()},
+          headers: [String.t()],
           api_key_set: boolean(),
           agents: [agent_ref()],
           inserted_at: DateTime.t(),
@@ -39,7 +40,8 @@ defmodule Helmsman.ProviderAccounts do
           id: pos_integer(),
           name: String.t(),
           base_url: String.t(),
-          models: %{String.t() => String.t()}
+          models: %{String.t() => String.t()},
+          headers: [String.t()]
         }
 
   @doc "The most provider accounts a user may have."
@@ -86,6 +88,9 @@ defmodule Helmsman.ProviderAccounts do
     end
   end
 
+  # Ecto SQL logs cast_params, before Cloak encrypts them; schema redact:
+  # true and Phoenix parameter filters cannot protect these query logs.
+  # Suppress both account writes, including writes rejected by constraints.
   defp insert(user_id, attrs) do
     Repo.one!(from(u in User, where: u.id == ^user_id, lock: "FOR UPDATE", select: u.id))
     count = Repo.aggregate(from(a in ProviderAccount, where: a.user_id == ^user_id), :count)
@@ -94,7 +99,7 @@ defmodule Helmsman.ProviderAccounts do
          {:ok, account} <-
            %ProviderAccount{user_id: user_id}
            |> ProviderAccount.changeset(attrs)
-           |> Repo.insert() do
+           |> Repo.insert(log: false) do
       notify(user_id)
       {:ok, hd(views([account]))}
     end
@@ -117,7 +122,7 @@ defmodule Helmsman.ProviderAccounts do
 
   defp modify(scope, id, attrs) do
     with %ProviderAccount{} = account <- own(scope, id, :lock),
-         {:ok, account} <- account |> ProviderAccount.changeset(attrs) |> Repo.update() do
+         {:ok, account} <- account |> ProviderAccount.changeset(attrs) |> Repo.update(log: false) do
       notify(account.user_id)
       Enum.each(bound_workspace_ids(account.id), &notify_agents/1)
       {:ok, hd(views([account]))}
@@ -152,7 +157,9 @@ defmodule Helmsman.ProviderAccounts do
       cli: view.cli,
       base_url: view.base_url,
       models: view.models,
-      api_key: "set"
+      api_key: "set",
+      header_names: view.headers,
+      headers: JSON.encode!(Enum.map(view.headers, &%{"name" => &1, "value" => "set"}))
     }
   end
 
@@ -203,7 +210,13 @@ defmodule Helmsman.ProviderAccounts do
          from(a in ProviderAccount,
            where: a.user_id == ^scope.user.id and a.cli == ^cli,
            order_by: a.name,
-           select: %{id: a.id, name: a.name, base_url: a.base_url, models: a.models}
+           select: %{
+             id: a.id,
+             name: a.name,
+             base_url: a.base_url,
+             models: a.models,
+             headers: a.header_names
+           }
          )
        )}
     end
@@ -246,6 +259,7 @@ defmodule Helmsman.ProviderAccounts do
         cli: account.cli,
         base_url: account.base_url,
         models: account.models || %{},
+        headers: account.header_names,
         api_key_set: true,
         agents: Map.get(agents, account.id, []),
         inserted_at: account.inserted_at,

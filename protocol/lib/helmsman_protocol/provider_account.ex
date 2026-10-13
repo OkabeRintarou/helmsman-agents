@@ -9,7 +9,8 @@ defmodule HelmsmanProtocol.ProviderAccount do
   field(:base_url, :string, min_bytes: 1, max_bytes: 2_048)
   field(:api_key, :string, min_bytes: 1, max_bytes: 8_192)
   field(:models, :string_map)
-  use HelmsmanProtocol.Redacted, [:api_key]
+  list(:headers, HelmsmanProtocol.ProviderAccount.Header, max: 8, default: [])
+  use HelmsmanProtocol.Redacted, [:api_key, {:nested, :headers, [:value]}]
 
   @doc "Model alias keys supported by a provider account's CLI."
   @spec model_aliases(:claude | :codex) :: [String.t()]
@@ -18,7 +19,12 @@ defmodule HelmsmanProtocol.ProviderAccount do
 
   @doc false
   def validate(%{models: models} = account) do
+    names = Enum.map(account.headers, &String.downcase(&1.name))
+
     cond do
+      length(names) != length(Enum.uniq(names)) ->
+        HelmsmanProtocol.Schema.invalid(["headers"], :duplicate)
+
       map_size(models) > 8 ->
         HelmsmanProtocol.Schema.invalid(["models"], {:count, 0, 8})
 

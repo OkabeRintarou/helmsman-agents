@@ -6,6 +6,7 @@ defmodule Helmsman.E2E.ProviderAccountTest do
   @moduletag :e2e
   @moduletag timeout: 300_000
 
+  import Ecto.Query, only: [from: 2]
   import Phoenix.ChannelTest
   import Helmsman.AccountsFixtures
   import Helmsman.AgentsFixtures
@@ -159,6 +160,69 @@ defmodule Helmsman.E2E.ProviderAccountTest do
     assert field(event_a_v2, "settings_base_url") == ctx.account_a.base_url
     assert event_a_v2 =~ "api_key_helper=printenv HELMSMAN_PROVIDER_API_KEY"
     refute event_a_v2 =~ "key_sha256=#{hash_a_v1}"
+  end
+
+  test "Codex account headers survive claim and reach only CLI environment", ctx do
+    fake = Path.expand("../support/fake_cli/provider-account-codex", __DIR__)
+    File.ln!(fake, Path.join(ctx.bin, "codex"))
+    codex_home = Path.join(ctx.home, "codex")
+    File.mkdir_p!(codex_home)
+
+    CommittedData.unboxed(fn ->
+      runtime = runtime_fixture(ctx.workspace, ctx.daemon, %{provider: "codex"})
+
+      account =
+        provider_account_fixture(ctx.owner, %{
+          cli: "codex",
+          headers: %{
+            "Ocp-Apim-Subscription-Key" => "HEADER_ONE_E2E_SENTINEL",
+            "user" => "HEADER_TWO_E2E_SENTINEL"
+          }
+        })
+
+      managed_agent_fixture(ctx.scope, %{
+        name: "keel/codex-headers",
+        provider: "codex",
+        runtime_id: runtime.id,
+        provider_account_id: account.id
+      })
+    end)
+
+    home = Path.join(ctx.home, "daemon-home")
+    DaemonE2E.write_credentials(home, ctx.endpoint_url, ctx.daemon.id, ctx.token)
+
+    daemon =
+      DaemonE2E.start_provider_daemon(home, [
+        {~c"PATH", String.to_charlist(ctx.bin <> ":" <> System.fetch_env!("PATH"))},
+        {~c"HOME", String.to_charlist(home)},
+        {~c"CODEX_HOME", String.to_charlist(codex_home)}
+      ])
+
+    DaemonE2E.wait_until(daemon, "Codex online", fn ->
+      Repo.exists?(
+        from(r in Runtime,
+          where: r.daemon_id == ^ctx.daemon.id and r.provider == "codex" and r.status == "online"
+        )
+      )
+    end)
+
+    run = run_fixture(agent_actor(ctx.workspace, "keel/codex-headers"))
+    await_success(daemon, run.id)
+    assert {:ok, %{events: events}} = Runs.list_events(ctx.scope, run.id)
+    assert Enum.any?(events, &(&1.type == "text" and &1.data["text"] == "headers_correct=true"))
+    DaemonE2E.stop_daemon(daemon)
+
+    for value <- ["HEADER_ONE_E2E_SENTINEL", "HEADER_TWO_E2E_SENTINEL"] do
+      refute inspect(events, limit: :infinity) =~ value
+
+      for path <-
+            Enum.flat_map(
+              [home, codex_home],
+              &Path.wildcard(Path.join(&1, "**/*"), match_dot: true)
+            ),
+          File.regular?(path),
+          do: refute(File.read!(path) =~ value)
+    end
   end
 
   test "a protocol 1 daemon connection leaves an account-bound run queued", ctx do

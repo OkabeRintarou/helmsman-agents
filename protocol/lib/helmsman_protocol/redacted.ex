@@ -36,6 +36,9 @@ defmodule HelmsmanProtocol.Redacted do
 
   defp redact_nested(nil, _), do: nil
 
+  defp redact_nested(values, fields) when is_list(values),
+    do: Enum.map(values, &redact_nested(&1, fields))
+
   defp redact_nested(%{__struct__: _} = value, fields),
     do: redact_map(Map.from_struct(value), fields)
 

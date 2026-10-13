@@ -1,12 +1,15 @@
 defmodule HelmsmanDaemon.ProviderHTTP do
   @moduledoc "Loopback-only fake provider; reports credential classes, never header values."
 
-  def start(owner, name, expected_key) do
+  def start(owner, name, expected_key, expected_headers \\ %{}) do
     {:ok, socket} =
       :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
 
     {:ok, {_, port}} = :inet.sockname(socket)
-    task = Task.start_link(fn -> accept(socket, owner, name, expected_key, 0) end)
+
+    task =
+      Task.start_link(fn -> accept(socket, owner, name, {expected_key, expected_headers}, 0) end)
+
     {:ok, pid} = task
 
     {"http://127.0.0.1:#{port}",
@@ -33,7 +36,7 @@ defmodule HelmsmanDaemon.ProviderHTTP do
     end
   end
 
-  defp serve(client, owner, name, key, calls) do
+  defp serve(client, owner, name, {key, expected_headers}, calls) do
     with {:ok, header, body} <- headers(client, ""),
          [request | lines] <- String.split(header, "\r\n"),
          [_, path, _] <- String.split(request, " "),
@@ -50,6 +53,21 @@ defmodule HelmsmanDaemon.ProviderHTTP do
         end
 
       classes = Map.new(["authorization", "x-api-key"], &{&1, credential(headers[&1], key)})
+
+      header_classes =
+        Map.new(expected_headers, fn {header, value} ->
+          {header, credential(headers[String.downcase(header)], value)}
+        end)
+
+      if map_size(expected_headers) > 0 do
+        send(owner, {:provider_headers, name, header_classes, self()})
+
+        receive do
+          :continue_provider -> :ok
+        after
+          10_000 -> :ok
+        end
+      end
 
       send(owner, {:provider_request, name, %{path: path, credentials: classes, model: model}})
       respond(client, path, body, calls)

@@ -2,7 +2,7 @@ defmodule HelmsmanDaemon.Adapters.CodexProviderTest do
   use HelmsmanDaemon.Case
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Codex
-  alias HelmsmanDaemon.Adapters.Codex.Config
+  alias HelmsmanDaemon.Adapters.Codex.{Config, Provider}
   alias HelmsmanProtocol.ProviderAccount
   @fixtures Path.expand("../../fixtures/codex", __DIR__)
 
@@ -84,6 +84,55 @@ defmodule HelmsmanDaemon.Adapters.CodexProviderTest do
       assert File.ls!(Config.home()) == []
       refute inspect(launch) =~ "ACCOUNT_SENTINEL"
     end
+  end
+
+  test "headers use ordered environment variables and quoted TOML keys", %{tmp_dir: dir} do
+    run = bound()
+
+    headers = [
+      %{name: "Ocp-Apim-Subscription-Key", value: "HEADER_ONE_SENTINEL"},
+      %{name: "x'`!", value: "HEADER_TWO_SENTINEL"}
+    ]
+
+    run = put_in(run.agent.provider_account.headers, headers)
+    assert {:ok, launch} = Codex.prepare(run, dir, dir)
+    assert {:ok, config} = Toml.decode(List.last(launch.argv))
+
+    assert config["model_providers"]["helmsman_account"]["env_http_headers"] == %{
+             "Ocp-Apim-Subscription-Key" => "HELMSMAN_PROVIDER_HEADER_1",
+             "x'`!" => "HELMSMAN_PROVIDER_HEADER_2"
+           }
+
+    assert {"HELMSMAN_PROVIDER_HEADER_1", "HEADER_ONE_SENTINEL"} in launch.env
+    assert {"HELMSMAN_PROVIDER_HEADER_2", "HEADER_TWO_SENTINEL"} in launch.env
+    refute List.last(launch.argv) =~ ",http_headers="
+
+    for text <- [
+          inspect(launch),
+          inspect(launch.argv),
+          inspect(launch.events),
+          IO.iodata_to_binary(launch.stdin)
+        ] do
+      refute text =~ "HEADER_ONE_SENTINEL"
+      refute text =~ "HEADER_TWO_SENTINEL"
+    end
+
+    assert File.ls!(Config.home()) == []
+  end
+
+  test "empty headers preserve the previous provider argv and environment exactly" do
+    account = bound().agent.provider_account
+
+    assert Provider.argv(account) == [
+             "-c",
+             ~s(model_provider="helmsman_account"),
+             "-c",
+             ~s(model_providers.helmsman_account={name="Helmsman provider account",base_url="https://account.example/v1",wire_api="responses",env_key="HELMSMAN_PROVIDER_API_KEY"})
+           ]
+
+    assert Provider.env(account) == [
+             {"HELMSMAN_PROVIDER_API_KEY", "ACCOUNT_SENTINEL"}
+           ]
   end
 
   test "provider custom config conflicts removed in separated, inline and quoted forms", %{

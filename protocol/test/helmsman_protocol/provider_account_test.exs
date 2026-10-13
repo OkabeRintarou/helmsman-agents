@@ -6,7 +6,8 @@ defmodule HelmsmanProtocol.ProviderAccountTest do
     %{
       "base_url" => "https://api.example.com/anthropic",
       "api_key" => "provider-secret-sentinel",
-      "models" => %{"default" => "model-example"}
+      "models" => %{"default" => "model-example"},
+      "headers" => []
     }
   end
 

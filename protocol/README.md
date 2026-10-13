@@ -6,7 +6,7 @@
 
 连接 `wss://<server>/daemon/socket/websocket`，令牌通过 `x-helmsman-token` 请求头传递，不能放在 URL 中。
 每个守护进程只加入 `daemon:<daemon_id>`，路径、请求头及 topic 由 `HelmsmanProtocol` 提供。
-`join.protocol` 声明守护进程版本；当前版本为 4，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。Phoenix 的 `vsn` 是序列化版本。
+`join.protocol` 声明守护进程版本；当前版本为 5，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。Phoenix 的 `vsn` 是序列化版本。
 
 所有枚举严格校验：未知消息、事件、provider、状态、失败原因或错误码均被拒绝。
 新增枚举值或消息、删除或改变字段的类型和语义必须升版本；新增可选字段可不升版本，接收方忽略未知字段。
@@ -86,7 +86,7 @@ model、effort 为可空字符串，非空值 1–128 字节；env 为字符串 
 provider_account 非空时含 base_url（1–2048 字节）、api_key（1–8192 字节）和 models（字符串 map，最多 8 项，值 1–128 字节）。
 `ProviderAccount.model_aliases/1` 返回 Claude 的 default / opus / sonnet / haiku / fable / subagent，Codex 的 default；协议接受两者的并集。
 按目标版本 1 编码 claim 回复时，空账号省略 provider_account 键；非空账号返回 `{:error, {:not_in_version, 1}}`，服务端必须跳过这类运行。
-Inspect 隐去账号 api_key，保留 base_url 与 models；低版本编码仅处理运行账号字段，不改 Agent 的自由 JSON 内容。
+Inspect 隐去账号 api_key 与 headers 的值，保留请求头名字、base_url 与 models；低版本编码仅处理运行账号字段，不改 Agent 的自由 JSON 内容。
 repo 非空时 github_repository_id 为必填正整数（GitHub 仓库 ID，改名和转移后不变）；git_token 和令牌过期时间必填；其他仓库标量为非空字符串。
 trigger.kind 与可空 reason 为 1–64 字节自由字符串，feedback_id 可空；新增触发名称无需升版本。
 Inspect 隐去 env 的值、extra_mcp_servers 与各令牌，保留环境变量名；to_wire 保留原始值。
@@ -153,3 +153,5 @@ expired_token / access_denied 返回 error；426 先验证结构化 ErrorReply �
 
 `mise exec -- mix precommit` 与 `mise exec -- mix dialyzer`。
 测试包含字段边界、嵌套错误路径、脱敏、消息目录，以及每个核心结构各 200 次固定种子的 JSON 往返。
+
+供应商账号请求头从 `HelmsmanProtocol.provider_account_headers_version/0`（5）起支持：`headers` 为最多 8 项的 `{name, value}` 列表（默认空）；名字 1–64 字节 HTTP token，不区分大小写唯一且禁止保留名；值 1–4096 字节可见 ASCII/内部空格。Inspect 隐去值。按低于 5 的目标版本编码 claim 时，空 headers 省略，非空返回 `{:not_in_version, version}`。

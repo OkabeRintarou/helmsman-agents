@@ -9,12 +9,36 @@ defmodule HelmsmanDaemon.Adapters.Codex.Provider do
       "-c",
       "model_providers.helmsman_account={name=\"Helmsman provider account\",base_url=" <>
         JSON.encode!(account.base_url) <>
-        ",wire_api=\"responses\",env_key=\"HELMSMAN_PROVIDER_API_KEY\"}"
+        ~s(,wire_api="responses",env_key="HELMSMAN_PROVIDER_API_KEY") <>
+        header_config(account.headers) <> "}"
     ]
   end
 
   def env(nil), do: []
-  def env(account), do: [{"HELMSMAN_PROVIDER_API_KEY", account.api_key}]
+
+  def env(account) do
+    headers =
+      Enum.map(Enum.with_index(account.headers, 1), fn {header, index} ->
+        {header_env(index), header.value}
+      end)
+
+    [{"HELMSMAN_PROVIDER_API_KEY", account.api_key} | headers]
+  end
+
+  defp header_config([]), do: ""
+
+  defp header_config(headers) do
+    entries =
+      headers
+      |> Enum.with_index(1)
+      |> Enum.map_join(",", fn {header, index} ->
+        JSON.encode!(header.name) <> "=" <> JSON.encode!(header_env(index))
+      end)
+
+    ",env_http_headers={" <> entries <> "}"
+  end
+
+  defp header_env(index), do: "HELMSMAN_PROVIDER_HEADER_#{index}"
   def model(%{model: model}) when model not in [nil, ""], do: model
   def model(%{provider_account: nil}), do: nil
   def model(%{provider_account: account}), do: account.models["default"]

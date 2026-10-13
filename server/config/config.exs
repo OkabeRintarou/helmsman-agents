@@ -146,3 +146,6 @@ config :mdex_native, syntax_highlighter: :lumis
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+# Provider headers, like API keys, are write-only credentials in form parameters.
+config :phoenix, :filter_parameters, ["password", "secret", "api_key", "headers"]

@@ -35,7 +35,14 @@ defmodule Helmsman.Agents.ProviderAccountBindingTest do
   describe "binding" do
     test "the user's own account (scenario)", ctx do
       assert {:ok, %{provider_account: summary}} = bind(ctx, ctx.zai.id)
-      assert summary == %{id: ctx.zai.id, name: "zai", cli: "claude", host: "api.z.ai"}
+
+      assert summary == %{
+               id: ctx.zai.id,
+               name: "zai",
+               cli: "claude",
+               host: "api.z.ai",
+               headers: []
+             }
 
       {_viewer, viewer_scope} = member_scope_fixture(ctx.workspace, :viewer)
       assert {:ok, view} = Agents.get(viewer_scope, "keel/dev")

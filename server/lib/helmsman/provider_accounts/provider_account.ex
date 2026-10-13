@@ -10,6 +10,7 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  alias Helmsman.ProviderAccounts.Headers
 
   @type t :: %__MODULE__{}
 
@@ -18,7 +19,7 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
   @max_key 8_192
   @max_model 128
 
-  @derive {Inspect, except: [:api_key]}
+  @derive {Inspect, except: [:api_key, :headers]}
   schema "provider_accounts" do
     belongs_to :user, Helmsman.Accounts.User
     field :name, :string
@@ -26,6 +27,8 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
     field :base_url, :string
     field :api_key, Helmsman.Encrypted.Binary, redact: true
     field :models, :map, default: %{}
+    field :header_names, {:array, :string}, default: []
+    field :headers, Helmsman.Encrypted.Binary, redact: true
     timestamps(type: :utc_datetime)
   end
 
@@ -54,10 +57,35 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
     |> validate_base_url()
     |> validate_api_key()
     |> validate_models()
+    |> apply_headers(attrs, account)
     |> unique_constraint(:name,
       name: :provider_accounts_user_id_name_index,
       message: "is already used by another of your provider accounts"
     )
+    |> scrub_invalid()
+  end
+
+  defp scrub_invalid(%{valid?: false} = cs), do: scrub(cs)
+  defp scrub_invalid(cs), do: cs
+
+  defp apply_headers(cs, attrs, account) do
+    case Headers.apply(attrs, account) do
+      {:ok, headers} ->
+        if headers != [] and get_field(cs, :cli) == "claude" do
+          add_error(cs, :headers, "Claude Code accounts do not support custom headers yet")
+        else
+          put_headers(cs, headers)
+        end
+
+      {:error, message} ->
+        add_error(cs, :headers, message)
+    end
+  end
+
+  defp put_headers(cs, headers) do
+    cs
+    |> put_change(:header_names, Enum.map(headers, & &1["name"]))
+    |> put_change(:headers, if(headers == [], do: nil, else: JSON.encode!(headers)))
   end
 
   defp drop_blank_key(attrs),
@@ -199,15 +227,15 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
   def scrub(%Ecto.Changeset{} = cs) do
     data =
       case cs.data do
-        %__MODULE__{} = data -> %{data | api_key: nil}
+        %__MODULE__{} = data -> %{data | api_key: nil, headers: nil}
         data -> data
       end
 
     %{
       cs
       | data: data,
-        changes: Map.delete(cs.changes, :api_key),
-        params: cs.params && Map.drop(cs.params, ["api_key", :api_key])
+        changes: Map.drop(cs.changes, [:api_key, :headers]),
+        params: cs.params && Map.drop(cs.params, ["api_key", :api_key, "headers", :headers])
     }
   end
 end

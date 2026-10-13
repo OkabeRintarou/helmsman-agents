@@ -14,6 +14,7 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Daemons.{Daemon, Runtime}
   alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Policy
+  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Origin, Outcome, TaskGrant}
@@ -253,18 +254,20 @@ defmodule Helmsman.Dispatch do
             on: r.id == p.runtime_id,
             left_join: d in Daemon,
             on: d.id == r.daemon_id,
+            left_join: account in ProviderAccount,
+            on: account.id == p.provider_account_id,
             where: a.workspace_id == ^workspace_id and a.kind == :agent and is_nil(p.archived_at),
-            select: {a, p, r, {d.name, d.protocol_version}}
+            select: {a, p, r, {d.name, d.protocol_version, account.header_names}}
           )
         )
 
       role = user_id && member_role(workspace_id, user_id)
 
       {:ok,
-       Map.new(agents, fn {actor, profile, runtime, {daemon_name, protocol}} ->
+       Map.new(agents, fn {actor, profile, runtime, {daemon_name, protocol, headers}} ->
          {actor.name,
           %{
-            result: dispatchable(profile, actor, {user_id, role}, {runtime, protocol}),
+            result: dispatchable(profile, actor, {user_id, role}, {runtime, protocol, headers}),
             runtime: runtime && runtime_view(runtime, daemon_name)
           }}
        end)}
@@ -280,20 +283,26 @@ defmodule Helmsman.Dispatch do
         )
       )
 
-  defp dispatchable(profile, actor, user, {runtime, protocol}) do
+  defp dispatchable(profile, actor, user, {runtime, protocol, headers}) do
     case TriggerRule.check(profile, actor, user) do
       :ok when is_nil(runtime) -> {:skipped, :no_runtime}
       :ok when not is_nil(runtime.disabled_at) -> {:skipped, :runtime_disabled}
-      :ok -> if outdated?(profile, protocol), do: {:skipped, :daemon_outdated}, else: :ok
+      :ok -> if outdated?(profile, protocol, headers), do: {:skipped, :daemon_outdated}, else: :ok
       {:error, reason} -> {:skipped, reason}
     end
   end
 
   # A daemon that never reported its version counts as outdated.
-  defp outdated?(%AgentProfile{provider_account_id: nil}, _protocol), do: false
+  defp outdated?(%AgentProfile{provider_account_id: nil}, _protocol, _headers), do: false
 
-  defp outdated?(_profile, protocol),
-    do: (protocol || 0) < HelmsmanProtocol.provider_account_version()
+  defp outdated?(_profile, protocol, headers) do
+    required =
+      if headers in [nil, []],
+        do: HelmsmanProtocol.provider_account_version(),
+        else: HelmsmanProtocol.provider_account_headers_version()
+
+    (protocol || 0) < required
+  end
 
   defp runtime_view(runtime, daemon_name) do
     %{

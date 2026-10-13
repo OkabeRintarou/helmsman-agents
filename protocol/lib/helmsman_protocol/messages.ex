@@ -161,7 +161,8 @@ defmodule HelmsmanProtocol.Messages do
   end
 
   defp encode_run(run, version) do
-    with {:ok, run} <- encode_account(run, version) do
+    with {:ok, run} <- encode_account(run, version),
+         {:ok, run} <- encode_headers(run, version) do
       encode_repo(run, version)
     end
   end
@@ -171,6 +172,21 @@ defmodule HelmsmanProtocol.Messages do
       version >= HelmsmanProtocol.provider_account_version() -> {:ok, run}
       is_nil(run["agent"]["provider_account"]) -> {:ok, drop_in(run, "agent", "provider_account")}
       true -> {:error, {:not_in_version, version}}
+    end
+  end
+
+  defp encode_headers(run, version) do
+    account = run["agent"]["provider_account"]
+
+    cond do
+      version >= HelmsmanProtocol.provider_account_headers_version() or is_nil(account) ->
+        {:ok, run}
+
+      account["headers"] == [] ->
+        {:ok, update_in(run, ["agent", "provider_account"], &Map.delete(&1, "headers"))}
+
+      true ->
+        {:error, {:not_in_version, version}}
     end
   end
 

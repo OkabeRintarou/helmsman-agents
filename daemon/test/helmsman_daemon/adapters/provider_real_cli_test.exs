@@ -300,6 +300,55 @@ defmodule HelmsmanDaemon.Adapters.ProviderRealCLITest do
     refute_receive {:provider_request, :sentinel, _}, 200
   end
 
+  test "real Codex delivers account headers without command-line or file leakage", ctx do
+    expected = %{
+      "Ocp-Apim-Subscription-Key" => "HEADER_ONE_SENTINEL",
+      "user" => "HEADER_TWO_SENTINEL"
+    }
+
+    {url, stop} = ProviderHTTP.start(self(), :headers, "ACCOUNT_SENTINEL", expected)
+    on_exit(stop)
+    run = bound(:codex, url <> "/account/v1")
+
+    run =
+      put_in(
+        run.agent.provider_account.headers,
+        Enum.map(expected, fn {name, value} -> %{name: name, value: value} end)
+      )
+
+    worker = launch(run, Codex, ctx.base_env)
+    monitor = Process.monitor(worker)
+    assert_receive {:provider_headers, :headers, classes, server}, 60_000
+    assert classes == %{"Ocp-Apim-Subscription-Key" => :account, "user" => :account}
+    %{pgid: pid} = :sys.get_state(worker)
+    cmdline = File.read!("/proc/#{pid}/cmdline")
+    for value <- Map.values(expected), do: refute(cmdline =~ value)
+    refute cmdline =~ "ACCOUNT_SENTINEL"
+    send(server, :continue_provider)
+    assert_receive {:provider_request, :headers, request}, 10_000
+    assert request.credentials["authorization"] == :account
+    # The fake service may ask the CLI to run its shell tool before the final response.
+    assert_receive {:provider_headers, :headers, ^classes, server}, 10_000
+    send(server, :continue_provider)
+    {finished, events} = collect(1, [])
+    assert finished.status == :succeeded
+    assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 5_000
+
+    for value <- Map.values(expected) ++ ["ACCOUNT_SENTINEL"] do
+      refute inspect({finished, events}, limit: :infinity) =~ value
+
+      for path <- Path.wildcard(Path.join(ctx.tmp_dir, "**/*"), match_dot: true),
+          File.regular?(path),
+          do:
+            refute(
+              File.read!(path) =~ value,
+              "header secret persisted in temporary CLI directories"
+            )
+    end
+
+    refute_receive {:provider_request, :sentinel, _}
+  end
+
   defp verify_requests do
     receive do
       {:provider_request, :account, request} ->

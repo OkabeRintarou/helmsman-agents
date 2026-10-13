@@ -39,7 +39,10 @@ defmodule HelmsmanProtocol.Schema do
   defmacro __before_compile__(env) do
     fields = env.module |> Module.get_attribute(:protocol_fields) |> Enum.reverse()
     compiled = Enum.map(fields, fn {name, type, opts} -> {name, compile_type(type), opts} end)
-    struct_fields = Enum.map(fields, fn {name, _, _} -> {name, nil} end)
+
+    struct_fields =
+      Enum.map(fields, fn {name, _, opts} -> {name, Keyword.get(opts, :default)} end)
+
     types = Enum.map(fields, fn {name, type, opts} -> {name, field_type(type, opts)} end)
 
     definitions =
@@ -145,9 +148,11 @@ defmodule HelmsmanProtocol.Schema do
   end
 
   defp decode_present(:error, _, opts, _, _, path) do
-    if opts[:nullable] == true and opts[:required] != true,
-      do: {:ok, nil},
-      else: invalid(path, :required)
+    cond do
+      Keyword.has_key?(opts, :default) -> {:ok, opts[:default]}
+      opts[:nullable] == true and opts[:required] != true -> {:ok, nil}
+      true -> invalid(path, :required)
+    end
   end
 
   defp decode_present({:ok, nil}, _, opts, _, _, path) do

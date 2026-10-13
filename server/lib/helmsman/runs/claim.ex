@@ -57,6 +57,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Links
   alias Helmsman.Locks
+  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec, Steering, Triggers}
@@ -98,7 +99,6 @@ defmodule Helmsman.Runs.Claim do
     state = %{
       daemon: daemon,
       protocol: protocol,
-      accounts?: protocol >= HelmsmanProtocol.provider_account_version(),
       base_url: base_url,
       tokens: tokens,
       slots: slots,
@@ -176,7 +176,7 @@ defmodule Helmsman.Runs.Claim do
          true <- task_free?(run),
          {:ok, locked} <- lock_rows(run, state.daemon.user_id),
          true <- agent_free?(locked.profile),
-         true <- state.accounts? or not bound_to_account?(locked.profile) do
+         true <- account_supported?(locked.profile, state.protocol) do
       # Read after the task lock and the check that the task has no active
       # run: the run a trigger waits for has ended, its facts are final.
       decide(run, Map.put(locked, :steers, Steering.facts(run.triggers)), state)
@@ -200,8 +200,18 @@ defmodule Helmsman.Runs.Claim do
   defp agent_free?(%AgentProfile{} = profile),
     do: active_count(:agent_id, profile.actor_id) < profile.max_concurrency
 
-  defp bound_to_account?(%AgentProfile{provider_account_id: id}), do: not is_nil(id)
-  defp bound_to_account?(nil), do: false
+  defp account_supported?(nil, _protocol), do: true
+  defp account_supported?(%AgentProfile{provider_account_id: nil}, _protocol), do: true
+
+  defp account_supported?(%AgentProfile{provider_account_id: id}, protocol) do
+    with true <- protocol >= HelmsmanProtocol.provider_account_version(),
+         {:ok, account} <- try_lock(from(a in ProviderAccount, where: a.id == ^id), :share) do
+      is_nil(account) or account.header_names == [] or
+        protocol >= HelmsmanProtocol.provider_account_headers_version()
+    else
+      _ -> false
+    end
+  end
 
   # Decision 24, in the global order. `:skip`: a writer holds one of them.
   defp lock_rows(run, daemon_user_id) do

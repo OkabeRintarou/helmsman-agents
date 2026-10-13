@@ -13,7 +13,12 @@ defmodule HelmsmanProtocol.RunSpec do
   embeds(:trigger, HelmsmanProtocol.RunSpec.Trigger)
 
   use HelmsmanProtocol.Redacted, [
-    {:nested, :agent, [:env, :extra_mcp_servers, {:nested, :provider_account, [:api_key]}]},
+    {:nested, :agent,
+     [
+       :env,
+       :extra_mcp_servers,
+       {:nested, :provider_account, [:api_key, {:nested, :headers, [:value]}]}
+     ]},
     {:nested, :repo, [:git_token]},
     {:nested, :mcp, [:token]}
   ]

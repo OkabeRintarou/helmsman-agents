@@ -524,6 +524,66 @@ defmodule HelmsmanWeb.DaemonChannelTest do
       assert DateTime.diff(Daemons.now(), seen) < 5
     end
 
+    test "version 4 claim omits headers and leaves header accounts queued", ctx do
+      assert {:ok, raw_socket} = connect_daemon(ctx.token)
+
+      payload =
+        join_payload(ctx.daemon, [claude(), %{claude() | provider: :codex}], %{protocol: 4})
+
+      assert {:ok, _reply, socket} =
+               subscribe_and_join(
+                 raw_socket,
+                 DaemonChannel,
+                 HelmsmanProtocol.topic(ctx.daemon.id),
+                 payload
+               )
+
+      runtime =
+        Enum.find(
+          runtimes(ctx.daemon),
+          &(&1.provider == "codex" and &1.workspace_id == ctx.acme.id)
+        )
+
+      scope = Helmsman.WorkspacesFixtures.workspace_scope_fixture(ctx.alice, ctx.acme)
+
+      account =
+        Helmsman.ProviderAccountsFixtures.provider_account_fixture(ctx.alice, %{
+          cli: "codex",
+          headers: %{"user" => "HEADER_SENTINEL"}
+        })
+
+      agent =
+        managed_agent_fixture(scope, %{
+          name: "channel/headers",
+          provider: "codex",
+          runtime_id: runtime.id,
+          provider_account_id: account.id
+        })
+
+      bound = Helmsman.RunsFixtures.run_fixture(Repo.get!(Helmsman.Actors.Actor, agent.actor_id))
+
+      plain_account =
+        Helmsman.ProviderAccountsFixtures.provider_account_fixture(ctx.alice, %{cli: "codex"})
+
+      plain_agent =
+        managed_agent_fixture(scope, %{
+          name: "channel/plain",
+          provider: "codex",
+          runtime_id: runtime.id,
+          provider_account_id: plain_account.id
+        })
+
+      plain =
+        Helmsman.RunsFixtures.run_fixture(Repo.get!(Helmsman.Actors.Actor, plain_agent.actor_id))
+
+      ref = push(socket, "claim", encode!(%Report.Claim{}))
+      assert_reply ref, :ok, reply
+      assert [%{"run_id" => id, "agent" => %{"provider_account" => account}}] = reply["runs"]
+      assert id == plain.id
+      refute Map.has_key?(account, "headers")
+      assert Repo.get!(Helmsman.Runs.Run, bound.id).status == :queued
+    end
+
     test "claim replies an empty run list (spec 空领取)", ctx do
       {socket, _} = joined(ctx.daemon, ctx.token)
       stale = DateTime.add(Daemons.now(), -60)

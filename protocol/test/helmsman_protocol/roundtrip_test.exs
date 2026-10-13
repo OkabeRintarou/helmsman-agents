@@ -49,6 +49,10 @@ defmodule HelmsmanProtocol.RoundtripTest do
     %{
       "base_url" => "https://api.example.com/#{id()}",
       "api_key" => "test-key-#{id()}",
+      "headers" =>
+        Enum.map(1..(:rand.uniform(9) - 1)//1, fn i ->
+          %{"name" => "X-Header-#{i}", "value" => "test header #{id()}"}
+        end),
       "models" => if(:rand.uniform(2) == 1, do: %{}, else: %{"default" => text()})
     }
   end

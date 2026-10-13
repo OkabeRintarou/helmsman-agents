@@ -23,7 +23,7 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Agents
   alias Helmsman.Feedback.Entry
   alias Helmsman.Feedback.Id, as: FeedbackId
-  alias Helmsman.ProviderAccounts.ProviderAccount
+  alias Helmsman.ProviderAccounts.{Headers, ProviderAccount}
   alias Helmsman.Repo
   alias Helmsman.Runs.{GitRepo, LocalRepo, Prompt, Run}
   alias Helmsman.Tasks.Task
@@ -88,7 +88,16 @@ defmodule Helmsman.Runs.Spec do
 
   defp provider_account(id) do
     account = Repo.get!(ProviderAccount, id)
-    %{base_url: account.base_url, api_key: account.api_key, models: account.models || %{}}
+
+    %{
+      base_url: account.base_url,
+      api_key: account.api_key,
+      models: account.models || %{},
+      headers:
+        Enum.map(Headers.decode(account.headers), fn header ->
+          %{name: header["name"], value: header["value"]}
+        end)
+    }
   end
 
   # `add-local-repositories` decision 13: the name only, no path or token.
