@@ -74,6 +74,7 @@ end
 | `run_agent(agent, task_id?, instructions?)` | 手动触发一个托管 Agent（13 §2.1「手动」）；受 12 §2.1 约束 |
 | `list_runs(task_id)` `cancel_run(run_id)` | 查看 / 停止运行 |
 | `delegate(task_id, to, instructions)` | 只在小队 leader 的运行里可用：把同一任务委派给小队成员（16 §1.2） |
+| `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` | 只对设计运行（能力 `design`）列出：读写创建对话的草稿，不能创建 Agent（12 §6，`add-agent-conversation`）；小队对话另有 `propose_squad`（16 §1.4） |
 
 所有写工具都接受可选的 `actor` / `author` 参数（03 §4 第 1 条），正常不需要；运行令牌下被忽略。
 

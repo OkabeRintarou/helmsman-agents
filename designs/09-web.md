@@ -16,6 +16,7 @@
 | `/w/:slug/t/:ident` | `TaskLive.Show` | 任务详情 |
 | `/w/:slug/query` | `QueryLive` | BQL 编辑、结果表、保存筛选器 |
 | `/w/:slug/agents`、`/w/:slug/agents/:name` | `AgentLive.Index` / `.Show` | Agent 列表、配置、运行与用量（12 §5） |
+| `/w/:slug/agent-design` | `AgentDesignLive` | 对话创建 Agent（12 §6）：对话 + 实时草稿、确认创建；只有本人能看；不放在 `/agents/*name` 下以免与 Agent 名冲突；`add-agent-conversation-ui` |
 | `/w/:slug/runs/:id` | `RunLive.Show` | 单次运行的完整执行记录（任务页里的弹窗也能看，这里便于分享链接） |
 | `/w/:slug/squads` | `SquadLive.Index` | 小队（16 §3） |
 | `/w/:slug/autopilots`、`/w/:slug/autopilots/:id` | `AutopilotLive.*` | 自动化（16 §3） |
@@ -78,6 +79,7 @@
 | `workspace:<id>:runs` | `DashboardLive`、`AgentLive.*`、侧栏 | Agent 忙闲、队列长度（13 §9） |
 | `workspace:<id>:runtimes` | `RuntimesLive`、`AgentLive.*` | 机器上线 / 离线 |
 | `run:<id>` | 运行记录弹窗、`RunLive.Show` | 追加执行事件；事件很多时只保留最近 500 条在页面上，更早的按需加载 |
+| `agent_design:<id>` | `AgentDesignLive`（`get` 成功后才订阅） | 对话、草稿或状态变了 → 重读（消息只含 ID）；当前轮的实时文本另订阅它的 `run:<id>` |
 | `user:<id>` | 根布局 | 被移出工作区 / 角色变化 → 重新挂载 |
 
 列表页用 LiveView streams，不在 socket 里保存整张表；分页用「加载更多」。执行记录同样用 streams。

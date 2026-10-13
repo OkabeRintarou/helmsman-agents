@@ -238,17 +238,21 @@ helmsman-agents/
 | 45 | M5 | `add-run-read-models` | 架构 | #22 界面所需的只读领域函数：Agent 可派发性、任务的运行中 Agent、Agent 用量、Agent 视图的最近运行与权限、守护进程在线（`add-agents-runs-ui` 领域请求 R1、R5–R8） | 17、18、19 |
 | 46 | M5 | `add-provider-accounts` | 架构 | 用户所属的供应商账号（地址、只写的加密密钥、模型映射），托管 Agent 选择其一；RunSpec 带账号、协议升版本、旧守护进程不领取；Claude 用 `--settings` 覆盖 + `apiKeyHelper` 读进程环境、Codex 用保留的 `model_providers.helmsman_account`，密钥不落盘，凭据来源不符即中止。先实测再实现 | 17、19、45；Claude 部分需 21 的 `add-claude-adapter`，Codex 部分需 `add-codex-adapter` |
 | 47 | M5 | `add-provider-accounts-ui` | 前端 | 个人设置页 `/users/settings/provider-accounts`（列表、新建 / 编辑面板、删除确认与使用中的 Agent）；Agent 新建 / 编辑面板的「供应商账号」下拉（空 = CLI 默认登录）、详情页摘要（账号名 + 主机）与 `env` 提示 | 22、46 |
+| 52 | M6 | `update-codex-user-home` | 架构 | 用户决定：Codex 缺省用用户自己的 Codex 目录（继承的 `CODEX_HOME` 或 `~/.codex`，守护进程只读），终端里配好的登录 / provider / 网关 / 请求头直接生效，会话进用户的 Codex 历史；私有目录改为可选（`[codex] home`）；用户配置里的 MCP 服务器按名字设为不启用（守卫兜底），同名 `helmsman` 不能被取代时不可用；模型来源检查按所用目录与 profile，未定义的自定义 provider / 缺 `env_key` 变量启动前 `provider_auth`；只在私有目录清理快照；会话恢复只看最近一次启动过 CLI 的运行（§9.5） | 21（`add-codex-adapter` 先归档） |
 | 27 | M6 | `add-github-ui` | 前端 | GitHub 设置页、项目绑定 GitHub 仓库与合并设置、PR 卡片、重新验收 / 立即合并 / 重试、验收面板的合并预告；本地仓库部分拆到 #48（`add-github-ui` 决策记录） | 22、26 |
 | 48 | M6 | `add-local-repositories-ui` | 前端 | 本地仓库模式的界面：项目绑定本地仓库（与 GitHub 切换）、本地分支卡片（审查命令、合并状态、标记已合并）、指派到别的机器时的提示、切换模式的提示（#44 决策 5、6、10、12）；在 #27 预留的位置上实现 | 27、44 |
 | 28 | M7 | `add-run-steering` | 架构 | 插话、回执、兜底触发 | 19、21、25 |
 | 29 | M7 | `add-copilot-adapter`、`add-cursor-adapter` | 架构 | 两个独立变更，先实测再实现，做不到隔离就不启用（`add-codex-adapter` 已提前到 21） | 20 |
+| 49 | M7 | `add-agent-conversation` | 架构 | 对话创建 Agent（12 §6）：创建对话（每人每工作区一个）、每轮一条无任务的设计运行（不恢复会话、服务端重放对话记录，能力 `read` + `design`，不重试）、草稿工具 `get_design` / `propose_agent` / `withdraw_agent`、用户改草稿、确认后一次创建多个 Agent、停止 / 排队超时 / 过期；小队接口定好，#34 落地。M6 之后，不阻塞首个可用版本 | 19、45、46、47 |
+| 50 | M7 | `add-agent-conversation-ui` | 前端 | 对话创建页 `/w/:slug/agent-design`：起草 Agent 选择与可见性说明、对话（实时文本、停止、换起草 Agent）、实时草稿卡片（编辑 / 移除 / 敏感取值提示）、确认 / 放弃；运行列表的「创建对话」触发（`add-agent-conversation` 决策 14） | 22、47、49 |
+| 51 | M7 | `add-provider-account-headers` | 架构 | 验收 C 拆出（`add-provider-accounts` 决策 20）：Codex 账号的自定义请求头（值只写、加密，经 `env_http_headers` + 进程环境下发，协议 5，旧守护进程不领取）；账号面板的请求头编辑由 hm-frontend 在同一变更里做。用户目录模式（#52）下用户网关已可用，本项用于同一机器上不同 Agent 走不同网关 / 分别计费；收紧检查已移到 #52 | 46、47、52 |
 | 30 | M8 | `add-epics` | 架构 | Epic 校验、进度、自动级联 | 9 |
 | 31 | M8 | `add-task-links` | 架构 | 替代 / 依赖、成环检测、`blocked`（只看状态） | 9 |
 | 32 | M8 | `add-dependency-dispatch` | 架构 | `deferred` 运行、依赖满足触发、`satisfied?` 的 PR 规则与本地分支已合并规则（07 §3）、领取时复查 | 18、26、31、44 |
 | 33 | M8 | 关联与协作界面 | 前端 | Epic 进度 / 步骤、关联与阻塞标记、插话勾选框、提及置灰说明 | 13、22、25、28、30、31 |
-| 34 | M9 | `add-squads` | 架构 | 小队 actor、leader 运行、`delegate` / `delegate_done`、独立性扩展 | 25、26 |
+| 34 | M9 | `add-squads` | 架构 | 小队 actor、leader 运行、`delegate` / `delegate_done`、独立性扩展；对话创建小队（`propose_squad`、一次确认创建小队与新成员，16 §1.4） | 25、26；对话创建小队需 49 |
 | 35 | M9 | `add-autopilots` | 架构 | 定时 / 手动 / webhook、两种模式、`overlap`、失败停用 | 18、24 |
-| 36 | M9 | 小队与自动化界面 | 前端 | 小队页、自动化页 | 22、34、35 |
+| 36 | M9 | 小队与自动化界面 | 前端 | 小队页、自动化页；对话创建小队（在 #50 的页面上加小队草稿） | 22、34、35；对话创建小队需 50 |
 | 37 | M10 | `add-fulltext-search` | 架构 | 分词、检索列同事务写入、reindex、片段 | 11 |
 | 38 | M10 | `add-bql-filters` | 架构 | BQL 解析 / 编译、bosun 兼容用例、保存的筛选器、MCP 查询工具 | 37；`run` / `pr` / `squad` 字段需 19、26、34 |
 | 39 | M10 | 检索与查询界面 | 前端 | 命令面板的任务检索、列表搜索框、BQL 页、侧栏筛选器 | 3、38 |
@@ -261,6 +265,7 @@ helmsman-agents/
 
 - 16、20、21 只依赖协议，可以和 M1–M4 同时做；17 只依赖 4，可以和 M2–M4 并行。
 - 5、6、8 在 4 之后并行；9 与 12 并行；23 在 8 合并后即开工（已定，缩短到 M6 的时间），与 M3–M5 并行。
+- 49、50 不依赖 M6 的任何变更，但按用户的安排排在 M6 之后，与 M7 其他变更并行。
 - 25 只依赖 11、18，可在 M5 之后与 23、24 并行；30、31、37 在 M3 之后就能开工，不必等 M7；21 的两个适配器、29 的两个适配器互相并行。
 - 前端变更与同里程碑的后端变更并行开发：前端先按后端变更的规格（领域函数签名、PubSub 消息）用桩数据写页面，后端合并后再接上。
 
@@ -291,7 +296,7 @@ helmsman-agents/
 | ~~`run_events` 按月分区，但主键 `(run_id, seq)` 不含分区键（PostgreSQL 不允许）；分区由谁预建~~ 已解决：不分区，按运行整块清理（13 §1） | 19 `add-run-lifecycle` |
 | ~~插话的兜底触发在 13 §2 里没有对应的触发类型~~ 已解决：新发起触发 `steer`；被插话的运行成功结束且有回执才移除兜底（13 §2.1、§8） | 28 `add-run-steering` |
 | ~~运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas`~~ 已解决：`pushed` 不看运行状态，只看是否领取者当前代次的上报；`git_token` 在运行结束后 30 分钟内仍可续签（`add-daemon-git-workspace` 决策 4、5） | 24 `add-daemon-git-workspace` |
-| 恢复会话失败（CLI 找不到会话）的运行以 `cli_error` 结束且 `session_id` 为空；`add-run-lifecycle` 决策 11 取「最近结束且 `session_id` 非空」的运行，下一次又会恢复同一个失效的会话，持续失败。方向：只看最近一次终态运行，其 `session_id` 为空就开新会话 | 19 `add-run-lifecycle` |
+| ~~恢复会话失败（CLI 找不到会话）的运行以 `cli_error` 结束且 `session_id` 为空；`add-run-lifecycle` 决策 11 取「最近结束且 `session_id` 非空」的运行，下一次又会恢复同一个失效的会话，持续失败。方向：只看最近一次终态运行，其 `session_id` 为空就开新会话~~ 已解决：只看最近一次启动过 CLI 的已结束运行，它没有会话就开新会话（`update-codex-user-home` 决策 7） | 52 `update-codex-user-home` |
 | 未绑定供应商账号的 Claude Agent，仓库里的 `.claude/settings*.json` 能改 Claude Code 的供应商地址与凭据去向（`-p` 下不询问信任；`add-provider-accounts` 预探查 P6b）。绑定了账号的不受影响。方向待定：未绑定时也只钉住地址（需要读用户配置），或对不可信仓库拒绝运行（类似 Codex 的项目配置检查） | 未分配 |
 
 公开运行时的隔离问题（`isolation = user` 只有一个执行用户，不同用户的运行能互读 worktree 和 CLI 登录文件）已决定：本期不做公开运行时，守护进程只实现 `isolation = none`（12 §3.3、14 §9），两者推迟到扩展点（§10）。

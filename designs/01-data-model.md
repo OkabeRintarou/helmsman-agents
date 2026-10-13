@@ -66,7 +66,7 @@ erDiagram
 | 表 | 列 | 约束 / 索引 |
 |---|---|---|
 | `agent_profiles` | 只有托管 Agent 有这一行。`workspace_id`、`actor_id`、`provider`、`runtime_id`、`model`、`effort`、`instructions`、`description`、`access`、`access_member_ids bigint[]`、`capabilities text[]`、`max_concurrency`、`timeout_minutes`、`idle_timeout_minutes`、`custom_args text[]`、`env`（加密）、`extra_mcp_servers`（加密）、`provider_account_id`（可空，`add-provider-accounts`）、`wake_on_requested bool`（缺省 true，`add-continuation-triggers`）、`archived_at`、时间戳 | 唯一 `actor_id`；`provider_account_id` → `provider_accounts`（`ON DELETE RESTRICT`）；详见 12 §2 |
-| `provider_accounts` | `user_id`、`name citext`、`cli`（claude \| codex）、`base_url`、`api_key`（加密，只写）、`models jsonb`、时间戳 | 唯一 `(user_id, name)`；不属于某个工作区；每人最多 32 个；详见 12 §2.2 |
+| `provider_accounts` | `user_id`、`name citext`、`cli`（claude \| codex）、`base_url`、`api_key`（加密，只写）、`models jsonb`、`header_names text[]` 与 `headers`（加密，只写；只限 codex，`add-provider-account-headers`）、时间戳 | 唯一 `(user_id, name)`；不属于某个工作区；每人最多 32 个；详见 12 §2.2 |
 | `daemons` | `user_id`、`machine_id`、`name`、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash`、`previous_token_expires_at`、`auth_epoch`（授权代次）、`max_concurrency`、`last_seen_at`、`revoked_at`、时间戳 | 唯一 `(user_id, machine_id)`、`token_hash`、部分唯一 `previous_token_hash`；不属于某个工作区 |
 | `daemon_workspaces` | `daemon_id`、`workspace_id` | 主键 `(daemon_id, workspace_id)`；登录时勾选的工作区（12 §3.1），领取只能领这些工作区的运行 |
 | `device_codes` | `device_code_hash`、`user_code`、`machine jsonb`、`protocol_version`、`user_id`（确认后填）、`workspace_ids bigint[]`、`status`（pending \| approved \| denied \| used \| expired）、`interval`、`last_polled_at`、`expires_at` | 设备码登录（12 §3.1），10 分钟过期；部分唯一 `user_code WHERE status IN (pending, approved)`（发码前先把过期的置 `expired`） |
@@ -76,6 +76,8 @@ erDiagram
 | `task_grants` | `workspace_id`、`task_id`、`agent_id`、`kind`（assign \| requested；小队加 delegate）、`root_initiator_user_id`、`causal_agent_ids`、`granted_by_id`、`inserted_at` | 唯一 `(task_id, agent_id, kind)`；延续触发继承授权的来源（13 §2.2）；执行方变化时作废 `assign`；`requested` = 托管 Agent 在运行中建任务时记下的提出方授权，不作废 |
 | `run_events` | `run_id`、`seq`、`type`、`data jsonb`、`at` | 主键 `(run_id, seq)`；不分区，运行结束 30 天后按运行整块删除（13 §1） |
 | `run_steers` | `workspace_id`、`run_id`、`feedback_id`、`sent_at`、`acked_at`（守护进程回执，可空） | 主键 `(run_id, feedback_id)`；索引 `feedback_id`；一行 = 推送过的插话，`acked_at` 即回执（13 §8，`add-run-steering`） |
+| `agent_designs` | `workspace_id`、`user_id`、`helper_agent_id`、`kind`（agent；小队加 squad）、`status`（open \| confirmed \| discarded \| expired）、`draft jsonb`、`draft_version`、`pending_edits jsonb`（还没告诉 AI 的用户修改）、`current_run_id`、`user_messages`、`created_actor_ids bigint[]`、`last_activity_at`、`closed_at`、时间戳 | 部分唯一 `(workspace_id, user_id) WHERE status = 'open'`、`current_run_id WHERE NOT NULL`；对话创建 Agent（12 §6，`add-agent-conversation` 决策 3）；关闭 30 天后删除 |
+| `agent_design_messages` | `design_id`、`seq`、`role`（user \| assistant \| system）、`content`、`edits jsonb`（用户消息：发送时 `pending_edits` 的快照）、`code` / `detail`（系统消息）、`run_id`、`inserted_at` | 唯一 `(design_id, seq)`；部分唯一 `run_id WHERE role <> 'user'`（结算幂等） |
 | `squads` / `squad_members` | 见 16 §1.1 | `squads.actor_id` 唯一；`squad_members` 主键 `(squad_id, actor_id)` |
 | `autopilots` / `autopilot_runs` | 见 16 §2.1 | `autopilot_runs` 部分唯一 `(autopilot_id) WHERE status = 'started'`、`(autopilot_id) WHERE status = 'pending'`；唯一 `(autopilot_id, delivery_id)` |
 | `github_apps` | `app_id`、`slug`、`name`、`html_url`、`owner_login`、`client_id`、`client_secret`（加密）、`private_key`（加密）、`webhook_secret`（加密）、`created_by_id`、时间戳 | 实例级单行（15 §1）；环境变量配置时不用这张表 |

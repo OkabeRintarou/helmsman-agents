@@ -30,7 +30,7 @@
 ├── repos/local/<name>.git              # 本地仓库模式：从机器上用户仓库 fetch 的缓存（15 §8）
 ├── work/<workspace_id>/<ident>/        # 任务的 git worktree，同一任务的后续运行复用（用不变的工作区 ID）
 ├── scratch/<workspace>/<ident>/        # 没有仓库的任务的工作目录，同样复用（CLI 按工作目录保存会话）
-├── codex/                              # 守护进程专用的 CODEX_HOME（持久：Codex 的会话存在这里，恢复要用）；provider 与登录由机器主人配置，守护进程不写入
+├── codex/                              # 只在守护进程配置 `[codex] home` 指向这里时使用的私有 CODEX_HOME（持久，会话恢复要用）；缺省 Codex 用用户自己的目录（§4，`update-codex-user-home`）
 └── runs/<run_id>/                      # 单次运行的私有目录：MCP 配置、临时文件、原始日志
 ```
 
@@ -40,7 +40,7 @@
 - 能列出模型的 CLI 顺便取模型列表（例如 `cursor-agent --list-models`），连同支持的推理强度（如 Claude 的 `--effort`），随注册上报，供界面下拉。
 - 每 10 分钟重新检测一次；`helmsman daemon restart` 立即重测。
 - 一个 CLI 都没有时拒绝启动，并提示去安装。
-- 检测到 Codex、而守护进程专用的 `~/.helmsman/codex` 里既没有登录（`codex login status`）也没有选非 `openai` 的 provider 时，启动时打印一行提示；运行时照常上报为可用（同一运行时上绑定了供应商账号的 Agent 不受影响，`update-codex-provider-check`）。
+- 检测到 Codex、而所用的 Codex 目录（缺省为用户的 `~/.codex`，§4）没有可用的模型来源（未登录、选定的 provider 未定义或缺 `env_key` 变量）时，启动时打印一行提示；运行时照常上报为可用（同一运行时上绑定了供应商账号的 Agent 不受影响，`update-codex-provider-check`、`update-codex-user-home`）。原私有目录 `~/.helmsman/codex` 存在而未配置 `[codex] home` 时另提示一次。
 
 ## 3. 与服务端的协议
 
@@ -113,7 +113,7 @@
 | | 启动命令（无人值守） | 提示词怎么给 | 注入 Helmsman MCP | 恢复会话 | 插话 |
 |---|---|---|---|---|---|
 | **Claude Code** | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode bypassPermissions --strict-mcp-config --mcp-config <run_dir>/mcp.json [--model] [--effort] [--resume <id>]` | stdin 写一帧 stream-json 用户消息，stdin 保持打开；收到 `result` 后关闭 stdin | `--mcp-config` 指向私有目录里的 JSON（HTTP 服务器 + `Authorization: Bearer ${HELMSMAN_RUN_TOKEN}`，CLI 展开环境变量，令牌不落盘；2.1.246 实测，`add-claude-adapter` 决策 16） | `--resume` | stdin 再写一帧用户消息；送达信号与关闭 stdin 的时机以实测为准，找不到可靠信号则不支持（`add-run-steering` 决策 12） |
-| **Codex** | `codex app-server --disable shell_snapshot --disable shell_snapshot_v2`（stdio 上的 JSON-RPC：`initialize` → `thread/start` 或 `thread/resume` → `turn/start`；审批 `never`、沙箱 `danger-full-access`），环境变量 `CODEX_HOME=~/.helmsman/codex` | `turn/start` 的参数 | `thread/start` 的 `config` 写 `mcp_servers.helmsman = {url, bearer_token_env_var = "HELMSMAN_RUN_TOKEN"}`（streamable HTTP，令牌不落盘、不进命令行）。用守护进程专用、持久的 `CODEX_HOME` 隔离：守护进程**不读不改不复制**用户的 `~/.codex`，provider 与登录由机器主人在其中配置一次；该目录的 `config.toml` 定义了 MCP 服务器时 CLI 不可用；工作目录或仓库根有 `.codex/config.toml` 时拒绝运行（`workspace_prepare`，未信任的项目配置也会生效）。不支持 MCP prompts（提示词只依赖工具与资源） | `thread/resume` | 当前 turn 内追加输入（`turn/steer`），成功回复即送达（`add-run-steering` 决策 11） |
+| **Codex** | `codex app-server --disable shell_snapshot --disable shell_snapshot_v2`（stdio 上的 JSON-RPC：`initialize` → `thread/start` 或 `thread/resume` → `turn/start`；审批 `never`、沙箱 `danger-full-access`），环境变量 `CODEX_HOME` = 用户的 Codex 目录（继承的 `CODEX_HOME` 或 `~/.codex`；守护进程配置 `[codex] home` 时为该私有目录） | `turn/start` 的参数 | `thread/start` 的 `config` 写 `mcp_servers.helmsman = {url, bearer_token_env_var = "HELMSMAN_RUN_TOKEN"}`（streamable HTTP，令牌不落盘、不进命令行）。缺省用用户自己的 Codex 目录（`update-codex-user-home`，与 Claude 用 `~/.claude` 一致）：终端里配好的登录、provider、网关与请求头直接生效，托管会话出现在用户的 Codex 历史里；守护进程对该目录只读（不建、不写、不删）。该目录 `config.toml` 里的 MCP 服务器在托管运行里按名字设为不启用（运行时守卫兜底），用户自己定义的 `helmsman` 服务器不能被注入完全取代时 CLI 不可用；工作目录或仓库根有 `.codex/config.toml` 时拒绝运行（`workspace_prepare`，未信任的项目配置也会生效）。不支持 MCP prompts（提示词只依赖工具与资源） | `thread/resume` | 当前 turn 内追加输入（`turn/steer`），成功回复即送达（`add-run-steering` 决策 11） |
 | **Copilot CLI** | `copilot -p <prompt> --output-format json --allow-all --no-ask-user --disable-builtin-mcps --additional-mcp-config @<run_dir>/mcp.json [--model] [--resume <id>]`，环境变量 `COPILOT_HOME=<run_dir>/copilot-home` | 命令行参数（所以提示词要短，13 §6） | `--additional-mcp-config @文件`（注意 `@` 前缀，否则会被当作 JSON 字符串）。它会**追加**而不是替换用户的 `mcp-config.json`，所以用私有的 `COPILOT_HOME` 隔离，只放入登录所需的文件 | `--resume` | 不支持 → 结束后续跑 |
 | **Cursor CLI** | `cursor-agent -p --output-format stream-json --force --workspace <work_dir> [--model] [--resume <id>]`，环境变量 `CURSOR_DATA_DIR=<run_dir>/cursor-data` | stdin（写完关闭） | Cursor 只从项目目录读 MCP 配置：写 `<work_dir>/.cursor/mcp.json`，并在私有的 `CURSOR_DATA_DIR` 里只批准这一个服务器（不用 `--approve-mcps`，否则仓库和用户已有的 MCP 也会被批准）。仓库里已有 `.cursor/mcp.json` 时**拒绝运行**（`workspace_prepare`），不覆盖；文件加进 `$(git rev-parse --git-path info/exclude)` | `--resume` | 不支持 → 结束后续跑 |
 
@@ -123,8 +123,8 @@
 - Claude Code 拒绝在 root 下用 `bypassPermissions`：守护进程以 root 运行时启动直接失败，提示换用普通用户（与 §9 的安全建议一致）。
 - **供应商账号**（12 §2.2，`add-provider-accounts`）：RunSpec 带 `agent.provider_account` 时才生效，否则启动方式与上表逐字节相同。
   - Claude Code：用户 `settings.json` 的 `env` 高于进程环境，仓库的 `.claude/settings*.json` 更高，命令行 `--settings` 最高（托管策略除外）。所以加 `--settings <run_dir>/claude-settings.json`（0600，不含密钥、不含 `null`——含 `null` 的设置文件会被整个静默忽略）：把决定地址、凭据、模型的全部变量先置空串再写入账号的地址与模型映射，顶层 `model` 同样覆盖，`apiKeyHelper` 改为 `printenv HELMSMAN_PROVIDER_API_KEY`（设置文件的 `env` 不展开变量，helper 让密钥只留在进程环境里）。不换 `CLAUDE_CONFIG_DIR`：那样用户的登录、hooks、会话都不加载，仓库设置仍能改地址。守卫：初始化行的 `apiKeySource` 不是 `apiKeyHelper` 就中止运行。
-  - Codex：守护进程不读用户的 `~/.codex`；专用目录 `config.toml` 的 `model_provider` 高于 `OPENAI_*` 环境变量，`-c` 高于 `config.toml`，`-c` 对已有 id 逐键合并。所以用保留 id：`-c model_provider="helmsman_account" -c model_providers.helmsman_account={base_url=…, wire_api="responses", env_key="HELMSMAN_PROVIDER_API_KEY"}`；专用 `config.toml` 定义了这个 id 时 CLI 不可用；`thread/start` 回复的 `modelProvider` 不是它就中止。
-  - Codex 启动前检查模型来源（`update-codex-provider-check`）：绑定了账号、按 CLI 优先级算出的有效 provider 不是 `openai`（Agent 参数里最后一个 `model_provider` 高于专用目录的配置）、或在专用目录下 `codex login status` 已登录，任一成立才启动（0.162.1 的缺省 provider 不读 `OPENAI_API_KEY` 等环境变量，API key 要用 `codex login --with-api-key` 存进专用目录）；全部明确不成立时不启动，运行以 `provider_auth` 失败（不自动重试），错误说明怎样配置——否则缺省的 OpenAI provider 在连不上时会一直重试，把任务占住半小时以上。判断不了时照常启动。
+  - Codex：所用 Codex 目录（缺省为用户的）`config.toml` 的 `model_provider` 高于 `OPENAI_*` 环境变量，`-c` 高于 `config.toml`，`-c` 对已有 id 逐键合并。所以用保留 id：`-c model_provider="helmsman_account" -c model_providers.helmsman_account={base_url=…, wire_api="responses", env_key="HELMSMAN_PROVIDER_API_KEY"}`；专用 `config.toml` 定义了这个 id 时 CLI 不可用；`thread/start` 回复的 `modelProvider` 不是它就中止。账号带自定义请求头时同一个 `-c` 加 `env_http_headers`（名字 → `HELMSMAN_PROVIDER_HEADER_<i>`），值只在进程环境里，不用会把值放进命令行的 `http_headers`（`add-provider-account-headers`）。
+  - Codex 启动前检查模型来源（`update-codex-provider-check`，`update-codex-user-home` 改为针对所用目录并纳入 profile）：绑定了账号、按 CLI 优先级算出的有效 provider 不是 `openai`（Agent 参数里最后一个 `model_provider` 高于所用目录配置里选定 profile 的、再高于顶层的；它必须是内置的本地 provider（`ollama`、`lmstudio`）、在 Agent 参数里定义、或在所用目录配置里定义且 `env_key` 变量存在，`update-codex-user-home` 决策 5）、或在所用目录下 `codex login status` 已登录，任一成立才启动（0.162.1 的缺省 provider 不读 `OPENAI_API_KEY` 等环境变量，API key 要用 `codex login --with-api-key` 存进所用目录）；全部明确不成立时不启动，运行以 `provider_auth` 失败（不自动重试），错误说明怎样配置——否则缺省的 OpenAI provider 在连不上时会一直重试，把任务占住半小时以上。判断不了时照常启动。
   - 绑定账号时 `custom_args` 里改供应商的参数（Claude 的 `--settings` / `--setting-sources`，Codex 的 `-c model_provider*`）被剔除；未绑定账号而 Agent `env` 里有供应商变量时，运行事件里警告（只列变量名）。
 
 **输出归一化**：各适配器把 CLI 的输出解析成同一组事件——`text`（助手文本，增量合并）、`thinking`、`tool_call`（名称、参数摘要）、`tool_result`（截断到 16 KB）、`usage`、`session`（会话 ID）、`result`（最终输出、是否成功）、`error`（附原因码，13 §5）。原始输出另存在 `runs/<run_id>/raw.log`，7 天后清理，排查时用。
@@ -143,12 +143,12 @@
 | `HELMSMAN_PROVIDER_API_KEY` | Agent 绑定了供应商账号时的密钥（12 §2.2），只给 CLI 的认证用（Claude 的 `apiKeyHelper`、Codex 的 `env_key`） |
 | `HELMSMAN_SERVER_URL` / `HELMSMAN_RUN_ID` / `HELMSMAN_TASK` | 供 Agent 或脚本参考 |
 | `TMPDIR` | `runs/<run_id>/tmp` |
-| `CODEX_HOME` / `COPILOT_HOME` / `CURSOR_DATA_DIR` | 各 CLI 私有的配置目录：`CODEX_HOME` 是守护进程专用的持久目录 `~/.helmsman/codex/`（会话恢复要用）；其余在 `runs/<run_id>/` 下（实测确认是否也要持久） |
+| `CODEX_HOME` / `COPILOT_HOME` / `CURSOR_DATA_DIR` | 各 CLI 私有的配置目录：`CODEX_HOME` 缺省是用户自己的 Codex 目录，配置 `[codex] home` 时是该私有目录（都持久，会话恢复要用；§4）；其余在 `runs/<run_id>/` 下（实测确认是否也要持久） |
 | `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL`（及 `GIT_COMMITTER_*`） | 有仓库时：Agent 名与 `<agent>@agents.<服务器域名>`（Agent 名中的 `/` 等字符换成 `-`），提交记录能看出是哪个 Agent 写的 |
 
 - **推送用的 GitHub 令牌不给 Agent**：它只在守护进程自己执行 `git fetch/push` 时通过 `GIT_ASKPASS` 临时提供，不进 CLI 的环境。
   但这**不等于** Agent 推不了代码：机器用户自己配置的 SSH 密钥、`gh` 登录，Agent 照样能用。要让「推送和合并只能经过 Helmsman」真正成立，按 §9 用一个**没有配置任何 GitHub 凭据**的专用系统用户运行守护进程。
-- 关掉 CLI 自带的、可能带写权限的集成：Copilot CLI 加 `--disable-builtin-mcps`（否则内置的 GitHub MCP 会用用户的 GitHub 身份）并用私有 `COPILOT_HOME`；Claude 用 `--strict-mcp-config` 只加载我们给的 MCP；Codex 用守护进程专用的 `CODEX_HOME`（不加载用户的 `~/.codex`），Helmsman 的 MCP 由 `thread/start` 注入，专用目录或项目里另有 MCP 配置时不运行，并一律以 `--disable shell_snapshot --disable shell_snapshot_v2` 启动（否则 CLI 把整个进程环境——运行令牌、供应商密钥、Agent 的 `env`——写进共用的 `CODEX_HOME/shell_snapshots/`；启动前删除该目录里已有的快照，`add-provider-accounts` 决策 19）；Cursor 用私有 `CURSOR_DATA_DIR` 只批准我们的服务器。
+- 关掉 CLI 自带的、可能带写权限的集成：Copilot CLI 加 `--disable-builtin-mcps`（否则内置的 GitHub MCP 会用用户的 GitHub 身份）并用私有 `COPILOT_HOME`；Claude 用 `--strict-mcp-config` 只加载我们给的 MCP；Codex 加载用户的 Codex 配置，但其中的 MCP 服务器在托管运行里按名字设为不启用、Helmsman 的 MCP 由 `thread/start` 注入、意外加载的 MCP 服务器由运行时守卫中止运行，项目里另有 `.codex/config.toml` 时不运行，并一律以 `--disable shell_snapshot --disable shell_snapshot_v2` 启动（否则 CLI 把整个进程环境——运行令牌、供应商密钥、Agent 的 `env`——写进 `CODEX_HOME/shell_snapshots/`；只在 `[codex] home` 私有目录模式下启动前删除其中已有的快照，用户目录里的快照是用户自己的，不动，`add-provider-accounts` 决策 19、`update-codex-user-home` 决策 4）；Cursor 用私有 `CURSOR_DATA_DIR` 只批准我们的服务器。
 - MCP 配置文件只放在私有目录 `runs/<run_id>/`（0600），不写进仓库；Cursor 的例外见上表。
 - 运行结束后删除 `runs/<run_id>/`（原始日志除外），worktree 保留给同一任务的下一次运行。
 
@@ -213,7 +213,7 @@ Helmsman 自己能保证的：
 
 - Agent 拿到的 `hmr_` 令牌只能以这个 Agent 的身份、在这次运行的能力范围内调 MCP（13 §2.3），运行结束即失效，冒充不了人或别的 Agent；
 - Helmsman 签发的推送令牌不交给 Agent（§5），合并由服务端按策略执行（15 §4）；
-- 每次运行有私有的临时目录，CLI 用 Helmsman 专用的配置目录，不读、不改、不污染用户自己的 `~/.codex` 等。
+- 每次运行有私有的临时目录；Copilot、Cursor 用 Helmsman 专用的配置目录。Claude Code 与 Codex 用用户自己的配置（`~/.claude`、`~/.codex`），守护进程只读、不改其中的文件，但其中的 hooks / `notify` 会在托管运行里执行（环境含运行令牌），托管会话也会出现在用户的 CLI 历史里；不想这样时 Codex 可配置 `[codex] home` 用私有目录。
 - Agent 配置里的 `env` 与 `extra_mcp_servers` 存在服务器上（加密），会下发到执行机器——不想离开本机的密钥不要写在那里，直接放在守护进程用户的环境里。供应商账号的密钥同样加密存在服务器上、随运行下发到所属用户自己的机器，只在 CLI 的进程环境里出现。
 - CLI 自己的配置层级不归 Helmsman 管：机器上的 Claude Code 托管策略（managed settings）高于命令行，能改掉供应商账号的地址（凭据来源被改会被守卫拦下）；未绑定供应商账号的 Agent，仓库里的 `.claude/settings*.json` 能改它的供应商地址与凭据去向（`-p` 下不询问信任，00 §9.5）。只在可信的仓库与机器上运行。
 
