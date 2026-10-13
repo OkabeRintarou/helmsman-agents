@@ -183,3 +183,122 @@ defmodule HelmsmanWeb.ShellTest do
     end
   end
 end
+
+defmodule HelmsmanWeb.ShellFiltersTest do
+  @moduledoc """
+  The shell's 筛选器 group (spec web-query 侧栏筛选器, add-search-query-ui D8) against the
+  real saved-filter domain.
+  """
+  use HelmsmanWeb.ConnCase, async: true
+
+  import Phoenix.LiveViewTest
+  import Helmsman.AccountsFixtures
+  import Helmsman.ProjectsFixtures
+  import Helmsman.WorkspacesFixtures
+
+  alias Helmsman.Filters
+
+  setup %{conn: conn} do
+    alice = user_fixture(%{display_name: "Alice"})
+    ws = workspace_fixture(alice)
+    alice_scope = workspace_scope_fixture(alice, ws)
+    bob = user_fixture(%{display_name: "Bob"})
+    member_fixture(ws, bob, :member)
+    project_fixture(alice_scope, key: "BOS", name: "Bosun")
+
+    %{
+      conn: conn,
+      slug: ws.slug,
+      alice: %{user: alice, scope: alice_scope},
+      bob: %{user: bob, scope: workspace_scope_fixture(bob, ws)}
+    }
+  end
+
+  defp open(conn, who, path), do: live(log_in_user(conn, who.user), path)
+
+  defp create(who, name, visibility) do
+    {:ok, filter} =
+      Filters.create(who.scope, %{name: name, bql: "status = new", visibility: visibility})
+
+    filter
+  end
+
+  defp nav_labels(view) do
+    view
+    |> element("#hm-nav-filters")
+    |> render()
+    |> LazyHTML.from_fragment()
+    |> LazyHTML.query("a")
+    |> Enum.map(&String.trim(LazyHTML.text(&1)))
+  end
+
+  test "当前筛选器高亮: the open filter has aria-current, 查询 not", ctx do
+    filter = create(ctx.alice, "我的新任务", :private)
+    {:ok, view, _html} = open(ctx.conn, ctx.alice, "/w/#{ctx.slug}/query?filter=#{filter.id}")
+
+    assert has_element?(
+             view,
+             ~s(#hm-nav-filters a[href="/w/#{ctx.slug}/query?filter=#{filter.id}"][aria-current="page"]),
+             "我的新任务"
+           )
+
+    refute has_element?(view, ~s(#hm-nav-filters a[href="/w/#{ctx.slug}/query"][aria-current]))
+  end
+
+  test "共享后他人侧栏出现: without re-mounting", ctx do
+    {:ok, view, _html} = open(ctx.conn, ctx.bob, "/w/#{ctx.slug}/p/BOS")
+    pid = view.pid
+    assert nav_labels(view) == ["查询"]
+
+    filter = create(ctx.alice, "待合并", :workspace)
+
+    assert nav_labels(view) == ["查询", "待合并"]
+    assert has_element?(view, ~s(#hm-nav-filters a[title="待合并（Alice）"]))
+
+    assert has_element?(
+             view,
+             ~s(#hm-nav-filters a[href="/w/#{ctx.slug}/query?filter=#{filter.id}"])
+           )
+
+    assert view.pid == pid
+
+    {:ok, _} = Filters.update(ctx.alice.scope, filter.id, %{name: "待合并 2"})
+    assert nav_labels(view) == ["查询", "待合并 2"]
+
+    {:ok, _} = Filters.delete(ctx.alice.scope, filter.id)
+    assert nav_labels(view) == ["查询"]
+  end
+
+  test "私有筛选器不通知他人: the owner's other tab shows it, others do not", ctx do
+    {:ok, alice_tab, _html} = open(ctx.conn, ctx.alice, "/w/#{ctx.slug}/projects")
+    {:ok, bob_view, _html} = open(ctx.conn, ctx.bob, "/w/#{ctx.slug}/projects")
+
+    create(ctx.alice, "我的私有", :private)
+
+    assert nav_labels(alice_tab) == ["查询", "我的私有"]
+    assert nav_labels(bob_view) == ["查询"]
+  end
+
+  test "超出上限: the first 15 by name and 全部筛选器", ctx do
+    for i <- 20..1//-1, do: create(ctx.alice, "f#{String.pad_leading("#{i}", 2, "0")}", :private)
+
+    {:ok, view, _html} = open(ctx.conn, ctx.alice, "/w/#{ctx.slug}/projects")
+    labels = nav_labels(view)
+
+    assert labels ==
+             ["查询"] ++ for(i <- 1..15, do: "f#{String.pad_leading("#{i}", 2, "0")}") ++ ["全部筛选器"]
+
+    assert has_element?(
+             view,
+             ~s(#hm-nav-filters a[href="/w/#{ctx.slug}/query?panel=filters"]),
+             "全部筛选器"
+           )
+  end
+
+  test "other pages keep their current item", ctx do
+    create(ctx.alice, "我的新任务", :private)
+    {:ok, view, _html} = open(ctx.conn, ctx.alice, "/w/#{ctx.slug}/projects?panel=new")
+    assert has_element?(view, ~s(#hm-sidebar a[aria-current="page"]), "查看全部")
+    refute has_element?(view, ~s(#hm-nav-filters a[aria-current]))
+  end
+end

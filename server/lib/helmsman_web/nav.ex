@@ -13,8 +13,13 @@ defmodule HelmsmanWeb.Nav do
         visible?: fn scope -> true end,                # optional
         badge: fn scope -> 3 end,                      # optional count / dot
         hint: "BOS",                                   # optional, tooltip / search
-        match?: fn current_path, path -> … end         # optional current-item test
+        match?: fn current_path, path -> … end,        # optional current-item test
+        prefix?: false                                 # optional, see items_for/3
       }
+
+  `match?` may also take three arguments, `fn current_path, item_path, query_params`
+  (the item path without its query string), for items told apart by the query string
+  (the saved filters of `filter_items/1`).
 
   A feature change registers its page by adding an item to `items/0`; features that
   are not registered do not appear. Groups are rendered in `groups/0` order and empty
@@ -81,6 +86,83 @@ defmodule HelmsmanWeb.Nav do
     end
   end
 
+  @max_mine 15
+  @max_shared 10
+
+  @doc """
+  Items of the 筛选器 group (add-search-query-ui D8): 查询, the user's own filters (by
+  name, at most #{@max_mine}), filters others share (by name, at most #{@max_shared}, the
+  owner or 所有者已离开 as hint) and, when some are left out, 全部筛选器 (the BQL page's
+  `?panel=filters`). `filters` is `%{mine: [filter], shared: [filter]}` as listed by the
+  domain (already sorted by name).
+
+  A filter's item is current when the BQL page shows it (`?filter=<ID>`); 查询 is current
+  on the BQL page without a filter.
+  """
+  def filter_items(%{mine: mine, shared: shared}) do
+    more =
+      if length(mine) > @max_mine or length(shared) > @max_shared,
+        do: [all_filters_item()],
+        else: []
+
+    [query_item()] ++
+      Enum.map(Enum.take(mine, @max_mine), &filter_item(&1, "lucide-funnel", nil)) ++
+      Enum.map(Enum.take(shared, @max_shared), &filter_item(&1, "lucide-users", owner_hint(&1))) ++
+      more
+  end
+
+  defp query_item do
+    %{
+      id: :query,
+      group: :filters,
+      label: fn -> dgettext("ui", "查询") end,
+      icon: "lucide-square-terminal",
+      path: &"/w/#{&1.workspace.slug}/query",
+      prefix?: false,
+      match?: fn current, path, params ->
+        current == path and blank?(params["filter"]) and params["panel"] != "filters"
+      end
+    }
+  end
+
+  defp filter_item(filter, icon, hint) do
+    id = to_string(filter.id)
+
+    %{
+      id: {:filter, id},
+      group: :filters,
+      label: filter.name,
+      hint: hint,
+      icon: icon,
+      path: &"/w/#{&1.workspace.slug}/query?filter=#{id}",
+      prefix?: false,
+      match?: fn current, path, params -> current == path and params["filter"] == id end
+    }
+  end
+
+  defp all_filters_item do
+    %{
+      id: :all_filters,
+      group: :filters,
+      label: fn -> dgettext("ui", "全部筛选器") end,
+      icon: "lucide-list-filter",
+      path: &"/w/#{&1.workspace.slug}/query?panel=filters",
+      prefix?: false,
+      match?: fn current, path, params ->
+        current == path and blank?(params["filter"]) and params["panel"] == "filters"
+      end
+    }
+  end
+
+  defp owner_hint(filter) do
+    case HelmsmanWeb.QueryData.owner_name(filter) do
+      nil -> dgettext("ui", "所有者已离开")
+      name -> name
+    end
+  end
+
+  defp blank?(value), do: value in [nil, ""]
+
   @doc "Group ids in display order."
   def groups, do: @group_order
 
@@ -95,8 +177,10 @@ defmodule HelmsmanWeb.Nav do
   Resolves the items visible to `scope`, grouped and in order, marking the item whose
   path best matches `current_path` with `current?: true`.
 
-  The current item is the first whose `match?` returns true, otherwise the one with the
-  longest path that prefixes `current_path`.
+  `current_path` may carry a query string (`/w/acme/query?filter=3`); only items whose
+  `match?` takes three arguments look at it. The current item is the first whose `match?`
+  returns true, otherwise the one with the longest path that prefixes the current path
+  (items with `prefix?: false` are only current through `match?`).
 
   Returns `[%{id: group, label: String.t(), items: [%{id, label, hint, icon, path, badge, current?}]}]`.
   """
@@ -111,12 +195,13 @@ defmodule HelmsmanWeb.Nav do
           icon: item.icon,
           path: item.path.(scope),
           badge: if(badge = Map.get(item, :badge), do: badge.(scope)),
-          match?: Map.get(item, :match?)
+          match?: Map.get(item, :match?),
+          prefix?: Map.get(item, :prefix?, true)
         }
       end
 
     current = current_item(resolved, current_path)
-    resolved = Enum.map(resolved, &Map.delete(&1, :match?))
+    resolved = Enum.map(resolved, &Map.drop(&1, [:match?, :prefix?]))
 
     for group <- @group_order,
         group_items = Enum.filter(resolved, &(&1.group == group)),
@@ -144,18 +229,29 @@ defmodule HelmsmanWeb.Nav do
 
   defp current_item(_items, nil), do: nil
 
-  defp current_item(items, current_path) do
-    case Enum.find(items, &(&1.match? && &1.match?.(current_path, &1.path))) do
+  defp current_item(items, current) do
+    %URI{path: current_path, query: query} = URI.parse(current)
+    params = URI.decode_query(query || "")
+
+    case Enum.find(items, &matches?(&1, current_path, params)) do
       nil -> longest_prefix_item(items, current_path)
       item -> item.id
     end
   end
 
+  defp matches?(%{match?: nil}, _current_path, _params), do: false
+
+  defp matches?(%{match?: fun, path: path}, current_path, _params) when is_function(fun, 2),
+    do: fun.(current_path, path)
+
+  defp matches?(%{match?: fun, path: path}, current_path, params) when is_function(fun, 3),
+    do: fun.(current_path, URI.parse(path).path, params)
+
   defp longest_prefix_item(items, current_path) do
     items
-    |> Enum.filter(fn %{path: path} ->
+    |> Enum.filter(fn %{path: path, prefix?: prefix?} ->
       path = path |> URI.parse() |> Map.get(:path)
-      current_path == path or String.starts_with?(current_path, path <> "/")
+      prefix? and (current_path == path or String.starts_with?(current_path, path <> "/"))
     end)
     |> Enum.max_by(&String.length(&1.path), fn -> nil end)
     |> case do

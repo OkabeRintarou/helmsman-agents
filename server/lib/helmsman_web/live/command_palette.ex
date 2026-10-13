@@ -9,13 +9,13 @@ defmodule HelmsmanWeb.CommandPalette do
   """
   use HelmsmanWeb, :live_component
 
-  alias HelmsmanWeb.CommandPalette.{Actions, Ident, Pages}
+  alias HelmsmanWeb.CommandPalette.{Actions, Ident, Pages, TaskSearch}
   alias HelmsmanWeb.Components.Overlay
 
   @dialog_id "command-palette-dialog"
 
   @doc "Result sources in display order. Feature changes append theirs here."
-  def sources, do: [Ident, Pages, Actions]
+  def sources, do: [Ident, Pages, TaskSearch, Actions]
 
   @doc "JS that opens the palette (also used by the sidebar search entry)."
   def open(js \\ %JS{}) do
@@ -161,7 +161,17 @@ defmodule HelmsmanWeb.CommandPalette do
             >
               <.icon name={result[:icon] || "lucide-corner-down-right"} class="size-4 text-fg-muted" />
               <span class="truncate">{result.label}</span>
-              <span :if={result[:sublabel]} class="truncate text-caption text-fg-muted">
+              <span
+                :if={result[:sublabel_html]}
+                class="truncate text-caption text-fg-muted [&_mark]:bg-transparent [&_mark]:font-medium [&_mark]:text-fg"
+                data-snippet
+              >
+                {result.sublabel_html}
+              </span>
+              <span
+                :if={!result[:sublabel_html] && result[:sublabel]}
+                class="truncate text-caption text-fg-muted"
+              >
                 {result.sublabel}
               </span>
               <.icon

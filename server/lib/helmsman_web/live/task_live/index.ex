@@ -5,7 +5,9 @@ defmodule HelmsmanWeb.TaskLive.Index do
   `project:<id>`, and the project menu (edit, archive, restore; admins).
 
   Live updates never reload the table: a summary that passes the current filters is
-  moved to the top, one that does not is removed (`HelmsmanWeb.TaskLive.Filter`).
+  moved to the top, one that does not is removed (`HelmsmanWeb.TaskLive.Filter`). With a
+  search text (`q`, add-search-query-ui D2) that cannot be decided in memory, so the
+  loaded rows are read again instead, at most once a second.
 
   Rows carry `working`, the agents with a run in progress on the task (add-agents-runs-ui
   D15, R5), read once per loaded page. A run change of a loaded task (`workspace:<id>:runs`)
@@ -62,10 +64,12 @@ defmodule HelmsmanWeb.TaskLive.Index do
     {:ok,
      socket
      |> stream_configure(:tasks, dom_id: &"task-#{&1.id}")
+     |> stream(:tasks, [])
      |> assign(
        project: project,
        page_title: project.name,
        filters: nil,
+       search_error: nil,
        label_options: TaskData.labels(scope, project.key),
        agents: agents,
        assignable: TaskData.assignable(scope, agents),
@@ -169,7 +173,27 @@ defmodule HelmsmanWeb.TaskLive.Index do
   defp load(socket, filters) do
     %{current_scope: scope, project: project} = socket.assigns
     opts = Filter.domain_opts(filters)
-    {:ok, rows, has_more, cursor} = TaskData.page(scope, project.key, opts, nil)
+
+    case TaskData.page(scope, project.key, opts, nil) do
+      {:ok, rows, has_more, cursor} ->
+        socket
+        |> assign(:search_error, nil)
+        |> show_page(filters, rows, has_more, cursor)
+
+      # The rows shown stay, but they belong to the previous filters: paging stops until
+      # the text is corrected (code-review-2 P2-3).
+      {:error, {:invalid_query, _}} ->
+        assign(socket, filters: filters, search_error: search_too_long(), has_more: false)
+    end
+  end
+
+  @max_search 200
+  @search_reload_ms 1000
+
+  defp search_too_long, do: dgettext("ui", "最多 %{n} 个字符", n: @max_search)
+
+  defp show_page(socket, filters, rows, has_more, cursor) do
+    scope = socket.assigns.current_scope
     summaries = Enum.map(rows, &Tasks.summary/1)
     working = read_working(scope, summaries)
     summaries = Enum.map(summaries, &with_working(&1, working))
@@ -188,6 +212,23 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
   @impl true
   def handle_event("load_more", _params, socket), do: {:noreply, load_next(socket)}
+
+  # The search box (add-search-query-ui D2): the text goes to the URL; too long a text
+  # keeps the list and says so.
+  def handle_event("search", params, socket) do
+    q = String.trim(params["q"] || "")
+
+    if String.length(q) > @max_search do
+      {:noreply, assign(socket, :search_error, search_too_long())}
+    else
+      filters = socket.assigns.filters || %{}
+      filters = if q == "", do: Map.delete(filters, :q), else: Map.put(filters, :q, q)
+      base = "/w/#{socket.assigns.current_scope.workspace.slug}/p/#{socket.assigns.project.key}"
+
+      {:noreply,
+       socket |> assign(:search_error, nil) |> push_patch(to: Filters.path(base, filters))}
+    end
+  end
 
   def handle_event("edit_project_change", %{"project" => params}, socket) do
     edit = %{socket.assigns.edit | params: Map.take(params, ~w(name description))}
@@ -229,7 +270,14 @@ defmodule HelmsmanWeb.TaskLive.Index do
     %{current_scope: scope, project: project, filters: filters} = socket.assigns
     opts = Filter.domain_opts(filters)
 
-    {:ok, rows, has_more, cursor} = TaskData.page(scope, project.key, opts, socket.assigns.cursor)
+    case TaskData.page(scope, project.key, opts, socket.assigns.cursor) do
+      {:ok, rows, has_more, cursor} -> append_page(socket, rows, has_more, cursor)
+      {:error, _} -> assign(socket, has_more: false)
+    end
+  end
+
+  defp append_page(socket, rows, has_more, cursor) do
+    scope = socket.assigns.current_scope
 
     summaries = Enum.map(rows, &Tasks.summary/1)
     working = read_working(scope, summaries)
@@ -461,30 +509,31 @@ defmodule HelmsmanWeb.TaskLive.Index do
       when event in [:task_created, :task_updated] do
     socket = merge_labels(socket, [summary])
 
-    if Filter.match?(summary, socket.assigns.filters) do
-      # A task entering the list may already have runs in progress: its runs were not
-      # followed while it was out, so they are read now (code-review-4).
-      socket =
-        if MapSet.member?(socket.assigns.shown, summary.id),
-          do: socket,
-          else:
-            put_working(socket, summary.id, read_working(socket.assigns.current_scope, [summary]))
+    cond do
+      Filter.search?(socket.assigns.filters) ->
+        {:noreply, Throttle.schedule(socket, :reload_search, @search_reload_ms)}
 
-      summary = with_working(summary, socket.assigns.working)
+      Filter.match?(summary, socket.assigns.filters) ->
+        {:noreply, put_matching(socket, summary)}
 
-      {:noreply,
-       socket
-       |> stream_delete(:tasks, summary)
-       |> stream_insert(:tasks, summary, at: 0)
-       |> assign(:shown, MapSet.put(socket.assigns.shown, summary.id))}
-    else
-      socket =
-        socket
-        |> stream_delete(:tasks, summary)
-        |> forget_working(summary.id)
-        |> assign(:shown, MapSet.delete(socket.assigns.shown, summary.id))
+      true ->
+        {:noreply, drop_row(socket, summary)}
+    end
+  end
 
-      {:noreply, refill(socket)}
+  # With a search text the rows already shown are read again (add-search-query-ui D2):
+  # as many as are loaded, at most 200; the rest comes with 加载更多.
+  def handle_info(:reload_search, socket) do
+    socket = Throttle.done(socket, :reload_search)
+    %{current_scope: scope, project: project, filters: filters} = socket.assigns
+    count = max(MapSet.size(socket.assigns.shown), TaskData.page_size())
+
+    case read_rows(scope, project.key, Filter.domain_opts(filters), count) do
+      {:ok, rows, has_more, cursor} ->
+        {:noreply, show_page(socket, filters, rows, has_more, cursor)}
+
+      {:error, _} ->
+        {:noreply, socket}
     end
   end
 
@@ -609,6 +658,52 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
   # Every loaded row left the filter but more may match after the cursor: load the
   # next page instead of reporting an empty list.
+  # The first `count` rows in pages of `TaskData.page/4` (the domain reads at most 200 at
+  # a time), with whether more follow and the cursor of the last (code-review-1 P2-1).
+  defp read_rows(scope, key, opts, count, cursor \\ nil, acc \\ []) do
+    with {:ok, rows, has_more, next} <- TaskData.page(scope, key, opts, cursor) do
+      acc = acc ++ rows
+
+      cond do
+        length(acc) > count ->
+          taken = Enum.take(acc, count)
+          last = List.last(taken)
+          {:ok, taken, true, {last.updated_at, last.id}}
+
+        length(acc) == count or not has_more ->
+          {:ok, acc, has_more, next}
+
+        true ->
+          read_rows(scope, key, opts, count, next, acc)
+      end
+    end
+  end
+
+  defp put_matching(socket, summary) do
+    # A task entering the list may already have runs in progress: its runs were not
+    # followed while it was out, so they are read now (code-review-4).
+    socket =
+      if MapSet.member?(socket.assigns.shown, summary.id),
+        do: socket,
+        else:
+          put_working(socket, summary.id, read_working(socket.assigns.current_scope, [summary]))
+
+    summary = with_working(summary, socket.assigns.working)
+
+    socket
+    |> stream_delete(:tasks, summary)
+    |> stream_insert(:tasks, summary, at: 0)
+    |> assign(:shown, MapSet.put(socket.assigns.shown, summary.id))
+  end
+
+  defp drop_row(socket, summary) do
+    socket
+    |> stream_delete(:tasks, summary)
+    |> forget_working(summary.id)
+    |> assign(:shown, MapSet.delete(socket.assigns.shown, summary.id))
+    |> refill()
+  end
+
   defp refill(%{assigns: %{has_more: true}} = socket) do
     if MapSet.size(socket.assigns.shown) == 0, do: load_next(socket), else: socket
   end
@@ -705,7 +800,6 @@ defmodule HelmsmanWeb.TaskLive.Index do
         path={@base}
         filters={@filters}
         dimensions={@dimensions}
-        search={false}
       >
         <:views>
           <.link
@@ -725,6 +819,14 @@ defmodule HelmsmanWeb.TaskLive.Index do
           </.link>
         </:views>
       </.filter_bar>
+      <p
+        :if={@search_error}
+        id="task-search-error"
+        role="alert"
+        class="-mt-1 px-4 pb-2 text-right text-caption text-danger-fg"
+      >
+        {@search_error}
+      </p>
       <.data_table
         id="tasks"
         class={@empty? && "hidden"}

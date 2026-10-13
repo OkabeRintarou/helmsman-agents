@@ -8,14 +8,14 @@ defmodule HelmsmanWeb.Throttle do
   """
   import Phoenix.Component, only: [assign: 3]
 
-  @doc "Schedules `message` unless it is already scheduled."
-  def schedule(socket, message \\ :reload) do
+  @doc "Schedules `message` (after `delay_ms`, default the configured delay) unless it is already scheduled."
+  def schedule(socket, message \\ :reload, delay_ms \\ nil) do
     timers = socket.assigns[:throttle_timers] || %{}
 
     if Map.has_key?(timers, message) do
       socket
     else
-      ref = Process.send_after(self(), message, delay())
+      ref = Process.send_after(self(), message, delay_ms || delay())
       assign(socket, :throttle_timers, Map.put(timers, message, ref))
     end
   end

@@ -6,7 +6,8 @@ defmodule HelmsmanWeb.CommandPalette.Source do
   `ctx` carries `:nav` (resolved navigation groups), `:recent_tasks` and
   `:can_create_task?`.
 
-  A result is a map with `:group` (heading), `:label`, optional `:sublabel` and `:icon`,
+  A result is a map with `:group` (heading), `:label`, optional `:sublabel` (or
+  `:sublabel_html`, safe HTML that only `TaskSearch` builds from escaped snippets) and `:icon`,
   and either `:path` (navigate there) or `:action` (`{name, params}` handled on the
   client, see `assets/js/app.js`).
   """
@@ -15,6 +16,7 @@ defmodule HelmsmanWeb.CommandPalette.Source do
           required(:group) => String.t(),
           required(:label) => String.t(),
           optional(:sublabel) => String.t(),
+          optional(:sublabel_html) => Phoenix.HTML.safe(),
           optional(:icon) => String.t(),
           optional(:path) => String.t(),
           optional(:action) => {String.t(), map()}

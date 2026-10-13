@@ -145,4 +145,103 @@ defmodule HelmsmanWeb.NavTest do
       assert agents.current?
     end
   end
+
+  describe "filter items (add-search-query-ui D8)" do
+    defp filter(id, name, opts \\ []) do
+      %{
+        id: id,
+        name: name,
+        owner: Keyword.get(opts, :owner, %{display_name: "Alice"}),
+        owner_left: Keyword.get(opts, :owner_left, false)
+      }
+    end
+
+    defp filter_group(filters, current) do
+      groups = Nav.items_for(@scope, current, Nav.filter_items(filters) ++ Nav.items())
+      Enum.find(groups, &(&1.id == :filters))
+    end
+
+    defp current_ids(group), do: for(i <- group.items, i.current?, do: i.id)
+
+    defp filters do
+      %{
+        mine: [filter(1, "我的新任务"), filter(2, "周报")],
+        shared: [filter(3, "待合并"), filter(4, "旧的", owner: nil, owner_left: true)]
+      }
+    end
+
+    test "查询, own filters and shared filters come in order with paths and hints" do
+      group = filter_group(filters(), "/w/acme")
+
+      assert group.label == "筛选器"
+
+      assert Enum.map(group.items, & &1.id) == [
+               :query,
+               {:filter, "1"},
+               {:filter, "2"},
+               {:filter, "3"},
+               {:filter, "4"}
+             ]
+
+      [query, mine | _] = group.items
+      assert query.label == "查询"
+      assert query.path == "/w/acme/query"
+      assert mine.path == "/w/acme/query?filter=1"
+      assert mine.hint == nil
+
+      assert Enum.find(group.items, &(&1.id == {:filter, "3"})).hint == "Alice"
+      assert Enum.find(group.items, &(&1.id == {:filter, "4"})).hint == "所有者已离开"
+      assert current_ids(group) == []
+    end
+
+    test "the open filter is current, not 查询 (scenario 当前筛选器高亮)" do
+      assert current_ids(filter_group(filters(), "/w/acme/query?filter=1")) == [{:filter, "1"}]
+
+      assert current_ids(filter_group(filters(), "/w/acme/query?bql=x&filter=3")) == [
+               {:filter, "3"}
+             ]
+    end
+
+    test "查询 is current on the BQL page without a filter" do
+      assert current_ids(filter_group(filters(), "/w/acme/query")) == [:query]
+      assert current_ids(filter_group(filters(), "/w/acme/query?bql=status+%3D+new")) == [:query]
+      assert current_ids(filter_group(%{mine: [], shared: []}, "/w/acme/query")) == [:query]
+    end
+
+    test "without filters only 查询 is listed" do
+      assert [%{id: :query}] = filter_group(%{mine: [], shared: []}, "/w/acme").items
+    end
+
+    test "at most 15 own and 10 shared filters, then 全部筛选器 (scenario 超出上限)" do
+      mine = for i <- 1..20, do: filter(i, "f#{String.pad_leading("#{i}", 2, "0")}")
+      shared = for i <- 21..23, do: filter(i, "s#{i}")
+      group = filter_group(%{mine: mine, shared: shared}, "/w/acme/query?panel=filters")
+
+      ids = Enum.map(group.items, & &1.id)
+      assert length(ids) == 1 + 15 + 3 + 1
+      assert Enum.slice(ids, 1, 15) == for(i <- 1..15, do: {:filter, "#{i}"})
+      assert List.last(group.items).id == :all_filters
+      assert List.last(group.items).label == "全部筛选器"
+      assert List.last(group.items).path == "/w/acme/query?panel=filters"
+      assert current_ids(group) == [:all_filters]
+
+      shared = for i <- 21..31, do: filter(i, "s#{i}")
+      group = filter_group(%{mine: [], shared: shared}, "/w/acme")
+      assert length(group.items) == 1 + 10 + 1
+
+      group = filter_group(%{mine: Enum.take(mine, 15), shared: []}, "/w/acme")
+      refute Enum.any?(group.items, &(&1.id == :all_filters))
+    end
+
+    test "other items still follow the path only" do
+      groups =
+        Nav.items_for(
+          @scope,
+          "/w/acme/projects?status=new",
+          Nav.filter_items(filters()) ++ Nav.items()
+        )
+
+      assert for(g <- groups, i <- g.items, i.current?, do: i.id) == [:projects]
+    end
+  end
 end

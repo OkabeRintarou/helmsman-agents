@@ -169,7 +169,8 @@ defmodule HelmsmanWeb.TaskLive.IndexTest do
       assert has_element?(view, "#task-filters-chip-status", "新建、进行中")
       assert has_element?(view, "#task-filters-chip-label", "api")
       assert Enum.sort(row_ids(view)) == ["BOS-1", "BOS-2"]
-      refute has_element?(view, "[data-hm-filter-input]")
+      # add-search-query-ui: the search box is shown now (it was not in add-projects-tasks-ui).
+      assert has_element?(view, "[data-hm-filter-input]")
     end
 
     test "quick views patch the status and keep label and assignee", ctx do
@@ -442,5 +443,151 @@ defmodule HelmsmanWeb.TaskLive.IndexTest do
       html |> LazyHTML.from_fragment() |> LazyHTML.query("a") |> LazyHTML.attribute(name)
 
     value
+  end
+
+  describe "search box (add-search-query-ui D2)" do
+    alias Helmsman.Feedback
+
+    defp search(view, q),
+      do: view |> element("#task-filters-search") |> render_change(%{"q" => q})
+
+    defp eventually(fun, tries \\ 60) do
+      cond do
+        fun.() -> true
+        tries == 0 -> flunk("condition never held")
+        true -> Process.sleep(50) && eventually(fun, tries - 1)
+      end
+    end
+
+    test "搜索框：与其他条件叠加，写进 URL", ctx do
+      create(ctx, %{title: "登录页改版"})
+      create(ctx, %{title: "登录超时"})
+      create(ctx, %{title: "首页"})
+      {:ok, _} = Tasks.transition(ctx.scopes.admin, "BOS-2", "in_progress", %{})
+
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?status=new")
+      search(view, "登录")
+
+      assert_patch(view, ctx.base <> "?" <> URI.encode_query(%{"q" => "登录", "status" => "new"}))
+      assert row_ids(view) == ["BOS-1"]
+      assert has_element?(view, ~s(#task-filters-search input[value="登录"]))
+    end
+
+    test "按 Feedback 命中", ctx do
+      create(ctx, %{title: "甲"})
+      create(ctx, %{title: "乙"})
+      {:ok, _} = Feedback.add(ctx.member, "BOS-2", %{content: "先做灰度发布"})
+
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=灰度")
+      assert row_ids(view) == ["BOS-2"]
+    end
+
+    test "搜索词过长：提示，列表不变", ctx do
+      create(ctx, %{title: "登录"})
+      create(ctx, %{title: "首页"})
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=登录")
+
+      search(view, String.duplicate("长", 201))
+      assert has_element?(view, "#task-search-error", "最多 200 个字符")
+      assert row_ids(view) == ["BOS-1"]
+
+      search(view, "首页")
+      refute has_element?(view, "#task-search-error")
+    end
+
+    test "清除筛选同时清除搜索词", ctx do
+      create(ctx, %{title: "甲"})
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=nothing-here")
+      assert render(view) =~ "没有符合条件的结果"
+      view |> element("button", "清除筛选") |> render_click()
+      assert_patch(view, ctx.base)
+      assert row_ids(view) == ["BOS-1"]
+    end
+
+    test "有搜索词时的实时更新", ctx do
+      create(ctx, %{title: "登录页"})
+      create(ctx, %{title: "首页"})
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=登录")
+      assert row_ids(view) == ["BOS-1"]
+
+      {:ok, t2} = Tasks.get(ctx.member, "BOS-2")
+      {:ok, _} = Tasks.update(ctx.scopes.admin, "BOS-2", %{title: "登录超时"}, t2.lock_version)
+      {:ok, t1} = Tasks.get(ctx.member, "BOS-1")
+      {:ok, _} = Tasks.update(ctx.scopes.admin, "BOS-1", %{title: "首页改版"}, t1.lock_version)
+
+      eventually(fn -> row_ids(view) == ["BOS-2"] end)
+    end
+
+    # code-review-1 P2-1: the domain reads at most 200 rows at once.
+    test "已加载 200 行以上时重读后仍能加载其余、不重复", ctx do
+      for _ <- 1..205, do: create(ctx, %{title: "登录相关"})
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=登录")
+      for _ <- 1..3, do: view |> element("#tasks-more") |> render_click()
+      assert length(row_ids(view)) == 200
+      assert has_element?(view, "#tasks-more")
+
+      {:ok, t} = Tasks.get(ctx.member, "BOS-3")
+      {:ok, _} = Tasks.update(ctx.scopes.admin, "BOS-3", %{title: "登录相关 改"}, t.lock_version)
+
+      eventually(fn -> hd(row_ids(view)) == "BOS-3" end)
+      assert length(row_ids(view)) == 200
+      assert has_element?(view, "#tasks-more")
+
+      ids = view |> load_all() |> row_ids()
+      assert length(ids) == 205
+      assert length(Enum.uniq(ids)) == 205
+
+      {:ok, t} = Tasks.get(ctx.member, "BOS-4")
+      {:ok, _} = Tasks.update(ctx.scopes.admin, "BOS-4", %{title: "登录相关 再改"}, t.lock_version)
+      eventually(fn -> hd(row_ids(view)) == "BOS-4" end)
+      assert length(row_ids(view)) == 205
+      refute has_element?(view, "#tasks-more")
+    end
+
+    test "直接打开过长搜索词的地址：提示，不崩溃；改正后正常", ctx do
+      create(ctx, %{title: "首页"})
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=" <> String.duplicate("长", 201))
+      assert has_element?(view, "#task-search-error", "最多 200 个字符")
+      assert row_ids(view) == []
+
+      search(view, "首页")
+      refute has_element?(view, "#task-search-error")
+      assert row_ids(view) == ["BOS-1"]
+    end
+
+    # code-review-2 P2-3: back to a too-long address with rows shown — no paging, no crash.
+    test "已有分页结果时回到过长搜索词的地址：不再加载更多，改正后恢复", ctx do
+      for _ <- 1..60, do: create(ctx, %{title: "needle"})
+      long = ctx.base <> "?q=" <> String.duplicate("长", 201)
+      {:ok, view, _html} = live(as(ctx, :member), long)
+
+      search(view, "needle")
+      assert length(row_ids(view)) == 50
+      assert has_element?(view, "#tasks-more")
+
+      render_patch(view, long)
+      assert has_element?(view, "#task-search-error", "最多 200 个字符")
+      refute has_element?(view, "#tasks-more")
+      render_click(view, "load_more", %{})
+      assert Process.alive?(view.pid)
+
+      search(view, "needle")
+      refute has_element?(view, "#task-search-error")
+      assert length(view |> load_all() |> row_ids()) == 60
+    end
+
+    test "两页已加载时重读仍是已加载的范围", ctx do
+      for _ <- 1..60, do: create(ctx, %{title: "登录相关"})
+      {:ok, view, _html} = live(as(ctx, :member), ctx.base <> "?q=登录")
+      load_all(view)
+      assert length(row_ids(view)) == 60
+
+      {:ok, t} = Tasks.get(ctx.member, "BOS-3")
+      {:ok, _} = Tasks.update(ctx.scopes.admin, "BOS-3", %{title: "登录相关 改"}, t.lock_version)
+
+      eventually(fn -> hd(row_ids(view)) == "BOS-3" end)
+      assert length(row_ids(view)) == 60
+      refute has_element?(view, "#tasks-more")
+    end
   end
 end

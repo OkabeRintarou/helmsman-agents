@@ -17,6 +17,11 @@ defmodule HelmsmanWeb.Shell do
     page when it exports `handle_info/2` (`HelmsmanWeb.LiveFallback` ignores the rest),
     otherwise they stop here.
   * Assigns `shell.projects` (the sidebar's 项目 group) and `shell.can_create_task?`.
+  * Assigns `shell.filters` (`%{mine, shared}`, the sidebar's 筛选器 group, add-search-query-ui
+    D8) and subscribes to `workspace:<id>:filters` and `workspace:<id>:filters:<user_id>`:
+    `{:filters_changed, _}` reloads them and the navigation, then goes on to the page like
+    `{:projects_changed}`. The current item of the group follows the query string
+    (`?filter=<ID>`).
   * Handles the `hm:switch-workspace` event from the workspace switcher.
 
   The scope is read from `socket.assigns.current_scope` (`user`, `workspace`). For a
@@ -33,7 +38,7 @@ defmodule HelmsmanWeb.Shell do
   alias Helmsman.Policy
   alias Helmsman.Projects
   alias Helmsman.Workspaces
-  alias HelmsmanWeb.Nav
+  alias HelmsmanWeb.{Nav, QueryData}
 
   @max_recent 10
 
@@ -46,6 +51,7 @@ defmodule HelmsmanWeb.Shell do
       do: Phoenix.PubSub.subscribe(Helmsman.PubSub, topic(user_id))
 
     if connected?(socket), do: subscribe_workspace(scope)
+    if connected?(socket), do: subscribe_filters(scope)
 
     socket =
       socket
@@ -54,6 +60,7 @@ defmodule HelmsmanWeb.Shell do
         nav_items: socket.assigns[:shell_nav_items] || Nav.items(),
         workspaces: workspaces(scope),
         projects: projects(scope),
+        filters: filters(scope),
         can_create_task?: can_create_task?(scope),
         recent_tasks: recent_tasks(socket),
         path: nil,
@@ -74,18 +81,20 @@ defmodule HelmsmanWeb.Shell do
     shell = socket.assigns.shell
     scope = socket.assigns[:current_scope]
 
-    shell = %{
-      shell
-      | path: path,
-        uri: if(query, do: "#{path}?#{query}", else: path),
-        nav: nav(scope, path, shell)
-    }
+    uri = if(query, do: "#{path}?#{query}", else: path)
+    shell = %{shell | path: path, uri: uri, nav: nav(scope, uri, shell)}
 
     {:cont, assign(socket, :shell, shell)}
   end
 
-  defp nav(scope, path, shell),
-    do: Nav.items_for(scope, path, Nav.project_items(shell.projects) ++ shell.nav_items)
+  defp nav(scope, uri, shell) do
+    items = Nav.project_items(shell.projects) ++ filter_items(scope, shell) ++ shell.nav_items
+    Nav.items_for(scope, uri, items)
+  end
+
+  # The /dev/ui demo scope (a plain map) has no 筛选器 group.
+  defp filter_items(%Scope{workspace: %{}}, shell), do: Nav.filter_items(shell.filters)
+  defp filter_items(_scope, _shell), do: []
 
   defp handle_info({:membership_changed, workspace_id, change}, socket) do
     workspace = current_workspace(socket.assigns[:current_scope])
@@ -125,7 +134,14 @@ defmodule HelmsmanWeb.Shell do
   defp handle_info({:projects_changed} = message, socket) do
     scope = socket.assigns[:current_scope]
     shell = %{socket.assigns.shell | projects: projects(scope)}
-    shell = %{shell | nav: nav(scope, shell.path, shell)}
+    shell = %{shell | nav: nav(scope, shell.uri, shell)}
+    forward(message, assign(socket, :shell, shell))
+  end
+
+  defp handle_info({:filters_changed, _audience} = message, socket) do
+    scope = socket.assigns[:current_scope]
+    shell = %{socket.assigns.shell | filters: filters(scope)}
+    shell = %{shell | nav: nav(scope, shell.uri, shell)}
     forward(message, assign(socket, :shell, shell))
   end
 
@@ -173,6 +189,23 @@ defmodule HelmsmanWeb.Shell do
     do: Events.subscribe(Events.topic(:workspace, id))
 
   defp subscribe_workspace(_scope), do: :ok
+
+  defp subscribe_filters(%Scope{workspace: %{id: id}, user: %{id: user_id}})
+       when is_integer(id) do
+    Events.subscribe(QueryData.topic(id))
+    Events.subscribe(QueryData.topic(id, user_id))
+  end
+
+  defp subscribe_filters(_scope), do: :ok
+
+  defp filters(%Scope{workspace: %{}} = scope) do
+    case QueryData.list_filters(scope) do
+      {:ok, %{mine: mine, shared: shared}} -> %{mine: mine, shared: shared}
+      {:error, _} -> %{mine: [], shared: []}
+    end
+  end
+
+  defp filters(_scope), do: %{mine: [], shared: []}
 
   # The /dev/ui demo scope (a plain map) has no projects and may open the new-task panel.
   defp projects(%Scope{workspace: %{}} = scope) do

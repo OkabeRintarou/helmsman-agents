@@ -11,7 +11,7 @@ defmodule HelmsmanWeb.TaskLive.Filter do
   @closed ~w(verified rejected cancelled)
 
   @doc "The `HelmsmanWeb.Filters` schema of the task list."
-  def schema, do: [status: {:list, @statuses}, label: :string, assignee: :string]
+  def schema, do: [status: {:list, @statuses}, label: :string, assignee: :string, q: :string]
 
   @doc "Statuses in display order."
   def statuses, do: @statuses
@@ -22,7 +22,8 @@ defmodule HelmsmanWeb.TaskLive.Filter do
     [
       status: filters[:status],
       label: filters[:label],
-      assignee: if(filters[:assignee] == "@none", do: "", else: filters[:assignee])
+      assignee: if(filters[:assignee] == "@none", do: "", else: filters[:assignee]),
+      q: filters[:q]
     ]
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
   end
@@ -51,7 +52,10 @@ defmodule HelmsmanWeb.TaskLive.Filter do
   def apply_view(filters, nil), do: Map.delete(filters, :status)
   def apply_view(filters, statuses), do: Map.put(filters, :status, statuses)
 
-  @doc "Whether the task `summary` passes `filters`."
+  @doc "Whether the filters have a search text (`match?/2` cannot decide it in memory)."
+  def search?(filters), do: (filters || %{})[:q] not in [nil, ""]
+
+  @doc "Whether the task `summary` passes `filters`, the search text aside (see `search?/1`)."
   @spec match?(map(), map()) :: boolean()
   def match?(summary, filters) do
     status?(summary, filters[:status]) and label?(summary, filters[:label]) and

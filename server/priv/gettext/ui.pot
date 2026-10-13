@@ -59,6 +59,7 @@ msgstr ""
 msgid "一句话说明要做什么"
 msgstr ""
 
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/form_errors.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
@@ -93,6 +94,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "优先级"
 msgstr ""
@@ -203,6 +205,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/task_collab.ex
@@ -223,6 +226,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/components/overlay.ex
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
@@ -537,6 +541,7 @@ msgid "数据表格与筛选"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "文本"
 msgstr ""
@@ -623,6 +628,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "标签"
 msgstr ""
@@ -636,6 +642,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "标题"
 msgstr ""
@@ -673,6 +680,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "状态"
 msgstr ""
@@ -743,6 +751,7 @@ msgstr ""
 msgid "筛选…"
 msgstr ""
 
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
 msgid "筛选器"
@@ -906,6 +915,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/nav.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "项目"
 msgstr ""
@@ -953,6 +963,7 @@ msgid "放弃填写？"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
@@ -1110,6 +1121,7 @@ msgid "欢迎，%{email}"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/user_live/settings.ex
 #: lib/helmsman_web/provider_account_form.ex
@@ -1507,6 +1519,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "执行方"
 msgstr ""
@@ -1566,6 +1579,7 @@ msgstr ""
 msgid "撤销后任务结束；之后可以恢复。原因会记入历史。"
 msgstr ""
 
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/errors.ex
@@ -1604,6 +1618,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "更新"
 msgstr ""
@@ -1664,8 +1679,10 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/settings_live/errors.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
@@ -1711,6 +1728,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/markdown_editor.ex
@@ -1787,6 +1805,7 @@ msgstr ""
 msgid "长度须为 1–200 个字符"
 msgstr ""
 
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/form_errors.ex
 #, elixir-autogen, elixir-format
 msgid "长度须为 1–80 个字符"
@@ -2092,6 +2111,7 @@ msgstr ""
 msgid "已移除 %{name}"
 msgstr ""
 
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "已过期"
@@ -2606,6 +2626,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "待回答"
 msgstr ""
@@ -2739,8 +2760,10 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/query_components.ex
 #, elixir-autogen, elixir-format
 msgid "名字"
 msgstr ""
@@ -2802,6 +2825,7 @@ msgid "已绑定的 Agent 不会再被派发运行，排队中的运行会被取
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/index.ex
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #, elixir-autogen, elixir-format
 msgid "我的"
@@ -3145,6 +3169,7 @@ msgid "仍然指派（不会启动运行）"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/command_palette/task_search.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/task_collab.ex
@@ -3732,6 +3757,7 @@ msgid "超时"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/task_runs.ex
 #, elixir-autogen, elixir-format
 msgid "运行"
@@ -6732,6 +6758,7 @@ msgstr ""
 
 #: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/query_components.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "被阻塞"
@@ -6760,4 +6787,351 @@ msgstr ""
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "选择这个任务所属的 Epic。不输入时列出本项目的 Epic；其他项目的 Epic 输入 ID 或标题查找。"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/task_search.ex
+#, elixir-autogen, elixir-format
+msgid "%{author} 的 Feedback #%{seq}"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{field} 升序"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{field} 降序"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "BQL 字段"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "BQL 无效"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "仅自己"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务 ID（KEY-N）"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "你在这个工作区还没有身份，不能运行查询"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "例如 status = new AND assignee = currentUser()"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "保存到 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "先输入查询"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "全部筛选器"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "共 %{n} 个任务"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "共享"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "共享后工作区所有成员可见、可运行；所有者与管理员可以修改。"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "写法：字段 运算 值，用 AND / OR / NOT 与括号组合，ORDER BY 字段 [ASC|DESC] 排序。点击字段名把它加到查询末尾。"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "出错位置"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "删除后侧栏与他人的列表里都不再有它。"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "删除筛选器 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "别名"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "取值"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "另存为…"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "另存为筛选器"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "只有所有者能改变可见性"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "可排序"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "可见性"
+msgstr ""
+
+#: lib/helmsman_web/live/command_palette/task_search.ex
+#, elixir-autogen, elixir-format
+msgid "在查询页搜索 \"%{query}\""
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "字段"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "字段速查"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "小队名"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "工作区共享"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "已保存到 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "已保存筛选器 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "已修改"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "所有者已离开"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "所有者：%{name}"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "按 %{order}"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "按名字过滤"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "按相关度"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "整数"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "日期：2026-10-01、-7d"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "最多 %{n} 个字符"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "最多显示 10000 个结果，请缩小范围"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/nav.ex
+#, elixir-autogen, elixir-format
+msgid "查询"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "查询失败，请稍后重试"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "查询无效：%{message}"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "查询无效：第 %{n} 个字符：%{message}"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "查询结果"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "查询超时：请缩小范围（例如加上 project = KEY）"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "没有符合条件的任务"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "没有筛选器"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "第 %{n} 个字符："
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器不存在或你无权查看"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器已删除"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器已更新"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器已被删除或你已无权查看"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器操作"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "筛选器数量已达上限，请先删除不用的筛选器"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "编辑筛选器"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "试试这些查询："
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "身份名或 currentUser()"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "载入最新"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "运算"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "这个筛选器刚被修改"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "这个筛选器已被他人修改"
+msgstr ""
+
+#: lib/helmsman_web/live/query_live.ex
+#, elixir-autogen, elixir-format
+msgid "重新运行"
+msgstr ""
+
+#: lib/helmsman_web/query_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目 Key"
+msgstr ""
+
+#: lib/helmsman_web/filter_form.ex
+#, elixir-autogen, elixir-format
+msgid "你已有同名的筛选器"
 msgstr ""
