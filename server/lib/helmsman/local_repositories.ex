@@ -608,11 +608,19 @@ defmodule Helmsman.LocalRepositories do
   Clears the merged mark of the local branch of task `ident` (people
   only, `:transition_task`): the branch must be `merged`
   (`{:error, {:invalid_state, state}}`).
+
+  `opts[:manual_only]` (default false): also require, under the branch
+  row lock, that a person marked it (`merged_by_id` set); a merge found
+  by the daemon's detection gives `{:error, :not_manual}` and nothing is
+  written (`add-local-repositories-ui` D8: an in-flight undo must not
+  clear a detected merge).
   """
-  @spec mark_unmerged(Scope.t(), String.t()) :: {:ok, map()} | {:error, term()}
-  def mark_unmerged(%Scope{} = scope, ident) when is_binary(ident) do
+  @spec mark_unmerged(Scope.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def mark_unmerged(%Scope{} = scope, ident, opts \\ []) when is_binary(ident) do
+    manual_only? = Keyword.get(opts, :manual_only, false)
+
     with :ok <- person(scope) do
-      branch_write(scope, ident, &mark_unmerged_locked/2)
+      branch_write(scope, ident, &mark_unmerged_locked(&1, &2, manual_only?))
     end
   end
 
@@ -633,7 +641,10 @@ defmodule Helmsman.LocalRepositories do
   defp mark_merged_locked(_task, branch, _actor, _note),
     do: {:error, {:invalid_state, branch.state}}
 
-  defp mark_unmerged_locked(task, %TaskLocalBranch{state: "merged"} = branch) do
+  defp mark_unmerged_locked(_task, %TaskLocalBranch{state: "merged", merged_by_id: nil}, true),
+    do: {:error, :not_manual}
+
+  defp mark_unmerged_locked(task, %TaskLocalBranch{state: "merged"} = branch, _manual_only?) do
     branch
     |> Ecto.Changeset.change(state: "open", merged_at: nil, merged_by_id: nil, merge_note: nil)
     |> Repo.update!()
@@ -642,7 +653,8 @@ defmodule Helmsman.LocalRepositories do
     :ok
   end
 
-  defp mark_unmerged_locked(_task, branch), do: {:error, {:invalid_state, branch.state}}
+  defp mark_unmerged_locked(_task, branch, _manual_only?),
+    do: {:error, {:invalid_state, branch.state}}
 
   @doc """
   Asks the daemon of the local repository of task `ident` to check merge

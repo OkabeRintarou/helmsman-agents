@@ -143,6 +143,31 @@ defmodule Helmsman.LocalRepositories.MergeStateTest do
              LocalRepositories.mark_unmerged(ctx.alice_scope, ctx.task.ident)
   end
 
+  test "manual_only: a detected merge is not undone, a person's mark is", ctx do
+    delivered(ctx, sha("c"))
+    assert :ok = LocalRepositories.apply_status(ctx.dctx, status(ctx, sha("c"), :yes))
+    assert %TaskLocalBranch{state: "merged", merged_by_id: nil} = local_branch(ctx.task.id)
+
+    assert {:error, :not_manual} =
+             LocalRepositories.mark_unmerged(ctx.alice_scope, ctx.task.ident, manual_only: true)
+
+    assert %TaskLocalBranch{state: "merged", merged_by_id: nil, merged_at: %DateTime{}} =
+             local_branch(ctx.task.id)
+
+    # Without the option the existing behaviour is kept.
+    assert {:ok, %{state: "open"}} =
+             LocalRepositories.mark_unmerged(ctx.alice_scope, ctx.task.ident)
+
+    assert {:ok, %{state: "merged"}} =
+             LocalRepositories.mark_merged(ctx.alice_scope, ctx.task.ident, "manual")
+
+    assert {:ok, %{state: "open"}} =
+             LocalRepositories.mark_unmerged(ctx.alice_scope, ctx.task.ident, manual_only: true)
+
+    assert {:error, {:invalid_state, "open"}} =
+             LocalRepositories.mark_unmerged(ctx.alice_scope, ctx.task.ident, manual_only: true)
+  end
+
   test "an agent cannot mark (scenario); a viewer cannot either", ctx do
     run = delivered(ctx, sha("c"))
     {agent_scope, _token} = run_scope_fixture(run)
