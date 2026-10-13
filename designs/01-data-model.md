@@ -170,5 +170,5 @@ erDiagram
 
 - 每张表在**第一个用到它的变更**里建，只建这个变更用到的列；后续变更需要的列、约束、索引用新的 migration（`ALTER TABLE`）加上，不回改已经合并的 migration。例如 `tasks.kind` / `epic_id` 随 `add-epics` 加、`tasks.search` 随 `add-fulltext-search` 加、`task_events.source_run_id` 随 `add-run-dispatch` 加（00 §9）。
 - `citext`、`pg_trgm` 扩展在 M0 的第一个 migration 里开启。
-- 每个 migration 必须可回滚（`down` 能执行），CI 里跑一次 `mix ecto.rollback --all && mix ecto.migrate`。
+- 每个 migration 必须可回滚（`down` 能执行），CI 里跑一次 `MIX_ENV=test mix ecto.rollback --all && MIX_ENV=test mix ecto.migrate`；本地只在自己的测试分区上跑（同时带 `MIX_ENV=test` 与 `MIX_TEST_PARTITION=<分区>`），不要对 `helmsman_dev` 执行迁移或回滚。
 - 不用数据库触发器：所有派生字段在 Elixir 里维护，便于测试和阅读。

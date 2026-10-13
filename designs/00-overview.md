@@ -302,7 +302,7 @@ helmsman-agents/
 | ~~插话的兜底触发在 13 §2 里没有对应的触发类型~~ 已解决：新发起触发 `steer`；被插话的运行成功结束且有回执才移除兜底（13 §2.1、§8） | 28 `add-run-steering` |
 | ~~运行被判失败后，守护进程迟到的推送被拒，改动不进 `pushed_shas`~~ 已解决：`pushed` 不看运行状态，只看是否领取者当前代次的上报；`git_token` 在运行结束后 30 分钟内仍可续签（`add-daemon-git-workspace` 决策 4、5） | 24 `add-daemon-git-workspace` |
 | ~~恢复会话失败（CLI 找不到会话）的运行以 `cli_error` 结束且 `session_id` 为空；`add-run-lifecycle` 决策 11 取「最近结束且 `session_id` 非空」的运行，下一次又会恢复同一个失效的会话，持续失败。方向：只看最近一次终态运行，其 `session_id` 为空就开新会话~~ 已解决：只看最近一次启动过 CLI 的已结束运行，它没有会话就开新会话（`update-codex-user-home` 决策 7） | 52 `update-codex-user-home` |
-| 未绑定供应商账号的 Claude Agent，仓库里的 `.claude/settings*.json` 能改 Claude Code 的供应商地址与凭据去向（`-p` 下不询问信任；`add-provider-accounts` 预探查 P6b）。绑定了账号的不受影响。方向待定：未绑定时也只钉住地址（需要读用户配置），或对不可信仓库拒绝运行（类似 Codex 的项目配置检查） | 未分配 |
+| ~~未绑定供应商账号的 Claude Agent，仓库里的 `.claude/settings*.json` 能改 Claude Code 的供应商地址与凭据去向（`-p` 下不询问信任；`add-provider-accounts` 预探查 P6b）~~ 已解决：守护进程启动 Claude Code 一律 `--setting-sources user`，仓库的 project / local 设置不生效；仓库的 `CLAUDE.md` 经 `--add-dir` 照常加载（14 §4，`update-claude-setting-sources`） | `update-claude-setting-sources` |
 
 公开运行时的隔离问题（`isolation = user` 只有一个执行用户，不同用户的运行能互读 worktree 和 CLI 登录文件）已决定：本期不做公开运行时，守护进程只实现 `isolation = none`（12 §3.3、14 §9），两者推迟到扩展点（§10）。
 
