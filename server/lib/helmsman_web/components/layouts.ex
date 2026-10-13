@@ -8,6 +8,7 @@ defmodule HelmsmanWeb.Layouts do
     `#hm-shell`).
   * `app/1` — workspace shell: sidebar + content surface with a page header slot.
   * `auth/1` — centered card for unauthenticated pages (no sidebar).
+  * `personal/1` — the personal settings pages (no sidebar, tabs 账号 / 供应商账号).
   """
   use HelmsmanWeb, :html
 
@@ -300,6 +301,12 @@ defmodule HelmsmanWeb.Layouts do
         icon: "lucide-user-cog",
         navigate: "/users/settings"
       },
+      %{
+        id: "hm-provider-accounts",
+        label: dgettext("ui", "供应商账号"),
+        icon: "lucide-key-round",
+        navigate: "/users/settings/provider-accounts"
+      },
       %{type: :divider},
       theme_item("system", dgettext("ui", "跟随系统"), "lucide-monitor", theme_group),
       theme_item("light", dgettext("ui", "亮"), "lucide-sun", theme_group),
@@ -373,6 +380,70 @@ defmodule HelmsmanWeb.Layouts do
         <h1 :if={@title} class="mb-4 text-heading font-semibold text-fg">{@title}</h1>
         {render_slot(@inner_block)}
       </main>
+    </div>
+    <div class="fixed right-4 bottom-4 z-[60]">
+      <.flash_group flash={@flash} />
+    </div>
+    """
+  end
+
+  @doc """
+  The personal settings pages (add-provider-accounts-ui D2): outside any workspace, no
+  sidebar; a centered 960px surface with a "返回工作区" link and the user's name on top,
+  the title 个人设置 and the tabs 账号 (`/users/settings`) and 供应商账号
+  (`/users/settings/provider-accounts`).
+  """
+  attr :flash, :map, required: true
+  attr :current_scope, :map, required: true
+  attr :active, :atom, required: true, values: [:account, :provider_accounts]
+  attr :class, :any, default: nil, doc: "classes of the content below the tabs"
+  slot :inner_block, required: true
+
+  def personal(assigns) do
+    user = assigns.current_scope.user
+
+    assigns =
+      assign(assigns, :name, Map.get(user, :display_name) || Map.get(user, :email) || "")
+
+    ~H"""
+    <div class="min-h-dvh bg-shell px-4 py-12">
+      <div class="mx-auto flex w-full max-w-[960px] flex-col gap-4">
+        <div class="flex items-center justify-between gap-4">
+          <.link
+            id="hm-back-to-workspace"
+            href="/"
+            class="flex items-center gap-2 rounded-field text-body text-fg-muted hover:text-fg"
+          >
+            <span class="inline-flex size-7 items-center justify-center rounded-field bg-brand text-on-brand">
+              <.icon name="lucide-ship-wheel" class="size-4" />
+            </span>
+            <.icon name="lucide-arrow-left" class="size-4" />
+            {dgettext("ui", "返回工作区")}
+          </.link>
+          <span id="hm-personal-user" class="flex min-w-0 items-center gap-2 text-body text-fg">
+            <.avatar name={@name} src={Map.get(@current_scope.user, :avatar_url)} />
+            <span class="truncate">{@name}</span>
+          </span>
+        </div>
+        <main
+          id="hm-main"
+          class="w-full rounded-box border border-border bg-surface px-6 pt-5 pb-6"
+        >
+          <h1 class="text-heading font-semibold text-fg">{dgettext("ui", "个人设置")}</h1>
+          <.tabs label={dgettext("ui", "个人设置")} class="mt-3 mb-6">
+            <:tab navigate="/users/settings" active={@active == :account}>
+              {dgettext("ui", "账号")}
+            </:tab>
+            <:tab
+              navigate="/users/settings/provider-accounts"
+              active={@active == :provider_accounts}
+            >
+              {dgettext("ui", "供应商账号")}
+            </:tab>
+          </.tabs>
+          <div class={@class}>{render_slot(@inner_block)}</div>
+        </main>
+      </div>
     </div>
     <div class="fixed right-4 bottom-4 z-[60]">
       <.flash_group flash={@flash} />

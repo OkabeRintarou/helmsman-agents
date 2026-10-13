@@ -12,7 +12,7 @@ defmodule HelmsmanWeb.RunComponents do
   ## Dispatch outcomes (D12)
 
   @known_reasons ~w(not_started task_closed unauthorized agent_disabled agent_archived no_runtime
-                    runtime_disabled loop_detected chain_too_long rate_limited)a
+                    runtime_disabled daemon_outdated loop_detected chain_too_long rate_limited)a
 
   @doc """
   The flash of a dispatch outcome (`%Helmsman.Runs.Outcome{}` or a map with `agent`,
@@ -65,6 +65,9 @@ defmodule HelmsmanWeb.RunComponents do
   defp reason_text(_agent, :no_runtime), do: dgettext("ui", "它没有绑定运行时")
   defp reason_text(_agent, :runtime_disabled), do: dgettext("ui", "运行时已禁用")
 
+  defp reason_text(_agent, :daemon_outdated),
+    do: dgettext("ui", "它所在机器的守护进程版本过旧，请升级 helmsman 守护进程")
+
   defp reason_text(agent, :loop_detected),
     do: dgettext("ui", "%{agent} 已在触发链上，为防止循环没有启动", agent: agent)
 
@@ -92,6 +95,9 @@ defmodule HelmsmanWeb.RunComponents do
 
   def unavailable_reason(agent, {:skipped, :runtime_disabled}),
     do: dgettext("ui", "%{agent} 的运行时已禁用", agent: agent)
+
+  def unavailable_reason(agent, {:skipped, :daemon_outdated}),
+    do: dgettext("ui", "%{agent} 所在机器的守护进程版本过旧", agent: agent)
 
   def unavailable_reason(agent, {:skipped, _}), do: dgettext("ui", "不能启动 %{agent}", agent: agent)
 

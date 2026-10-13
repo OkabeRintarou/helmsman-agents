@@ -6,13 +6,14 @@ defmodule HelmsmanWeb.AgentLive.Index do
 
   Subscribes to the workspace's runs and the agents' presence before reading (D9a);
   `{:agents_changed}`, `{:runtimes_changed}` (forwarded by the shell) and
-  `{:run_updated, _}` reload the list through `HelmsmanWeb.Throttle`.
+  `{:run_updated, _}` reload the list through `HelmsmanWeb.Throttle`. The current user's
+  `{:provider_accounts_changed}` reloads the account options of an open panel.
   """
   use HelmsmanWeb, :live_view
 
   import HelmsmanWeb.AgentComponents
 
-  alias Helmsman.{Events, Policy, Presence}
+  alias Helmsman.{Events, Policy, Presence, ProviderAccounts}
   alias HelmsmanWeb.{AgentForm, RunData, Throttle, Url}
 
   @impl true
@@ -22,6 +23,7 @@ defmodule HelmsmanWeb.AgentLive.Index do
     if connected?(socket) do
       Events.subscribe(Events.topic(:workspace_runs, scope.workspace.id))
       Events.subscribe(Presence.agents_topic(scope.workspace.id))
+      Events.subscribe(ProviderAccounts.topic(scope.user.id))
     end
 
     {:ok,
@@ -139,6 +141,15 @@ defmodule HelmsmanWeb.AgentLive.Index do
       do: {:noreply, Throttle.schedule(socket)}
 
   def handle_info({:run_updated, _summary}, socket), do: {:noreply, Throttle.schedule(socket)}
+
+  def handle_info({:provider_accounts_changed}, %{assigns: %{agent_form: %{} = form}} = socket),
+    do:
+      {:noreply,
+       assign(
+         socket,
+         :agent_form,
+         AgentForm.accounts_changed(form, socket.assigns.current_scope)
+       )}
 
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, socket |> load_online() |> render_rows()}

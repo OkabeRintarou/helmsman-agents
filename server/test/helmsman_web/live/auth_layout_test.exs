@@ -1,7 +1,8 @@
 defmodule HelmsmanWeb.AuthLayoutTest do
   @moduledoc """
-  Authentication pages and the account settings page use `Layouts.auth` (centered card,
-  no shell), and their form buttons submit (`<.button>` defaults to `type="button"`).
+  Authentication pages use `Layouts.auth` (centered card, no shell) and the account
+  settings page `Layouts.personal` (no shell either); their form buttons submit
+  (`<.button>` defaults to `type="button"`).
   """
   use HelmsmanWeb.ConnCase, async: true
 

@@ -7,16 +7,18 @@ defmodule HelmsmanWeb.AgentLive.Show do
   A name in another case redirects to the lower-case address; an unknown name is a 404.
   `{:agents_changed}`, `{:runtimes_changed}` and `{:run_updated, _}` reload the agent
   through `HelmsmanWeb.Throttle`; an open edit panel keeps its input and shows a notice
-  when the agent changed meanwhile (`HelmsmanWeb.AgentForm.refreshed/2`).
+  when the agent changed meanwhile (`HelmsmanWeb.AgentForm.refreshed/2`). The current
+  user's `{:provider_accounts_changed}` reloads the account options of an open panel.
   """
   use HelmsmanWeb, :live_view
 
   import HelmsmanWeb.AgentComponents
+  import HelmsmanWeb.ProviderAccountComponents, only: [account_summary: 1, supported?: 1]
 
   import HelmsmanWeb.RunComponents,
     only: [run_card: 1, cancellable?: 2, trigger_summary: 1, duration_text: 1]
 
-  alias Helmsman.{Agents, Dispatch, Events, Members, Policy, Presence}
+  alias Helmsman.{Agents, Dispatch, Events, Members, Policy, Presence, ProviderAccounts}
   alias HelmsmanWeb.{AgentForm, MarkdownEditor, RunActions, RunComponents, RunData, Throttle, Url}
   alias Phoenix.HTML.Engine
 
@@ -36,6 +38,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
       if connected?(socket) do
         Events.subscribe(Events.topic(:workspace_runs, scope.workspace.id))
         Events.subscribe(Presence.agents_topic(scope.workspace.id))
+        Events.subscribe(ProviderAccounts.topic(scope.user.id))
       end
 
       case RunData.agent(scope, name) do
@@ -393,6 +396,15 @@ defmodule HelmsmanWeb.AgentLive.Show do
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, put_agent(socket, socket.assigns.agent)}
 
+  def handle_info({:provider_accounts_changed}, %{assigns: %{agent_form: %{} = form}} = socket),
+    do:
+      {:noreply,
+       assign(
+         socket,
+         :agent_form,
+         AgentForm.accounts_changed(form, socket.assigns.current_scope)
+       )}
+
   def handle_info(:reload, socket), do: {:noreply, socket |> Throttle.done() |> reload()}
   def handle_info(_message, socket), do: {:noreply, socket}
 
@@ -482,6 +494,9 @@ defmodule HelmsmanWeb.AgentLive.Show do
     member_names = Enum.map(agent.access_member_ids || [], &Map.get(names, &1, "#{&1}"))
     access_label(agent, member_names)
   end
+
+  defp model_default(%{provider_account: %{}}), do: dgettext("ui", "账号缺省")
+  defp model_default(_agent), do: dgettext("ui", "CLI 缺省")
 
   defp limits_text(agent),
     do:
@@ -676,8 +691,22 @@ defmodule HelmsmanWeb.AgentLive.Show do
               <span :if={!@agent.runtime} class="text-fg-subtle">{dgettext("ui", "未绑定运行时")}</span>
             </.property_row>
             <.property_row
+              :if={supported?(@agent.provider)}
+              label={dgettext("ui", "供应商账号")}
+              data-provider-account-row
+            >
+              <.account_summary
+                :if={@agent[:provider_account]}
+                account={@agent.provider_account}
+                link={@agent.owner.id == @current_scope.user.id}
+              />
+              <span :if={!@agent[:provider_account]} class="text-fg-subtle">
+                {dgettext("ui", "CLI 默认登录")}
+              </span>
+            </.property_row>
+            <.property_row
               label={dgettext("ui", "模型")}
-              value={@agent.model || dgettext("ui", "CLI 缺省")}
+              value={@agent.model || model_default(@agent)}
               data-model
             />
             <.property_row

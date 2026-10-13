@@ -130,6 +130,12 @@ defmodule HelmsmanWeb.RunLive.Show do
           {@run.agent}
         </.link>
       </.property_row>
+      <.property_row
+        :if={@run[:provider_account_name]}
+        label={dgettext("ui", "供应商账号")}
+        value={@run.provider_account_name}
+        data-provider-account
+      />
       <.property_row label="lane" value={@run.lane} />
       <.property_row label={dgettext("ui", "状态")} data-status>
         <.run_status_badge status={@run.status} />

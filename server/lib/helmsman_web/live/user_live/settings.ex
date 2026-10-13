@@ -7,7 +7,12 @@ defmodule HelmsmanWeb.UserLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.auth flash={@flash}>
+    <Layouts.personal
+      flash={@flash}
+      current_scope={@current_scope}
+      active={:account}
+      class="max-w-[400px]"
+    >
       <.header>
         {dgettext("ui", "账号设置")}
         <:subtitle>{dgettext("ui", "管理显示名、邮箱和密码")}</:subtitle>
@@ -104,7 +109,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
           {dgettext("ui", "保存密码")}
         </.button>
       </.form>
-    </Layouts.auth>
+    </Layouts.personal>
     """
   end
 
@@ -137,6 +142,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
 
     socket =
       socket
+      |> assign(:page_title, dgettext("ui", "账号设置"))
       |> assign(:current_email, user.email)
       |> assign(:sudo_mode?, Accounts.sudo_mode?(user))
       |> assign(:display_name_form, to_form(Accounts.change_user_display_name(user)))

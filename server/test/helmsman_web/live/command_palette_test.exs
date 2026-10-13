@@ -35,6 +35,19 @@ defmodule HelmsmanWeb.CommandPaletteTest do
     assert_redirect(view, "/dev/ui/projects")
   end
 
+  test "供应商账号 is found by 供应商 or provider (add-provider-accounts-ui D11)", %{conn: conn} do
+    for q <- ["供应商", "Provider"] do
+      {:ok, view, _html} = live(conn, "/dev/ui")
+      search(view, q)
+      html = palette(view)
+      assert html =~ "供应商账号"
+      assert html =~ "个人设置"
+
+      palette_event(view, "execute", %{})
+      assert_redirect(view, "/users/settings/provider-accounts")
+    end
+  end
+
   test "no match shows a hint", %{conn: conn} do
     {:ok, view, _html} = live(conn, "/dev/ui")
     search(view, "zzzz-nothing")

@@ -188,6 +188,7 @@ msgstr ""
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "创建"
 msgstr ""
@@ -199,6 +200,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "删除"
 msgstr ""
@@ -226,6 +228,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "取消"
 msgstr ""
@@ -347,6 +350,7 @@ msgstr ""
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "已保存"
 msgstr ""
@@ -574,6 +578,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "更多操作"
 msgstr ""
@@ -931,6 +936,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "保存"
 msgstr ""
@@ -946,7 +952,9 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "名称"
 msgstr ""
@@ -1080,6 +1088,7 @@ msgstr ""
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/user_live/settings.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "正在保存…"
 msgstr ""
@@ -1630,6 +1639,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_errors.ex
+#: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/run_actions.ex
 #, elixir-autogen, elixir-format
 msgid "没有权限执行此操作"
@@ -1667,6 +1677,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/markdown_editor.ex
 #, elixir-autogen, elixir-format
 msgid "编辑"
@@ -1974,7 +1985,9 @@ msgid "在 Claude Code 中添加 Helmsman："
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "地址"
 msgstr ""
@@ -2230,6 +2243,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "请修正下列错误"
 msgstr ""
@@ -2780,6 +2794,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "操作失败，请重试"
 msgstr ""
@@ -2961,6 +2976,7 @@ msgid "%{name} 已归档，不能再修改"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "%{name} 已被修改，提交仍以面板中的值为准"
 msgstr ""
@@ -3253,6 +3269,8 @@ msgid "守护进程领取后没有按时启动 CLI"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "密钥"
 msgstr ""
@@ -3275,6 +3293,7 @@ msgid "已停用"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/index.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "已创建 %{name}"
 msgstr ""
@@ -3591,6 +3610,7 @@ msgid "类型"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "编辑 %{name}"
 msgstr ""
@@ -3973,4 +3993,363 @@ msgstr ""
 #: lib/helmsman_web/components/actor.ex
 #, elixir-autogen, elixir-format
 msgid "所属：%{owner}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{agent} 所在机器的守护进程版本过旧"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{cli} 供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{label}（必填）"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 已被删除"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name}（当前）"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "CLI 默认登录"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "Codex 账号必须填写缺省模型（default）"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "https；本机地址（localhost、127.x、[::1]）可用 http；不能包含用户名、密码或查询串"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "不能删除 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能包含 # 片段"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能包含控制字符"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能包含查询串"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能包含用户名或密码"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 2048 字节"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/command_palette/pages.ex
+#, elixir-autogen, elixir-format
+msgid "个人设置"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "为托管 Agent 指定模型供应商的地址、密钥与模型；同一个 CLI 可以有多个账号，Agent 各选其一"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "为这个 Agent 使用另一家供应商的地址、密钥与模型"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "仍被以下 Agent 使用，先在这些 Agent 的设置里改用其他账号："
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "你已有同名的供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "使用中"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "使用中的 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/command_palette/pages.ex
+#: lib/helmsman_web/live/run_live/show.ex
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "供应商账号不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "供应商账号已被删除"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "修改地址、密钥或模型映射只影响之后开始的运行"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "创建后不能修改"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "删除 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "删除后不能恢复；已结束的运行不再显示所用账号。"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "只有本机地址可以使用 http，其他地址须为 https"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_components.ex
+#, elixir-autogen, elixir-format
+msgid "子 Agent（subagent）"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "它所在机器的守护进程版本过旧，请升级 helmsman 守护进程"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "密钥加密保存，保存后不能查看"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "密钥加密保存，保存后不能查看；Agent 在 Agent 设置里选择账号。"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "已删除 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "已清空：%{model} 不在运行时上报的模型里"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "已设置"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "必填"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "新建供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "新建账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "更新时间"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "最多 %{n} 个供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "未使用"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "未知的别名 %{alias}（可用：%{allowed}）"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "未设置"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "格式不正确"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "模型名须为 1–128 个可见 ASCII 字符"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "模型映射"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "添加供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "留空使用 %{model}"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "留空使用 CLI 的缺省"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "留空使用账号的缺省模型"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "留空则不修改"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "知道了"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "管理供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "缺省模型"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_components.ex
+#, elixir-autogen, elixir-format
+msgid "缺省模型（default）"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "被 %{count} 个 Agent 使用，不能删除"
+msgid_plural "被 %{count} 个 Agent 使用，不能删除"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "要切换模型供应商请使用供应商账号：CLI 的用户配置会覆盖这里的 %{vars} 变量。"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "该账号已不存在"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "该账号用于 %{cli}"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "账号"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "账号的缺省模型"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "账号缺省"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "返回工作区"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "还没有 %{cli} 的供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "还没有供应商账号"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "选这些别名时实际使用的模型；留空的别名不映射"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "须为 1–8192 个可见 ASCII 字符（不含空格）"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "须为 https 地址"
 msgstr ""

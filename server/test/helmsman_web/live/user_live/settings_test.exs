@@ -37,6 +37,21 @@ defmodule HelmsmanWeb.UserLive.SettingsTest do
       assert html =~ "保存密码"
     end
 
+    test "uses the personal settings layout (add-provider-accounts-ui D2)", %{conn: conn} do
+      {:ok, lv, _html} = conn |> log_in_user(user_fixture()) |> live(~p"/users/settings")
+
+      assert has_element?(lv, ~s(nav a[aria-current="page"][href="/users/settings"]), "账号")
+
+      assert has_element?(
+               lv,
+               ~s{nav a[href="/users/settings/provider-accounts"]:not([aria-current])},
+               "供应商账号"
+             )
+
+      refute has_element?(lv, "#hm-sidebar")
+      assert page_title(lv) == "账号设置 · Helmsman"
+    end
+
     test "redirects if user is not logged in", %{conn: conn} do
       assert {:error, redirect} = live(conn, ~p"/users/settings")
 

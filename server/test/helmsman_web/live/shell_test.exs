@@ -115,6 +115,12 @@ defmodule HelmsmanWeb.ShellTest do
 
       assert has_element?(view, ~s(#hm-account[href="/users/settings"]), "账号设置")
 
+      assert has_element?(
+               view,
+               ~s(#hm-provider-accounts[href="/users/settings/provider-accounts"]),
+               "供应商账号"
+             )
+
       for theme <- ~w(system light dark) do
         assert has_element?(
                  view,

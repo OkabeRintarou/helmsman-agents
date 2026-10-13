@@ -9,8 +9,12 @@ defmodule HelmsmanWeb.RunLive.ShowTest do
   import Helmsman.RunsFixtures
   import Helmsman.RunLifecycleFixtures
   import HelmsmanWeb.LiveHelpers
+  import Ecto.Query
+  import Helmsman.AgentsFixtures
+  import Helmsman.ProviderAccountsFixtures
 
-  alias Helmsman.Tasks
+  alias Helmsman.Daemons.Daemon
+  alias Helmsman.{Repo, Tasks}
 
   setup %{conn: conn} do
     ctx = dispatch_fixture(%{access: "workspace"})
@@ -63,6 +67,43 @@ defmodule HelmsmanWeb.RunLive.ShowTest do
     assert has_element?(view, "#run-claimed-at")
     assert has_element?(view, "#run-started-at")
     refute has_element?(view, "#run-finished-at")
+  end
+
+  describe "运行页的供应商账号 (add-provider-accounts-ui D10)" do
+    test "显示所用账号: the account of the claim, not of a later binding", ctx do
+      daemon = daemon_of(ctx.agent)
+      Repo.update_all(from(d in Daemon, where: d.id == ^daemon.id), set: [max_concurrency: 8])
+
+      zai = provider_account_fixture(ctx.alice, %{name: "zai", api_key: "sk-zai-run"})
+      volc = provider_account_fixture(ctx.alice, %{name: "volc"})
+
+      managed_agent_fixture(ctx.alice_scope, %{
+        name: "keel/claude-zai",
+        runtime_id: profile(ctx.agent).runtime_id,
+        provider_account_id: zai.id
+      })
+
+      agent = agent_actor(ctx.workspace, "keel/claude-zai")
+      run = run_fixture(agent, %{root_initiator_user_id: ctx.alice.id})
+      assert run.id in claim!(agent)
+
+      {:ok, _} =
+        Helmsman.Agents.update(ctx.alice_scope, "keel/claude-zai", %{provider_account_id: volc.id})
+
+      {:ok, view, html} =
+        live(log_in_user(ctx.conn, ctx.carol), "/w/#{ctx.workspace.slug}/runs/#{run.id}")
+
+      assert has_element?(view, "#run-properties [data-provider-account]", "zai")
+      refute has_element?(view, "#run-properties [data-provider-account]", "volc")
+      refute html =~ "sk-zai-run"
+    end
+
+    test "未使用账号: no row", ctx do
+      [_] = claim!(ctx.agent)
+      {:ok, view, _html} = open(ctx, ctx.carol)
+      assert has_element?(view, "#run-properties [data-daemon]")
+      refute has_element?(view, "#run-properties [data-provider-account]")
+    end
   end
 
   test "a run of another workspace is a 404", ctx do

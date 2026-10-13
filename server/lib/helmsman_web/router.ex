@@ -98,6 +98,7 @@ defmodule HelmsmanWeb.Router do
       on_mount: [{HelmsmanWeb.UserAuth, :require_authenticated}] do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+      live "/users/settings/provider-accounts", UserLive.ProviderAccounts, :index
       live "/workspaces/new", WorkspaceLive.New, :new
       live "/device", DeviceLive, :show
     end

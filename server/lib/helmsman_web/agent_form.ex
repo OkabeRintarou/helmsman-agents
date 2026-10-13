@@ -12,16 +12,24 @@ defmodule HelmsmanWeb.AgentForm do
     (`gen`); their params are dropped before the state is stored.
   * Two local checks only: the MCP input must decode to a JSON object, and a new
     variable with a value needs a name. Everything else is the domain's changeset.
+  * Provider accounts (add-provider-accounts-ui D8): for `claude` / `codex` the execution
+    group has a 供应商账号 select listing the current user's accounts of that CLI
+    (`ProviderAccounts.options/2`); with an account the model is free text. Changing the
+    CLI clears an account of another CLI; an edit switching a bound agent to a CLI
+    without accounts submits `provider_account_id: nil` explicitly.
   """
   use HelmsmanWeb, :html
 
   import HelmsmanWeb.AgentComponents, only: [provider_label: 1, providers: 0]
 
-  alias Helmsman.{Agents, Members, Runtimes}
+  import HelmsmanWeb.ProviderAccountComponents,
+    only: [accounts_path: 0, accounts_path: 1, host: 1, supported?: 1]
+
+  alias Helmsman.{Agents, Members, ProviderAccounts, Runtimes}
   alias HelmsmanWeb.{FormErrors, MarkdownEditor}
 
   @basic ~w(description)
-  @execution ~w(provider runtime_id model effort instructions custom_args)
+  @execution ~w(provider runtime_id provider_account_id model effort instructions custom_args)
   @access ~w(access access_member_ids capabilities)
   @limits ~w(max_concurrency timeout_minutes idle_timeout_minutes)
   @integers ~w(max_concurrency timeout_minutes idle_timeout_minutes)
@@ -30,6 +38,7 @@ defmodule HelmsmanWeb.AgentForm do
     "description" => "",
     "provider" => "claude",
     "runtime_id" => "",
+    "provider_account_id" => "",
     "model" => "",
     "effort" => "",
     "instructions" => "",
@@ -58,7 +67,9 @@ defmodule HelmsmanWeb.AgentForm do
       add_rows: [],
       errors: %{},
       error: nil,
-      notice: nil
+      notice: nil,
+      missing_account: nil,
+      model_cleared: nil
     }
     |> load_options(scope)
   end
@@ -75,7 +86,9 @@ defmodule HelmsmanWeb.AgentForm do
       add_rows: [],
       errors: %{},
       error: nil,
-      notice: nil
+      notice: nil,
+      missing_account: nil,
+      model_cleared: nil
     }
     |> load_options(scope)
   end
@@ -90,6 +103,7 @@ defmodule HelmsmanWeb.AgentForm do
     |> Map.merge(%{
       "name" => view.name,
       "runtime_id" => runtime_param(view.runtime),
+      "provider_account_id" => runtime_param(view[:provider_account]),
       "custom_args" => Enum.join(List.wrap(view.custom_args), "\n"),
       "access_member_ids" => Enum.map(List.wrap(view.access_member_ids), &to_string/1),
       "capabilities" => List.wrap(view.capabilities),
@@ -116,7 +130,7 @@ defmodule HelmsmanWeb.AgentForm do
           []
       end
 
-    form |> Map.put(:members, members) |> load_runtimes(scope)
+    form |> Map.put(:members, members) |> load_runtimes(scope) |> load_accounts(scope)
   end
 
   defp load_runtimes(%{configure?: false} = form, _scope), do: Map.put(form, :runtimes, [])
@@ -129,6 +143,39 @@ defmodule HelmsmanWeb.AgentForm do
       end
 
     Map.put(form, :runtimes, runtimes)
+  end
+
+  # The current user's accounts of the selected CLI. An admin editing someone else's
+  # agent lists none: the select only shows the current binding.
+  defp load_accounts(%{configure?: false} = form, _scope), do: Map.put(form, :accounts, [])
+
+  defp load_accounts(form, scope) do
+    provider = form.params["provider"]
+
+    accounts =
+      with true <- supported?(provider),
+           {:ok, options} <- ProviderAccounts.options(scope, provider) do
+        options
+      else
+        _ -> []
+      end
+
+    Map.put(form, :accounts, accounts)
+  end
+
+  @doc """
+  The user's provider accounts changed (another tab): reloads the options of the
+  select, keeping the selected value; a selected account that is gone stays as the
+  current item with a hint.
+  """
+  def accounts_changed(form, scope) do
+    selected = form.params["provider_account_id"]
+    previous = Enum.find(form.accounts, &(to_string(&1.id) == selected))
+    form = load_accounts(form, scope)
+
+    if previous && not Enum.any?(form.accounts, &(&1.id == previous.id)),
+      do: %{form | missing_account: %{id: previous.id, name: previous.name}},
+      else: form
   end
 
   ## Events
@@ -182,17 +229,54 @@ defmodule HelmsmanWeb.AgentForm do
   def change(form, scope, params) do
     params = merge(form, params)
     provider_changed? = params["provider"] != form.params["provider"]
-    form = %{form | params: params}
+    previous_account = form.params["provider_account_id"]
+    form = %{form | params: params, model_cleared: nil}
 
-    if provider_changed? and form.configure? do
-      form = load_runtimes(form, scope)
-      ids = Enum.map(form.runtimes, &to_string(&1.id))
+    form =
+      if provider_changed? and form.configure? do
+        form = form |> load_runtimes(scope) |> load_accounts(scope)
+        ids = Enum.map(form.runtimes, &to_string(&1.id))
 
-      if params["runtime_id"] in ids,
-        do: form,
-        else: %{form | params: %{params | "runtime_id" => "", "model" => "", "effort" => ""}}
-    else
-      form
+        form =
+          if params["runtime_id"] in ids,
+            do: form,
+            else: %{form | params: %{params | "runtime_id" => "", "model" => "", "effort" => ""}}
+
+        keep_account(form)
+      else
+        form
+      end
+
+    clear_model(form, previous_account)
+  end
+
+  # An account of another CLI is cleared with the CLI change.
+  defp keep_account(form) do
+    selected = form.params["provider_account_id"]
+
+    if selected == "" or Enum.any?(form.accounts, &(to_string(&1.id) == selected)),
+      do: form,
+      else: put_param(form, "provider_account_id", "")
+  end
+
+  # Back from an account to the CLI's own login: a model the runtime does not report is
+  # cleared (with a hint), since the select only offers the reported ones.
+  defp clear_model(form, previous_account) do
+    model = form.params["model"]
+    models = runtime_models(form)
+
+    if previous_account != "" and form.params["provider_account_id"] == "" and model != "" and
+         models != [] and model not in models,
+       do: %{put_param(form, "model", "") | model_cleared: model},
+       else: form
+  end
+
+  defp put_param(form, key, value), do: %{form | params: Map.put(form.params, key, value)}
+
+  defp runtime_models(form) do
+    case Enum.find(form.runtimes, &(to_string(&1.id) == form.params["runtime_id"])) do
+      %{models: models} when is_list(models) -> models
+      _ -> []
     end
   end
 
@@ -254,7 +338,18 @@ defmodule HelmsmanWeb.AgentForm do
       |> Map.drop([:env, :extra_mcp_servers])
       |> then(&if(secrets == [], do: &1, else: Map.put(&1, :secrets, secrets)))
 
-    %{form | errors: errors, error: dgettext("ui", "请修正下列错误")}
+    hidden_account_errors =
+      if supported?(form.params["provider"]),
+        do: [],
+        else: Map.get(errors, :provider_account_id, [])
+
+    error =
+      case hidden_account_errors do
+        [] -> dgettext("ui", "请修正下列错误")
+        messages -> Enum.join([dgettext("ui", "供应商账号") <> "：" | messages], "")
+      end
+
+    %{form | errors: errors, error: error}
   end
 
   # Keeps only the non-secret params; the add rows keep their names.
@@ -296,6 +391,7 @@ defmodule HelmsmanWeb.AgentForm do
       attrs =
         form
         |> changed(fields, values)
+        |> unbind(form)
         |> put_secret("env", env, env != %{} and form.configure?)
         |> put_secret("extra_mcp_servers", mcp, mcp != :keep and form.configure?)
 
@@ -303,22 +399,43 @@ defmodule HelmsmanWeb.AgentForm do
     end
   end
 
-  defp changed(%{mode: :new} = form, _fields, values),
-    do: Map.put(values, "name", String.trim(form.params["name"] || ""))
+  defp changed(%{mode: :new} = form, _fields, values) do
+    values
+    |> Map.reject(fn {k, v} -> k == "provider_account_id" and v == nil end)
+    |> Map.put("name", String.trim(form.params["name"] || ""))
+  end
 
   defp changed(form, fields, values) do
     base = Map.new(fields, &{&1, value(&1, params_of(form.base)[&1])})
     Map.filter(values, fn {k, v} -> v != base[k] end)
   end
 
+  # A bound agent moved to a CLI without accounts: the binding is dropped in the same
+  # request (the domain refuses a CLI that does not match the account).
+  defp unbind(attrs, %{mode: :edit, configure?: true, base: %{provider_account: %{}}} = form) do
+    if supported?(form.params["provider"]),
+      do: attrs,
+      else: Map.put(attrs, "provider_account_id", nil)
+  end
+
+  defp unbind(attrs, _form), do: attrs
+
   defp put_secret(attrs, key, value, true), do: Map.put(attrs, key, value)
   defp put_secret(attrs, _key, _value, false), do: attrs
 
-  defp fields(%{configure?: true}), do: @basic ++ @execution ++ @access ++ @limits
+  defp fields(%{configure?: true} = form) do
+    execution =
+      if supported?(form.params["provider"]),
+        do: @execution,
+        else: List.delete(@execution, "provider_account_id")
+
+    @basic ++ execution ++ @access ++ @limits
+  end
+
   defp fields(_form), do: @basic ++ @limits
 
-  defp value("runtime_id", ""), do: nil
-  defp value("runtime_id", id), do: integer(id)
+  defp value(field, "") when field in ~w(runtime_id provider_account_id), do: nil
+  defp value(field, id) when field in ~w(runtime_id provider_account_id), do: integer(id)
   defp value(field, "") when field in ~w(model effort), do: nil
 
   defp value("custom_args", text),
@@ -410,7 +527,11 @@ defmodule HelmsmanWeb.AgentForm do
                   access_member_ids capabilities max_concurrency timeout_minutes
                   idle_timeout_minutes env_names extra_mcp_server_names)a
   defp config(view),
-    do: view |> Map.take(@config_keys) |> Map.put(:runtime_id, view.runtime && view.runtime.id)
+    do:
+      view
+      |> Map.take(@config_keys)
+      |> Map.put(:runtime_id, view.runtime && view.runtime.id)
+      |> Map.put(:provider_account_id, view[:provider_account] && view.provider_account.id)
 
   ## Rendering
 
@@ -483,7 +604,13 @@ defmodule HelmsmanWeb.AgentForm do
         gen: assigns.form.gen,
         locked?: not assigns.form.configure?,
         runtime_options: runtime_options(assigns.form),
-        models: (runtime && runtime.models) || [],
+        account?: supported?(p["provider"]),
+        account: selected_account(assigns.form),
+        models:
+          if(p["provider_account_id"] in ["", nil],
+            do: (runtime && runtime.models) || [],
+            else: []
+          ),
         efforts: (runtime && runtime.efforts) || []
       )
 
@@ -543,15 +670,29 @@ defmodule HelmsmanWeb.AgentForm do
           options={@runtime_options}
           errors={Map.get(@e, :runtime_id, [])}
         />
+        <.account_select :if={@account?} form={@form} errors={Map.get(@e, :provider_account_id, [])} />
         <div class="grid gap-4 sm:grid-cols-2">
-          <.choice_or_text
-            id="agent-model"
-            name="agent[model]"
-            label={dgettext("ui", "模型")}
-            value={@p["model"]}
-            options={@models}
-            errors={Map.get(@e, :model, [])}
-          />
+          <div class="flex flex-col gap-1">
+            <.choice_or_text
+              id="agent-model"
+              name="agent[model]"
+              label={dgettext("ui", "模型")}
+              value={@p["model"]}
+              options={@models}
+              placeholder={@p["provider_account_id"] not in ["", nil] && dgettext("ui", "账号的缺省模型")}
+              errors={Map.get(@e, :model, [])}
+            />
+            <p
+              :if={@p["provider_account_id"] not in ["", nil]}
+              id="agent-model-account-hint"
+              class="text-caption text-fg-muted"
+            >
+              {model_hint(@account)}
+            </p>
+            <p :if={@form.model_cleared} id="agent-model-cleared" class="text-caption text-warning-fg">
+              {dgettext("ui", "已清空：%{model} 不在运行时上报的模型里", model: @form.model_cleared)}
+            </p>
+          </div>
           <.choice_or_text
             id="agent-effort"
             name="agent[effort]"
@@ -676,6 +817,14 @@ defmodule HelmsmanWeb.AgentForm do
           <p :for={msg <- @e.secrets}>{msg}</p>
         </div>
         <p class="text-label font-medium text-fg">{dgettext("ui", "环境变量")}</p>
+        <p
+          :if={@account?}
+          id="agent-env-provider-hint"
+          class="flex items-start gap-1.5 text-caption text-fg-muted"
+        >
+          <.icon name="lucide-info" class="mt-0.5 size-3.5 shrink-0" />
+          {env_hint(@p["provider"])}
+        </p>
         <input type="hidden" name="agent[env_delete][]" value="" />
         <div
           :for={name <- existing_env(@form)}
@@ -778,6 +927,7 @@ defmodule HelmsmanWeb.AgentForm do
   attr :label, :string, required: true
   attr :value, :string, required: true
   attr :options, :list, required: true
+  attr :placeholder, :any, default: nil
   attr :errors, :list, default: []
 
   defp choice_or_text(%{options: []} = assigns) do
@@ -787,7 +937,7 @@ defmodule HelmsmanWeb.AgentForm do
       name={@name}
       label={@label}
       value={@value}
-      placeholder={dgettext("ui", "CLI 缺省")}
+      placeholder={@placeholder || dgettext("ui", "CLI 缺省")}
       errors={@errors}
     />
     """
@@ -836,6 +986,141 @@ defmodule HelmsmanWeb.AgentForm do
     do: dgettext("ui", "%{machine}（已禁用）", machine: r.daemon_name)
 
   defp current_label(r), do: r.daemon_name
+
+  attr :form, :map, required: true
+  attr :errors, :list, default: []
+
+  defp account_select(assigns) do
+    form = assigns.form
+    provider = form.params["provider"]
+
+    assigns =
+      assign(assigns,
+        options: account_options(form),
+        provider: provider,
+        none?: form.accounts == [],
+        gone?:
+          form.missing_account != nil and
+            to_string(form.missing_account.id) == form.params["provider_account_id"]
+      )
+
+    ~H"""
+    <div id="agent-provider-account-field" class="flex flex-col gap-1">
+      <.input
+        id="agent-provider-account"
+        name="agent[provider_account_id]"
+        type="select"
+        label={dgettext("ui", "供应商账号")}
+        value={@form.params["provider_account_id"]}
+        options={@options}
+        errors={@errors}
+      />
+      <p :if={@gone?} id="agent-provider-account-gone" class="text-caption text-warning-fg">
+        {dgettext("ui", "该账号已不存在")}
+      </p>
+      <p :if={@form.configure?} id="agent-provider-account-help" class="text-caption text-fg-muted">
+        <span :if={@none?}>
+          {dgettext("ui", "还没有 %{cli} 的供应商账号", cli: provider_label(@provider))}
+          <.link
+            id="agent-provider-account-add"
+            href={accounts_path(panel: "new")}
+            target="_blank"
+            rel="noopener"
+            class="ml-1 font-medium text-brand-fg hover:underline"
+          >
+            {dgettext("ui", "添加供应商账号")}
+          </.link>
+        </span>
+        <span :if={!@none?}>
+          {dgettext("ui", "为这个 Agent 使用另一家供应商的地址、密钥与模型")}
+          <.link
+            id="agent-provider-account-manage"
+            href={accounts_path()}
+            target="_blank"
+            rel="noopener"
+            class="ml-1 font-medium text-brand-fg hover:underline"
+          >
+            {dgettext("ui", "管理供应商账号")}
+          </.link>
+        </span>
+      </p>
+    </div>
+    """
+  end
+
+  # "CLI 默认登录", the user's accounts of the CLI, and the selected account when it is
+  # not among them: the current binding (deleted, or listed for an admin who may not
+  # change it) or an account deleted while the panel is open.
+  defp account_options(form) do
+    listed =
+      form.accounts
+      |> Enum.sort_by(&String.downcase(&1.name))
+      |> Enum.map(&{"#{&1.name} · #{host(&1.base_url)}", to_string(&1.id)})
+
+    selected = form.params["provider_account_id"]
+
+    extra =
+      cond do
+        selected in ["", nil] or Enum.any?(listed, &(elem(&1, 1) == selected)) ->
+          []
+
+        match?(%{provider_account: %{}}, form.base) and
+            to_string(form.base.provider_account.id) == selected ->
+          [{current_account_label(form), selected}]
+
+        form.missing_account && to_string(form.missing_account.id) == selected ->
+          [{dgettext("ui", "%{name}（当前）", name: form.missing_account.name), selected}]
+
+        true ->
+          []
+      end
+
+    [{dgettext("ui", "CLI 默认登录"), ""} | listed ++ extra]
+  end
+
+  defp current_account_label(%{configure?: false, base: %{provider_account: a}}),
+    do: "#{a.name} · #{a.host}"
+
+  defp current_account_label(%{base: %{provider_account: a}}),
+    do: dgettext("ui", "%{name}（当前）", name: a.name)
+
+  defp selected_account(form) do
+    selected = form.params["provider_account_id"]
+    Enum.find(form.accounts, &(to_string(&1.id) == selected))
+  end
+
+  defp model_hint(%{models: models}) when is_map(models) do
+    others =
+      models
+      |> Map.delete("default")
+      |> Enum.sort()
+      |> Enum.map_join("、", fn {k, v} -> "#{k} → #{v}" end)
+
+    case {models["default"], others} do
+      {nil, ""} -> dgettext("ui", "留空使用 CLI 的缺省")
+      {nil, others} -> others
+      {default, ""} -> dgettext("ui", "留空使用 %{model}", model: default)
+      {default, others} -> dgettext("ui", "留空使用 %{model}", model: default) <> "；" <> others
+    end
+  end
+
+  defp model_hint(_account), do: dgettext("ui", "留空使用账号的缺省模型")
+
+  defp env_hint("codex"),
+    do:
+      dgettext(
+        "ui",
+        "要切换模型供应商请使用供应商账号：CLI 的用户配置会覆盖这里的 %{vars} 变量。",
+        vars: "OPENAI_*"
+      )
+
+  defp env_hint(_provider),
+    do:
+      dgettext(
+        "ui",
+        "要切换模型供应商请使用供应商账号：CLI 的用户配置会覆盖这里的 %{vars} 变量。",
+        vars: "ANTHROPIC_*"
+      )
 
   defp existing_env(%{base: %{env_names: names}}) when is_list(names), do: names
   defp existing_env(_form), do: []

@@ -24,6 +24,7 @@ defmodule HelmsmanWeb.RunComponentsTest do
         {skipped(:agent_archived), :warning, "没有启动 keel/dev：它已归档"},
         {skipped(:no_runtime), :warning, "没有启动 keel/dev：它没有绑定运行时"},
         {skipped(:runtime_disabled), :warning, "没有启动 keel/dev：运行时已禁用"},
+        {skipped(:daemon_outdated), :warning, "没有启动 keel/dev：它所在机器的守护进程版本过旧，请升级 helmsman 守护进程"},
         {skipped(:loop_detected), :warning, "没有启动 keel/dev：keel/dev 已在触发链上，为防止循环没有启动"},
         {skipped(:chain_too_long), :warning, "没有启动 keel/dev：触发链过长，为防止循环没有启动"},
         {skipped(:rate_limited), :warning, "没有启动 keel/dev：这个任务一小时内的运行次数已达上限"}
@@ -78,6 +79,16 @@ defmodule HelmsmanWeb.RunComponentsTest do
 
     assert RunComponents.unavailable_reason("keel/dev", {:skipped, :no_runtime}) ==
              "keel/dev 没有绑定运行时"
+
+    assert RunComponents.unavailable_reason("keel/dev", {:skipped, :daemon_outdated}) ==
+             "keel/dev 所在机器的守护进程版本过旧"
+
+    assert RunComponents.dispatch_message(%{
+             agent: "keel/claude-zai",
+             result: "skipped",
+             reason: "daemon_outdated"
+           }) ==
+             {:warning, "没有启动 keel/claude-zai：它所在机器的守护进程版本过旧，请升级 helmsman 守护进程"}
   end
 
   describe "D13" do
