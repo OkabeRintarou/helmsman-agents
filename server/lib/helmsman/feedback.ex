@@ -151,19 +151,23 @@ defmodule Helmsman.Feedback do
     seq = task.feedback_seq + 1
 
     entry =
-      Repo.insert!(%Entry{
-        workspace_id: task.workspace_id,
-        task_id: task.id,
-        seq: seq,
-        thread_seq: seq,
-        author_id: actor.id,
-        kind: input[:kind] || :comment,
-        content: content,
-        mentions:
-          Keyword.get_lazy(opts, :mentions, fn -> resolve_mentions(task.workspace_id, content) end),
-        source_run_id: Keyword.get(opts, :source_run_id, source_run_id(scope)),
-        fallback: Keyword.get(opts, :fallback, false)
-      })
+      Repo.insert!(
+        Entry.new(
+          workspace_id: task.workspace_id,
+          task_id: task.id,
+          seq: seq,
+          thread_seq: seq,
+          author_id: actor.id,
+          kind: input[:kind] || :comment,
+          content: content,
+          mentions:
+            Keyword.get_lazy(opts, :mentions, fn ->
+              resolve_mentions(task.workspace_id, content)
+            end),
+          source_run_id: Keyword.get(opts, :source_run_id, source_run_id(scope)),
+          fallback: Keyword.get(opts, :fallback, false)
+        )
+      )
 
     task = refresh_counters(task, seq)
     entry = entry |> load(task.ident) |> hd()
@@ -282,22 +286,25 @@ defmodule Helmsman.Feedback do
     seq = task.feedback_seq + 1
 
     entry =
-      Repo.insert!(%Entry{
-        workspace_id: task.workspace_id,
-        task_id: task.id,
-        seq: seq,
-        thread_seq: old.thread_seq,
-        author_id: scope.actor.id,
-        kind: input.kind || old.kind,
-        content: input.content,
-        mentions: mentions,
-        supersedes_id: old.id,
-        source_run_id: source_run_id(scope)
-      })
+      Repo.insert!(
+        Entry.new(
+          workspace_id: task.workspace_id,
+          task_id: task.id,
+          seq: seq,
+          thread_seq: old.thread_seq,
+          author_id: scope.actor.id,
+          kind: input.kind || old.kind,
+          content: input.content,
+          mentions: mentions,
+          supersedes_id: old.id,
+          source_run_id: source_run_id(scope)
+        )
+      )
 
+    # A superseded record is never found (designs/06 §1).
     {1, _} =
       Repo.update_all(where(Entry, id: ^old.id),
-        set: [status: :superseded, superseded_by_id: entry.id]
+        set: [status: :superseded, superseded_by_id: entry.id, search: nil]
       )
 
     task = refresh_counters(task, seq)

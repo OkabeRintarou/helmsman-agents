@@ -6,13 +6,14 @@ defmodule Helmsman.Feedback.Entry do
   Markdown content and the identities it mentions.
 
   Rows are only ever inserted, except for the one update a revision makes
-  to the record it supersedes (`status` and `superseded_by_id`).
+  to the record it supersedes (`status`, `superseded_by_id` and `search`).
   """
 
   use Ecto.Schema
   import Ecto.Changeset
 
   alias Helmsman.Actors.Actor
+  alias Helmsman.Search.Document
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
@@ -44,6 +45,10 @@ defmodule Helmsman.Feedback.Entry do
     # 10): `%{"agent_id", "trigger", "result", "reason", "run_id"}` each,
     # written in the transaction that inserts the record, never changed.
     field :dispatch, {:array, :map}, default: []
+    # `Helmsman.Search.Document.feedback/1` of the content while active,
+    # NULL once superseded (`add-fulltext-search` decision 5); never read
+    # with the record.
+    field :search, Helmsman.Search.TsVector, load_in_query: false
 
     # Filled in by `Helmsman.Feedback.load/2` for the external form.
     field :task_ident, :string, virtual: true
@@ -58,6 +63,17 @@ defmodule Helmsman.Feedback.Entry do
   @doc "All kinds."
   @spec kinds() :: [kind()]
   def kinds, do: @kinds
+
+  @doc """
+  A new record with `fields` and the search column of its content: every
+  insert goes through here, so no record is written without it
+  (`add-fulltext-search` decision 5).
+  """
+  @spec new(keyword()) :: t()
+  def new(fields) when is_list(fields) do
+    entry = struct!(__MODULE__, fields)
+    %{entry | search: Document.feedback(entry.content)}
+  end
 
   @doc """
   Validates the caller-supplied fields `kind` and `content` (keys may be

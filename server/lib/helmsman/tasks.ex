@@ -34,6 +34,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
   alias Helmsman.Runs.{Run, TaskGrant}
+  alias Helmsman.Search
   alias Helmsman.Tx
 
   alias Helmsman.Tasks.{
@@ -177,12 +178,12 @@ defmodule Helmsman.Tasks do
   end
 
   defp insert_task(scope, changeset, project, seq, start?) do
+    ident = Ident.build(project.key, seq)
+
     changeset =
-      Changeset.change(changeset,
-        project_id: project.id,
-        seq: seq,
-        ident: Ident.build(project.key, seq)
-      )
+      changeset
+      |> Changeset.change(project_id: project.id, seq: seq, ident: ident)
+      |> put_search()
 
     with {:ok, task} <- Repo.insert(changeset) do
       Repo.insert!(%TaskEvent{
@@ -302,38 +303,68 @@ defmodule Helmsman.Tasks do
     * `:before` - `{updated_at, id}` of the last task of the previous page:
       only the tasks after it in this order (keyset pagination; `:offset`
       is then ignored)
+    * `:q` - only the tasks that match this text themselves (ID, labels,
+      title, description) or by an active feedback record, as in
+      `Helmsman.Search.search/3`; the order and the pages do not change.
+      Blank is ignored; a text with nothing to search for (only stop
+      words) matches nothing.
 
-  Returns `{:error, :not_found}` for an unknown project and
-  `{:error, {:invalid, :kind}}` for an unknown kind.
+  Returns `{:error, :not_found}` for an unknown project,
+  `{:error, {:invalid, :kind}}` for an unknown kind and
+  `{:error, {:invalid_query, :too_long | :not_a_string}}` for a `:q` over
+  200 characters or not a string.
   """
   @spec list(Scope.t(), String.t(), keyword()) ::
-          {:ok, [Task.t()]} | {:error, :forbidden | :not_found | {:invalid, :kind}}
+          {:ok, [Task.t()]}
+          | {:error, :forbidden | :not_found | {:invalid, :kind} | Search.Query.error()}
   def list(%Scope{workspace: %Workspace{id: workspace_id}} = scope, project_key, opts \\ [])
       when is_binary(project_key) do
     with :ok <- Policy.authorize(scope, :read_tasks),
          {:ok, kind} <- kind_filter(opts[:kind]),
+         {:ok, text} <- text_filter(opts[:q]),
          {:ok, project} <- fetch_project(scope, project_key) do
-      tasks =
-        from(t in Task,
-          as: :task,
-          where: t.workspace_id == ^workspace_id and t.project_id == ^project.id,
-          order_by: [desc: t.updated_at, desc: t.id],
-          limit: ^limit(opts[:limit]),
-          preload: [:created_by, :assignee]
-        )
-        |> select_blocked()
-        |> page(opts[:before], opts[:offset])
-        |> filter_status(opts[:status])
-        |> filter_label(opts[:label])
-        |> filter_assignee(workspace_id, opts[:assignee])
-        |> filter_kind(kind)
-        |> filter_epic(workspace_id, opts[:epic])
-        |> Repo.all()
-        |> put_derived()
-
-      {:ok, tasks}
+      list_matching(workspace_id, project, kind, text, opts)
     end
   end
+
+  defp list_matching(_workspace_id, _project, _kind, :nothing, _opts), do: {:ok, []}
+
+  defp list_matching(workspace_id, project, kind, text, opts) do
+    tasks =
+      from(t in Task,
+        as: :task,
+        where: t.workspace_id == ^workspace_id and t.project_id == ^project.id,
+        order_by: [desc: t.updated_at, desc: t.id],
+        limit: ^limit(opts[:limit]),
+        preload: [:created_by, :assignee]
+      )
+      |> select_blocked()
+      |> page(opts[:before], opts[:offset])
+      |> filter_status(opts[:status])
+      |> filter_label(opts[:label])
+      |> filter_assignee(workspace_id, opts[:assignee])
+      |> filter_kind(kind)
+      |> filter_epic(workspace_id, opts[:epic])
+      |> filter_text(text)
+      |> Repo.all()
+      |> put_derived()
+
+    {:ok, tasks}
+  end
+
+  # `nil` (no filter), `:nothing` or the tsquery text.
+  defp text_filter(nil), do: {:ok, nil}
+
+  defp text_filter(q) do
+    case Search.Query.parse(q) do
+      {:ok, :blank} -> {:ok, nil}
+      {:ok, groups} -> {:ok, Search.Query.to_tsquery(groups) || :nothing}
+      {:error, _reason} = error -> error
+    end
+  end
+
+  defp filter_text(query, nil), do: query
+  defp filter_text(query, tsquery), do: where(query, ^Search.task_matches(tsquery, :task))
 
   defp limit(n) when is_integer(n), do: n |> max(0) |> min(@max_limit)
   defp limit(_), do: @default_limit
@@ -562,7 +593,11 @@ defmodule Helmsman.Tasks do
 
   defp save(changeset, scope, start?) do
     prev_assignee_id = changeset.data.assignee_id
-    changeset = Changeset.change(changeset, lock_version: changeset.data.lock_version + 1)
+
+    changeset =
+      changeset
+      |> Changeset.change(lock_version: changeset.data.lock_version + 1)
+      |> put_search_if_changed()
 
     with {:ok, task} <- Repo.update(changeset) do
       :ok = recompute_epics(scope, changeset.data.epic_id, task.epic_id)
@@ -576,6 +611,27 @@ defmodule Helmsman.Tasks do
       notify(:task_updated, task)
       {:ok, %{task | dispatch: dispatch}}
     end
+  end
+
+  # The search column, in the statement that writes the indexed fields
+  # (`add-fulltext-search` decision 5).
+  defp put_search(changeset) do
+    Changeset.put_change(
+      changeset,
+      :search,
+      Search.Document.task(%{
+        ident: Changeset.get_field(changeset, :ident),
+        labels: Changeset.get_field(changeset, :labels),
+        title: Changeset.get_field(changeset, :title),
+        description: Changeset.get_field(changeset, :description)
+      })
+    )
+  end
+
+  defp put_search_if_changed(%Changeset{changes: changes} = changeset) do
+    if Enum.any?([:title, :description, :labels], &Map.has_key?(changes, &1)),
+      do: put_search(changeset),
+      else: changeset
   end
 
   # The task is read again after a dispatch: a refused trigger chain adds

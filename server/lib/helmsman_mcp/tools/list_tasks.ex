@@ -21,6 +21,10 @@ defmodule HelmsmanMCP.Tools.ListTasks do
       epic:
         {:string,
          description: "Only the steps of this epic (e.g. BOS-1); \"\" for tasks in no epic."},
+      query:
+        {:string,
+         description:
+           "Only tasks whose ID, labels, title, description or feedback match this text."},
       limit: {:integer, description: "At most this many tasks (default 50, at most 200)."},
       offset: {:integer, description: "Skip this many tasks (default 0)."}
     },
@@ -36,6 +40,7 @@ defmodule HelmsmanMCP.Tools.ListTasks do
         args
         |> Args.take([:label, :assignee, :kind, :epic, :limit, :offset])
         |> Map.put(:status, statuses)
+        |> Map.put(:q, args["query"])
         |> Enum.reject(fn {_key, value} -> is_nil(value) end)
 
       with {:ok, tasks} <- Tasks.list(scope, key, opts) do

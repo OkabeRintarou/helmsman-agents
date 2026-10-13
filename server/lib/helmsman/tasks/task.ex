@@ -50,6 +50,9 @@ defmodule Helmsman.Tasks.Task do
     field :feedback_seq, :integer, default: 0
     field :feedback_count, :integer, default: 0
     field :open_question, :boolean, default: false
+    # Written by `Helmsman.Tasks` with the fields it indexes
+    # (`Helmsman.Search.Document.task/1`); never read with the task.
+    field :search, Helmsman.Search.TsVector, load_in_query: false
 
     # Every commit in the task's history (first occurrence first), filled in
     # by `Helmsman.Tasks` when it loads tasks for their summary.

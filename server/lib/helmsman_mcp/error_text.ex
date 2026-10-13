@@ -230,6 +230,11 @@ defmodule HelmsmanMCP.ErrorText do
        "running on it (run #{id}). Wait until the run ends and its changes are pushed."}
   end
 
+  def format({:invalid_query, :too_long}, _ctx),
+    do: {:ok, "The query is too long (at most 200 characters)."}
+
+  def format({:invalid_query, :not_a_string}, _ctx), do: {:ok, "query must be a string."}
+
   def format({:invalid, :kind}, %Context{args: args}) do
     {:ok, "Unknown kind #{inspect(args["kind"])}. Use task or epic."}
   end
