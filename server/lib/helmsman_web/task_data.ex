@@ -9,7 +9,7 @@ defmodule HelmsmanWeb.TaskData do
   rows when 加载更多 continues (design D5).
   """
 
-  alias Helmsman.{Actors, Tasks}
+  alias Helmsman.{Actors, Agents, Tasks}
 
   @page_size 50
 
@@ -18,19 +18,47 @@ defmodule HelmsmanWeb.TaskData do
 
   @doc """
   Identities a task may be assigned to (humans first, then agents, by name), as maps
-  for `actor_chip`: `%{name, kind, owner_name}`.
+  for `actor_chip`: `%{name, kind, owner_name}`, agents also with `managed?` (from
+  `agents`, see `agent_info/1`).
   """
-  @spec assignable(map()) :: [map()]
-  def assignable(scope) do
+  @spec assignable(map(), %{String.t() => map()} | nil) :: [map()]
+  def assignable(scope, agents \\ nil) do
     case Actors.list_assignable(scope) do
-      {:ok, actors} -> Enum.map(actors, &actor_view/1)
-      {:error, _} -> []
+      {:ok, actors} ->
+        agents = agents || agent_info(scope)
+        Enum.map(actors, &actor_view(&1, agents))
+
+      {:error, _} ->
+        []
     end
   end
 
-  defp actor_view(actor) do
+  defp actor_view(actor, agents) do
     owner = actor.owner && (actor.owner.display_name || actor.owner.email)
-    %{name: actor.name, kind: to_string(actor.kind), owner_name: owner}
+    view = %{name: actor.name, kind: to_string(actor.kind), owner_name: owner}
+
+    case agents[actor.name] do
+      %{managed?: managed?} when actor.kind == :agent -> Map.put(view, :managed?, managed?)
+      _ -> view
+    end
+  end
+
+  @doc """
+  The workspace's agents (archived and disabled included) by name, as the extra
+  fields of their `actor_chip`: `%{managed?}` plus `owner_name` when the owner has a
+  display name. Task summaries refer to actors by `%{name, kind}` only.
+  """
+  @spec agent_info(map()) :: %{String.t() => map()}
+  def agent_info(scope) do
+    case Agents.list(scope) do
+      {:ok, views} -> Map.new(views, &{&1.name, agent_fields(&1)})
+      {:error, _} -> %{}
+    end
+  end
+
+  defp agent_fields(%{kind: kind, owner: owner}) do
+    fields = %{managed?: kind == "managed"}
+    if owner[:name], do: Map.put(fields, :owner_name, owner.name), else: fields
   end
 
   @doc "Labels used by the tasks of the project with `key`, sorted."

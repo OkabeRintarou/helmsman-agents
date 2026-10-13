@@ -88,6 +88,33 @@ defmodule HelmsmanWeb.TaskLive.HistoryTest do
     refute html =~ "data-tests"
   end
 
+  test "an agent's entry is 托管 / 外接 from `agents`, neither without an entry" do
+    entry = fn name ->
+      %{
+        from: "new",
+        to: "in_progress",
+        actor: %{name: name, kind: "agent"},
+        at: ~U[2026-01-01 00:00:00Z]
+      }
+    end
+
+    agents = %{"keel/dev" => %{managed?: true}, "alice/cli" => %{managed?: false}}
+
+    render = fn name ->
+      render_component(&HelmsmanWeb.TaskComponents.history_entry/1,
+        id: "h",
+        entry: entry.(name),
+        agents: agents,
+        now: ~U[2026-01-02 00:00:00Z]
+      )
+    end
+
+    assert render.("keel/dev") =~ "托管"
+    refute render.("keel/dev") =~ "外接"
+    assert render.("alice/cli") =~ "外接"
+    refute render.("gone/agent") =~ ~r/托管|外接/
+  end
+
   test "an entry with a reason links to its feedback; old entries keep their comment",
        %{conn: conn, path: path, scope: scope} do
     {:ok, _} = Tasks.transition(scope, "BOS-1", "in_progress", %{comment: "旧的备注"})

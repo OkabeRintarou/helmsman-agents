@@ -45,6 +45,25 @@ defmodule HelmsmanWeb.TaskLive.AssignTest do
         "start" => to_string(start)
       })
 
+  # The `confirm_assign` push of a dialog button as the browser sends it: the JSON
+  # value of its `phx-click` (booleans stay booleans).
+  defp dialog_push(view, label) do
+    button =
+      view
+      |> portal("assign-confirm")
+      |> LazyHTML.query("button")
+      |> Enum.find(&(String.trim(LazyHTML.text(&1)) == label))
+
+    [js] = LazyHTML.attribute(button, "phx-click")
+
+    js
+    |> Jason.decode!()
+    |> Enum.find_value(fn
+      ["push", %{"event" => "confirm_assign", "value" => value}] -> value
+      _ -> nil
+    end)
+  end
+
   defp dialog_buttons(view),
     do:
       view
@@ -169,5 +188,37 @@ defmodule HelmsmanWeb.TaskLive.AssignTest do
     assert confirm(view, ctx, true, opened) =~ "此任务已被其他人修改"
     assert assignee(ctx) == nil
     assert runs(ctx) == []
+  end
+
+  describe "the payload of the dialog's own buttons (M5 F1)" do
+    test "开始 pushes a boolean `start: true` and starts", ctx do
+      {:ok, view, _html} = open(ctx)
+      choose(view, "keel/dev")
+
+      value = dialog_push(view, "开始")
+      assert value["start"] == true
+      assert render_click(view, "confirm_assign", value) =~ "已派发给 keel/dev"
+      refute render(view) =~ "暂不开始"
+      assert assignee(ctx).name == "keel/dev"
+      assert [%{status: :queued}] = runs(ctx)
+    end
+
+    test "暂不开始 pushes a boolean `start: false` and does not start", ctx do
+      {:ok, view, _html} = open(ctx)
+      choose(view, "keel/dev")
+
+      value = dialog_push(view, "暂不开始")
+      assert value["start"] == false
+      assert render_click(view, "confirm_assign", value) =~ "已指派给 keel/dev，暂不开始"
+      assert assignee(ctx).name == "keel/dev"
+      assert runs(ctx) == []
+    end
+
+    test "string payloads (`phx-value-*`) behave the same", ctx do
+      {:ok, view, _html} = open(ctx)
+      choose(view, "keel/dev")
+      assert confirm(view, ctx, "true") =~ "已派发给 keel/dev"
+      assert [%{status: :queued}] = runs(ctx)
+    end
   end
 end

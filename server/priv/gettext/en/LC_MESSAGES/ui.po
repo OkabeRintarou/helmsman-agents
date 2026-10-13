@@ -3969,3 +3969,8 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "近 %{n} 天每天的运行数"
 msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "所属：%{owner}"
+msgstr ""

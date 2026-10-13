@@ -48,6 +48,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       end
 
     detail = Tasks.detail(task)
+    agents = TaskData.agent_info(scope)
 
     if connected?(socket) do
       Events.subscribe(Events.topic(:task, task.id))
@@ -64,7 +65,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
        editing: %{"title" => nil, "description" => nil},
        field_errors: %{},
        labels_draft: nil,
-       assignable: TaskData.assignable(scope),
+       agents: agents,
+       assignable: TaskData.assignable(scope, agents),
        availability: availability(scope),
        assign_confirm: nil,
        label_options: TaskData.labels(scope, detail.project_key),
@@ -203,10 +205,11 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
-  # The buttons that promise not to start always submit `start: false` (D11).
+  # The buttons that promise not to start always submit `start: false` (D11). The
+  # dialog pushes JSON (`true`), `phx-value-*` would send `"true"`.
   def handle_event("confirm_assign", %{"agent" => agent, "start" => start} = params, socket) do
     version = parse_version(params["version"]) || socket.assigns.task.lock_version
-    attrs = %{assignee: agent, start: start == "true"}
+    attrs = %{assignee: agent, start: start in [true, "true"]}
     {:noreply, socket |> assign(:assign_confirm, nil) |> save("assignee", attrs, version)}
   end
 
@@ -918,6 +921,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
             revisable={@revisable}
             can_feedback?={@can_feedback?}
             fresh_after={@fresh_after}
+            agents={@agents}
           />
         </section>
         <aside class="flex min-w-0 flex-col gap-6" aria-label={dgettext("ui", "属性")}>
@@ -962,13 +966,19 @@ defmodule HelmsmanWeb.TaskLive.Show do
                   items={assignee_items(@assignees, @task, @availability)}
                   trigger_class="h-7 px-1.5 -mx-1.5 min-w-0"
                 >
-                  <:trigger><TaskComponents.actor_ref actor={@task.assignee} /></:trigger>
+                  <:trigger>
+                    <TaskComponents.actor_ref actor={@task.assignee} agents={@agents} />
+                  </:trigger>
                 </.dropdown>
-                <TaskComponents.actor_ref :if={!@can_edit?} actor={@task.assignee} />
+                <TaskComponents.actor_ref
+                  :if={!@can_edit?}
+                  actor={@task.assignee}
+                  agents={@agents}
+                />
                 <.field_error error={@field_errors["assignee"]} />
               </.property_row>
               <.property_row label={dgettext("ui", "提出方")} id="task-creator">
-                <TaskComponents.actor_ref actor={@task.created_by} />
+                <TaskComponents.actor_ref actor={@task.created_by} agents={@agents} />
               </.property_row>
               <.property_row label={dgettext("ui", "提交")} id="task-commits">
                 <span :if={Map.get(@task, :commits, []) != []} class="flex flex-wrap gap-1">
@@ -1011,6 +1021,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
                 :for={{entry, i} <- Enum.with_index(@task.history)}
                 id={"history-#{i}"}
                 entry={entry}
+                agents={@agents}
               />
             </ol>
           </section>

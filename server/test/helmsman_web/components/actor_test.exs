@@ -25,6 +25,15 @@ defmodule HelmsmanWeb.Components.ActorTest do
     assert external =~ "所属：alice · 外接"
   end
 
+  test "an agent reference without `managed?` claims neither 托管 nor 外接" do
+    bare = render_component(&actor_chip/1, actor: %{name: "keel/dev", kind: "agent"})
+    refute bare =~ ~r/托管|外接/
+
+    owned = render_component(&actor_chip/1, actor: Map.delete(@agent, :managed?))
+    assert owned =~ "所属：alice"
+    refute owned =~ ~r/托管|外接/
+  end
+
   test "compact mode keeps the name for the tooltip and assistive technology" do
     html = render_component(&actor_chip/1, actor: @agent, compact: true)
     assert html =~ ~r/<span class="truncate sr-only">\s*keel\/dev\s*<\/span>/

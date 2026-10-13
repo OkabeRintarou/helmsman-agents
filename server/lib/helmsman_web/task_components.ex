@@ -44,10 +44,13 @@ defmodule HelmsmanWeb.TaskComponents do
   end
 
   @doc """
-  An actor reference of a task summary (`%{name, kind}`) as an `actor_chip`.
+  An actor reference of a task summary (`%{name, kind}`) as an `actor_chip`. Agents
+  take `managed?` / `owner_name` from `agents` (`HelmsmanWeb.TaskData.agent_info/1`);
+  without an entry the chip claims neither 托管 nor 外接.
   """
   attr :id, :string, default: nil
   attr :actor, :map, default: nil
+  attr :agents, :map, default: %{}
   attr :compact, :boolean, default: false
   attr :class, :any, default: nil
 
@@ -61,12 +64,17 @@ defmodule HelmsmanWeb.TaskComponents do
     ~H"""
     <.actor_chip
       id={@id}
-      actor={%{name: @actor.name, kind: @actor.kind}}
+      actor={chip_actor(@actor, @agents)}
       compact={@compact}
       class={@class}
     />
     """
   end
+
+  defp chip_actor(%{name: name, kind: kind}, agents) when kind in ["agent", :agent],
+    do: Map.merge(%{name: name, kind: kind}, Map.get(agents, name, %{}))
+
+  defp chip_actor(%{name: name, kind: kind}, _agents), do: %{name: name, kind: kind}
 
   @doc """
   One history entry (oldest first in the timeline): actor, action (创建了任务 or
@@ -77,6 +85,7 @@ defmodule HelmsmanWeb.TaskComponents do
   attr :id, :string, required: true
   attr :entry, :map, required: true
   attr :now, DateTime, default: nil
+  attr :agents, :map, default: %{}, doc: "see `actor_ref/1`"
 
   def history_entry(assigns) do
     entry = assigns.entry
@@ -94,7 +103,7 @@ defmodule HelmsmanWeb.TaskComponents do
     ~H"""
     <li id={@id} class="flex flex-col gap-1.5 py-2">
       <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-body">
-        <.actor_ref actor={@entry.actor} />
+        <.actor_ref actor={@entry.actor} agents={@agents} />
         <span :if={is_nil(@entry.from)} class="text-fg-muted">{dgettext("ui", "创建了任务")}</span>
         <span :if={@entry.from} class="inline-flex items-center gap-1 text-fg-muted">
           <.status_icon status={@entry.from} />

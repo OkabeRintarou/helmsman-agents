@@ -28,6 +28,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
         {:error, :not_found} -> raise HelmsmanWeb.NotFoundError
       end
 
+    agents = TaskData.agent_info(scope)
+
     if connected?(socket) do
       Events.subscribe(Events.topic(:project, project.id))
       Events.subscribe(Events.topic(:workspace_runs, scope.workspace.id))
@@ -41,7 +43,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
        page_title: project.name,
        filters: nil,
        label_options: TaskData.labels(scope, project.key),
-       assignable: TaskData.assignable(scope),
+       agents: agents,
+       assignable: TaskData.assignable(scope, agents),
        can_manage?: Policy.authorize(scope, :update_project) == :ok,
        shown: MapSet.new(),
        working: %{},
@@ -460,7 +463,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
         </:col>
         <:col :let={task} label={dgettext("ui", "执行方")} class="w-32">
           <span :if={task.assignee}>
-            <TaskComponents.actor_ref actor={task.assignee} compact />
+            <TaskComponents.actor_ref actor={task.assignee} agents={@agents} compact />
           </span>
         </:col>
         <:col :let={task} label={dgettext("ui", "更新")} secondary class="w-24">

@@ -43,7 +43,8 @@ defmodule HelmsmanWeb.Components.Actor do
   @doc """
   Icon or avatar plus name for a human, Agent, squad or the system.
 
-  * Agents get a tooltip with the owner and "托管" / "外接".
+  * Agents get a tooltip with the owner and "托管" / "外接" (only when the map has
+    `managed?`; a bare `%{name, kind}` reference claims neither).
   * `compact` shows only the icon; the name moves to the tooltip and accessible name.
   * `disabled_reason` renders the chip at 60% opacity and exposes the reason
     (tooltip, and as visually hidden text for assistive technology).
@@ -116,11 +117,17 @@ defmodule HelmsmanWeb.Components.Actor do
   defp state_suffix(_), do: ""
 
   defp agent_info(:agent, actor) do
-    mode = if Map.get(actor, :managed?), do: dgettext("ui", "托管"), else: dgettext("ui", "外接")
+    mode =
+      case Map.fetch(actor, :managed?) do
+        {:ok, true} -> dgettext("ui", "托管")
+        {:ok, _} -> dgettext("ui", "外接")
+        :error -> nil
+      end
 
-    case Map.get(actor, :owner_name) do
-      nil -> mode
-      owner -> dgettext("ui", "所属：%{owner} · %{mode}", owner: owner, mode: mode)
+    case {Map.get(actor, :owner_name), mode} do
+      {nil, mode} -> mode
+      {owner, nil} -> dgettext("ui", "所属：%{owner}", owner: owner)
+      {owner, mode} -> dgettext("ui", "所属：%{owner} · %{mode}", owner: owner, mode: mode)
     end
   end
 

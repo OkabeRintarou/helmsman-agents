@@ -33,6 +33,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
   attr :revisable, :any, required: true, doc: "MapSet of the IDs the reader may revise"
   attr :can_feedback?, :boolean, required: true
   attr :fresh_after, :integer, default: 0, doc: "records above this number flash when added"
+  attr :agents, :map, default: %{}, doc: "see `HelmsmanWeb.TaskComponents.actor_ref/1`"
 
   def timeline(assigns) do
     assigns = assign(assigns, :threads, FeedbackTimeline.threads(assigns.feedback))
@@ -55,6 +56,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
             revisable?={MapSet.member?(@revisable, thread.current.id)}
             can_feedback?={@can_feedback?}
             fresh?={thread.current.seq > @fresh_after}
+            agents={@agents}
           />
           <details
             :if={thread.history != []}
@@ -74,6 +76,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
                 revisable?={false}
                 can_feedback?={false}
                 fresh?={false}
+                agents={@agents}
               />
             </div>
           </details>
@@ -99,6 +102,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
   attr :revisable?, :boolean, default: false
   attr :can_feedback?, :boolean, default: false
   attr :fresh?, :boolean, default: false
+  attr :agents, :map, default: %{}, doc: "see `HelmsmanWeb.TaskComponents.actor_ref/1`"
 
   def card(assigns) do
     entry = assigns.entry
@@ -131,7 +135,11 @@ defmodule HelmsmanWeb.FeedbackComponents do
       ]}
     >
       <header class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <TaskComponents.actor_ref actor={@entry.author} class={@system? && "text-fg-muted"} />
+        <TaskComponents.actor_ref
+          actor={@entry.author}
+          agents={@agents}
+          class={@system? && "text-fg-muted"}
+        />
         <.badge tone={@tone} data-kind-badge>{@kind_label}</.badge>
         <span class="inline-flex items-center">
           <a
