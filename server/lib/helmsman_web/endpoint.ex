@@ -42,16 +42,17 @@ defmodule HelmsmanWeb.Endpoint do
     plug Phoenix.Ecto.CheckRepoStatus, otp_app: :helmsman
   end
 
-  plug Phoenix.LiveDashboard.RequestLogger,
-    param_key: "request_logger",
-    cookie_key: "request_logger"
-
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
   # Needs the raw request body, so it runs before Plug.Parsers.
   plug HelmsmanWeb.GitHubWebhookPlug
   plug HelmsmanWeb.AutopilotWebhookPlug
+  plug HelmsmanWeb.API.ImportBodyPlug
+
+  plug Phoenix.LiveDashboard.RequestLogger,
+    param_key: "request_logger",
+    cookie_key: "request_logger"
 
   # Plug.Parsers; on /api paths its errors render as JSON.
   plug HelmsmanWeb.API.BodyParser,

@@ -51,6 +51,12 @@ defmodule Helmsman.Policy do
     :manage_github_app,
     # import and export
     :import_workspace,
+    :import_merge,
+    :import_replace,
+    :view_imports,
+    :request_claim,
+    :decide_claim,
+    :transfer_agent,
     :export_workspace,
     # workspace settings
     :change_workspace_slug,
@@ -64,6 +70,13 @@ defmodule Helmsman.Policy do
 
   # Actions with an authorization clause below.
   @actions [
+    :export_workspace,
+    :import_merge,
+    :import_replace,
+    :view_imports,
+    :request_claim,
+    :decide_claim,
+    :transfer_agent,
     :view_agents,
     :manage_agents,
     :configure_agent,
@@ -159,6 +172,18 @@ defmodule Helmsman.Policy do
   @spec authorize(Scope.t(), action(), term()) :: :ok | {:error, :forbidden}
   def authorize(scope, action, resource \\ nil)
 
+  def authorize(%Scope{actor: %Actor{kind: kind}}, action, _resource)
+      when action in [
+             :export_workspace,
+             :import_merge,
+             :import_replace,
+             :view_imports,
+             :request_claim,
+             :decide_claim,
+             :transfer_agent
+           ] and kind != :human,
+      do: {:error, :forbidden}
+
   def authorize(%Scope{actor: %Actor{kind: :agent}}, action, _resource)
       when action in @management_actions,
       do: {:error, :forbidden}
@@ -182,6 +207,22 @@ defmodule Helmsman.Policy do
   end
 
   defp run_gate(_scope, _action), do: {:error, :forbidden}
+
+  defp check(%Scope{} = scope, action, _resource)
+       when action in [
+              :export_workspace,
+              :import_merge,
+              :view_imports,
+              :decide_claim,
+              :transfer_agent
+            ],
+       do: allow_if(role_at_least?(scope, :admin))
+
+  defp check(%Scope{} = scope, :import_replace, _resource),
+    do: allow_if(role_at_least?(scope, :owner))
+
+  defp check(%Scope{via: :web} = scope, :request_claim, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
 
   defp check(%Scope{} = scope, :view_workspace, _resource),
     do: allow_if(role_at_least?(scope, :viewer))

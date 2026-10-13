@@ -57,7 +57,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Workspaces.Workspace
 
   @type error :: Changeset.t() | :forbidden | :not_found | :no_actor | atom()
-  @type actor_ref :: %{name: String.t(), kind: String.t()} | nil
+  @type actor_ref :: %{name: String.t(), kind: String.t(), unclaimed: boolean()} | nil
   @type summary :: %{
           id: String.t(),
           project_key: String.t(),
@@ -1243,6 +1243,7 @@ defmodule Helmsman.Tasks do
     case Repo.one(query) do
       nil -> {:invalid, "does not exist"}
       %Actor{kind: :system} -> {:invalid, "cannot be the system identity"}
+      %Actor{kind: :human, user_id: nil} -> {:invalid, "is not a member"}
       # A disabled squad is refused like any disabled identity (`add-squads`
       # decision 15).
       %Actor{disabled_at: %DateTime{}} -> {:invalid, "is disabled"}
@@ -1400,7 +1401,9 @@ defmodule Helmsman.Tasks do
   defp project_key(ident), do: ident |> String.split("-", parts: 2) |> hd()
 
   defp actor_ref(nil), do: nil
-  defp actor_ref(%Actor{name: name, kind: kind}), do: %{name: name, kind: Atom.to_string(kind)}
+
+  defp actor_ref(%Actor{name: name, kind: kind, user_id: user_id}),
+    do: %{name: name, kind: Atom.to_string(kind), unclaimed: kind == :human and is_nil(user_id)}
 
   @doc """
   Loads what `summary/1` needs into `task` (creator, assignee, commits,
@@ -1414,9 +1417,18 @@ defmodule Helmsman.Tasks do
   def load_summaries(tasks) when is_list(tasks) do
     tasks
     |> Repo.preload([:created_by, :assignee], force: true)
+    |> Enum.map(&mark_task_actors/1)
     |> put_derived()
     |> Links.put_blocked()
   end
+
+  defp mark_actor(nil), do: nil
+
+  defp mark_actor(%Actor{} = actor),
+    do: %{actor | unclaimed: actor.kind == :human and is_nil(actor.user_id)}
+
+  defp mark_task_actors(task),
+    do: %{task | created_by: mark_actor(task.created_by), assignee: mark_actor(task.assignee)}
 
   @doc """
   Loads what `detail/1` needs into `task` (as `get/2` returns it), inside
@@ -1428,9 +1440,15 @@ defmodule Helmsman.Tasks do
   defp preload_detail(task) do
     events = from(e in TaskEvent, order_by: [asc: e.inserted_at, asc: e.id], preload: :actor)
     task = Repo.preload(task, [:created_by, :assignee, events: events], force: true)
-    feedback = Feedback.for_task(task)
+    task = mark_task_actors(task)
+    feedback = Enum.map(Feedback.for_task(task), &%{&1 | author: mark_actor(&1.author)})
     ids = Map.new(feedback, &{&1.id, Feedback.Id.build(task.ident, &1.seq)})
-    events = Enum.map(task.events, &%{&1 | feedback_ident: ids[&1.feedback_id]})
+
+    events =
+      Enum.map(
+        task.events,
+        &%{&1 | feedback_ident: ids[&1.feedback_id], actor: mark_actor(&1.actor)}
+      )
 
     task = %{
       task

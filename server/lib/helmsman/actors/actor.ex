@@ -30,6 +30,7 @@ defmodule Helmsman.Actors.Actor do
     field :project_key, :string
     field :worktree, :string
     field :last_seen_at, :utc_datetime_usec
+    field :unclaimed, :boolean, virtual: true, default: false
 
     timestamps(type: :utc_datetime)
   end

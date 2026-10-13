@@ -185,6 +185,9 @@ defmodule Helmsman.Squads do
   def trigger_check(workspace_id, user_id, %{squad: %Squad{}} = loaded),
     do: check_loaded(loaded, {user_id, role_of(workspace_id, user_id)})
 
+  def trigger_check(_workspace_id, _user_id, %Actor{kind: :squad, disabled_at: %DateTime{}}),
+    do: {:error, :squad_disabled}
+
   def trigger_check(workspace_id, user_id, squad) do
     case load(squad) do
       nil -> {:error, :not_managed}

@@ -170,4 +170,43 @@ defmodule Helmsman.PolicyTest do
       assert Policy.authorize(design_scope, :update_task) == {:error, :forbidden}
     end
   end
+
+  test "backup and claim permissions cover roles, people, agents and run tokens", ctx do
+    actions = [
+      :export_workspace,
+      :import_merge,
+      :import_replace,
+      :view_imports,
+      :request_claim,
+      :decide_claim,
+      :transfer_agent
+    ]
+
+    %{api_token: token} = api_token_fixture(ctx.alice_scope)
+
+    for role <- [:owner, :admin, :member, :viewer], action <- actions do
+      minimum =
+        case action do
+          :import_replace -> [:owner]
+          :request_claim -> [:owner, :admin, :member, :viewer]
+          _ -> [:owner, :admin]
+        end
+
+      for via <- [:web, :mcp, :api] do
+        scope = %{ctx.alice_scope | role: role, via: via, token: if(via != :web, do: token)}
+
+        expected =
+          if role in minimum and (action != :request_claim or via == :web),
+            do: :ok,
+            else: {:error, :forbidden}
+
+        assert Policy.authorize(scope, action) == expected
+        assert Policy.authorize(%{scope | actor: ctx.agent}, action) == {:error, :forbidden}
+      end
+    end
+
+    run = run_fixture(ctx.agent, %{status: :running, capabilities: Run.capabilities()})
+    {scope, _} = run_scope_fixture(run)
+    for action <- actions, do: assert(Policy.authorize(scope, action) == {:error, :forbidden})
+  end
 end

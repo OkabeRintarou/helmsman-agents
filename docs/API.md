@@ -25,7 +25,9 @@ Authorization: Bearer hm_...
 
 指定的名字必须是 Token 用户名下的 Agent，否则 403 `forbidden`；写入时停用的 Agent → 403 `agent_disabled`（读取允许停用的 Agent）。REST 不会创建会话 Agent。`GET /me` 显示当前身份及其来源。
 
-例外：`POST /autopilots/:id/run`（自动化是人管理的）总是以 Token 用户本人执行，忽略 Token 的缺省 Agent；`X-Helmsman-Actor` / `actor` 只能省略或写本人的 human 身份名，写 Agent 名 → 403 `forbidden`，不产生触发记录。
+例外：导出、导入及备份记录/下载总是以 Token 用户本人管理身份执行（admin 以上，replace 仅 owner），忽略缺省 Agent；`X-Helmsman-Actor` 只能省略或为本人 human 身份名。
+
+`POST /autopilots/:id/run`（自动化是人管理的）总是以 Token 用户本人执行，忽略 Token 的缺省 Agent；`X-Helmsman-Actor` / `actor` 只能省略或写本人的 human 身份名，写 Agent 名 → 403 `forbidden`，不产生触发记录。
 
 ## 请求与响应
 
@@ -41,6 +43,11 @@ Authorization: Bearer hm_...
 
 | 方法 | 路径 | 对应 | scope |
 |---|---|---|---|
+| POST | `/exports` | 排队导出（202），admin 以上 | write |
+| GET | `/exports/:id` | 本人导出记录 | read |
+| GET | `/exports/:id/download` | 本人未过期成功快照，application/gzip 附件 | read |
+| POST | `/imports` | 原始 JSON/gzip 快照排队导入（202） | write |
+| GET | `/imports/:id` | 本工作区导入审计，admin 以上 | read |
 | GET | `/me` | 当前用户、角色、身份与 Token | read |
 | GET | `/me/tasks` | `list_my_tasks` | read |
 | GET | `/actors` | `list_actors` | read |
@@ -130,6 +137,21 @@ BQL 的语法与字段见 `docs/BQL.md`。
 | 422 | `query_timeout` | 查询超时，缩小范围（如加 `project = KEY`） |
 | 429 | `rate_limited` | 限流（带 `Retry-After`） |
 | 500 | `internal` | 内部错误：`ref`（服务端日志用同一引用号记录细节） |
+
+## 快照导入
+
+`POST /imports?mode=merge&dry_run=false&source=helmsman` 的请求体为整个快照文件，接受 `application/json` 或 `application/gzip`，不经普通 8 MB JSON 解析器。上传与解压后分别受 `import_max_bytes` 限制（缺省 300 MB）。参数：`mode=merge|replace`、`dry_run=true|false`、`source=helmsman|bosun`、`rename[旧名]=新名`；replace 必须带 `confirm=<工作区 slug>`。
+
+认证、scope、工作区、管理身份、参数、角色、进行中导入、存储与媒体检查均在读取请求体之前完成；拒绝请求不读文件、不落盘。超限或上传中断清理半成品；通过后返回 `data` 内的导入记录，后续通过 `GET /imports/:id` 查询完整报告。一次请求只扣一次 Token 限流额度。导出/导入 JSON 记录不含文件路径或内部 options；导出只给发起人，导入审计给本工作区管理员。
+
+| 状态 | 备份错误码 | 说明 |
+|---|---|---|
+| 409 | `diverged` / `actor_kind_conflict` / `replace_blocked` / `cycle` / `busy` | 历史分叉、身份种类、活动运行/PR、依赖成环或已有导入 |
+| 413 | `too_large` | 超过快照大小上限 |
+| 422 | `invalid_import` / `confirmation_required` | 文件校验错误（`detail.errors`）或缺少 replace 确认 |
+| 503 | `storage_unavailable` | 备份目录不可写 |
+
+格式与 merge/replace 规则见 [EXPORT-FORMAT.md](EXPORT-FORMAT.md)。
 
 ## 限流
 

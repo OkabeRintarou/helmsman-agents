@@ -67,6 +67,7 @@ defmodule HelmsmanWeb.ErrorMapper do
     do: {400, "invalid_params", %{fields: fields}}
 
   defp map(:invalid_json), do: {400, "invalid_json", %{}}
+  defp map(:invalid_params), do: {400, "invalid_params", %{fields: %{}}}
   defp map(:unauthorized), do: {401, "unauthorized", %{}}
 
   defp map({:insufficient_scope, required}),
@@ -106,6 +107,7 @@ defmodule HelmsmanWeb.ErrorMapper do
   defp map({:self_verify_requires_tests, name}),
     do: {409, "self_verify_requires_tests", %{actor: name}}
 
+  defp map({:cycle, detail}) when is_map(detail), do: {409, "cycle", detail}
   defp map({:cycle, path}), do: {409, "cycle", %{path: path}}
   defp map({:superseded, latest_id}), do: {409, "superseded", %{latest: latest_id}}
 
@@ -198,6 +200,16 @@ defmodule HelmsmanWeb.ErrorMapper do
     do: {422, "invalid_bql", %{message: message, position: position}}
 
   defp map(:query_timeout), do: {422, "query_timeout", %{}}
+
+  # Workspace backup operations (add-export-import decision 16).
+  defp map({:invalid_import, errors}), do: {422, "invalid_import", %{errors: errors}}
+  defp map(:confirmation_required), do: {422, "confirmation_required", %{}}
+  defp map(:too_large), do: {413, "too_large", %{}}
+  defp map(:storage_unavailable), do: {503, "storage_unavailable", %{}}
+  defp map({:replace_blocked, reasons}), do: {409, "replace_blocked", %{reasons: reasons}}
+
+  defp map({code, detail}) when code in [:diverged, :actor_kind_conflict] and is_map(detail),
+    do: {409, Atom.to_string(code), detail}
 
   defp map(_reason), do: :error
 
@@ -309,7 +321,14 @@ defmodule HelmsmanWeb.ErrorMapper do
     "rate_limited" => "Too many requests; retry after the time in the Retry-After header.",
     "internal" =>
       "Internal error. Try again later; if it keeps happening, report the reference in " <>
-        "detail.ref."
+        "detail.ref.",
+    "invalid_import" => "The snapshot is invalid; see detail.errors.",
+    "diverged" => "The local and imported task histories have diverged.",
+    "actor_kind_conflict" => "The actor name has a different kind; use rename.",
+    "replace_blocked" => "Active runs or open pull requests prevent replacement.",
+    "confirmation_required" => "Confirm replacement with the workspace slug.",
+    "too_large" => "The snapshot exceeds the configured import size limit.",
+    "storage_unavailable" => "Backup storage is unavailable."
   }
 
   @doc "The English message of an error `code`."

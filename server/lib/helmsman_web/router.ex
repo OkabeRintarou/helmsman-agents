@@ -118,6 +118,15 @@ defmodule HelmsmanWeb.Router do
     get "/filters", FiltersController, :index
     get "/filters/:id", FiltersController, :show
     get "/filters/:id/run", FiltersController, :run
+    get "/exports/:id", BackupController, :show
+    get "/imports/:id", BackupController, :import_status
+  end
+
+  # Binary snapshot download; bearer authentication and workspace checks still apply.
+  scope "/api/v1/w/:slug", HelmsmanWeb.API do
+    pipe_through :api_read
+
+    get "/exports/:id/download", BackupController, :download
   end
 
   scope "/api/v1/w/:slug", HelmsmanWeb.API do
@@ -139,6 +148,7 @@ defmodule HelmsmanWeb.Router do
     patch "/filters/:id", FiltersController, :update
     delete "/filters/:id", FiltersController, :delete
     post "/autopilots/:id/run", AutopilotsController, :run
+    post "/exports", BackupController, :create
   end
 
   scope "/api", HelmsmanWeb.API do
@@ -211,6 +221,8 @@ defmodule HelmsmanWeb.Router do
 
   scope "/", HelmsmanWeb do
     pipe_through [:browser, :require_authenticated_user, :workspace_page]
+
+    get "/w/:slug/exports/:id/download", ExportController, :download
 
     live_session :workspace,
       on_mount: [

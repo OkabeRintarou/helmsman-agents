@@ -35,6 +35,17 @@ defmodule Helmsman.DomainErrorReasons do
       |> Ecto.Changeset.add_error(:title, "can't be blank", validation: :required)
 
     [
+      # REST-only workspace backup domain errors (add-export-import 6.3).
+      {"backup params", :invalid_params},
+      {"invalid import", {:invalid_import, [%{path: "tasks[0].title", message: "invalid"}]}},
+      {"backup diverged", {:diverged, %{path: "tasks[0]", message: "history differs"}}},
+      {"backup actor kind",
+       {:actor_kind_conflict, %{path: "actors[0]", message: "kind differs"}}},
+      {"backup cycle", {:cycle, %{path: "links", message: "cycle"}}},
+      {"backup blocked", {:replace_blocked, [%{task: "BOS-1", reason: "active_run"}]}},
+      {"backup confirmation", :confirmation_required},
+      {"backup size", :too_large},
+      {"backup storage", :storage_unavailable},
       # Permissions and identities.
       {"forbidden", :forbidden},
       {"forbidden cancels other task", {:forbidden, {:cancels_other_task, "BOS-2", "BOS-1"}}},

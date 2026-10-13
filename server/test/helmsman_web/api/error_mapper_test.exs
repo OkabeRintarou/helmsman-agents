@@ -70,6 +70,18 @@ defmodule HelmsmanWeb.API.ErrorMapperTest do
     {:query_timeout, 422, "query_timeout", %{}},
     {:bql_or_filter, 400, "invalid_params", %{fields: %{bql: ["pass either bql or filter_id"]}}},
     {{:invalid, :limit}, 400, "invalid_params", %{fields: %{limit: ["out of range"]}}},
+    {:invalid_params, 400, "invalid_params", %{fields: %{}}},
+    {{:invalid_import, [%{path: "tasks[0]", message: "bad"}]}, 422, "invalid_import",
+     %{errors: [%{path: "tasks[0]", message: "bad"}]}},
+    {{:diverged, %{path: "tasks[0]"}}, 409, "diverged", %{path: "tasks[0]"}},
+    {{:actor_kind_conflict, %{path: "actors[0]"}}, 409, "actor_kind_conflict",
+     %{path: "actors[0]"}},
+    {{:replace_blocked, [%{task: "BOS-1"}]}, 409, "replace_blocked",
+     %{reasons: [%{task: "BOS-1"}]}},
+    {{:cycle, %{path: "links"}}, 409, "cycle", %{path: "links"}},
+    {:confirmation_required, 422, "confirmation_required", %{}},
+    {:too_large, 413, "too_large", %{}},
+    {:storage_unavailable, 503, "storage_unavailable", %{}},
     {:payload_too_large, 413, "payload_too_large", %{}},
     {:unsupported_media_type, 415, "unsupported_media_type", %{}}
   ]
@@ -93,7 +105,7 @@ defmodule HelmsmanWeb.API.ErrorMapperTest do
   test "no domain error reason is a 500" do
     for {label, reason, _tool} <- Helmsman.DomainErrorReasons.all() do
       {status, body} = ErrorMapper.to_response(reason)
-      assert status in 400..499, "#{label} is #{status}"
+      assert status in 400..499 or status == 503, "#{label} is #{status}"
       assert Jason.encode!(body)
       assert body.message != "Error.", "#{label} has no message"
     end

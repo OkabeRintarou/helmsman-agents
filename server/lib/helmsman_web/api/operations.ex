@@ -27,7 +27,8 @@ defmodule HelmsmanWeb.API.Operations do
     415 => "Request body is not JSON (unsupported_media_type).",
     422 => "Invalid field values (validation_failed, invalid_status, ...).",
     429 => "Rate limited (rate_limited); see Retry-After.",
-    500 => "Internal error (internal); detail.ref is in the server log."
+    500 => "Internal error (internal); detail.ref is in the server log.",
+    503 => "Backup storage unavailable (storage_unavailable)."
   }
 
   @doc """
@@ -81,6 +82,7 @@ defmodule HelmsmanWeb.API.Operations do
     * `:write` - `true` for a write (more error statuses)
     * `:public` - `true`: no authentication (`security: []`)
     * `:content_type` - the success content type (default JSON)
+    * `:errors` - additional error statuses for this operation
   """
   @spec manual(keyword()) :: Operation.t()
   def manual(opts) do
@@ -107,7 +109,7 @@ defmodule HelmsmanWeb.API.Operations do
       security: if(public?, do: []),
       responses:
         success(Keyword.get(opts, :status, 200), opts[:response], opts[:content_type])
-        |> Map.merge(errors(error_statuses))
+        |> Map.merge(errors(Enum.uniq(error_statuses ++ Keyword.get(opts, :errors, []))))
     }
   end
 

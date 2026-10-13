@@ -415,6 +415,17 @@ defmodule HelmsmanMCP.ErrorText do
     {:ok, text}
   end
 
+  def format({:invalid_import, errors}, _ctx),
+    do: {:ok, "Invalid snapshot: #{inspect(errors)}"}
+
+  def format({code, detail}, _ctx)
+      when code in [:diverged, :actor_kind_conflict, :replace_blocked, :cycle],
+      do: {:ok, "#{code}: #{inspect(detail)}"}
+
+  def format(reason, _ctx)
+      when reason in [:invalid_params, :confirmation_required, :too_large, :storage_unavailable],
+      do: {:ok, "Backup request failed: #{reason}."}
+
   def format(_reason, _ctx), do: :error
 
   @doc "The text of a tool call whose token stopped being valid."

@@ -2,6 +2,8 @@ defmodule HelmsmanWeb.API.DocsTest do
   # add-rest-api 5.1: docs/API.md lists exactly the /api/v1 routes.
   use ExUnit.Case, async: true
 
+  alias HelmsmanWeb.API.ImportBodyPlug
+
   @path Path.expand("../../../../docs/API.md", __DIR__)
   @workspace "/api/v1/w/:slug"
 
@@ -17,10 +19,13 @@ defmodule HelmsmanWeb.API.DocsTest do
   end
 
   defp routed do
-    for route <- HelmsmanWeb.Router.__routes__(),
-        String.starts_with?(route.path, "/api/v1/"),
-        into: MapSet.new(),
-        do: {route.verb, route.path}
+    routes =
+      for route <- HelmsmanWeb.Router.__routes__(),
+          String.starts_with?(route.path, "/api/v1/"),
+          into: MapSet.new(),
+          do: {route.verb, route.path}
+
+    MapSet.union(routes, MapSet.new(ImportBodyPlug.routes()))
   end
 
   test "every documented endpoint is routed and every /api/v1 route is documented" do

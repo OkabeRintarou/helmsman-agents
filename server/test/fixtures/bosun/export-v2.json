@@ -1,0 +1,156 @@
+{
+  "format": "bosun-export",
+  "version": 2,
+  "exported_at": "2025-01-01T00:00:00Z",
+  "projects": [
+    {
+      "key": "BOS",
+      "name": "Synthetic project",
+      "description": "Generated data",
+      "task_seq": 3,
+      "archived": true,
+      "created_at": 1735689600000,
+      "updated_at": 1735689600000
+    }
+  ],
+  "tasks": [
+    {
+      "id": "BOS-1",
+      "project_key": "BOS",
+      "seq": 1,
+      "title": "Synthetic task 1",
+      "description": "Generated migration sample",
+      "status": "NEW",
+      "priority": "medium",
+      "labels": [
+        "sample"
+      ],
+      "history": [
+        {
+          "from": null,
+          "to": "NEW",
+          "actor": "user",
+          "comment": null,
+          "at": 1735689600000,
+          "commits": [],
+          "tests": null
+        }
+      ],
+      "feedback_seq": 0,
+      "assignee": null,
+      "kind": "epic",
+      "epic": null,
+      "created_at": 1735689600000,
+      "updated_at": 1735689600000
+    },
+    {
+      "id": "BOS-2",
+      "project_key": "BOS",
+      "seq": 2,
+      "title": "Synthetic task 2",
+      "description": "Generated migration sample",
+      "status": "NEW",
+      "priority": "medium",
+      "labels": [
+        "sample"
+      ],
+      "history": [
+        {
+          "from": null,
+          "to": "NEW",
+          "actor": "user",
+          "comment": null,
+          "at": 1735689600000,
+          "commits": [],
+          "tests": null
+        }
+      ],
+      "feedback_seq": 0,
+      "assignee": null,
+      "kind": "task",
+      "epic": "BOS-1",
+      "created_at": 1735689600000,
+      "updated_at": 1735689600000
+    },
+    {
+      "id": "BOS-3",
+      "project_key": "BOS",
+      "seq": 3,
+      "title": "Synthetic task 3",
+      "description": "Generated migration sample",
+      "status": "NEW",
+      "priority": "medium",
+      "labels": [
+        "sample"
+      ],
+      "history": [
+        {
+          "from": null,
+          "to": "NEW",
+          "actor": "user",
+          "comment": null,
+          "at": 1735689600000,
+          "commits": [],
+          "tests": null
+        }
+      ],
+      "feedback_seq": 0,
+      "assignee": null,
+      "kind": "task",
+      "epic": null,
+      "created_at": 1735689600000,
+      "updated_at": 1735689600000
+    }
+  ],
+  "feedback": [
+    {
+      "id": "BOS-2#1",
+      "task_id": "BOS-2",
+      "seq": 1,
+      "author": "user",
+      "kind": "question",
+      "content": "Synthetic question 1",
+      "created_at": 1735689600001,
+      "supersedes": null,
+      "superseded_by": "BOS-2#2"
+    },
+    {
+      "id": "BOS-2#2",
+      "task_id": "BOS-2",
+      "seq": 2,
+      "author": "user",
+      "kind": "question",
+      "content": "Synthetic question 2",
+      "created_at": 1735689600002,
+      "supersedes": "BOS-2#1",
+      "superseded_by": null
+    }
+  ],
+  "links": [
+    {
+      "from": "BOS-3",
+      "to": "BOS-2",
+      "type": "depends_on",
+      "actor": "user",
+      "created_at": 1735689600000
+    }
+  ],
+  "filters": [
+    {
+      "id": "synthetic",
+      "name": "triage",
+      "query": "status = new"
+    }
+  ],
+  "actors": [
+    {
+      "name": "user",
+      "kind": "human",
+      "project": null,
+      "worktree": null,
+      "first_seen": 1735689600000,
+      "last_seen": 1735689600000
+    }
+  ],
+  "counters": {}
+}

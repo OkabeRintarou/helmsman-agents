@@ -10,7 +10,7 @@ defmodule HelmsmanWeb.API.OpenAPITest do
   import OpenApiSpex.TestAssertions
 
   alias HelmsmanMCP.Tools.ListTasks
-  alias HelmsmanWeb.API.{Operations, Params}
+  alias HelmsmanWeb.API.{ImportBodyPlug, Operations, Params}
   alias HelmsmanWeb.ErrorMapper
   alias OpenApiSpex.OpenApi
   alias OpenApiSpex.OpenApi.Decode
@@ -44,7 +44,13 @@ defmodule HelmsmanWeb.API.OpenAPITest do
 
   test "every /api/v1 route has an operation and every operation a route" do
     spec = api_spec()
-    routes = MapSet.new(routes())
+
+    upload_routes =
+      Enum.map(ImportBodyPlug.routes(), fn {verb, path} ->
+        {verb, String.replace(path, ~r/:(\w+)/, "{\\1}")}
+      end)
+
+    routes = MapSet.new(routes() ++ upload_routes)
 
     assert MapSet.size(routes) >= 28
     assert routes == MapSet.new(operations(spec))

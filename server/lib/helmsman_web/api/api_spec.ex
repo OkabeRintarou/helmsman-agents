@@ -8,6 +8,7 @@ defmodule HelmsmanWeb.API.ApiSpec do
 
   @behaviour OpenApiSpex.OpenApi
 
+  alias HelmsmanWeb.API.ImportBodyPlug
   alias OpenApiSpex.{Components, Info, OpenApi, Paths, SecurityScheme, Server}
 
   @impl OpenApiSpex.OpenApi
@@ -41,6 +42,7 @@ defmodule HelmsmanWeb.API.ApiSpec do
     HelmsmanWeb.Router
     |> Paths.from_router()
     |> Map.filter(fn {path, _item} -> String.starts_with?(path, "/api/v1/") end)
+    |> Map.merge(ImportBodyPlug.paths())
   end
 
   defp version do

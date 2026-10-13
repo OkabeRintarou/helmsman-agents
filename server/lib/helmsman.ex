@@ -3,6 +3,10 @@ defmodule Helmsman do
     deps: [],
     exports: [
       Repo,
+      Backup,
+      Backup.Files,
+      Backup.ExportRecord,
+      Backup.ImportRecord,
       RateLimit,
       Vault,
       AgentDesigns,

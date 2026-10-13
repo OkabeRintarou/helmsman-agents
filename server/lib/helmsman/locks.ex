@@ -58,9 +58,9 @@ defmodule Helmsman.Locks do
     do: lock!("pg_advisory_xact_lock_shared", key(:maint, workspace_id))
 
   @doc "Takes the workspace maintenance lock in exclusive mode (import)."
-  @spec maint_exclusive!(pos_integer()) :: :ok
-  def maint_exclusive!(workspace_id),
-    do: lock!("pg_advisory_xact_lock", key(:maint, workspace_id))
+  @spec maint_exclusive!(pos_integer(), keyword()) :: :ok
+  def maint_exclusive!(workspace_id, opts \\ []),
+    do: lock!("pg_advisory_xact_lock", key(:maint, workspace_id), opts)
 
   @doc "Tries the workspace maintenance lock in shared mode without waiting."
   @spec try_maint_shared(pos_integer()) :: boolean()
@@ -111,9 +111,9 @@ defmodule Helmsman.Locks do
     released?
   end
 
-  defp lock!(function, key) do
+  defp lock!(function, key, opts \\ []) do
     ensure_transaction!()
-    Repo.query!("SELECT #{function}($1)", [key])
+    Repo.query!("SELECT #{function}($1)", [key], opts)
     :ok
   end
 

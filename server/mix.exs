@@ -12,7 +12,10 @@ defmodule Helmsman.MixProject do
       deps: deps(),
       compilers: [:boundary, :phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
-      dialyzer: [plt_local_path: "priv/plts", plt_add_apps: [:mix]],
+      dialyzer: [
+        plt_local_path: "priv/plts",
+        plt_add_apps: [:mix] ++ if(Mix.env() == :test, do: [:ex_unit], else: [])
+      ],
       # No line numbers in POT references, so `gettext.extract --check-up-to-date`
       # (precommit) only fails when messages change.
       gettext: [write_reference_line_numbers: false]

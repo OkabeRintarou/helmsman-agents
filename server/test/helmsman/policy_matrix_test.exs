@@ -410,6 +410,28 @@ defmodule Helmsman.PolicyMatrixTest do
 
               {:manage_autopilots, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
             end,
+            # Snapshot and identity management actions (add-export-import).
+            for action <- [
+                  :export_workspace,
+                  :import_merge,
+                  :import_replace,
+                  :view_imports,
+                  :request_claim,
+                  :decide_claim,
+                  :transfer_agent
+                ],
+                role <- @roles,
+                kind <- [:human, :agent] do
+              allowed =
+                kind == :human and
+                  case action do
+                    :request_claim -> true
+                    :import_replace -> role == :owner
+                    _ -> role in [:owner, :admin]
+                  end
+
+              {action, role, kind, @none, if(allowed, do: :ok, else: :forbidden)}
+            end,
             # delegate: only run scopes with the capability (squads tests)
             for role <- @roles, kind <- [:human, :agent] do
               {:delegate, role, kind, @none, :forbidden}

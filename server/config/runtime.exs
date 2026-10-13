@@ -67,6 +67,8 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
+  config :helmsman, :data_dir, System.get_env("HELMSMAN_DATA_DIR", "/var/lib/helmsman")
+
   database_url =
     System.get_env("DATABASE_URL") ||
       raise """

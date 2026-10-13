@@ -17,6 +17,13 @@ defmodule Helmsman.Actors do
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.{Membership, Workspace}
 
+  defdelegate request_claim(scope, name), to: Helmsman.Actors.Claims, as: :request
+  defdelegate list_claims(scope), to: Helmsman.Actors.Claims, as: :list
+  defdelegate decide_claim(scope, id, decision), to: Helmsman.Actors.Claims, as: :decide
+  defdelegate cancel_claim(scope, id), to: Helmsman.Actors.Claims, as: :cancel
+  defdelegate claim_for(scope, name, user_id), to: Helmsman.Actors.Claims
+  defdelegate transfer_agent(scope, name, user_id), to: Helmsman.Actors.Claims, as: :transfer
+
   @base_max 60
   @name_max 64
   @max_attempts 10
@@ -176,7 +183,7 @@ defmodule Helmsman.Actors do
         from(a in Actor,
           where:
             a.workspace_id == ^workspace_id and a.kind in [:human, :agent, :squad] and
-              is_nil(a.disabled_at),
+              is_nil(a.disabled_at) and (a.kind != :human or not is_nil(a.user_id)),
           order_by: [
             asc: fragment("CASE ? WHEN 'human' THEN 0 WHEN 'agent' THEN 1 ELSE 2 END", a.kind),
             asc: a.name
@@ -617,14 +624,19 @@ defmodule Helmsman.Actors do
   Returns the actor `id` of the workspace, without locking it, or nil.
   """
   @spec get(pos_integer(), pos_integer()) :: Actor.t() | nil
-  def get(workspace_id, id) when is_integer(workspace_id) and is_integer(id),
-    do: Repo.one(from(a in Actor, where: a.workspace_id == ^workspace_id and a.id == ^id))
+  def get(workspace_id, id) when is_integer(workspace_id) and is_integer(id) do
+    case Repo.one(from(a in Actor, where: a.workspace_id == ^workspace_id and a.id == ^id)) do
+      %Actor{} = actor -> %{actor | unclaimed: actor.kind == :human and is_nil(actor.user_id)}
+      nil -> nil
+    end
+  end
 
   @type listed :: %{
           name: String.t(),
           kind: Actor.kind(),
           owner: String.t() | nil,
           disabled: boolean(),
+          unclaimed: boolean(),
           project: String.t() | nil,
           worktree: String.t() | nil,
           last_seen_at: DateTime.t() | nil
@@ -656,6 +668,7 @@ defmodule Helmsman.Actors do
             kind: a.kind,
             owner: h.name,
             disabled: not is_nil(a.disabled_at),
+            unclaimed: a.kind == :human and is_nil(a.user_id),
             project: a.project_key,
             worktree: a.worktree,
             last_seen_at: a.last_seen_at

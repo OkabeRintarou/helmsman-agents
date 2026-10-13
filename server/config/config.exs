@@ -48,6 +48,7 @@ config :helmsman, Oban,
   engine: Oban.Engines.Basic,
   repo: Helmsman.Repo,
   queues: [
+    backup: 2,
     github: 5,
     github_sync: 1,
     github_pr: 3,
@@ -60,6 +61,7 @@ config :helmsman, Oban,
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
     {Oban.Plugins.Cron,
      crontab: [
+       {"0 * * * *", Helmsman.Backup.Workers.Prune},
        {"0 4 * * *", Helmsman.GitHub.Workers.SyncAll},
        {"30 4 * * *", Helmsman.GitHub.Workers.PruneDeliveries},
        {"* * * * *", Helmsman.Daemons.Workers.MarkOffline},
@@ -166,6 +168,11 @@ config :mdex_native, syntax_highlighter: :lumis
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
+config :helmsman,
+  data_dir:
+    Path.expand("../tmp/data/#{config_env()}#{System.get_env("MIX_TEST_PARTITION", "")}", __DIR__),
+  import_max_bytes: 300 * 1024 * 1024
+
 import_config "#{config_env()}.exs"
 
 # Provider headers, like API keys, are write-only credentials in form parameters.

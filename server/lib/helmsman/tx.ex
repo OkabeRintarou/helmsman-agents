@@ -33,13 +33,17 @@ defmodule Helmsman.Tx do
       result is `{:error, code}` (without retries the error is raised). Only the database transaction is retried,
       never the callbacks that run after the commit. Ignored when joining
       an outer transaction, which cannot be retried from inside.
+    * `:timeout` - database transaction timeout in milliseconds; forwarded
+      to Ecto on each attempt. The repository default applies when omitted.
   """
   @spec run((-> result()), keyword()) :: result()
   def run(fun, opts \\ []) when is_function(fun, 0) do
+    transaction_opts = Keyword.take(opts, [:timeout])
+
     if Repo.in_transaction?() do
-      Repo.transact(fun)
+      Repo.transact(fun, transaction_opts)
     else
-      case transact(fun, Keyword.get(opts, :retry, 0), 0) do
+      case transact(fun, Keyword.get(opts, :retry, 0), 0, transaction_opts) do
         {{:ok, _} = result, callbacks} ->
           Enum.each(callbacks, &run_callback/1)
           result
@@ -51,23 +55,30 @@ defmodule Helmsman.Tx do
   end
 
   # Without the :retry option a retryable failure is raised as before.
-  defp transact(fun, retries, attempt_no) do
-    case attempt(fun) do
-      {:retry, _error, _stacktrace} when retries > 0 -> transact(fun, retries - 1, attempt_no + 1)
-      {:retry, error, stacktrace} when attempt_no == 0 -> reraise error, stacktrace
-      {:retry, error, _stacktrace} -> {{:error, error.postgres.code}, []}
-      done -> done
+  defp transact(fun, retries, attempt_no, opts) do
+    case attempt(fun, opts) do
+      {:retry, _error, _stacktrace} when retries > 0 ->
+        transact(fun, retries - 1, attempt_no + 1, opts)
+
+      {:retry, error, stacktrace} when attempt_no == 0 ->
+        reraise error, stacktrace
+
+      {:retry, error, _stacktrace} ->
+        {{:error, error.postgres.code}, []}
+
+      done ->
+        done
     end
   end
 
   # Returns the transaction result with the callbacks it registered, or
   # `{:retry, error, stacktrace}` after a retryable failure (nothing was
   # committed).
-  defp attempt(fun) do
+  defp attempt(fun, opts) do
     Process.put(@queue, [])
 
     try do
-      result = Repo.transact(fun)
+      result = Repo.transact(fun, opts)
       {result, @queue |> Process.get() |> Enum.reverse()}
     rescue
       error in Postgrex.Error ->
