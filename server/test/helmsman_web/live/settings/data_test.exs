@@ -236,10 +236,23 @@ defmodule HelmsmanWeb.SettingsLive.DataTest do
       assert panel?(view, "#import-dry-run[disabled]")
     end
 
+    test "the import button opens the panel when no import runs (walkthrough)", ctx do
+      {:ok, view, _html} = open(ctx, :admin)
+      assert has_element?(view, ~s(a#import-button[href="#{ctx.path}?panel=import"]))
+      refute has_element?(view, "#import-button[data-hm-disabled]")
+
+      view |> element("#import-button") |> render_click()
+      assert_patch(view, ctx.path <> "?panel=import")
+      assert open?(view, "import-panel")
+      refute panel?(view, "#import-dry-run[data-hm-disabled]")
+    end
+
     test "the import button is disabled while an import runs", ctx do
       put_import(ctx, status: :running)
       {:ok, view, _html} = open(ctx, :admin)
       assert has_element?(view, "#import-button[disabled]")
+      assert has_element?(view, "#import-button[data-hm-disabled]")
+      refute has_element?(view, "a#import-button")
       assert has_element?(view, "#import-busy", "已有进行中的导入")
     end
   end
@@ -579,7 +592,7 @@ defmodule HelmsmanWeb.SettingsLive.DataTest do
 
       admin |> element("#claim-#{claim.id} button", "批准") |> render_click()
       assert in_portal?(admin, "data-confirm", "#data-confirm", "批准并合并")
-      render_click(admin, "confirm_approve", %{"id" => to_string(claim.id)})
+      render_click(admin, "confirm_approve", %{"id" => claim.id})
       assert render(admin) =~ "已把 robert 合并到"
       refute has_element?(admin, row("robert"))
       refute has_element?(bob, row("robert"))

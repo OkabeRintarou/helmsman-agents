@@ -360,9 +360,11 @@ defmodule HelmsmanWeb.SettingsLive.Data do
     end
   end
 
+  # `confirm_value` reaches the server as JSON: the id is an integer here, unlike
+  # `phx-value-*` strings (found in the browser walkthrough).
   def handle_event("confirm_approve", %{"id" => id}, socket) do
     socket = load_identities(socket)
-    claim = Enum.find(socket.assigns.claims, &(to_string(&1.id) == id))
+    claim = Enum.find(socket.assigns.claims, &(to_string(&1.id) == to_string(id)))
     socket = assign(socket, :confirm, nil)
 
     case claim && BackupData.decide_claim(socket.assigns.current_scope, claim.id, :approve) do
@@ -860,7 +862,7 @@ defmodule HelmsmanWeb.SettingsLive.Data do
               icon="lucide-upload"
               patch={"#{@base_path}?panel=import"}
               disabled={@busy?}
-              disabled_reason={@busy? && dgettext("ui", "已有进行中的导入")}
+              disabled_reason={if(@busy?, do: dgettext("ui", "已有进行中的导入"))}
             >
               {dgettext("ui", "导入数据")}
             </.button>
@@ -1423,7 +1425,7 @@ defmodule HelmsmanWeb.SettingsLive.Data do
               form="import-form"
               variant="primary"
               disabled={!@can_dry_run? or @busy?}
-              disabled_reason={@busy? && dgettext("ui", "已有进行中的导入")}
+              disabled_reason={if(@busy?, do: dgettext("ui", "已有进行中的导入"))}
             >
               {dgettext("ui", "试运行")}
             </.button>
