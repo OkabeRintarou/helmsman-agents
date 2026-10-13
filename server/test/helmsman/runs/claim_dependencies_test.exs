@@ -8,8 +8,8 @@ defmodule Helmsman.Runs.ClaimDependenciesTest do
   import Helmsman.ProjectsFixtures
   import Helmsman.RunsFixtures
 
-  alias Helmsman.{CommittedData, Locks, Runs, Tx}
   alias Helmsman.Links.Link
+  alias Helmsman.{Locks, Runs}
 
   # No domain write that takes the graph lock: in the sandbox it would be
   # held by the test's connection until the end.
@@ -55,6 +55,32 @@ defmodule Helmsman.Runs.ClaimDependenciesTest do
     n > 0
   end
 
+  # Holds the workspace graph lock (session level) on a connection of its
+  # own, outside the Repo pool, so that taking it never waits for a pooled
+  # connection; returns once it is held. Stopping the connection releases it.
+  defp hold_graph_lock!(workspace_id) do
+    parent = self()
+    key = Locks.key(:graph, workspace_id)
+
+    after_connect = fn conn ->
+      Postgrex.query!(conn, "SELECT pg_advisory_lock($1)", [key])
+      send(parent, {:graph_held, self()})
+    end
+
+    opts =
+      Repo.config()
+      |> Keyword.drop([:pool, :name])
+      |> Keyword.merge(pool_size: 1, backoff_type: :stop, after_connect: after_connect)
+
+    {:ok, conn} = Postgrex.start_link(opts)
+    ref = Process.monitor(conn)
+
+    receive do
+      {:graph_held, _pid} -> conn
+      {:DOWN, ^ref, :process, _pid, reason} -> flunk("lock holder down: #{inspect(reason)}")
+    end
+  end
+
   describe "领取时复查依赖" do
     test "排队后才加的依赖", ctx do
       task = task(ctx)
@@ -88,28 +114,15 @@ defmodule Helmsman.Runs.ClaimDependenciesTest do
       Repo.update_all(Helmsman.Agents.AgentProfile, set: [max_concurrency: 5])
       blocked = run_with!(ctx, ctx.web2, :queued, ["assign"], %{priority: 3})
       other = run_with!(ctx, task(ctx), :queued, ["assign"])
-      parent = self()
+      holder = hold_graph_lock!(ctx.workspace.id)
 
-      holder =
-        Task.async(fn ->
-          CommittedData.unboxed(fn ->
-            Tx.run(fn ->
-              :ok = Locks.graph!(ctx.workspace.id)
-              send(parent, :held)
+      # Not waiting is checked by the lock wait, not by the elapsed time: a
+      # claim waiting for the graph lock fails with `lock_not_available`.
+      Repo.query!("SET LOCAL lock_timeout = '1s'")
+      result = claim(ctx)
+      Repo.query!("SET LOCAL lock_timeout = DEFAULT")
+      GenServer.stop(holder)
 
-              receive do
-                :release -> {:ok, :ok}
-              end
-            end)
-          end)
-        end)
-
-      assert_receive :held, 5_000
-      {micros, result} = :timer.tc(fn -> claim(ctx) end)
-      send(holder.pid, :release)
-      Task.await(holder)
-
-      assert micros < 1_000_000
       assert ids(result) == [other.id]
       assert run_status(blocked) == :queued
     end
