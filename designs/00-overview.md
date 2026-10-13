@@ -251,7 +251,7 @@ helmsman-agents/
 | 32 | M8 | `add-dependency-dispatch` | 架构 | `deferred` 运行、依赖满足触发、`satisfied?` 的 PR 规则与本地分支已合并规则（07 §3）、领取时复查 | 18、26、31、44 |
 | 33 | M8 | 关联与协作界面 | 前端 | Epic 进度 / 步骤、关联与阻塞标记、插话勾选框、提及置灰说明 | 13、22、25、28、30、31 |
 | 34 | M9 | `add-squads` | 架构 | 小队 actor、leader 运行、`delegate` / `delegate_done`、独立性扩展；对话创建小队（`propose_squad`、一次确认创建小队与新成员，16 §1.4）；Leader 不能创建 Agent（用户要求），成员可以是同一 CLI 上不同模型 / 推理强度 / 指令的多个 Agent | 25、26；对话创建小队需 49 |
-| 35 | M9 | `add-autopilots` | 架构 | 定时 / 手动 / webhook、两种模式、`overlap`、失败停用 | 18、24 |
+| 35 | M9 | `add-autopilots` | 架构 | 定时 / 手动 / webhook、两种模式、`overlap`、结算与失败停用、授权来源 = 最后保存的人；仅运行模式的只读检出（协议 6，守护进程部分由 hm-coder2 做） | 18、24；小队目标需 34；本地仓库的只读检出需 44 |
 | 36 | M9 | 小队与自动化界面 | 前端 | 小队页、自动化页；对话创建小队（在 #50 的页面上加小队草稿） | 22、34、35；对话创建小队需 50 |
 | 37 | M10 | `add-fulltext-search` | 架构 | 分词、检索列同事务写入、reindex、片段 | 11 |
 | 38 | M10 | `add-bql-filters` | 架构 | BQL 解析 / 编译、bosun 兼容用例、保存的筛选器、MCP 查询工具 | 37；`run` / `pr` / `squad` 字段需 19、26、34 |

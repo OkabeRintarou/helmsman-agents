@@ -63,7 +63,7 @@ end
 | 状态 | `transition_task(task_id, to, comment?, commits?, tests?, feedback?)` | `feedback = {kind, content}`：迁移原因，与迁移在同一事务里写入（06）；bosun 没有这个参数，不传时行为与 bosun 一致 |
 | 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | 返回 `from` 的详情；`type` 为 `depends_on`（from 等 to）或 `replaces`（from 接手 to，to 未结束时被撤销）；重复添加、删除不存在的都成功（`add-task-links`） |
 | 反馈 | `add_feedback(task_id, content, kind?)` `update_feedback(feedback_id, content, kind?)` `list_feedback(task_id)` | |
-| 查询 | `query_tasks(bql, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name, bql, filter_id?, shared?)` `delete_filter(filter_id)` | `save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致） |
+| 查询 | `query_tasks(bql?, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name?, bql?, filter_id?, shared?)` `delete_filter(filter_id)` | `save_filter` 新建时 `name`、`bql` 必填，更新只改给出的字段；`currentUser()` 需要当前身份，没有时返回 `no_identity`；`query_tasks` 的 `bql` 与 `filter_id` 二选一，`limit` 缺省 50、最多 200；`save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致）；运行令牌只能查询与列出共享筛选器（`add-bql-filters`） |
 
 新增：
 

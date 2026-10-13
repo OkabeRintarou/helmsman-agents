@@ -45,7 +45,7 @@
 | **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己） | reply | 回应这条 Feedback，**不改变**执行方 |
 | **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行 | work | 按 leader 的指示做；不看依赖 |
 | **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent` | work | 按附带的说明做 |
-| **自动化** | 定时 / 手动 / webhook（16 §2） | work | |
+| **自动化** `autopilot` | 仅运行模式的自动化被触发（定时 / 手动 / webhook，16 §2）；建任务模式不用它——建出的任务指派给目标，就是普通的 `assign` | work（无任务） | 按自动化的说明做，最后输出即结果；不合并、不自动重试也不能人工重试，优先级 1；授权来源是这次触发的授权来源（16 §2.5），链为空（`add-autopilots` 决策 11） |
 | **创建对话** `design` | 用户在创建对话里发了一条消息（12 §6） | work（无任务） | 按对话修改草稿并回复；不合并、不自动重试、租约过期不重排，优先级 3（`add-agent-conversation`） |
 | **插话兜底** `steer` | 人写 Feedback 时插话正在运行的托管 Agent（§8），且这条 Feedback 没有为该 Agent 排上别的触发 | 与被插话的运行相同 | 处理这条 Feedback；被插话的运行成功结束且有回执时，领取前移除（`add-run-steering` 决策 5、7） |
 
@@ -89,7 +89,7 @@
 |---|---|---|
 | `read` | 总是 | 读工作区里的项目、任务、反馈、检索、BQL |
 | `write_task` | 有任务的运行 | 只对**本次运行的任务**：写 / 修订 Feedback（含 @其他 Agent）、状态迁移、改字段、建 / 删以它为一端的链（不能用 `replaces` 撤销另一张未结束的任务，07 §5） |
-| `create_tasks` | 以小队 leader 身份的运行、Agent 配置里勾选了的 | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
+| `create_tasks` | 以小队 leader 身份的运行、Agent 配置里勾选了的；仅运行模式的自动化运行只看自动化配置里的勾选（不看 Agent 配置） | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
 | `delegate` | 以小队 leader 身份的运行（不能由 Agent 配置授予） | 16 §1.2 |
 | `design` | 设计运行（只有它，再加 `read`；不能由 Agent 配置授予） | 读写所在创建对话的草稿（12 §6）；只在这条运行仍是对话的当前轮时有效 |
 
@@ -225,6 +225,8 @@ SELECT r.* FROM runs r
 | `context_overflow` | 上下文超出模型窗口 | 否；人工重试时开新会话 |
 | `obsolete` `unauthorized` | 校验不通过（§3、§2.2） | 否 |
 | `cli_error` / `unknown` | 其他 | 否 |
+
+设计运行与仅运行模式的自动化运行不自动重试，也不能人工重试（`add-agent-conversation`、`add-autopilots` 决策 11）。
 
 自动重试在运行结束提交之后由后台任务入队（与 Agent 改绑、运行时禁用串行；Agent 不可用、未绑定或运行时已禁用时不重试，`add-run-lifecycle` 决策 25）。重试按 §3 合并进排队中的运行，`attempt + 1`；沿用原运行的授权来源与触发（领取时复核），排到 Agent 当前绑定的运行时；能恢复会话就恢复。「最多共 N 次」按 `auto_retries` 计；`push_conflict` / `push_failed` 上限 2。人工重试（界面按钮）不受次数限制（`auto_retries` 归零）；同一条运行的重试已结束后不能再对它重试（`retry_of_id` 唯一）。
 

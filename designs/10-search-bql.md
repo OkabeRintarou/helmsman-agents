@@ -76,20 +76,20 @@ op     := = | != | ~ | !~ | > | >= | < | <=
 
 | 字段 | 运算 | 说明 |
 |---|---|---|
-| `assignee_kind` `created_by_kind` | `= !=` | `human` / `agent` |
+| `assignee_kind` `created_by_kind` | `= != IN NOT IN` | `human` / `agent` / `squad` / `system`（`actors.kind`） |
 | `owner` | `= != IN` | Agent 的所属用户（`owner = alice` 找 alice 本人和她所有 Agent 的任务） |
-| 值 `currentUser()` | 用于 `assignee` `created_by` `owner` | 当前用户本人的 human actor；对 `owner` 是当前用户 |
+| 值 `currentUser()` | 用于 `assignee` `created_by` `owner` | 调用者当前的身份：人是本人的 human actor，外接 Agent 的令牌是它代表的身份，运行令牌是运行的托管 Agent；对 `owner` 是该身份对应的用户；没有当前身份（未 `identify` 的 `hm_` 会话）时返回 `no_identity`，不当作空值（`add-bql-filters` 决策 6） |
 | `run` | `= != IN` | 最近一次运行的状态：`deferred` `queued` `claimed` `running` `cancelling` `succeeded` `failed` `cancelled`；`run IS EMPTY` = 从没跑过 |
 | `pr` | `= != IN IS EMPTY` | PR 状态：`draft` `open` `merged` `closed` |
-| `ci` | `= !=` | PR 的检查状态：`pending` `success` `failure` |
-| `merge` | `= !=` | 合并进度：`waiting` `stale` `merged` `blocked` `failed` |
-| `squad` | `= != IN` | 执行方是这个小队，或执行方是它的成员 |
+| `ci` | `= != IN NOT IN IS EMPTY` | 当前 PR 的检查状态：`pending` `success` `failure`（没有 PR 或没有检查为空） |
+| `merge` | `= != IN NOT IN IS EMPTY` | 当前 PR 的合并进度：`waiting` `stale` `merged` `blocked` `failed`（没有为空） |
+| `squad` | `= != IN NOT IN` | 执行方是这个小队、它当前的 leader 或成员 |
 
 ### 2.2 实现
 
 ```
 "status = NEW AND text ~ 搜索"
-   │ Helmsman.BQL.Parser（NimbleParsec）
+   │ Helmsman.BQL.Lexer + Parser（手写递归下降，错误带位置、文本与 bosun 一致，`add-bql-filters` 决策 2）
    ▼
 AST  {:and, [{:cond, :status, :eq, [:new]}, {:cond, :text, :match, "搜索"}]}
    │ Helmsman.BQL.Normalizer：别名 → 规范字段；值按字段校验、归一（大小写、相对时间 → 绝对时间、ident 格式）
@@ -121,13 +121,15 @@ from t in Task, where: t.workspace_id == ^ws and ^dynamic, order_by: ..., limit:
 
 - 缺省排序：有 `text` / `feedback` 条件时按相关度，否则 `updated DESC`。
 - 所有值都通过 Ecto 参数传入，字段名走白名单，不存在 SQL 注入面。
-- BQL 查询在 `SET LOCAL statement_timeout = '5s'` 的事务里执行，`limit` 上限 200。
-- 解析错误 `{:invalid_bql, %{message, position}}`：界面把出错位置标红，MCP 文本给出位置和可用字段。
+- BQL 查询在 `SET LOCAL statement_timeout = '5s'` 的事务里执行，`limit` 缺省 50、上限 200（bosun 100 / 500），`offset` ≤ 10000；查询 ≤ 2000 个字符、≤ 64 个条件、≤ 32 层嵌套、`IN` ≤ 100 个值。
+- 解析错误 `{:invalid_bql, %{message, position}}`（位置为出错词的起始字符位置，从 1 起；意外结束时为长度 + 1）：界面把出错位置标红，MCP 文本给出位置和可用字段。
+- 不存在的项目、身份、任务、小队只是匹配不到，不报错；格式不对的值、不认识的枚举值报错。
 - 测试：解析器用 StreamData 生成随机 AST → 打印成字符串 → 再解析，断言往返相等；编译结果用固定数据集逐字段对照预期。
 
 ## 3. 保存的筛选器
 
-- `saved_filters`：`name`、`bql`、`visibility`（`private` 只有自己看到；`workspace` 全员可见，作者或 admin 可改 / 删）。
+- `saved_filters`：`name`、`bql`、`visibility`（`private` 只有自己看到；`workspace` 全员可见，作者或 admin 可改 / 删，只有作者能改可见性）。
+- member 以上的人能保存（viewer 只读，运行令牌只能运行共享的）；所有者离开工作区时删除他的私有筛选器，共享的保留（`add-bql-filters` 决策 10）。
 - 保存前先解析一次，非法 BQL 不能保存。
 - 侧栏列出「我的」和「共享」两组；`/w/:slug/query?filter=<id>` 打开。
-- MCP：`list_filters` `save_filter(name, bql, filter_id?, shared?)`（带 `filter_id` 是更新）`delete_filter(filter_id)`；`query_tasks` 也接受 `filter_id`。
+- MCP：`list_filters` `save_filter(name?, bql?, filter_id?, shared?)`（带 `filter_id` 是更新，只改给出的字段；新建时 `name`、`bql` 必填）`delete_filter(filter_id)`；`query_tasks` 接受 `bql` 或 `filter_id`（二选一）。

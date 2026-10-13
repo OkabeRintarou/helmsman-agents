@@ -62,7 +62,7 @@
 | `heartbeat` | 每 30 秒；所有在跑的运行的 `run_id, last_seq`。回复：服务端认为已结束、应立即终止的运行 |
 | `steer_ack` | `run_id, feedback_id`：CLI 已把插话纳入当前会话（以适配器的确认为准）；与事件同一套重发，`finished` 在它得到回复之后才上报（13 §8） |
 | `git_token` | `run_id`：请求新的推送令牌（安装令牌 1 小时过期，长任务结束时可能已失效） |
-| `cleanup_check` | 协议 4（`add-pr-reconcile-merge`；版本累积：2 供应商账号、3 本地仓库、4 清理）：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
+| `cleanup_check` | 协议 4（`add-pr-reconcile-merge`；版本累积：2 供应商账号、3 本地仓库、4 清理、5 供应商账号请求头、6 仓库的只读检出 `repo.mode = snapshot`（`add-autopilots`））：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
 | `repo_status` | 协议 3：本地仓库模式下，`join` / `sync` 回复给出要检查的分支，守护进程 fetch 用户仓库后上报每个分支的提交是否已进入基础分支（15 §8） |
 | `pushed` | `run_id, branch, base_sha, head_sha, commits, rescue_branch?` |
 | `finished` | `run_id, status, failure_reason?, error?, session_id, summary, usage` |
@@ -131,7 +131,7 @@
 
 ## 5. 运行环境
 
-- 工作目录：有仓库时是任务的 worktree（§7）；没有仓库时，有任务的用 `scratch/<workspace>/<ident>/`（同一任务复用，会话才能恢复），无任务的（自动化「仅运行」）用 `runs/<run_id>/scratch/`。
+- 工作目录：有仓库时是任务的 worktree（§7）；自动化「仅运行」的项目绑定了仓库时是只读检出 `runs/<run_id>/checkout/`（§7）；没有仓库时，有任务的用 `scratch/<workspace>/<ident>/`（同一任务复用，会话才能恢复），无任务的用 `runs/<run_id>/scratch/`。
 - 环境变量：**清理后的**继承环境 + `GIT_TERMINAL_PROMPT=0` + Agent 的 `env`，再加上下表；一律以「清空后整体传入」的方式启动子进程（erlexec 的子进程继承的是 erlexec 启动时的环境快照，事后删 BEAM 的环境变量清不掉，`update-daemon-env-scrub`）：
   - 清理（守护进程启动时、每个子进程——CLI、守护进程自己的 git、版本探测、`ps` / `kill` 等命令——每次启动时都按同一规则 `HelmsmanDaemon.Env` 清理）：去掉继承来的全部 `GIT_*`（被注入的配置 `GIT_CONFIG_*`、凭据弹窗 `GIT_ASKPASS`、改写仓库位置的 `GIT_DIR` / `GIT_WORK_TREE` 等、改写执行程序的 `GIT_EXEC_PATH` / `GIT_SSH_COMMAND` 等、跟踪输出）、`SSH_ASKPASS` / `SSH_ASKPASS_REQUIRE`、全部 `VSCODE_*`（`VSCODE_GIT_IPC_HANDLE` 与 askpass 会让 Agent 经 VS Code 借用用户的 GitHub 登录，`VSCODE_IPC_HOOK_CLI` 能操纵用户的编辑器）；子进程另去掉继承来的 `HELMSMAN_*`。启动时打印被忽略的变量名（不含值）。
   - 保留其余全部（`PATH`、`HOME`、语言、代理、`SSH_AUTH_SOCK`、机器主人自己放进环境的令牌）：CLI 要靠它们联网与认证；Agent 能用守护进程用户的凭据见 §9。用户长期的 git 设置在 `~/.gitconfig` 里，Agent 的 git 照常读取；Agent 的 `env` 可以明确设置 `GIT_*`。
@@ -178,6 +178,8 @@
    - 网络、权限导致推送失败 → 重试 3 次，仍失败则 `failed(push_failed)`，改动留在本机 worktree，重试优先派回同一运行时；
    - 上报 `pushed`（分支、`base_sha`、`head_sha`、提交列表、救援分支），服务端记在运行上（运行已被判结束的迟到推送同样记录），据此开 / 更新 PR（15 §3）。**推送成功之后**才上报 `finished(succeeded)`；CLI 本身失败的运行保持原失败原因，推送问题附在 `error` 里。
 4. **清理**（`add-pr-reconcile-merge` 决策 16）：每次启动后第一次连接成功时与之后每 24 小时，守护进程列出 `work/` 下的 worktree，用 `cleanup_check`（协议 4）询问服务端；服务端只对「任务 VERIFIED / CANCELLED / REJECTED、没有排队或活跃的运行、推送过 GitHub 的任务当前 PR 已合并或关闭」的回答可删，并附上该任务推送过的提交与基础分支。守护进程只处理经路径与 git 元数据证实属于自己缓存布局的 worktree（目录不是符号链接，`.git` 指向 `repos/` 下的 bare 缓存且反向登记一致，检出的正是任务分支；用户仓库的 worktree 即使放在 `work/` 下也不碰），再在本机确认：不等待即可拿到 worktree 与仓库缓存的锁、待推送账本为空、worktree 干净且没有进行中的合并、`HEAD` 已包含在某个推送过的提交或远端基础分支里——全部满足才删除 worktree 与缓存里的任务分支（本地模式不碰用户仓库）；否则保留并记日志。bare 仓库保留。
+
+**只读检出**（`add-autopilots` 决策 13，协议 6）：运行描述的 `repo.mode = snapshot`（自动化「仅运行」，16 §2.2）时没有任务分支：准备时在仓库缓存锁下照常 fetch（GitHub 令牌只有 `contents: read`），`git worktree add --detach runs/<run_id>/checkout origin/<base_branch>`；收尾不自动提交、不推送、不上报 `pushed`，在缓存锁下 `git worktree remove --force` 并删除目录；不取任务 worktree 锁、不写待推送账本、不参与清理询问；崩溃遗留的由下一次准备的 `git worktree prune` 与运行目录清理处理。本地仓库模式同样，从本地缓存检出、从不交付回用户仓库。协议低于 6 的守护进程不会收到这种运行（服务端领取时直接以 `workspace_prepare` 失败并提示升级）。
 
 **本地仓库模式**（`add-local-repositories`，15 §8）：准备与收尾与上面相同，只是「远端」换成机器上的用户仓库——先 fetch 到 `repos/local/<name>.git`，在缓存的任务 worktree 里执行；收尾不强推地把 `hm/<工作区 ID>/<ident>` 推进用户仓库（`--receive-pack` 里强制 `receive.denyCurrentBranch=refuse` 与不运行 hook，被拒推救援分支；准备与交付前都复核该仓库仍对本运行的工作区开放），只写 `refs/heads/hm/<工作区 ID>/…`，不动用户的工作区、暂存区、`HEAD` 与其他分支；没有令牌，不开 PR。
 

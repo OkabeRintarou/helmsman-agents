@@ -48,48 +48,51 @@
 
 ## 2. 自动化
 
-> 按计划、手动或 webhook 触发一个 Agent 去做预设的工作，例如每天整理新任务、每周升级依赖、CI 夜间失败时排查。
+> 按计划、手动或 webhook 触发一个 Agent 去做预设的工作，例如每天整理新任务、每周升级依赖、CI 夜间失败时排查。规格见 `add-autopilots`。
 
 ### 2.1 模型
 
 | 表 | 列 |
 |---|---|
-| `autopilots` | `workspace_id`、`name`、`agent_id`、`project_id`（可空）、`mode`、`title_template`、`instructions`、`cron`、`timezone`、`overlap`（`skip` 缺省 \| `queue`）、`enabled`、`next_run_at`、`webhook_token_hash`（可空）、`created_by_user_id`、时间戳 |
-| `autopilot_runs` | `autopilot_id`、`source`（`schedule` \| `manual` \| `webhook`）、`delivery_id`、`initiator_user_id`、`payload jsonb`（webhook 请求体，截断到 64 KB）、`task_id`、`run_id`、`status`（`pending` \| `skipped` \| `started` \| `succeeded` \| `failed`）、`result`、`inserted_at` |
+| `autopilots` | `workspace_id`、`name`、`agent_id`（目标：托管 Agent；建任务模式也可以是小队）、`project_id`（可空，建任务模式必填）、`mode`、`title_template`、`instructions`（≤ 16 KB）、`create_tasks`（仅运行模式的能力）、`cron`（可空）、`timezone`、`overlap`（`skip` 缺省 \| `queue`）、`enabled`、`next_run_at`、`webhook_token_hash`（可空）、`initiator_user_id`（授权来源，§2.5）、`created_by_user_id`、`disabled_reason`、`consecutive_failures`、`lock_version`、时间戳 |
+| `autopilot_runs` | 一次触发一行：`autopilot_id`、`source`（`schedule` \| `manual` \| `webhook`）、`scheduled_for`、`delivery_id`、`initiator_user_id`、`note`（手动附加说明）、`payload jsonb`（webhook 请求体，≤ 64 KB）、`config jsonb`（接受请求时冻结的执行配置）、`task_id`、`run_id`、`status`（`pending` \| `skipped` \| `started` \| `succeeded` \| `failed` \| `cancelled`）、`reason`、`result`、`started_at`、`finished_at` |
 
 ### 2.2 两种模式
 
 | 模式 | 做什么 | 结果在哪 |
 |---|---|---|
-| `create_task` | 在 `project` 里建一张任务：标题来自模板（支持 `{{date}}` `{{source}}`），正文是 `instructions` + webhook 内容摘要，执行方是这个 Agent，标签 `autopilot`，提出方是自动化创建者本人的 human actor。之后完全按普通任务走：指派触发、分支、PR、验收、合并 | 那张任务 |
-| `run_only` | 不建任务，直接为 Agent 建一次运行（`task_id` 为空），提示词是 `instructions` + 触发来源 + payload。有仓库时在基础分支的临时 worktree 里跑，**不推送**任何改动 | `autopilot_runs.result`（Agent 的最后输出）；Agent 也可以通过 MCP 建任务、写反馈 |
+| `create_task` | 以这次触发的授权来源（§2.5）的身份在 `project` 里建一张任务：标题来自模板（支持 `{{date}}` `{{source}}`），正文是 `instructions` + 触发信息（手动说明、webhook 内容前 4 KB，标为不可信数据），执行方是目标（Agent 或小队），标签 `autopilot`，提出方是授权来源本人。之后完全按普通任务走：指派触发、分支、PR、验收、合并 | 那张任务 |
+| `run_only` | 不建任务，直接为 Agent 建一次运行（`task_id` 为空，触发 `autopilot`），提示词是 `instructions` + 触发来源 + 手动说明 + payload（≤ 32 KB，标为不可信数据）。项目绑定了仓库时在基础分支的临时只读检出里跑（14 §7），**不推送**任何改动，结束即删除 | `autopilot_runs.result`（Agent 的最后输出）；勾选 `create_tasks` 时 Agent 也可以通过 MCP 建任务，但不能写任何已有任务 |
 
-`run_only` 适合「看一看然后建工单 / 写评论」这类工作；要改代码就用 `create_task`，这样改动有任务、有 PR、有验收。
+`run_only` 适合「看一看然后建工单」这类工作；要改代码就用 `create_task`，这样改动有任务、有 PR、有验收。
 
-### 2.3 调度
+### 2.3 调度、重叠与结算
 
-- 保存时用 `crontab` 库按时区（`tz` 时区库）算出 `next_run_at`，并插入一个 Oban 任务 `AutopilotFire`，`scheduled_at = next_run_at`，唯一键 `(autopilot_id, next_run_at)` 防止重复。
-- 触发时（定时、手动、webhook 都一样）先 `SELECT … FOR UPDATE` 锁住这条自动化，再检查上一次是否还在进行（它建的任务还没结束，或它的运行还没结束）。`autopilot_runs` 上有部分唯一索引 `(autopilot_id) WHERE status = 'started'` 兜底，同一时刻最多一次在进行：
+- 保存时用 `crontab` 库按时区（`tz` 时区库）算出 `next_run_at`（标准 5 段；相邻两次至少 5 分钟；夏令时跳过的本地时刻取跳变后的第一个时刻，回拨时只取较早的一次），并插入一个 Oban 任务 `AutopilotFire`，`scheduled_at = next_run_at`，按 `(autopilot_id, next_run_at)` 唯一；配置改变后旧任务执行时发现时刻不符，什么都不做。
+- 触发时（定时、手动、webhook 都一样）以授权来源的身份开写事务，锁住这条自动化（全序里在成员关系行之后、图锁之前，01 §4），先就地结算上一次，再看是否还有在进行的。`autopilot_runs` 上的部分唯一索引 `(autopilot_id) WHERE status = 'started'` / `'pending'` 兜底：
   - `skip`：记一条 `skipped`；
-  - `queue`：记一条 `pending`（最多保留 1 条，多的合并）；上一次结束时（任务进入终态或运行结束的处理里）把它变成 `started` 并执行；
-  - 否则直接执行；然后算下一次时间，插入下一个 `AutopilotFire`。
-- 服务停机错过的时间：只补触发一次（错过超过 1 小时则直接跳到下一个未来时间），不会在恢复时连续补跑。
-- 启动时有一个对账任务，确保每个启用的自动化都有一个排好的 `AutopilotFire`。
+  - `queue`：记一条 `pending`；上一次结算后执行它；
+  - 新请求一律取代已有的 `pending`（改为 `skipped`，最新的请求胜出），所以旧请求不会排在新请求之后执行；
+  - 否则直接执行；定时触发再算下一次时间，插入下一个 `AutopilotFire`。
+- **结算**（一次执行何时算结束）：`run_only` 随运行结束（成功 / 失败 / 被人停止 → `cancelled`）；`create_task` 在任务 DONE 或 VERIFIED 时成功（之后的验收、打回、合并属于普通任务流程，不再占住自动化），REJECTED 失败，CANCELLED 或改派给别人时 `cancelled`，任务上的运行失败且不会再自动重试时失败；运行成功结束而任务还在进行（例如在等回答）仍算在进行。运行结束、任务迁移、改派、下一次触发和对账时都会结算。
+- 服务停机错过的时间：迟到 1 小时内只补触发一次，超过 1 小时记一条 `skipped`（`missed`）；都从当前时刻算下一次，不会在恢复时连续补跑。
+- 启动时与每 10 分钟有一个对账任务，确保每个启用的自动化都有一个排好的 `AutopilotFire`，并结算在进行的记录。
 
 ### 2.4 触发方式
 
 - **定时**：cron 表达式 + 时区，界面上用人话预览（「每个工作日 09:00（Asia/Shanghai）」）和接下来 5 次的时间。
-- **手动**：自动化页面上的「立即运行」，可以临时附加一段说明。
-- **Webhook**：`POST /hooks/autopilots/:id`，`Authorization: Bearer <令牌>`（创建时显示一次）；请求体作为 payload。按令牌限流，每分钟 10 次。
-
-- Webhook 令牌是 32 字节随机数，只存哈希，可以随时轮换；请求带 `X-Delivery-Id` 时按它去重（24 小时内），重复投递不会重复触发。
+- **手动**：自动化页面上的「立即运行」，可以临时附加一段说明（≤ 4 KB）；停用的自动化也能立即运行（试运行，成功不自动启用）。
+- **Webhook**：`POST /hooks/autopilots/:id`，请求头 `Authorization: Bearer hma_…`，请求体作为 payload（≤ 1 MB，保存时截断到 64 KB）。鉴权通过后按自动化限流，每分钟 10 次。响应：新触发 202、重复投递 200、id 不存在或令牌不对一律 401（不暴露 id 是否存在）、自动化停用 409、超限 413 / 429。
+- Webhook 令牌是 32 字节随机数（前缀 `hma_`），只存哈希，开启与轮换时显示一次，可以随时轮换；请求带 `X-Delivery-Id` 时按它去重（同一自动化内永久；带投递 ID 的记录不清理，没有投递 ID 的跳过记录 30 天后清理），重复投递不会重复触发。
 
 ### 2.5 权限与失败
 
-- 创建 / 修改自动化：有权触发该 Agent 的成员（12 §2.1）。定时和 webhook 触发的授权来源是自动化的创建者；手动触发的是点按钮的人（他也必须有权触发这个 Agent）。授权来源离开工作区或失去触发权限时，自动化自动停用，并在页面上说明原因。
+- 创建 / 修改 / 启用 / 立即运行 / 开启或轮换 webhook：有权触发目标的成员（Agent 按 12 §2.1，小队按 §1.1）；owner / admin 也不能绕过 `owner_only`。停用、删除：另允许 admin 以上（关掉别人失控的自动化）。Agent 身份一律不能管理（管理类动作）。
+- **授权来源 = 最后一次保存它的人**（建、改、启用、开启或轮换 webhook 的人；停用、删除不改）。定时和 webhook 触发以它为授权来源；手动触发的是点按钮的人（他也必须有权触发目标）。这样别人改了你的自动化，运行就以他的名义进行，不能借你的授权触发他无权触发的 Agent。每次触发的记录冻结接受时的执行配置（模式、目标、项目、说明等），排队、执行、结算都按它；改了执行配置时排队的请求作废（`config_changed`），所以排队的请求永远只以自己的发起人执行自己接受时的配置。
+- 授权来源离开工作区时，他的自动化在同一事务里停用；失去触发权限、目标被归档、项目被归档时，下一次触发记失败并停用。停用原因显示在页面上。
 - 自动化建出的运行能力范围（13 §2.3）：`create_task` 模式同普通任务；`run_only` 模式没有任务可写，只有 `read`，外加在自动化配置里勾选的 `create_tasks`。
-- `run_only` 的运行失败**不自动重试**，避免和下一次计划执行重叠；`create_task` 建出的任务按普通运行的规则重试（13 §5）。
-- 连续失败 5 次自动停用，等人检查。
+- `run_only` 的运行**不自动重试**、也不能人工重试（要再跑就「立即运行」，结果才有记录），避免和下一次计划执行重叠；`create_task` 建出的任务按普通运行的规则重试（13 §5）。
+- 连续失败 5 次自动停用，等人检查；重叠跳过和人为取消不计入、也不打断计数，成功一次归零。
 
 ## 3. 界面
 
