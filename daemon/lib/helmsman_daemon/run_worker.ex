@@ -5,6 +5,7 @@ defmodule HelmsmanDaemon.RunWorker do
 
   alias HelmsmanDaemon.{
     Adapter,
+    Env,
     EventBuffer,
     Exec,
     Git,
@@ -347,10 +348,7 @@ defmodule HelmsmanDaemon.RunWorker do
   end
 
   defp launch_cli(%{git_workspace: nil} = state, options) do
-    case :exec.run(state.launch.argv, options) do
-      {:ok, exec_pid, pid} -> {:ok, exec_pid, pid, nil}
-      error -> error
-    end
+    Exec.run_cli(state.launch.argv, options)
   end
 
   defp launch_cli(state, options), do: Exec.start_cli(state.launch.argv, options, state.opts)
@@ -376,6 +374,8 @@ defmodule HelmsmanDaemon.RunWorker do
 
     env =
       Keyword.get(state.opts, :base_env, System.get_env())
+      |> Env.child()
+      |> Map.put("GIT_TERMINAL_PROMPT", "0")
       |> Map.merge(Map.new(allowed))
       |> Map.merge(own)
       |> Map.merge(Map.new(state.launch.env))
@@ -730,8 +730,7 @@ defmodule HelmsmanDaemon.RunWorker do
            pgid: pgid,
            finalized?: false,
            preserve_record?: false
-         } =
-           state
+         } = state
        )
        when not is_nil(workspace) and not is_nil(pgid),
        do: {:noreply, state, {:continue, :finalize}}

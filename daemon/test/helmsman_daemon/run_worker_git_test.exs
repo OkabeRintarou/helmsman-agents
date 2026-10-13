@@ -88,6 +88,37 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
     finished(40)
   end
 
+  test "inherited git hook repository does not receive the Agent commit", %{fixture: fixture} do
+    other = Path.join(Paths.home(), "other.git")
+    git!(fixture.git, Paths.home(), ["init", "--bare", other])
+    git!(fixture.git, fixture.seed, ["push", other, "main"])
+    refs_before = git!(fixture.git, other, ["show-ref"])
+    objects_before = git!(fixture.git, other, ["count-objects", "-v"])
+
+    base =
+      Map.merge(System.get_env(), %{
+        "GIT_DIR" => other,
+        "GIT_INDEX_FILE" => Path.join(other, "hook-index"),
+        "GIT_WORK_TREE" => fixture.seed
+      })
+
+    {_, run} =
+      start(fixture, 40, "write isolated\ngit_commit isolated Agent commit\n" <> @success,
+        base_env: base
+      )
+
+    report = pushed(40)
+    finished(40)
+    assert [%{subject: "isolated Agent commit"}] = report.commits
+
+    assert git!(fixture.git, GitWorkspace.worktree_path(run), ["symbolic-ref", "--short", "HEAD"]) ==
+             run.repo.branch
+
+    assert remote_head(fixture) == report.head_sha
+    assert git!(fixture.git, other, ["show-ref"]) == refs_before
+    assert git!(fixture.git, other, ["count-objects", "-v"]) == objects_before
+  end
+
   test "CLI failure preserves original conclusion after push", %{fixture: fixture} do
     start(fixture, 40, "write hello\ngit_commit before failure\nerr failed\nexit 7\n")
     pushed(40)

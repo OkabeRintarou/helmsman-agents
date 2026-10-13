@@ -198,12 +198,19 @@ defmodule Helmsman.GitWorkspaceE2E do
       ] ++ args
 
   defp git_env do
-    [
-      {"GIT_CONFIG_GLOBAL", "/dev/null"},
-      {"GIT_CONFIG_SYSTEM", "/dev/null"},
-      {"GIT_CONFIG_NOSYSTEM", "1"},
-      {"GIT_TERMINAL_PROMPT", "0"}
-    ]
+    deleted =
+      for {name, _} <- System.get_env(),
+          String.starts_with?(name, ["GIT_", "VSCODE_"]) or
+            name in ["SSH_ASKPASS", "SSH_ASKPASS_REQUIRE"],
+          do: {name, nil}
+
+    deleted ++
+      [
+        {"GIT_CONFIG_GLOBAL", "/dev/null"},
+        {"GIT_CONFIG_SYSTEM", "/dev/null"},
+        {"GIT_CONFIG_NOSYSTEM", "1"},
+        {"GIT_TERMINAL_PROMPT", "0"}
+      ]
   end
 
   defp shell_quote(value), do: "'" <> String.replace(value, "'", "'\\''") <> "'"

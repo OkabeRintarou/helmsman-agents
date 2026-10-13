@@ -1,7 +1,7 @@
 defmodule HelmsmanDaemon.GitTokenLeakTest do
   use HelmsmanDaemon.Case, async: false
   alias HelmsmanDaemon.Adapters.{Claude, Codex, Fake}
-  alias HelmsmanDaemon.{Exec, Git, Paths}
+  alias HelmsmanDaemon.{Env, Exec, Git, Paths}
   import HelmsmanDaemon.GitHelpers
   @moduletag :tmp_dir
 
@@ -31,7 +31,7 @@ defmodule HelmsmanDaemon.GitTokenLeakTest do
     assert {:ok, output} =
              Exec.command(launch.argv,
                cd: state.path,
-               env: [:clear | Enum.to_list(System.get_env())]
+               env: Enum.to_list(Env.child())
              )
 
     File.write!(Path.join(run_dir, "raw.log"), output)

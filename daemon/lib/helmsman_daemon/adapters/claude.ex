@@ -22,7 +22,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
   def provider, do: :claude
   def executable, do: "claude"
   def min_version, do: @minimum
-  def detect, do: detect(&Exec.version/1, fn -> System.cmd("id", ["-u"]) end)
+  def detect, do: detect(&Exec.version/1, fn -> HelmsmanDaemon.Env.cmd("id", ["-u"]) end)
 
   @doc false
   def detect(version_probe, uid_probe) do

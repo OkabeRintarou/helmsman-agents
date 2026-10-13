@@ -1,6 +1,6 @@
 defmodule HelmsmanDaemon.ProcGroup do
   @moduledoc "Process-group continuity based on known member identities, shared by live and recovery cleanup."
-  alias HelmsmanDaemon.Exec
+  alias HelmsmanDaemon.{Env, Exec}
 
   def snapshot(pgid) do
     with {:ok, processes} <- processes() do
@@ -11,7 +11,7 @@ defmodule HelmsmanDaemon.ProcGroup do
   @doc "Group snapshot excluding zombies, which cannot perform repository writes."
   def live_snapshot(pgid) do
     with {:ok, ps} <- Exec.ps_executable() do
-      case System.cmd(ps, ["-A", "-o", "pid=", "-o", "pgid=", "-o", "stat=", "-o", "lstart="],
+      case Env.cmd(ps, ["-A", "-o", "pid=", "-o", "pgid=", "-o", "stat=", "-o", "lstart="],
              stderr_to_stdout: true
            ) do
         {output, 0} -> {:ok, parse_live(output, pgid)}
@@ -54,7 +54,8 @@ defmodule HelmsmanDaemon.ProcGroup do
   end
 
   def from_record(%{"os_pid" => pid, "proc_start" => start})
-      when is_integer(pid) and pid > 0 and is_binary(start), do: [{pid, start}]
+      when is_integer(pid) and pid > 0 and is_binary(start),
+      do: [{pid, start}]
 
   def from_record(_), do: []
 
@@ -111,7 +112,7 @@ defmodule HelmsmanDaemon.ProcGroup do
 
   defp processes do
     with {:ok, ps} <- Exec.ps_executable() do
-      case System.cmd(ps, ["-A", "-o", "pid=", "-o", "pgid=", "-o", "lstart="],
+      case Env.cmd(ps, ["-A", "-o", "pid=", "-o", "pgid=", "-o", "lstart="],
              stderr_to_stdout: true
            ) do
         {output, 0} -> {:ok, parse(output)}

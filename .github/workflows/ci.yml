@@ -71,7 +71,7 @@ jobs:
       - run: mix deps.get
       - run: mix precommit
       - name: End-to-end tests with the daemon
-        run: mix test --only e2e
+        run: ../scripts/hostile-git-env.sh mix test --only e2e
       - name: Roll back all migrations and migrate again
         env:
           MIX_ENV: test
@@ -99,7 +99,11 @@ jobs:
             daemon/_build
           key: daemon-mix-${{ runner.os }}-${{ hashFiles('.tool-versions', 'daemon/mix.lock') }}
       - run: mix deps.get
-      - run: mix precommit
+      - name: Compile daemon test environment before injecting git variables
+        env:
+          MIX_ENV: test
+        run: mix compile
+      - run: ../scripts/hostile-git-env.sh mix precommit
 
   dialyzer:
     runs-on: ubuntu-24.04

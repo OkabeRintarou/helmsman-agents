@@ -1,6 +1,6 @@
 defmodule HelmsmanDaemon.Git do
   @moduledoc "Isolated git commands; installation tokens travel only through askpass."
-  alias HelmsmanDaemon.{Exec, Paths}
+  alias HelmsmanDaemon.{Env, Exec, Paths}
 
   @prefix ["-c", "core.hooksPath=/dev/null", "-c", "credential.helper=", "-c", "gc.auto=0"]
   @network ["fetch", "push", "ls-remote"]
@@ -81,10 +81,7 @@ defmodule HelmsmanDaemon.Git do
     base = Keyword.get(context.opts, :base_env, System.get_env())
 
     base
-    |> Map.new()
-    |> Map.reject(fn {key, _} ->
-      String.starts_with?(key, "GIT_") or key == "HELMSMAN_GIT_TOKEN"
-    end)
+    |> Env.child()
     |> Map.merge(Keyword.get(context.opts, :identity, %{}))
     |> Map.merge(%{
       "GIT_CONFIG_NOSYSTEM" => "1",

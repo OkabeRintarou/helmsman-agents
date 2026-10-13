@@ -1,8 +1,9 @@
 defmodule HelmsmanDaemon do
   @moduledoc "Helmsman execution daemon; explicitly started by CLI or tests."
-  alias HelmsmanDaemon.{Config, Connection, Detector, Janitor, Paths, Runs, StateStore}
+  alias HelmsmanDaemon.{Config, Connection, Detector, Env, Janitor, Paths, Runs, StateStore}
 
   def start_daemon(opts \\ []) do
+    Env.scrub_process!()
     Paths.ensure!()
     security_notice()
 

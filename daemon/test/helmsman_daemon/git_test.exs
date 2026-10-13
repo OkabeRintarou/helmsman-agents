@@ -16,7 +16,14 @@ defmodule HelmsmanDaemon.GitTest do
       "GIT_CONFIG_VALUE_0" => "store",
       "GIT_CONFIG_PARAMETERS" => "'credential.helper=store'",
       "HELMSMAN_GIT_TOKEN" => "inherited",
-      "GIT_ASKPASS" => "/unsafe"
+      "GIT_ASKPASS" => "/unsafe",
+      "SSH_ASKPASS" => "/unsafe",
+      "SSH_ASKPASS_REQUIRE" => "force",
+      "VSCODE_GIT_IPC_HANDLE" => "/unsafe",
+      "VSCODE_IPC_HOOK_CLI" => "/unsafe",
+      "HELMSMAN_HOME" => "/unsafe",
+      "HELMSMAN_PROVIDER_API_KEY" => "hostile-sentinel",
+      "HELMSMAN_RUN_TOKEN" => "hostile-sentinel"
     }
 
     context = Git.context(Paths.run(1), token, base_env: env)
@@ -60,6 +67,12 @@ defmodule HelmsmanDaemon.GitTest do
       refute Map.has_key?(actual, "GIT_CONFIG_SYSTEM")
       refute Map.has_key?(actual, "GIT_CONFIG_COUNT")
       refute Map.has_key?(actual, "GIT_CONFIG_PARAMETERS")
+
+      for name <- ~w(SSH_ASKPASS SSH_ASKPASS_REQUIRE VSCODE_GIT_IPC_HANDLE VSCODE_IPC_HOOK_CLI
+        HELMSMAN_HOME HELMSMAN_PROVIDER_API_KEY HELMSMAN_RUN_TOKEN),
+          do: refute(Map.has_key?(actual, name))
+
+      refute "hostile-sentinel" in Map.values(actual)
 
       if command in ["fetch", "push", "ls-remote"] do
         assert actual["HELMSMAN_GIT_TOKEN"] == token

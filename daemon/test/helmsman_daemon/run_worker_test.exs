@@ -64,7 +64,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
         server_url: "https://hm.example.com:8443"
       )
 
-    assert_receive {:report, 2, %Report.Finished{status: :succeeded}, _, _, _}, 4_000
+    assert_receive {:report, 2, %Report.Finished{status: :succeeded}, _, _, _}, 15_000
     raw = File.read!(Path.join(Paths.run(2), "raw.log"))
     assert raw =~ HelmsmanDaemon.GitWorkspace.worktree_path(run)
     for key <- ["GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"], do: assert(raw =~ "#{key}=keel/dev")

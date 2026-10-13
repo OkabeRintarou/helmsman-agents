@@ -2,7 +2,21 @@ defmodule HelmsmanDaemon.Exec do
   @moduledoc "Bounded CLI version lookup and operating system process identity."
 
   require Logger
-  alias HelmsmanDaemon.{ProcGroup, RepoCache}
+  alias HelmsmanDaemon.{Env, ProcGroup, RepoCache}
+
+  @doc "Launch a CLI without repository locks."
+  def run_cli(argv, options) do
+    case :exec.run(argv, clear_environment(options)) do
+      {:ok, exec_pid, os_pid} -> {:ok, exec_pid, os_pid, nil}
+      error -> error
+    end
+  end
+
+  defp clear_environment(options) do
+    env = :proplists.get_value(:env, options, Env.child())
+    env = env |> Enum.reject(&(&1 == :clear)) |> Enum.to_list()
+    [{:env, [:clear | env]} | :proplists.delete(:env, options)]
+  end
 
   @doc "Launch a CLI with a lock pin retained until its process group is empty."
   def start_cli(argv, options, opts \\ []) do
@@ -53,7 +67,7 @@ defmodule HelmsmanDaemon.Exec do
   end
 
   defp launch_cli(caller, ref, owner, argv, options, opts) do
-    case :exec.run(argv, options) do
+    case :exec.run(argv, clear_environment(options)) do
       {:ok, exec_pid, os_pid} ->
         {:ok, members} = ProcGroup.snapshot(os_pid)
 
@@ -134,7 +148,7 @@ defmodule HelmsmanDaemon.Exec do
     options = [:stdout, :stderr, :monitor, {:group, 0}, :kill_group, {:kill_timeout, 0}]
     options = options ++ Keyword.take(opts, [:cd, :env])
 
-    case :exec.run(argv, options) do
+    case :exec.run(argv, clear_environment(options)) do
       {:ok, exec_pid, os_pid} ->
         members =
           case ProcGroup.snapshot(os_pid) do
@@ -247,7 +261,9 @@ defmodule HelmsmanDaemon.Exec do
   end
 
   defp probe(path, args, timeout) do
-    case :exec.run([path | args], [:stdout, :stderr, :monitor, {:group, 0}, :kill_group]) do
+    options = clear_environment([:stdout, :stderr, :monitor, {:group, 0}, :kill_group])
+
+    case :exec.run([path | args], options) do
       {:ok, exec_pid, os_pid} ->
         collect_version(exec_pid, os_pid, "", System.monotonic_time(:millisecond) + timeout)
 
@@ -292,7 +308,7 @@ defmodule HelmsmanDaemon.Exec do
   def signal_group(pgid, signal) when is_integer(pgid) and pgid > 0 and signal in [9, 15] do
     case kill_executable() do
       {:ok, path} ->
-        case System.cmd(path, ["-#{signal}", "--", "-#{pgid}"], stderr_to_stdout: true) do
+        case Env.cmd(path, ["-#{signal}", "--", "-#{pgid}"], stderr_to_stdout: true) do
           {_, 0} -> :ok
           _ -> {:error, :not_found}
         end
@@ -329,7 +345,7 @@ defmodule HelmsmanDaemon.Exec do
 
   def signal_process(pid, signal) when is_integer(pid) and pid > 0 and signal in [9, 15] do
     with {:ok, path} <- kill_executable() do
-      case System.cmd(path, ["-#{signal}", "--", "#{pid}"], stderr_to_stdout: true) do
+      case Env.cmd(path, ["-#{signal}", "--", "#{pid}"], stderr_to_stdout: true) do
         {_, 0} -> :ok
         _ -> {:error, :not_found}
       end
@@ -339,7 +355,7 @@ defmodule HelmsmanDaemon.Exec do
   def proc_start(pid) when is_integer(pid) and pid > 0 do
     {:ok, ps} = ps_executable()
 
-    case System.cmd(ps, ["-o", "lstart=", "-p", Integer.to_string(pid)]) do
+    case Env.cmd(ps, ["-o", "lstart=", "-p", Integer.to_string(pid)]) do
       {value, 0} -> {:ok, HelmsmanDaemon.ProcGroup.normalize_start(value)}
       _ -> {:error, :not_found}
     end
