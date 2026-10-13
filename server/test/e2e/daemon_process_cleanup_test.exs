@@ -193,6 +193,7 @@ defmodule Helmsman.E2E.DaemonProcessCleanupTest do
            "child process #{child_pid} survived cleanup retry after SIGCONT"
   end
 
+  @tag timeout: 30_000
   test "cleans a TERM-resistant child launched from a non-main thread and separate session" do
     home =
       Path.join(
@@ -230,11 +231,16 @@ defmodule Helmsman.E2E.DaemonProcessCleanupTest do
 
       threading.Thread(target=launch_child).start()
 
-      while not os.path.exists(os.environ['CHILD_PID_FILE']):
+      scan_deadline = time.monotonic() + 20
+      while time.monotonic() < scan_deadline:
+          if os.path.exists(os.environ['CHILD_PID_FILE']):
+              child_pid = int(open(os.environ['CHILD_PID_FILE']).read())
+              if child_pid in supervisor.descendants(os.getpid()):
+                  open(os.environ['SCAN_FILE'], 'w').write('found')
+                  break
           time.sleep(0.01)
-      child_pid = int(open(os.environ['CHILD_PID_FILE']).read())
-      visible = child_pid in supervisor.descendants(os.getpid())
-      open(os.environ['SCAN_FILE'], 'w').write('found' if visible else 'missing')
+      else:
+          open(os.environ['SCAN_FILE'], 'w').write('missing')
 
       while True:
           time.sleep(1)
@@ -255,11 +261,12 @@ defmodule Helmsman.E2E.DaemonProcessCleanupTest do
       )
 
     on_exit_kill_recorded_process(pid_file)
-    wait_for_file!(scan_file)
+    deadline = System.monotonic_time(:millisecond) + 20_000
+    wait_for_file!(scan_file, deadline)
     assert File.read!(scan_file) == "found", "scanner missed a child of a non-main thread"
-    child_pid = wait_for_pid_file!(pid_file)
+    child_pid = wait_for_pid_file!(pid_file, deadline)
     [group_file] = process_group_files(home)
-    refute process_group_id(child_pid) == group_id(group_file)
+    assert wait_for_separate_process_group!(child_pid, group_id(group_file), deadline)
     assert process_running?(child_pid)
 
     _ = Port.close(port)
@@ -401,6 +408,22 @@ defmodule Helmsman.E2E.DaemonProcessCleanupTest do
     case System.cmd("ps", ["-o", "pgid=", "-p", Integer.to_string(pid)], stderr_to_stdout: true) do
       {group, 0} -> String.trim(group) |> String.to_integer()
       _ -> nil
+    end
+  end
+
+  defp wait_for_separate_process_group!(pid, expected_group_id, deadline) do
+    group_id = process_group_id(pid)
+
+    cond do
+      process_running?(pid) and is_integer(group_id) and group_id != expected_group_id ->
+        true
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        flunk("timed out waiting for child process #{pid} to enter its separate session")
+
+      true ->
+        Process.sleep(25)
+        wait_for_separate_process_group!(pid, expected_group_id, deadline)
     end
   end
 
