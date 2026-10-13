@@ -3,6 +3,7 @@ defmodule HelmsmanDaemon do
   alias HelmsmanDaemon.{Config, Connection, Detector, Env, Janitor, Paths, Runs, StateStore}
 
   def start_daemon(opts \\ []) do
+    opts = Keyword.put(opts, :codex_hint_once, :atomics.new(1, []))
     Env.scrub_process!()
     Paths.ensure!()
     security_notice()

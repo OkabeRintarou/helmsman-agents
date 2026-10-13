@@ -3,6 +3,11 @@ defmodule HelmsmanDaemon.Adapters.CodexProjectConfigTest do
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Codex
 
+  setup %{tmp_dir: dir} do
+    HelmsmanDaemon.CodexLogin.install(dir)
+    :ok
+  end
+
   test "rejects config in cwd, git root and worktree root but excludes parents above root", %{
     tmp_dir: dir
   } do

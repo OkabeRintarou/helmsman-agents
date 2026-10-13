@@ -1,10 +1,97 @@
 defmodule HelmsmanDaemon.Adapters.Codex.Config do
   @moduledoc false
-  alias HelmsmanDaemon.Paths
+  alias HelmsmanDaemon.Adapters.Codex
+  alias HelmsmanDaemon.{Exec, Paths}
 
   @blocked ~w(mcp_servers approval_policy approvals_reviewer sandbox_mode sandbox_workspace_write model model_reasoning_effort project_root_markers projects)
 
   def home, do: Path.join(Paths.home(), "codex")
+
+  # codex-cli 0.162.1 app-server does not consume OPENAI_API_KEY or CODEX_API_KEY
+  # for its built-in provider. Custom providers are accepted independently.
+  def provider_source(%{agent: %{provider_account: account}}, _home, _env)
+      when not is_nil(account),
+      do: {:ok, :account}
+
+  def provider_source(spec, home, env) do
+    args = if spec, do: elem(filter(spec.agent.custom_args), 0), else: []
+
+    case effective_provider(args, home) do
+      {:ok, "openai"} -> login_source(home, env)
+      {:ok, provider} when is_binary(provider) and provider != "" -> {:ok, :custom_provider}
+      _ -> {:unknown, :config}
+    end
+  end
+
+  defp effective_provider(args, home) do
+    case argument_provider(args, nil) do
+      nil ->
+        case File.read(Path.join(home, "config.toml")) do
+          {:error, :enoent} -> {:ok, "openai"}
+          {:ok, text} -> file_provider(text)
+          _ -> {:unknown, :config}
+        end
+
+      provider ->
+        provider
+    end
+  end
+
+  defp file_provider(text) do
+    case Toml.decode(text) do
+      {:ok, config} -> {:ok, Map.get(config, "model_provider", "openai")}
+      _ -> {:unknown, :config}
+    end
+  end
+
+  defp argument_provider([], provider), do: provider
+
+  defp argument_provider([arg | rest], provider) do
+    [flag | inline] = String.split(arg, "=", parts: 2)
+    {value, rest} = value(inline, rest)
+
+    provider =
+      if flag in ["-c", "--config"] and config_key(value) == "model_provider",
+        do: parse_provider(value),
+        else: provider
+
+    argument_provider(rest, provider)
+  end
+
+  defp parse_provider(value) do
+    case String.split(value, "=", parts: 2) do
+      [_, raw] -> decode_provider(raw)
+      _ -> {:unknown, :config}
+    end
+  end
+
+  defp decode_provider(raw) do
+    case Toml.decode("model_provider=" <> raw) do
+      {:ok, %{"model_provider" => provider}} -> {:ok, provider}
+      _ -> {:ok, String.trim(raw)}
+    end
+  end
+
+  defp login_source(home, env) do
+    env = Map.put(Map.new(env), "CODEX_HOME", home)
+
+    case System.find_executable(Codex.executable()) do
+      nil ->
+        {:unknown, :not_found}
+
+      path ->
+        timeout = Application.get_env(:helmsman_daemon, :codex_login_timeout_ms, 10_000)
+
+        case Exec.command([path, "login", "status"], env: env, timeout: timeout) do
+          {:ok, _output} -> {:ok, :login}
+          {:error, {{:exit_status, 256}, _output}} -> {:error, :none}
+          {:error, {{:exit_status, status}, _output}} -> {:unknown, {:exit, div(status, 256)}}
+          {:error, {:timeout, _output}} -> {:unknown, :timeout}
+          {:error, {:output_limit, _output}} -> {:unknown, :output_limit}
+          _ -> {:unknown, :command_failed}
+        end
+    end
+  end
 
   def validate do
     path = Path.join(home(), "config.toml")

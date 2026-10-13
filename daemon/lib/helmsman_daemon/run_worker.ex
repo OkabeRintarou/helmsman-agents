@@ -94,7 +94,7 @@ defmodule HelmsmanDaemon.RunWorker do
     result =
       with {:ok, work_dir} <- workspace,
            {:ok, adapter} <- require_adapter(state.adapter),
-           {:ok, launch} <- adapter.prepare(state.spec, run_dir, work_dir) do
+           {:ok, launch} <- prepare_adapter(adapter, state, run_dir, work_dir) do
         {:ok, adapter, launch, work_dir}
       end
 
@@ -353,6 +353,19 @@ defmodule HelmsmanDaemon.RunWorker do
 
   defp launch_cli(state, options), do: Exec.start_cli(state.launch.argv, options, state.opts)
 
+  defp prepare_adapter(adapter, state, run_dir, work_dir) do
+    if function_exported?(adapter, :prepare, 4) do
+      env =
+        state.opts
+        |> Keyword.get(:base_env, System.get_env())
+        |> Env.agent(state.spec.agent.env)
+
+      adapter.prepare(state.spec, run_dir, work_dir, env)
+    else
+      adapter.prepare(state.spec, run_dir, work_dir)
+    end
+  end
+
   defp environment(state) do
     {reserved, allowed} =
       Enum.split_with(state.spec.agent.env, fn {key, _} ->
@@ -374,9 +387,7 @@ defmodule HelmsmanDaemon.RunWorker do
 
     env =
       Keyword.get(state.opts, :base_env, System.get_env())
-      |> Env.child()
-      |> Map.put("GIT_TERMINAL_PROMPT", "0")
-      |> Map.merge(Map.new(allowed))
+      |> Env.agent(Map.new(allowed))
       |> Map.merge(own)
       |> Map.merge(Map.new(state.launch.env))
       |> Map.merge(

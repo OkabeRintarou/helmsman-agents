@@ -12,6 +12,11 @@ defmodule HelmsmanDaemon.Env do
     base |> Map.new() |> Map.reject(fn {name, _} -> child_drop?(name) end)
   end
 
+  def agent(base, overrides) do
+    allowed = Map.reject(overrides, fn {name, _} -> String.starts_with?(name, "HELMSMAN_") end)
+    base |> child() |> Map.put("GIT_TERMINAL_PROMPT", "0") |> Map.merge(allowed)
+  end
+
   def scrub_process! do
     names = System.get_env() |> Map.keys() |> Enum.filter(&inherited_drop?/1) |> Enum.sort()
     Enum.each(names, &System.delete_env/1)

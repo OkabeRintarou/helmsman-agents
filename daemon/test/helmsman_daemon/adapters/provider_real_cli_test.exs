@@ -163,6 +163,17 @@ defmodule HelmsmanDaemon.Adapters.ProviderRealCLITest do
 
     verify_requests()
     verify_cleanup(worker, ctx.tmp_dir)
+    assert_full_access_reply(1)
+    stop_supervised(RunWorker)
+
+    resumed = %{run | run_id: 2, resume_session_id: finished.session_id}
+    worker = launch(resumed, Codex, env)
+    {resumed_finished, _} = collect(2, [])
+    assert resumed_finished.status == :succeeded
+    assert resumed_finished.session_id == finished.session_id
+    verify_requests()
+    verify_cleanup(worker, ctx.tmp_dir, 2)
+    assert_full_access_reply(2)
     refute File.exists?(Path.join(Config.home(), "shell_snapshots"))
     refute_receive {:provider_request, :sentinel, _}, 200
   end
@@ -219,9 +230,26 @@ defmodule HelmsmanDaemon.Adapters.ProviderRealCLITest do
          {run, [adapter: adapter, reporter: TestReporter, base_env: env, kill_timeout_ms: 500]}}
       )
 
-  defp verify_cleanup(worker, dir) do
+  defp assert_full_access_reply(id) do
+    reply =
+      Paths.run(id)
+      |> Path.join("raw.log")
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Enum.find_value(fn line ->
+        case JSON.decode(line) do
+          {:ok, %{"id" => 2, "result" => result}} -> result
+          _ -> nil
+        end
+      end)
+
+    assert reply["approvalPolicy"] == "never"
+    assert reply["sandbox"] == %{"type" => "dangerFullAccess"}
+  end
+
+  defp verify_cleanup(worker, dir, id \\ 1) do
     eventually(fn -> not Process.alive?(worker) end)
-    assert File.ls!(Paths.run(1)) == ["raw.log"]
+    assert File.ls!(Paths.run(id)) == ["raw.log"]
 
     refute Enum.any?(Path.wildcard(Path.join(dir, "**/*"), match_dot: true), fn path ->
              File.regular?(path) and String.contains?(File.read!(path), "hmr_run_token")

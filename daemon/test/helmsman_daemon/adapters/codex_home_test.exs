@@ -3,6 +3,11 @@ defmodule HelmsmanDaemon.Adapters.CodexHomeTest do
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Codex
 
+  setup %{tmp_dir: dir} do
+    HelmsmanDaemon.CodexLogin.install(dir)
+    :ok
+  end
+
   test "dedicated persistent home leaves user and inherited Codex homes untouched", %{
     tmp_dir: dir
   } do

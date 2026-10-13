@@ -94,6 +94,20 @@ Do not define MCP servers or `project_root_markers` in the daemon config.
 Helmsman injects its MCP configuration in thread/start or thread/resume stdin;
 workspaces with project `.codex/config.toml` are rejected before launch.
 The daemon never copies the machine owner's `~/.codex` config or authentication.
+Before each run, Helmsman checks the bound account, effective `model_provider`
+(last Agent override, then daemon config), and `codex login status` in the dedicated
+home. Missing sources fail immediately with `provider_auth` and configuration
+instructions. A login probe that times out after 10 seconds or fails unexpectedly
+allows the run with a warning. Codex 0.162.1 app-server's built-in OpenAI provider
+does not use `OPENAI_API_KEY`, `CODEX_API_KEY`, or `OPENAI_BASE_URL` from the process
+environment; use a provider account, a configured custom provider, or daemon login.
+At daemon startup, a missing source produces one local hint without disabling the
+runtime, since individual agents can bind provider accounts.
+
+Both new and resumed threads use `approvalPolicy: never` and
+`sandbox: danger-full-access`. They do not need bubblewrap or user namespaces.
+The app-server startup message about bubblewrap is harmless in this mode;
+stderr is retained for diagnostics and does not become a run error or event.
 
 For development the owner configures `~/.helmsman-dev/codex/` separately:
 

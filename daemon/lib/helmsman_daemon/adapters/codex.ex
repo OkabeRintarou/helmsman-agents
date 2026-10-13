@@ -2,7 +2,7 @@ defmodule HelmsmanDaemon.Adapters.Codex do
   @moduledoc "Unattended Codex app-server with a persistent daemon home and per-thread MCP."
   @behaviour HelmsmanDaemon.Adapter
   alias HelmsmanDaemon.Adapters.Codex.{Config, Output, Provider}
-  alias HelmsmanDaemon.{Exec, Launch, Paths}
+  alias HelmsmanDaemon.{Env, Exec, Launch, Paths}
   @minimum Version.parse!("0.162.0")
   @efforts ~w(low medium high xhigh)
   def provider, do: :codex
@@ -32,68 +32,95 @@ defmodule HelmsmanDaemon.Adapters.Codex do
   end
 
   def prepare(spec, _run_dir, work_dir) do
+    prepare(spec, nil, work_dir, Env.agent(System.get_env(), spec.agent.env))
+  end
+
+  def prepare(spec, _run_dir, work_dir, env) do
     with :ok <- Config.validate(), :ok <- Config.project_config(work_dir) do
       home = Paths.private_dir!(Config.home())
-      snapshot_warnings = Config.cleanup_snapshots(home)
-      {servers, removed_servers} = Config.mcp(spec)
 
-      {args, removed_args} =
-        Config.filter(spec.agent.custom_args, not is_nil(spec.agent.provider_account))
-
-      params =
-        %{
-          "cwd" => work_dir,
-          "approvalPolicy" => "never",
-          "sandbox" => "danger-full-access",
-          "config" => %{"mcp_servers" => servers}
-        }
-        |> optional("model", Provider.model(spec.agent))
-
-      {method, params} =
-        if spec.resume_session_id,
-          do: {"thread/resume", Map.put(params, "threadId", spec.resume_session_id)},
-          else: {"thread/start", params}
-
-      stdin = [
-        frame(%{
-          "id" => 1,
-          "method" => "initialize",
-          "params" => %{
-            "clientInfo" => %{
-              "name" => "helmsman-daemon",
-              "title" => "Helmsman daemon",
-              "version" => to_string(Application.spec(:helmsman_daemon, :vsn) || "0.1.0")
-            }
-          }
-        }),
-        frame(%{"method" => "initialized"}),
-        frame(%{"id" => 2, "method" => method, "params" => params})
-      ]
-
-      {:ok,
-       %Launch{
-         argv:
-           [
-             System.find_executable(executable()) || executable(),
-             "app-server",
-             "--disable",
-             "shell_snapshot",
-             "--disable",
-             "shell_snapshot_v2",
-             "-c",
-             "check_for_update_on_startup=false"
-           ] ++ Provider.argv(spec.agent.provider_account) ++ args,
-         env: [{"CODEX_HOME", home}] ++ Provider.env(spec.agent.provider_account),
-         stdin: stdin,
-         close_stdin?: false,
-         events:
-           snapshot_warnings ++
-             warnings("Ignored extra MCP servers", removed_servers) ++
-             warnings("Ignored Codex arguments", removed_args) ++ Provider.warnings(spec.agent)
-       }}
+      with {:ok, provider_warnings} <- check_provider(spec, home, env) do
+        launch(spec, work_dir, home, provider_warnings)
+      end
     else
       {:error, message} -> {:error, {:workspace_prepare, message}}
     end
+  end
+
+  defp check_provider(spec, home, env) do
+    case Config.provider_source(spec, home, env) do
+      {:ok, _source} ->
+        {:ok, []}
+
+      {:unknown, reason} ->
+        {:ok, warning("Could not check the Codex login (#{inspect(reason)}); starting anyway.")}
+
+      {:error, :none} ->
+        {:error,
+         {:provider_auth,
+          "Codex has no model provider for agent #{spec.agent.name}. Bind a provider account to the agent, or configure Codex for the Helmsman daemon once: CODEX_HOME=#{home} codex login, or set model_provider in #{home}/config.toml."}}
+    end
+  end
+
+  defp launch(spec, work_dir, home, provider_warnings) do
+    snapshot_warnings = Config.cleanup_snapshots(home)
+    {servers, removed_servers} = Config.mcp(spec)
+
+    {args, removed_args} =
+      Config.filter(spec.agent.custom_args, not is_nil(spec.agent.provider_account))
+
+    params =
+      %{
+        "cwd" => work_dir,
+        "approvalPolicy" => "never",
+        "sandbox" => "danger-full-access",
+        "config" => %{"mcp_servers" => servers}
+      }
+      |> optional("model", Provider.model(spec.agent))
+
+    {method, params} =
+      if spec.resume_session_id,
+        do: {"thread/resume", Map.put(params, "threadId", spec.resume_session_id)},
+        else: {"thread/start", params}
+
+    stdin = [
+      frame(%{
+        "id" => 1,
+        "method" => "initialize",
+        "params" => %{
+          "clientInfo" => %{
+            "name" => "helmsman-daemon",
+            "title" => "Helmsman daemon",
+            "version" => to_string(Application.spec(:helmsman_daemon, :vsn) || "0.1.0")
+          }
+        }
+      }),
+      frame(%{"method" => "initialized"}),
+      frame(%{"id" => 2, "method" => method, "params" => params})
+    ]
+
+    {:ok,
+     %Launch{
+       argv:
+         [
+           System.find_executable(executable()) || executable(),
+           "app-server",
+           "--disable",
+           "shell_snapshot",
+           "--disable",
+           "shell_snapshot_v2",
+           "-c",
+           "check_for_update_on_startup=false"
+         ] ++ Provider.argv(spec.agent.provider_account) ++ args,
+       env: [{"CODEX_HOME", home}] ++ Provider.env(spec.agent.provider_account),
+       stdin: stdin,
+       close_stdin?: false,
+       events:
+         provider_warnings ++
+           snapshot_warnings ++
+           warnings("Ignored extra MCP servers", removed_servers) ++
+           warnings("Ignored Codex arguments", removed_args) ++ Provider.warnings(spec.agent)
+     }}
   end
 
   def optional(map, _key, value) when value in [nil, ""], do: map

@@ -17,7 +17,12 @@ defmodule HelmsmanDaemon.GitTokenLeakTest do
     run_dir = Paths.run(spec.run_id)
 
     for adapter <- [Claude, Codex, Fake] do
-      assert {:ok, launch} = adapter.prepare(spec, run_dir, state.path)
+      configured =
+        if adapter == Codex,
+          do: %{spec | agent: %{spec.agent | custom_args: ["-c", ~s(model_provider="test")]}},
+          else: spec
+
+      assert {:ok, launch} = adapter.prepare(configured, run_dir, state.path)
       refute inspect(launch) =~ spec.repo.git_token
       refute inspect(launch.env) =~ "HELMSMAN_GIT_TOKEN"
       refute inspect(launch.env) =~ Path.join(run_dir, "askpass")

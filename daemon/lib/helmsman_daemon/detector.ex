@@ -1,7 +1,9 @@
 defmodule HelmsmanDaemon.Detector do
   @moduledoc "Periodic adapter detection and protocol CLI inventory."
   use GenServer
-  alias HelmsmanDaemon.Adapter
+  require Logger
+  alias HelmsmanDaemon.{Adapter, Env}
+  alias HelmsmanDaemon.Adapters.Codex.Config, as: CodexConfig
   alias HelmsmanProtocol.CLI
 
   def scan(adapters \\ Adapter.registered()), do: Enum.map(adapters, &detect/1)
@@ -55,10 +57,12 @@ defmodule HelmsmanDaemon.Detector do
     state = %{
       adapters: Keyword.get(opts, :adapters, Adapter.registered()),
       interval: Keyword.get(opts, :detect_interval_ms, 600_000),
-      clis: []
+      clis: [],
+      codex_hint_once: Keyword.get_lazy(opts, :codex_hint_once, fn -> :atomics.new(1, []) end),
+      codex_checked?: false
     }
 
-    state = %{state | clis: scan(state.adapters)}
+    state = %{state | clis: scan(state.adapters)} |> codex_hint()
 
     if available?(state.clis) do
       Process.send_after(self(), :refresh, state.interval)
@@ -84,6 +88,29 @@ defmodule HelmsmanDaemon.Detector do
     if clis != state.clis and Process.whereis(HelmsmanDaemon.Connection),
       do: GenServer.cast(HelmsmanDaemon.Connection, :sync)
 
-    %{state | clis: clis}
+    %{state | clis: clis} |> codex_hint()
+  end
+
+  defp codex_hint(%{codex_checked?: true} = state), do: state
+
+  defp codex_hint(state) do
+    if Enum.any?(state.clis, &(&1.provider == :codex and &1.available)) do
+      if :atomics.compare_exchange(state.codex_hint_once, 1, 0, 1) == :ok,
+        do: check_codex_hint()
+
+      %{state | codex_checked?: true}
+    else
+      state
+    end
+  end
+
+  defp check_codex_hint do
+    home = CodexConfig.home()
+
+    if CodexConfig.provider_source(nil, home, Env.child()) == {:error, :none} do
+      Logger.warning(
+        "Codex is installed but not configured for the Helmsman daemon; Codex agents without a provider account will fail. Configure it with CODEX_HOME=#{home} codex login, or a model_provider in #{home}/config.toml."
+      )
+    end
   end
 end

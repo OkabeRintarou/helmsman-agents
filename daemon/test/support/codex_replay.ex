@@ -10,7 +10,11 @@ defmodule HelmsmanDaemon.Adapters.CodexReplay do
 
   def prepare(spec, run_dir, work_dir) do
     with {:ok, launch} <-
-           Codex.prepare(%{spec | agent: %{spec.agent | custom_args: []}}, run_dir, work_dir) do
+           Codex.prepare(
+             %{spec | agent: %{spec.agent | custom_args: ["-c", ~s(model_provider="replay")]}},
+             run_dir,
+             work_dir
+           ) do
       {:ok, %{launch | argv: [Fake.executable(), "--scenario", hd(spec.agent.custom_args)]}}
     end
   end

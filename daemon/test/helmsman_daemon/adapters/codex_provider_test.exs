@@ -33,6 +33,11 @@ defmodule HelmsmanDaemon.Adapters.CodexProviderTest do
     |> Map.fetch!("params")
   end
 
+  setup %{tmp_dir: dir} do
+    HelmsmanDaemon.CodexLogin.install(dir)
+    :ok
+  end
+
   test "provider config roundtrips TOML escaping; model precedence applies to start and resume",
        %{tmp_dir: dir} do
     for url <- ["https://account.example/v1", ~s(https://account.example/quote"/slash\\/v1)],

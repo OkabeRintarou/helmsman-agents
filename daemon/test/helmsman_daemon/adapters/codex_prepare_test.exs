@@ -3,6 +3,155 @@ defmodule HelmsmanDaemon.Adapters.CodexPrepareTest do
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Codex
   alias HelmsmanDaemon.Adapters.Codex.Config
+  alias HelmsmanDaemon.{CodexLogin, RunWorker}
+  alias HelmsmanProtocol.ProviderAccount
+
+  setup %{tmp_dir: dir} do
+    {:ok, cli: CodexLogin.install(dir)}
+  end
+
+  test "no source fails with configuration guidance before app-server starts", %{
+    tmp_dir: dir,
+    cli: cli
+  } do
+    CodexLogin.mode(cli, "1")
+    run = spec(1)
+    run = %{run | agent: %{run.agent | name: "m5-codex", custom_args: []}}
+    assert {:error, {:provider_auth, message}} = Codex.prepare(run, dir, dir)
+    assert message =~ "agent m5-codex"
+    assert message =~ "Bind a provider account"
+    assert message =~ "CODEX_HOME=#{Config.home()} codex login"
+    assert message =~ Path.join(Config.home(), "config.toml")
+    refute File.exists?(cli <> ".started")
+  end
+
+  test "broken config remains a workspace preparation error without probing login", %{
+    tmp_dir: dir,
+    cli: cli
+  } do
+    CodexLogin.mode(cli, "1")
+    File.mkdir_p!(Config.home())
+    File.write!(Path.join(Config.home(), "config.toml"), "broken [")
+    assert {:error, {:workspace_prepare, message}} = Codex.prepare(spec(1), dir, dir)
+    assert message =~ "not valid TOML"
+    refute File.exists?(cli <> ".home")
+    refute File.exists?(cli <> ".started")
+  end
+
+  test "account, file provider, arguments and login allow preparation", %{tmp_dir: dir, cli: cli} do
+    run = spec(1)
+    run = %{run | agent: %{run.agent | custom_args: []}}
+    account = %ProviderAccount{base_url: "http://localhost/v1", api_key: "FAKE", models: %{}}
+    CodexLogin.mode(cli, "1")
+
+    assert {:ok, _} =
+             Codex.prepare(%{run | agent: %{run.agent | provider_account: account}}, dir, dir)
+
+    refute File.exists?(cli <> ".home")
+
+    File.write!(Path.join(Config.home(), "config.toml"), ~s(model_provider="gateway"))
+    assert {:ok, _} = Codex.prepare(run, dir, dir)
+    refute File.exists?(cli <> ".home")
+    openai = %{run | agent: %{run.agent | custom_args: ["-c", ~s(model_provider="openai")]}}
+    assert {:error, {:provider_auth, _}} = Codex.prepare(openai, dir, dir)
+    CodexLogin.mode(cli, "0")
+    assert {:ok, _} = Codex.prepare(openai, dir, dir)
+
+    File.write!(Path.join(Config.home(), "config.toml"), ~s(model_provider="openai"))
+    CodexLogin.mode(cli, "1")
+
+    custom = %{
+      run
+      | agent: %{
+          run.agent
+          | custom_args: [
+              "-c",
+              ~s(model_provider="openai"),
+              "--config",
+              ~s(model_provider="gateway")
+            ]
+        }
+    }
+
+    assert {:ok, _} = Codex.prepare(custom, dir, dir)
+  end
+
+  test "unknown login starts with a warning containing only its category", %{
+    tmp_dir: dir,
+    cli: cli
+  } do
+    for mode <- ["2", "hang"] do
+      CodexLogin.mode(cli, mode)
+      Application.put_env(:helmsman_daemon, :codex_login_timeout_ms, 100)
+      run = spec(1)
+      run = %{run | agent: %{run.agent | custom_args: []}}
+      assert {:ok, launch} = Codex.prepare(run, dir, dir)
+      assert [{:status, %{level: :warning, message: message}}] = launch.events
+      assert message =~ "Could not check the Codex login"
+      assert message =~ "starting anyway"
+      refute message =~ "PRIVATE_LOGIN_OUTPUT"
+    end
+  end
+
+  test "RunWorker reports failed provider_auth and login sees the actual clean environment", %{
+    cli: cli
+  } do
+    start_execution()
+    CodexLogin.mode(cli, "1")
+    run = spec(1)
+
+    run = %{
+      run
+      | agent: %{
+          run.agent
+          | name: "m5-codex",
+            provider: :codex,
+            custom_args: [],
+            env: %{
+              "AGENT_SENTINEL" => "ok",
+              "CODEX_HOME" => "/wrong",
+              "GIT_SSH_COMMAND" => "explicit",
+              "HELMSMAN_SECRET" => "ignored"
+            }
+        }
+    }
+
+    base = %{
+      "PATH" => System.fetch_env!("PATH"),
+      "GIT_CONFIG_COUNT" => "1",
+      "VSCODE_IPC_HOOK_CLI" => "bad",
+      "SSH_ASKPASS" => "bad",
+      "HELMSMAN_SECRET" => "bad"
+    }
+
+    worker =
+      start_supervised!(
+        {RunWorker, {run, [adapter: Codex, reporter: TestReporter, base_env: base]}}
+      )
+
+    monitor = Process.monitor(worker)
+
+    assert_receive {:report, 1,
+                    %Report.Finished{
+                      status: :failed,
+                      failure_reason: :provider_auth,
+                      error: message
+                    }, _, _, _},
+                   3_000
+
+    assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 3_000
+    assert message =~ Config.home()
+    assert File.read!(cli <> ".home") == Config.home()
+    names = File.read!(cli <> ".env-names") |> String.split("\n", trim: true)
+    assert "AGENT_SENTINEL" in names
+    assert "GIT_SSH_COMMAND" in names
+
+    for name <- ~w(GIT_CONFIG_COUNT VSCODE_IPC_HOOK_CLI SSH_ASKPASS HELMSMAN_SECRET),
+        do: refute(name in names)
+
+    refute File.exists?(cli <> ".started")
+    refute File.exists?(Path.join(Paths.run(1), "raw.log"))
+  end
 
   test "pipeline handshake, MCP, optional model and resumed thread", %{tmp_dir: dir} do
     run = spec(1)

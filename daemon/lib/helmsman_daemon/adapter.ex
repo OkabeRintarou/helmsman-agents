@@ -30,6 +30,9 @@ defmodule HelmsmanDaemon.Adapter do
   @callback detect() :: {:ok, detection()} | {:error, String.t()}
   @callback prepare(RunSpec.t(), Path.t(), Path.t()) ::
               {:ok, Launch.t()} | {:error, {atom(), String.t()}}
+  @callback prepare(RunSpec.t(), Path.t(), Path.t(), map()) ::
+              {:ok, Launch.t()} | {:error, {atom(), String.t()}}
+  @optional_callbacks prepare: 4
   @callback init_state(RunSpec.t()) :: term()
   @callback handle_output(:stdout | :stderr, binary(), term()) ::
               {[{atom(), map()}], [action()], term()}
