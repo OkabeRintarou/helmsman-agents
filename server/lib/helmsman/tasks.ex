@@ -35,6 +35,9 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Repo
   alias Helmsman.Runs.{Run, TaskGrant}
   alias Helmsman.Search
+  alias Helmsman.Squads
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.Squad
   alias Helmsman.Tx
 
   alias Helmsman.Tasks.{
@@ -141,7 +144,8 @@ defmodule Helmsman.Tasks do
           resolve_epic(scope.workspace.id, epic_input, Changeset.get_field(changeset, :kind))
         )
 
-      with {:ok, project} <- fetch_project(scope, project_key),
+      with :ok <- not_busy(assignee),
+           {:ok, project} <- fetch_project(scope, project_key),
            :ok <- validate(changeset),
            {:ok, seq} <- allocate_seq(project) do
         test_hook(:seq_allocated)
@@ -208,12 +212,15 @@ defmodule Helmsman.Tasks do
 
   # A managed agent creating a task in a run is its requester: the grant
   # `requested` continuation triggers inherit (`add-continuation-triggers`
-  # decision 5). Never removed: the requester does not change.
+  # decision 5). Never removed: the requester does not change. A run as a
+  # squad leader records its squad: the callback runs as it (`add-squads`
+  # decision 2).
   defp requested_grant(%Scope{via: :run, run: %Run{} = run, actor: %Actor{} = agent}, task) do
     Repo.insert!(%TaskGrant{
       workspace_id: task.workspace_id,
       task_id: task.id,
       agent_id: agent.id,
+      squad_id: run.squad_id,
       kind: :requested,
       root_initiator_user_id: run.root_initiator_user_id,
       causal_agent_ids: run.causal_agent_ids,
@@ -545,6 +552,7 @@ defmodule Helmsman.Tasks do
            :ok <- lock_graph_for_update(scope.workspace.id, epic_input, attrs),
            assignee = lock_assignee(scope.workspace.id, attrs),
            _ = test_hook(:assignee_locked),
+           :ok <- not_busy(assignee),
            {:ok, task} <- lock_task(scope.workspace.id, ident),
            :ok <- Policy.authorize(scope, :write_task, task),
            :ok <- check_version(task, lock_version) do
@@ -926,7 +934,9 @@ defmodule Helmsman.Tasks do
           auto: false,
           feedback_id: entry && entry.id,
           source_run_id: source_run_id(scope),
-          verified_sha: if(to == :verified, do: VerifiedSha.compute(task))
+          verified_sha: if(to == :verified, do: VerifiedSha.compute(task)),
+          # `add-squads` decision 11: who was on the assignee side.
+          assignee_side_ids: if(to == :verified, do: Squads.assignee_side(task))
         })
 
       task = task |> Changeset.change(transition_changes(task, to, scope)) |> Repo.update!()
@@ -988,7 +998,9 @@ defmodule Helmsman.Tasks do
   run's agent (`add-run-lifecycle` decision 12): a server decision, not
   authorized by `Helmsman.Policy`. In its own transaction, in the order of
   transitions (maintenance lock, graph lock, task row `FOR UPDATE`); only
-  while the task is `new` and its assignee is the agent. The history entry
+  while the task is `new` and its assignee is the agent, or the squad the
+  run is a leader of (`add-squads` decision 7; the assignee stays). The
+  history entry
   is `auto` and refers to the run; a unique index makes a second one for
   the same run impossible. The notifications are those of `transition/4`.
   Returns `{:ok, :claimed | :skipped}`.
@@ -1002,11 +1014,22 @@ defmodule Helmsman.Tasks do
       :ok = Locks.graph!(run.workspace_id)
       task = Repo.one!(from(t in Task, where: t.id == ^run.task_id, lock: "FOR UPDATE"))
 
-      if task.status == :new and task.assignee_id == run.agent_id,
+      if task.status == :new and claims_for?(task, run),
         do: auto_claim_locked(task, run),
         else: {:ok, :skipped}
     end)
   end
+
+  # The run's agent is the assignee, or the run is as the squad that is
+  # (`add-squads` decision 7). A delegated run never claims: the leader's
+  # run has.
+  defp claims_for?(%Task{assignee_id: id}, %Run{agent_id: id}), do: true
+
+  defp claims_for?(%Task{assignee_id: id}, %Run{squad_id: squad_id})
+       when is_integer(squad_id) and is_integer(id),
+       do: Repo.exists?(from(s in Squad, where: s.id == ^squad_id and s.actor_id == ^id))
+
+  defp claims_for?(_task, _run), do: false
 
   defp auto_claim_locked(task, run) do
     event =
@@ -1211,11 +1234,27 @@ defmodule Helmsman.Tasks do
     case Repo.one(query) do
       nil -> {:invalid, "does not exist"}
       %Actor{kind: :system} -> {:invalid, "cannot be the system identity"}
+      # A disabled squad is refused like any disabled identity (`add-squads`
+      # decision 15).
       %Actor{disabled_at: %DateTime{}} -> {:invalid, "is disabled"}
+      %Actor{kind: :squad, id: id} -> lock_squad(id)
       %Actor{kind: :agent, id: id} -> lock_profile(id)
       %Actor{id: id} -> {:set, id}
     end
   end
+
+  # The rows a squad's dispatch reads (`add-squads` decision 6): its
+  # leader and members, the squad row and their profiles, before the task.
+  # Its leader and members kept changing: `{:error, :busy}`.
+  defp lock_squad(actor_id) do
+    case SquadDispatch.lock_rows(actor_id) do
+      {:error, :busy} = busy -> busy
+      _locked -> {:set, actor_id}
+    end
+  end
+
+  defp not_busy({:error, :busy} = busy), do: busy
+  defp not_busy(_assignee), do: :ok
 
   # An archived profile has a disabled actor: never reached for one.
   defp lock_profile(actor_id) do
@@ -1224,6 +1263,8 @@ defmodule Helmsman.Tasks do
   end
 
   defp put_assignee(changeset, :keep), do: changeset
+  # The squad's rows kept changing: `not_busy/1` returns the error.
+  defp put_assignee(changeset, {:error, :busy}), do: changeset
   defp put_assignee(changeset, {:set, id}), do: Changeset.put_change(changeset, :assignee_id, id)
 
   defp put_assignee(changeset, {:invalid, message}),

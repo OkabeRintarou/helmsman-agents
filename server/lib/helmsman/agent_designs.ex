@@ -29,7 +29,16 @@ defmodule Helmsman.AgentDesigns do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
-  alias Helmsman.AgentDesigns.{AgentDesign, AgentDesignMessage, Draft, Options, Prompt}
+
+  alias Helmsman.AgentDesigns.{
+    AgentDesign,
+    AgentDesignMessage,
+    Draft,
+    Options,
+    Prompt,
+    SquadDraft
+  }
+
   alias Helmsman.Agents
   alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.Runtime
@@ -40,6 +49,7 @@ defmodule Helmsman.AgentDesigns do
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Origin, Run, RunTokens, Stop}
+  alias Helmsman.Squads
   alias Helmsman.Tx
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.{Membership, Workspace}
@@ -177,16 +187,33 @@ defmodule Helmsman.AgentDesigns do
     helper = attrs[:helper] || attrs["helper"]
     message = attrs[:message] || attrs["message"]
 
-    with {:ok, text} <- check_message(message) do
-      Workspaces.write_transaction(scope, :design_agents, nil, &start_locked(&1, helper, text))
+    with {:ok, kind} <- check_kind(Map.get(attrs, :kind, attrs["kind"])),
+         {:ok, text} <- check_message(message) do
+      Workspaces.write_transaction(
+        scope,
+        :design_agents,
+        nil,
+        &start_locked(&1, helper, text, kind)
+      )
     end
   end
 
-  defp start_locked(scope, helper, text) do
+  # `add-squads` decision 12: `agent` (the default) or `squad`.
+  defp check_kind(kind) when kind in [nil, "agent", :agent], do: {:ok, :agent}
+  defp check_kind(kind) when kind in ["squad", :squad], do: {:ok, :squad}
+
+  defp check_kind(_kind) do
+    {:error,
+     {%{}, %{kind: :string}}
+     |> Ecto.Changeset.change()
+     |> Ecto.Changeset.add_error(:kind, "must be agent or squad")}
+  end
+
+  defp start_locked(scope, helper, text, kind) do
     with nil <- open_id(scope),
          _ = test_hook(:design_start_checked),
          {:ok, agent, profile} <- lock_helper(scope.workspace.id, name: helper),
-         {:ok, design} <- insert_design(scope, agent),
+         {:ok, design} <- insert_design(scope, agent, kind),
          {:ok, design} <- turn(scope, design, agent, profile, text) do
       {:ok, view(scope, design)}
     else
@@ -201,8 +228,13 @@ defmodule Helmsman.AgentDesigns do
   # The partial unique index keeps one `open` conversation per user and
   # workspace: a concurrent start that committed first wins, and this one
   # reads its ID.
-  defp insert_design(scope, agent) do
+  defp insert_design(scope, agent, kind) do
     now = DateTime.utc_now()
+
+    draft =
+      if kind == :squad,
+        do: %{"agents" => [], "squad" => SquadDraft.empty()},
+        else: %{"agents" => []}
 
     {:ok, design} =
       Repo.insert(
@@ -210,6 +242,8 @@ defmodule Helmsman.AgentDesigns do
           workspace_id: scope.workspace.id,
           user_id: scope.user.id,
           helper_agent_id: agent.id,
+          kind: kind,
+          draft: draft,
           last_activity_at: now
         },
         on_conflict: :nothing,
@@ -412,8 +446,9 @@ defmodule Helmsman.AgentDesigns do
     locked_open(scope, id, fn scope, design ->
       with :ok <- no_turn(design),
            :ok <- same_version(design, version),
-           {:ok, draft, _entry, edit} <- Draft.put(design.draft, attrs, scope, "user") do
+           {:ok, draft, entry, edit} <- Draft.put(design.draft, attrs, scope, "user") do
         previous = attrs[:previous_name] || attrs["previous_name"]
+        draft = follow_rename(draft, previous, entry)
         pending = Draft.merge_edit(design.pending_edits, edit, previous)
         {:ok, view(scope, write_draft!(design, draft, pending_edits: pending))}
       end
@@ -426,12 +461,80 @@ defmodule Helmsman.AgentDesigns do
     locked_open(scope, id, fn scope, design ->
       with :ok <- no_turn(design),
            :ok <- same_version(design, version),
+           :ok <- not_referenced(design.draft, name),
            {:ok, draft, entry} <- Draft.remove(design.draft, name) do
         pending = Draft.merge_removal(design.pending_edits, entry["name"])
         {:ok, view(scope, write_draft!(design, draft, pending_edits: pending))}
       end
     end)
   end
+
+  @doc """
+  Changes the squad part of a `squad` conversation's draft as the user
+  (`add-squads` decision 12): `attrs` as `propose_squad`. Errors:
+  `:turn_running`, `:stale`, `:not_squad`, `{:invalid, %{"squad" =>
+  changeset}}` and those of a locked conversation. The pending edits get
+  `%{"squad" => true, "fields" => [...]}`.
+  """
+  @spec put_squad(Scope.t(), term(), integer(), map()) :: {:ok, view()} | {:error, term()}
+  def put_squad(%Scope{} = scope, id, version, attrs) when is_map(attrs) do
+    locked_open(scope, id, fn scope, design ->
+      with :ok <- no_turn(design),
+           :ok <- same_version(design, version),
+           :ok <- squad_design(design),
+           {:ok, draft, _squad, fields} <- squad_put(design.draft, attrs, scope, "user") do
+        pending = merge_squad_edit(design.pending_edits, fields)
+        {:ok, view(scope, write_draft!(design, draft, pending_edits: pending))}
+      end
+    end)
+  end
+
+  defp squad_design(%AgentDesign{kind: :squad}), do: :ok
+  defp squad_design(_design), do: {:error, :not_squad}
+
+  defp squad_put(draft, attrs, user_scope, by) do
+    case SquadDraft.put(draft, attrs, user_scope) do
+      {:ok, draft, squad, fields} ->
+        squad = Map.put(squad, "updated_by", by)
+        {:ok, Map.put(draft, "squad", squad), squad, fields}
+
+      {:error, cs} ->
+        {:error, {:invalid, %{"squad" => cs}}}
+    end
+  end
+
+  defp merge_squad_edit(pending, []), do: pending
+
+  defp merge_squad_edit(pending, fields) do
+    case Enum.find(pending, &(&1["squad"] == true)) do
+      nil ->
+        pending ++ [%{"squad" => true, "fields" => Enum.sort(fields)}]
+
+      old ->
+        merged = %{old | "fields" => Enum.sort(Enum.uniq(old["fields"] ++ fields))}
+        Enum.map(pending, &if(&1 == old, do: merged, else: &1))
+    end
+  end
+
+  # A renamed draft agent stays the squad's leader or member.
+  defp follow_rename(draft, previous, %{"name" => name}) when is_binary(previous),
+    do: SquadDraft.rename(draft, previous, name)
+
+  defp follow_rename(draft, _previous, _entry), do: draft
+
+  defp not_referenced(draft, name) when is_binary(name) do
+    case Draft.find(draft, name) do
+      %{"name" => found} ->
+        if SquadDraft.references?(draft, found),
+          do: {:error, {:referenced_by_squad, found}},
+          else: :ok
+
+      nil ->
+        :ok
+    end
+  end
+
+  defp not_referenced(_draft, _name), do: :ok
 
   defp same_version(%AgentDesign{draft_version: version}, version), do: :ok
   defp same_version(_design, _version), do: {:error, :stale}
@@ -458,18 +561,69 @@ defmodule Helmsman.AgentDesigns do
 
     with :ok <- no_turn(design),
          :ok <- same_version(design, version),
-         :ok <- if(agents == [], do: {:error, :empty_draft}, else: :ok),
+         :ok <- not_empty(design, agents),
          :ok <- validate_all(scope, agents),
+         :ok <- validate_squad(scope, design),
          _ = test_hook(:confirm_validated),
-         {:ok, created} <- create_all(scope, agents) do
+         {:ok, created} <- create_all(scope, agents),
+         {:ok, squad} <- create_squad(scope, design) do
+      ids = Enum.map(created, & &1.actor_id) ++ if(squad, do: [squad.actor_id], else: [])
+
       design =
         design
         |> close!(:confirmed)
-        |> update!(created_actor_ids: Enum.map(created, & &1.actor_id))
+        |> update!(created_actor_ids: ids)
 
-      {:ok, %{design: view(scope, design), agents: created}}
+      {:ok, %{design: view(scope, design), agents: created, squad: squad}}
     end
   end
+
+  # `add-squads` decision 12: a squad conversation may confirm a complete
+  # squad without new agents.
+  defp not_empty(%AgentDesign{kind: :squad}, _agents), do: :ok
+  defp not_empty(_design, []), do: {:error, :empty_draft}
+  defp not_empty(_design, _agents), do: :ok
+
+  defp validate_squad(scope, %AgentDesign{kind: :squad, draft: draft}) do
+    case SquadDraft.errors(SquadDraft.get(draft) || SquadDraft.empty(), draft, scope,
+           require: true
+         ) do
+      [] -> :ok
+      errors -> {:error, {:invalid, %{"squad" => squad_changeset(errors)}}}
+    end
+  end
+
+  defp validate_squad(_scope, _design), do: :ok
+
+  # After the new agents: names resolve to them or to existing identities;
+  # existing members are only added (their configuration is untouched).
+  # The rules and the permission are `Helmsman.Squads.create/2`'s, in this
+  # transaction; any failure rolls everything back.
+  defp create_squad(scope, %AgentDesign{kind: :squad, draft: draft}) do
+    squad = SquadDraft.get(draft)
+
+    attrs = %{
+      name: squad["name"],
+      description: squad["description"],
+      instructions: squad["instructions"],
+      leader: squad["leader"],
+      members: Enum.map(squad["members"], &%{name: &1["name"], role_note: &1["role_note"]})
+    }
+
+    case Squads.create(scope, attrs) do
+      {:ok, view} -> {:ok, view}
+      {:error, :forbidden} -> squad_error([{:leader, {"you may not make it the leader", []}}])
+      {:error, %Ecto.Changeset{} = cs} -> {:error, {:invalid, %{"squad" => cs}}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp create_squad(_scope, _design), do: {:ok, nil}
+
+  defp squad_error(errors), do: {:error, {:invalid, %{"squad" => squad_changeset(errors)}}}
+
+  defp squad_changeset(errors),
+    do: %Ecto.Changeset{data: %{}, types: %{}, valid?: false, errors: errors}
 
   defp validate_all(scope, agents) do
     errors =
@@ -595,6 +749,8 @@ defmodule Helmsman.AgentDesigns do
       current_run: current_run,
       draft: design.draft,
       draft_version: design.draft_version,
+      trigger_summary:
+        if(design.kind == :squad, do: SquadDraft.trigger_summary(design.draft, scope)),
       pending_edits: design.pending_edits,
       user_messages: design.user_messages,
       usage: usage(run_ids),
@@ -687,6 +843,8 @@ defmodule Helmsman.AgentDesigns do
           )
         )
 
+      user_scope = user_scope(design)
+
       {:ok,
        %{
          kind: Atom.to_string(design.kind),
@@ -696,13 +854,16 @@ defmodule Helmsman.AgentDesigns do
          draft_version: design.draft_version,
          user_edits: edits || [],
          user_edits_text: Prompt.edits_text(edits),
-         options: %{
-           runtimes: Options.runtimes(design.workspace_id, design.user_id),
-           provider_accounts: Options.accounts(design.user_id),
-           agents: Options.agents(design.workspace_id)
-         },
+         options:
+           %{
+             runtimes: Options.runtimes(design.workspace_id, design.user_id),
+             provider_accounts: Options.accounts(design.user_id),
+             agents: Options.agents(design.workspace_id)
+           }
+           |> put_squad_options(design),
          limits: %{max_agents: Draft.max_agents(), field_rules: Options.rules()}
-       }}
+       }
+       |> put_squad_summary(design, user_scope)}
     end
   end
 
@@ -720,6 +881,7 @@ defmodule Helmsman.AgentDesigns do
     draft_write(scope, fn design, user_scope ->
       case Draft.put(design.draft, attrs, user_scope, "ai") do
         {:ok, draft, entry, _edit} ->
+          draft = follow_rename(draft, attrs["previous_name"] || attrs[:previous_name], entry)
           {:ok, design, draft, %{agent: entry, warnings: warnings(entry)}}
 
         {:error, %Ecto.Changeset{} = cs} ->
@@ -739,11 +901,70 @@ defmodule Helmsman.AgentDesigns do
   @spec withdraw_agent(Scope.t(), term()) :: {:ok, map()} | {:error, term()}
   def withdraw_agent(%Scope{} = scope, name) do
     draft_write(scope, fn design, _user_scope ->
-      case Draft.remove(design.draft, name) do
-        {:ok, draft, entry} -> {:ok, design, draft, %{removed: entry["name"]}}
+      with :ok <- not_referenced(design.draft, name),
+           {:ok, draft, entry} <- Draft.remove(design.draft, name) do
+        {:ok, design, draft, %{removed: entry["name"]}}
+      else
         {:error, :not_found} -> {:error, {:not_in_draft, name}}
+        error -> error
       end
     end)
+  end
+
+  @doc """
+  The draft tool `propose_squad` (`add-squads` decision 12): patches the
+  squad part of a `squad` conversation (`SquadDraft.put/3`), checked for
+  the conversation's user. `{:ok, %{squad, trigger_summary, warnings,
+  draft_version}}`. Errors: `{:design, :not_squad}` (an `agent`
+  conversation), `{:invalid_squad, changeset}` and those of
+  `propose_agent/2`.
+  """
+  @spec propose_squad(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
+  def propose_squad(%Scope{} = scope, attrs) when is_map(attrs) do
+    draft_write(scope, fn design, user_scope ->
+      with :ok <- squad_tool(design),
+           {:ok, draft, squad, _fields} <- squad_put(design.draft, attrs, user_scope, "ai") do
+        summary = SquadDraft.trigger_summary(draft, user_scope)
+
+        {:ok, design, draft,
+         %{squad: squad, trigger_summary: summary, warnings: squad_warnings(draft, summary)}}
+      else
+        {:error, {:invalid, %{"squad" => cs}}} -> {:error, {:invalid_squad, cs}}
+        error -> error
+      end
+    end)
+  end
+
+  @doc "Whether the design run `run` is a turn of a squad conversation."
+  @spec squad_run?(Run.t()) :: boolean()
+  def squad_run?(%Run{} = run) do
+    case Runs.design_run?(run) && Runs.design_id(run) do
+      id when is_integer(id) ->
+        Repo.exists?(from(d in AgentDesign, where: d.id == ^id and d.kind == :squad))
+
+      _other ->
+        false
+    end
+  end
+
+  defp squad_tool(%AgentDesign{kind: :squad}), do: :ok
+  defp squad_tool(_design), do: {:error, {:design, :not_squad}}
+
+  defp squad_warnings(draft, summary) do
+    restricted =
+      case summary.restricted do
+        [] ->
+          []
+
+        names ->
+          [
+            "only #{summary.able} of #{summary.total} members can trigger the squad: " <>
+              "#{Enum.join(names, ", ")} limit who may run them"
+          ]
+      end
+
+    new = Enum.flat_map(Draft.agents(draft), &warnings/1)
+    restricted ++ new
   end
 
   # The entry check, then the write's own check under the conversation's
@@ -768,6 +989,18 @@ defmodule Helmsman.AgentDesigns do
       {:ok, Map.put(result, :draft_version, design.draft_version)}
     end
   end
+
+  # `add-squads` decision 12: a squad conversation also sees the people
+  # of the workspace and the squad's hint.
+  defp put_squad_options(options, %AgentDesign{kind: :squad} = design),
+    do: Map.put(options, :people, Options.people(design.workspace_id))
+
+  defp put_squad_options(options, _design), do: options
+
+  defp put_squad_summary(result, %AgentDesign{kind: :squad} = design, user_scope),
+    do: Map.put(result, :trigger_summary, SquadDraft.trigger_summary(design.draft, user_scope))
+
+  defp put_squad_summary(result, _design, _user_scope), do: result
 
   defp design_gate(scope) do
     case Policy.authorize(scope, :design) do

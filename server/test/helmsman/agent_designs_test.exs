@@ -227,7 +227,7 @@ defmodule Helmsman.AgentDesignsTest do
       assert view |> Map.keys() |> Enum.sort() ==
                Enum.sort(
                  ~w(id kind status helper messages current_run draft draft_version pending_edits
-                    user_messages usage created_agents inserted_at last_activity_at)a
+                    user_messages usage created_agents inserted_at last_activity_at trigger_summary)a
                )
 
       assert view.helper == %{

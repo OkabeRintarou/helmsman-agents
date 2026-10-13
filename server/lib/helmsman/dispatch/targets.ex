@@ -20,6 +20,11 @@ defmodule Helmsman.Dispatch.Targets do
        otherwise `ROLLBACK TO SAVEPOINT` (which releases the locks of the
        round) and again, at most 3 rounds, then `{:error, :busy}`.
 
+  A squad among the candidates or targets (`add-squads` decision 6) stands
+  for itself, its leader and its members: step 2 locks their identity rows
+  too, then the `squads` rows `FOR SHARE` (by ID) before the profiles, and
+  step 4 requires the leader and members read after the task lock.
+
   Between the savepoint and the check there are only reads and locks: no
   insert, no `Helmsman.Tx.after_commit/1`, so rolling back to the
   savepoint leaves nothing behind. Works inside an outer transaction too.
@@ -30,6 +35,8 @@ defmodule Helmsman.Dispatch.Targets do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Repo
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.Squad
 
   @max_rounds 3
 
@@ -65,6 +72,7 @@ defmodule Helmsman.Dispatch.Targets do
     case lock_task_fun.() do
       {:ok, task} ->
         {targets, value} = targets_fun.(task)
+        targets = Enum.uniq(targets ++ SquadDispatch.expand(targets))
 
         if Enum.all?(targets, &MapSet.member?(locked, &1)) do
           Repo.query!("RELEASE SAVEPOINT dispatch_targets")
@@ -80,19 +88,26 @@ defmodule Helmsman.Dispatch.Targets do
     end
   end
 
-  # The agent rows actually locked: a candidate gone by now is not.
+  # The agent and squad rows actually locked, with the leaders and members
+  # of the squads: a candidate gone by now is not.
   defp lock_agents(_workspace_id, []), do: MapSet.new()
 
   defp lock_agents(workspace_id, candidates) do
+    squad_rows = SquadDispatch.expand(candidates)
+
     ids =
       Repo.all(
         from(a in Actor,
-          where: a.id in ^candidates and a.workspace_id == ^workspace_id and a.kind == :agent,
+          where:
+            a.workspace_id == ^workspace_id and
+              ((a.id in ^candidates and a.kind in [:agent, :squad]) or a.id in ^squad_rows),
           order_by: a.id,
           lock: "FOR SHARE",
           select: a.id
         )
       )
+
+    SquadDispatch.lock_squads(Repo.all(from(s in Squad, where: s.actor_id in ^ids, select: s.id)))
 
     if ids != [] do
       Repo.all(

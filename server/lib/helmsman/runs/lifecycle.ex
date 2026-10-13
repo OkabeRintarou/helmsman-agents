@@ -25,6 +25,7 @@ defmodule Helmsman.Runs.Lifecycle do
   alias Helmsman.Runs
   alias Helmsman.Runs.{Revalidation, Run, RunEvent, RunTokens, Steering}
   alias Helmsman.Runs.Workers.{Retry, SideEffect}
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -139,7 +140,8 @@ defmodule Helmsman.Runs.Lifecycle do
   reason}`. Anything else is `:wrong_state`.
 
   Every row the check reads is locked first, in the global order
-  (memberships by ID, actor, profile, daemon, task, runtime, run).
+  (memberships by ID, actor, the squads' identity and `squads` rows,
+  profile, daemon, task, runtime, run).
   """
   @spec starting(daemon_ctx(), pos_integer()) ::
           {:ok, :proceed | {:abort, String.t()}} | {:error, error()}
@@ -158,6 +160,7 @@ defmodule Helmsman.Runs.Lifecycle do
   defp starting_locked(ctx, snapshot) do
     members = lock_members(snapshot, ctx.user_id)
     agent = Repo.one!(from(a in Actor, where: a.id == ^snapshot.agent_id, lock: "FOR SHARE"))
+    {:ok, squads} = SquadDispatch.lock_for_check(snapshot, :wait)
 
     profile =
       Repo.one(from(p in AgentProfile, where: p.actor_id == ^agent.id, lock: "FOR SHARE"))
@@ -176,6 +179,7 @@ defmodule Helmsman.Runs.Lifecycle do
         locked = %{
           members: members,
           agent: agent,
+          squads: squads,
           profile: profile,
           task: task,
           runtime: runtime,

@@ -1,6 +1,7 @@
 defmodule Helmsman.GitHub.PullRequests.DecideTest do
   # add-pr-reconcile-merge 1.3: the decision table (decisions 6, 7, 8, 9,
-  # 21, 22; designs/15 §7). Pure: no database.
+  # 21, 22; designs/15 §7); add-squads 3.2: the assignee side. Pure: no
+  # database.
   use ExUnit.Case, async: true
 
   alias Helmsman.GitHub.PullRequest
@@ -629,6 +630,113 @@ defmodule Helmsman.GitHub.PullRequests.DecideTest do
 
       assert {[:to_draft], changes} = decide(s)
       assert changes[:merge_status] == :none and changes[:merge_reason] == nil
+    end
+  end
+
+  describe "add-squads decision 11: the assignee side" do
+    @squad 50
+    @lead 40
+    @lead2 41
+    @bob 70
+    @outsider 60
+
+    # web-team (@squad) led by @lead, with @dev (who pushed), @review and
+    # the person @bob; `side` the side now, `recorded` the one recorded.
+    defp squad_snap(verifier, opts \\ []) do
+      side = Keyword.get(opts, :side, [@squad, @lead, @dev, @review, @bob])
+      recorded = Keyword.get(opts, :recorded, side)
+
+      snap(%{
+        task: %{assignee_id: hd(side)},
+        assignee_side: side,
+        squad_names: %{@squad => "web-team"},
+        verification: Map.merge(%{assignee_side_ids: recorded}, verifier)
+      })
+    end
+
+    defp note(s), do: elem(decide(s), 1)[:merge_note]
+
+    test "a member who never pushed verifies: blocked (小队成员带测试验收父任务)" do
+      s = squad_snap(%{actor_id: @review, actor_kind: :agent, actor_name: "keel/review"})
+      assert reason(decide(s)) == :not_independent
+      assert note(s) == "Not independent: keel/review is on the assignee side (squad web-team)."
+    end
+
+    test "a reviewer the leader mentioned: blocked (leader 请来的外部评审)" do
+      s =
+        squad_snap(%{
+          actor_id: @outsider,
+          actor_kind: :agent,
+          actor_name: "carol/review",
+          run_causal_agent_ids: [@lead, @outsider]
+        })
+
+      assert note(s) ==
+               "Not independent: carol/review verified in a run caused by the assignee side " <>
+                 "(squad web-team)."
+    end
+
+    test "a person outside the squad: merged (外部的人验收小队的工作)" do
+      assert merge?(decide(squad_snap(%{})))
+    end
+
+    test "a member removed after verifying: still blocked (内部验收后移出验收人)" do
+      s =
+        squad_snap(%{actor_id: @bob, actor_kind: :human, actor_name: "bob"},
+          side: [@squad, @lead, @dev, @review],
+          recorded: [@squad, @lead, @dev, @review, @bob]
+        )
+
+      assert note(s) ==
+               "Not independent: bob was on the assignee side (squad web-team) when verifying."
+    end
+
+    test "the old leader replaced after verifying: still blocked (旧 leader 验收后被替换)" do
+      s =
+        squad_snap(%{actor_id: @lead, actor_kind: :agent, actor_name: "keel/lead"},
+          side: [@squad, @lead2, @dev, @review],
+          recorded: [@squad, @lead, @dev, @review]
+        )
+
+      assert reason(decide(s)) == :not_independent
+      assert note(s) =~ "was on the assignee side (squad web-team)"
+
+      # alice re-verifies: her event records the side of its moment.
+      s = squad_snap(%{}, side: [@squad, @lead2, @dev, @review])
+      assert merge?(decide(s))
+    end
+
+    test "a member added afterwards counts too" do
+      s =
+        squad_snap(%{actor_id: @bob, actor_kind: :human, actor_name: "bob"},
+          recorded: [@squad, @lead, @dev, @review]
+        )
+
+      assert note(s) == "Not independent: bob is on the assignee side (squad web-team)."
+    end
+
+    test "a person assignee who verified, then reassigned (执行方本人验收后改派)" do
+      s =
+        snap(%{
+          task: %{assignee_id: 80},
+          assignee_side: [80],
+          verification: %{actor_id: 81, actor_name: "carol", assignee_side_ids: [81]}
+        })
+
+      assert note(s) == "Not independent: carol was the assignee when verifying."
+    end
+
+    test "an older event without a recorded side: the current side only" do
+      s =
+        squad_snap(%{actor_id: @bob, actor_kind: :human, actor_name: "bob"},
+          side: [@squad, @lead, @dev, @review],
+          recorded: nil
+        )
+
+      assert merge?(decide(s))
+
+      s = squad_snap(%{actor_id: @bob, actor_kind: :human, actor_name: "bob"}, recorded: [])
+      assert reason(decide(s)) == :not_independent
     end
   end
 

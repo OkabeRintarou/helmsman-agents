@@ -22,7 +22,8 @@ defmodule Helmsman.Events do
           | :run
           | :workspace_runs
           | :provider_accounts
-          | :agent_design,
+          | :agent_design
+          | :workspace_squads,
           pos_integer()
         ) :: String.t()
   def topic(:workspace, id) when is_integer(id), do: "workspace:#{id}"
@@ -32,6 +33,8 @@ defmodule Helmsman.Events do
   def topic(:task, id) when is_integer(id), do: "task:#{id}"
   def topic(:run, id) when is_integer(id), do: "run:#{id}"
   def topic(:workspace_runs, id) when is_integer(id), do: "workspace:#{id}:runs"
+  # The squads of a workspace (`add-squads` decision 3).
+  def topic(:workspace_squads, id) when is_integer(id), do: "workspace:#{id}:squads"
   # A creation conversation (`add-agent-conversation` decision 4).
   def topic(:agent_design, id) when is_integer(id), do: "agent_design:#{id}"
   # A user's provider accounts (`add-provider-accounts` decision 3).

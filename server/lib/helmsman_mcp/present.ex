@@ -137,8 +137,25 @@ defmodule HelmsmanMCP.Present do
     Map.put(
       result,
       :dispatch,
-      Enum.map(dispatch, &Map.take(&1, [:agent, :trigger, :result, :reason]))
+      Enum.map(dispatch, &dispatch_item/1)
     )
+  end
+
+  # A run as a squad leader names its squad (`add-squads` decision 4).
+  defp put_squad(view, %{name: name}), do: Map.put(view, :squad, name)
+  defp put_squad(view, _none), do: view
+
+  # A squad's outcome also names the squad and, refused, the blocking
+  # leader and members (`add-squads` decision 5).
+  defp dispatch_item(item) do
+    base = Map.take(item, [:agent, :trigger, :result, :reason])
+
+    Enum.reduce([:squad, :refused], base, fn key, acc ->
+      case item[key] do
+        nil -> acc
+        value -> Map.put(acc, key, value)
+      end
+    end)
   end
 
   @doc "A run summary (`Helmsman.Runs.summary/1`)."
@@ -164,6 +181,7 @@ defmodule HelmsmanMCP.Present do
       created_at: time(run.inserted_at),
       updated_at: time(run.updated_at)
     }
+    |> put_squad(run[:squad])
   end
 
   @doc """

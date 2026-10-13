@@ -7,17 +7,36 @@ defmodule HelmsmanMCP.Tools.ListAgents do
       "List the agents of this workspace: managed (started by Helmsman on a runtime, see " <>
         "run_agent) or external, owner, CLI, description, whether disabled or archived, " <>
         "whether running now (busy), how many runs are queued and whether a managed " <>
-        "agent is woken when a task it created makes progress (wake_on_requested).",
+        "agent is woken when a task it created makes progress (wake_on_requested); and " <>
+        "the squads: leader, members and their roles (assign a task to a squad or " <>
+        "mention it to start its leader).",
     schema: %{},
     mode: :read
 
-  alias Helmsman.Agents
+  alias Helmsman.{Agents, Squads}
 
   @impl HelmsmanMCP.Tool
   def call(_args, %{scope: scope}) do
-    with {:ok, agents} <- Agents.list(scope) do
-      {:ok, %{agents: Enum.map(agents, &view/1)}}
+    with {:ok, agents} <- Agents.list(scope),
+         {:ok, squads} <- Squads.list(scope) do
+      {:ok, %{agents: Enum.map(agents, &view/1), squads: Enum.map(squads, &squad_view/1)}}
     end
+  end
+
+  # `add-squads` decision 4.
+  defp squad_view(squad) do
+    %{
+      name: squad.name,
+      description: squad.description,
+      leader: squad.leader.name,
+      members:
+        Enum.map(
+          squad.members,
+          &%{name: &1.name, kind: to_string(&1.kind), role_note: &1.role_note}
+        ),
+      disabled: squad.disabled,
+      busy: squad.busy
+    }
   end
 
   defp view(agent) do

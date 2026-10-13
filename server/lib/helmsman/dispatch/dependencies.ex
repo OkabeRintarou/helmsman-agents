@@ -45,6 +45,18 @@ defmodule Helmsman.Dispatch.Dependencies do
   @sweep_batches 10
   @closed [:cancelled, :verified]
 
+  # The identity a deferred run is for: its agent, or the squad it runs
+  # as a leader of (`add-squads` decision 6).
+  defmacrop run_assignee(run) do
+    quote do
+      fragment(
+        "coalesce((SELECT s.actor_id FROM squads s WHERE s.id = ?), ?)",
+        unquote(run).squad_id,
+        unquote(run).agent_id
+      )
+    end
+  end
+
   ## Releasing
 
   @doc """
@@ -195,19 +207,23 @@ defmodule Helmsman.Dispatch.Dependencies do
   The runs on `task` deferred by a dependency for an agent that is no
   longer its assignee are cancelled (`obsolete`), in the caller's
   transaction (`Helmsman.Dispatch.on_assignee_change/4`, task row
-  locked). Returns how many.
+  locked). Returns how many. A run as a squad leader belongs to the
+  squad: it is kept only while the squad is the assignee (`add-squads`
+  decision 6).
   """
   @spec cancel_reassigned(Task.t()) :: non_neg_integer()
   def cancel_reassigned(%Task{id: task_id, assignee_id: assignee_id}) do
     from(r in Run,
       where: r.task_id == ^task_id and r.status == :deferred and dependency_gated_sql(r.triggers)
     )
-    |> other_agent(assignee_id)
+    |> other_assignee(assignee_id)
     |> Runs.cancel_pending(:obsolete)
   end
 
-  defp other_agent(query, nil), do: query
-  defp other_agent(query, agent_id), do: where(query, [r], r.agent_id != ^agent_id)
+  defp other_assignee(query, nil), do: query
+
+  defp other_assignee(query, assignee_id),
+    do: where(query, [r], fragment("? IS DISTINCT FROM ?", ^assignee_id, run_assignee(r)))
 
   @doc """
   The `Helmsman.Tasks.TransitionSteps` step (decision 8): a task moved to
@@ -267,7 +283,7 @@ defmodule Helmsman.Dispatch.Dependencies do
       dynamic(
         [run: r, task: t],
         not (^Links.unsatisfied_dependency(:task)) or t.status in ^@closed or
-          fragment("? IS DISTINCT FROM ?", t.assignee_id, r.agent_id)
+          fragment("? IS DISTINCT FROM ?", t.assignee_id, run_assignee(r))
       )
 
     from(r in Run,
@@ -323,7 +339,12 @@ defmodule Helmsman.Dispatch.Dependencies do
                 where:
                   t.id == parent_as(:run).task_id and
                     (t.status in ^@closed or
-                       fragment("? IS DISTINCT FROM ?", t.assignee_id, parent_as(:run).agent_id))
+                       fragment(
+                         "? IS DISTINCT FROM coalesce((SELECT s.actor_id FROM squads s WHERE s.id = ?), ?)",
+                         t.assignee_id,
+                         parent_as(:run).squad_id,
+                         parent_as(:run).agent_id
+                       ))
               )
             )
         )

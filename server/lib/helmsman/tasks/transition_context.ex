@@ -13,7 +13,10 @@ defmodule Helmsman.Tasks.TransitionContext do
   excluding `scope.run`, the run making the transition), read for a move
   to `verified` only. The self-verification fields follow designs/05 §5: only the
   acting identity itself counts as the assignee, not other identities of
-  the same user.
+  the same user. With a squad as the assignee (`add-squads` decision 11)
+  the whole assignee side counts: the squad, its current leader and
+  members (`Helmsman.Squads.assignee_side/1`); the error names the
+  assignee (the squad).
   """
 
   import Ecto.Query, warn: false
@@ -23,13 +26,15 @@ defmodule Helmsman.Tasks.TransitionContext do
   alias Helmsman.Links
   alias Helmsman.Repo
   alias Helmsman.Runs
+  alias Helmsman.Squads
   alias Helmsman.Tasks.{Evidence, StateMachine, Task, TaskEvent}
 
   @doc "Builds the check context for moving `task` to `to` as `scope`."
   @spec build(Task.t(), Scope.t(), Task.status(), Evidence.t()) :: StateMachine.ctx()
   def build(%Task{} = task, %Scope{actor: %Actor{} = actor} = scope, to, evidence) do
     self_verify? =
-      to == :verified and not is_nil(task.assignee_id) and actor.id == task.assignee_id
+      to == :verified and not is_nil(task.assignee_id) and
+        actor.id in Squads.assignee_side(task)
 
     %{
       blockers: blockers(task, to),
@@ -37,7 +42,11 @@ defmodule Helmsman.Tasks.TransitionContext do
       active_run: if(to == :verified, do: Runs.active_on_task(task.id, run_id(scope))),
       self_verify?: self_verify?,
       has_passing_tests?: to == :verified and passing_tests?(task, evidence),
-      assignee_name: if(self_verify?, do: actor.name, else: assignee_name(task))
+      assignee_name:
+        if(self_verify? and actor.id == task.assignee_id,
+          do: actor.name,
+          else: assignee_name(task)
+        )
     }
   end
 

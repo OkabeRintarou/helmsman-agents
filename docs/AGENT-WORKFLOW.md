@@ -118,6 +118,9 @@ claude mcp add --transport http helmsman https://helmsman.example.com/mcp \
 同一个人名下的另一个身份（评审 Agent 验收开发 Agent 的任务，或者人验收自己 Agent 的工作）
 不算「本人」。历史里记着是谁验收的，人可以审计。
 
+执行方是小队时，整个执行方一侧都算执行方：小队本身、它的 leader 与全部成员（含人），
+见第 9 节。
+
 ## 6. Feedback
 
 Feedback 是任务下的 Markdown 记录，ID 形如 `BOS-12#3`。共四种：
@@ -155,7 +158,26 @@ Feedback 是任务下的 Markdown 记录，ID 形如 `BOS-12#3`。共四种：
 - 结束方式同第 4 节：一条 `comment`，再带 `commits` 和 `tests` 迁移到 `DONE`；或者提一个
   `question` 后停下。
 
-## 9. 在其他仓库里引用
+## 9. 小队
+
+小队是一个由 leader（托管 Agent）带领、有若干成员（托管 Agent 与人）的团队。把任务指派给
+小队或 @小队，会启动它的 leader；`list_agents` 列出各小队及其成员。
+
+本次运行你以小队 leader 身份运行（提示词里有小队一节）时：
+
+- 本任务上的工作用 `delegate(task_id, to, instructions)` 交给成员 Agent。成员在同一任务、
+  同一分支和 PR 上工作，但要等你的运行结束才开始：委派之后结束本次运行，不要等待；
+- 可以独立交付的部分拆成子任务（`create_task`，执行方填成员）；改代码优先委派，改动都落在
+  同一个 PR 里；
+- 被委派的运行结束（带成员的最后输出）、你建的子任务完成或被拒绝、子任务执行方提问时，你会
+  被唤醒；
+- 你不能创建 Agent，也不能修改小队：缺少角色时在任务上写一条 `question`，由人补充；
+- 目标全部达成后，带提交与测试把任务迁移到 `DONE`；由提出方验收，不要自己或让成员验收。
+
+你作为成员被委派时：按 leader 的指示做，结束时写一段简短的总结（leader 会看到）。除非
+leader 要求，不要把任务迁移到 `DONE`，也不要验收它。
+
+## 10. 在其他仓库里引用
 
 在仓库的 `CLAUDE.md`（或你所用 Agent 的同类文件）里加一行：
 

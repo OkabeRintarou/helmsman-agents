@@ -168,7 +168,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==
              Enum.sort(
                Enum.map(HelmsmanMCP.Tools.all(), & &1.name()) --
-                 HelmsmanMCP.Tools.design_tool_names()
+                 Map.keys(HelmsmanMCP.Tools.required_capabilities())
              )
 
     assert %{"actor" => nil, "source" => "none"} = tool_json(token, sid, "whoami")

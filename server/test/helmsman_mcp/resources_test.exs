@@ -45,6 +45,14 @@ defmodule HelmsmanMCP.ResourcesTest do
       assert read(session, "helmsman://workflow") == {:ok, File.read!(@workflow)}
     end
 
+    # add-squads 4.3: the squads section (decision 13).
+    test "the workflow has the squads section", %{session: session} do
+      assert {:ok, text} = read(session, "helmsman://workflow")
+      assert text =~ "## 9. Squads"
+      assert text =~ "delegate(task_id, to, instructions)"
+      assert text =~ "after delegating, finish your run"
+    end
+
     test "projects have the shape of list_projects", %{session: session} do
       assert {:ok, json} = read(session, "helmsman://projects")
       assert Jason.decode!(json) == call!(session, "list_projects")

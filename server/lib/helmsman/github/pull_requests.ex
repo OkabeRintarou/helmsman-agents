@@ -318,6 +318,8 @@ defmodule Helmsman.GitHub.PullRequests do
             commits: [],
             auto: false,
             verified_sha: head,
+            # `add-squads` decision 11: who was on the assignee side.
+            assignee_side_ids: Helmsman.Squads.assignee_side(task),
             feedback_id: entry.id,
             source_run_id: source_run_id(scope)
           })

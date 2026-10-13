@@ -188,7 +188,7 @@ defmodule Helmsman.Runs.SteeringRequestTest do
       assert {by, initiator, causal} == {alice_actor.id, ctx.alice.id, [ctx.agent.id]}
       assert {feedback_id, steer_run_id} == {entry.id, ctx.run.id}
       assert fallback.root_initiator_user_id == ctx.alice.id
-      refute Triggers.assignee_bound?(fallback.triggers)
+      refute Triggers.run_bound(fallback)
     end
 
     test "steering and @ the same agent: one mention, no steer (scenario)", ctx do

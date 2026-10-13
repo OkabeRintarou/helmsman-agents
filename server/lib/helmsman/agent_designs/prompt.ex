@@ -24,7 +24,7 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
-  alias Helmsman.AgentDesigns.{AgentDesign, AgentDesignMessage, Draft, Options}
+  alias Helmsman.AgentDesigns.{AgentDesign, AgentDesignMessage, Draft, Options, SquadDraft}
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.Run
@@ -47,6 +47,14 @@ defmodule Helmsman.AgentDesigns.Prompt do
   - Architect: designs changes, writes specs, splits work into tasks (capability create_tasks). claude: opus, high. codex: high.
   - General developer: implements tasks end to end with tests. claude: sonnet, high. codex: high.
   """
+
+  @squad_example """
+  - Squad leader: reads the task, splits or delegates it to the members, checks their work and finishes the task; does not write code itself. claude: opus, high. codex: high.
+  """
+  @identity_description_bytes 200
+  @squad_description_bytes 200
+  @squad_instructions_bytes 400
+  @role_note_bytes 200
 
   @doc "The prompt of the design run `run` (its conversation read now)."
   @spec for_run(Run.t()) :: String.t()
@@ -71,12 +79,20 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
     {current, earlier} = split_turn(messages, run.id)
 
-    before = [
-      intro(user, human, workspace),
-      @examples,
-      options(user, workspace),
-      draft(design, current)
-    ]
+    before =
+      if design.kind == :squad,
+        do: [
+          squad_intro(user, human, workspace),
+          @examples <> @squad_example,
+          options(user, workspace, people_and_agents(workspace, user)),
+          draft(design, current) <> squad_part(design, user, workspace)
+        ],
+        else: [
+          intro(user, human, workspace),
+          @examples,
+          options(user, workspace),
+          draft(design, current)
+        ]
 
     last = new_message(current)
     # The history gets what the other parts leave of the whole, at most
@@ -110,6 +126,44 @@ defmodule Helmsman.AgentDesigns.Prompt do
     """
   end
 
+  # `add-squads` decision 12: how a squad conversation works.
+  defp squad_intro(user, human, workspace) do
+    who = if human, do: "#{user.display_name} (#{human})", else: user.display_name
+
+    """
+    You are helping #{who} design a squad for the Helmsman workspace "#{workspace.slug}": a leader and its members, and the new managed agents it needs. This run has no task.
+    How this works:
+    - You and the user talk in turns. Every turn you get the conversation so far; you keep no memory between turns.
+    - Change the draft only with the Helmsman MCP tools get_design, propose_agent, withdraw_agent and propose_squad. You cannot create agents or squads: the user reviews the draft and creates them by confirming it in the web UI, as their owner.
+    - The leader must be a managed agent. Members can be new agents of the draft, existing managed agents of the workspace or people. One CLI and runtime can host several members, each with its own model, effort and instructions (for example a frontend developer, a reviewer and a tester).
+    - When the squad runs, its leader cannot create agents or change the squad: it can only delegate work to the members or create tasks for them. Give the squad the roles it needs now.
+    - If something important is unclear, ask first. Otherwise propose, then say briefly what you chose and why.
+    - Reply in the language the user writes in, in at most 3000 characters. Your final message is shown to the user.
+    - Write agent instructions and the squad's instructions in English unless the user asks for another language. Helmsman adds the task workflow itself.
+    - Never put secrets in the draft or your reply. Environment variables, extra MCP servers and CLI arguments cannot be proposed; tell the user to add them after creating the agent.
+    """
+  end
+
+  # The existing people and agents of a squad conversation, in the order
+  # they are kept when the options are cut: people, the user's agents,
+  # other agents.
+  defp people_and_agents(workspace, user) do
+    people = Enum.map(Options.people(workspace.id), &"- #{&1.name} (person)\n")
+
+    agents =
+      Options.agents(workspace.id)
+      |> Enum.sort_by(&if(&1[:owner_id] == user.id, do: 0, else: 1))
+      |> Enum.map(fn agent ->
+        {desc, _cut?} = prefix(one_line(agent.description || ""), @identity_description_bytes)
+        cli = if agent.provider, do: ", #{agent.provider}", else: ""
+        "- #{agent.name} (#{agent.kind} agent#{cli}): #{desc}\n"
+      end)
+
+    people ++ agents
+  end
+
+  defp one_line(text), do: String.replace(text, ~r/[\x00-\x1F\x7F]+/u, " ")
+
   defp options(user, workspace) do
     runtimes = Options.runtimes(workspace.id, user.id)
     accounts = Options.accounts(user.id)
@@ -130,11 +184,28 @@ defmodule Helmsman.AgentDesigns.Prompt do
     end
   end
 
+  # A squad conversation's options: the identities follow the runtimes and
+  # accounts in the same 16 KB.
+  defp options(user, workspace, identities) do
+    runtimes = Options.runtimes(workspace.id, user.id)
+    accounts = Options.accounts(user.id)
+    head = "Options for #{user.display_name}:\n"
+    rules = "Fields:\n" <> Enum.map_join(Options.rules(), "", &"- #{&1}\n")
+    budget = @options_bytes - byte_size(head <> rules) - 600
+    {runtimes_text, left} = lines_text(runtimes, &runtime_line/1, budget, :runtimes)
+    {accounts_text, left} = lines_text(accounts, &account_line/1, left, :accounts)
+    {identities_text, _left} = lines_text(identities, & &1, left, :identities)
+    head <> runtimes_text <> accounts_text <> identities_text <> rules
+  end
+
   defp runtime_line(runtime), do: "- " <> Options.runtime_line(runtime) <> "\n"
   defp account_line(account), do: "- #{account.id}: #{account.name} (#{account.cli})\n"
 
   defp lines_text([], _line, budget, :runtimes), do: {"Runtimes: none.\n", budget}
   defp lines_text([], _line, budget, :accounts), do: {"Provider accounts: none.\n", budget}
+
+  defp lines_text([], _line, budget, :identities),
+    do: {"Existing people and agents: none.\n", budget}
 
   defp lines_text(items, line, budget, kind) do
     {lines, left, omitted} =
@@ -154,6 +225,10 @@ defmodule Helmsman.AgentDesigns.Prompt do
         :accounts ->
           {"Provider accounts (provider_account_id; with an account the model is free text):\n",
            "provider accounts"}
+
+        :identities ->
+          {"Existing people and agents (possible members; a leader must be a managed agent):\n",
+           "people and agents"}
       end
 
     note =
@@ -205,6 +280,41 @@ defmodule Helmsman.AgentDesigns.Prompt do
       )
   end
 
+  # `add-squads` decision 12: the squad part and its hint, bounded: the
+  # description and every role note cut to 200 bytes, the instructions to
+  # 400, each quoted (at most twice as long); at most 16 members.
+  defp squad_part(design, user, workspace) do
+    squad = SquadDraft.get(design.draft) || SquadDraft.empty()
+    instructions = squad["instructions"] || ""
+
+    summary =
+      SquadDraft.trigger_summary(design.draft, %Helmsman.Accounts.Scope{
+        user: user,
+        workspace: workspace
+      })
+
+    "Squad (propose_squad): name #{squad["name"] || "not set"}, leader " <>
+      "#{squad["leader"] || "not set"}, description " <>
+      quote_excerpt(squad["description"] || "", @squad_description_bytes) <>
+      "; instructions #{byte_size(instructions)} bytes: " <>
+      quote_excerpt(instructions, @squad_instructions_bytes) <>
+      "\nMembers:\n" <>
+      squad_members(squad["members"]) <>
+      "#{summary.able} of #{summary.total} members of the workspace can trigger the squad" <>
+      restricted_text(summary.restricted) <> ". Call get_design for the full texts.\n"
+  end
+
+  defp squad_members([]), do: "  (none yet)\n"
+
+  defp squad_members(members),
+    do:
+      Enum.map_join(members, "", fn m ->
+        "  - #{m["name"]}: #{quote_excerpt(m["role_note"] || "", @role_note_bytes)}\n"
+      end)
+
+  defp restricted_text([]), do: ""
+  defp restricted_text(names), do: "; limited by #{Enum.join(names, ", ")}"
+
   defp account(nil), do: ""
   defp account(id), do: ", provider account #{id}"
 
@@ -223,9 +333,16 @@ defmodule Helmsman.AgentDesigns.Prompt do
     "\"" <> escaped <> if(cut?, do: "…\"", else: "\"")
   end
 
-  defp prefix(text, max_bytes) when byte_size(text) <= max_bytes, do: {text, false}
+  @doc """
+  The bounded summary of `text`: at most `max_bytes` bytes, cut between
+  code points (a long grapheme is cut too), so the result is always valid
+  UTF-8; `true` when it was cut. Also used by `Helmsman.Runs.Prompt`
+  (`add-squads` decision 7).
+  """
+  @spec prefix(String.t(), non_neg_integer()) :: {String.t(), boolean()}
+  def prefix(text, max_bytes) when byte_size(text) <= max_bytes, do: {text, false}
 
-  defp prefix(text, max_bytes) do
+  def prefix(text, max_bytes) do
     {kept, _bytes} =
       text
       |> String.codepoints()
@@ -247,6 +364,7 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
   def edits_text(edits) do
     Enum.map_join(edits, "; ", fn
+      %{"squad" => true, "fields" => fields} -> "the squad (#{Enum.join(fields, ", ")})"
       %{"removed" => true, "agent" => name} -> "removed #{name}"
       %{"added" => true, "agent" => name} -> "added #{name}"
       %{"agent" => name, "fields" => fields} -> "#{name} (#{Enum.join(fields, ", ")})"

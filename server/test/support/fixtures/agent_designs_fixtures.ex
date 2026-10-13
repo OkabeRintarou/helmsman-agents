@@ -50,6 +50,17 @@ defmodule Helmsman.AgentDesignsFixtures do
     }
   end
 
+  @doc """
+  Starts a `squad` conversation of `scope` (add-squads decision 12); its
+  first turn settled, so the user may edit the draft. The view.
+  """
+  def start_squad_design!(ctx, message \\ "Build a web squad") do
+    {:ok, view} =
+      AgentDesigns.start(ctx.alice_scope, %{helper: "helper", message: message, kind: "squad"})
+
+    view
+  end
+
   @doc "Starts a conversation of `scope` with `helper` and `message`; the view."
   def start_design!(scope, message \\ "Help me create a frontend agent", helper \\ "helper") do
     {:ok, view} = AgentDesigns.start(scope, %{helper: helper, message: message})

@@ -37,6 +37,10 @@ defmodule Helmsman.Tasks.TaskEvent do
     # On a move to `verified`: the latest commit delivered to the task
     # branch (`Helmsman.Tasks.VerifiedSha`).
     field :verified_sha, :string
+    # On a move to `verified`: the assignee side at that moment
+    # (`Helmsman.Squads.assignee_side/1`, `add-squads` decision 11); nil
+    # on every other entry.
+    field :assignee_side_ids, {:array, :integer}
     # The ID of `feedback` (`KEY-N#S`), filled in by `Helmsman.Tasks`.
     field :feedback_ident, :string, virtual: true
 

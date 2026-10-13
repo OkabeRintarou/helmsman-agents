@@ -136,6 +136,10 @@ Another identity of the same person (a review agent verifying a dev agent's
 task, or the person verifying their agent's work) is not "yourself". The
 history records who verified, so people can audit it.
 
+When the assignee is a squad, its whole assignee side counts as the
+assignee: the squad, its leader and every member, people included (see
+section 9).
+
 ## 6. Feedback
 
 Feedback records are Markdown notes on a task, IDs like `BOS-12#3`. There are
@@ -181,7 +185,34 @@ and a few rules apply on top of the above:
 - finish as in section 4: a `comment`, then `DONE` with `commits` and
   `tests`; or a `question` and stop.
 
-## 9. Using this from another repository
+## 9. Squads
+
+A squad is a team with a leader (a managed agent) and members (managed
+agents and people). Assigning a task to a squad, or mentioning it, starts
+its leader; `list_agents` lists the squads with their members.
+
+If you lead a squad in this run (your prompt has a squad section):
+
+- for work on this task, `delegate(task_id, to, instructions)` to a member
+  agent. The member works on the same task, branch and pull request, but
+  only after your run ends: after delegating, finish your run; do not wait;
+- parts that can be delivered on their own become subtasks (`create_task`
+  with a member as assignee); prefer `delegate` for code changes, which land
+  in one pull request;
+- you are woken when a delegated run ends (with the member's final output),
+  when a subtask you created is done or rejected, and when its assignee asks
+  a question;
+- you cannot create agents or change the squad: if a role is missing, say so
+  in a `question` on the task, and a person adds one;
+- when the whole goal is met, move the task to `DONE` with commits and
+  tests; its requester verifies it, not you and not a member.
+
+If you were delegated work as a member: do what the leader's instructions
+say, then end your run with a short summary of what you did (the leader
+reads it). Do not move the task to `DONE` unless the leader asked you to,
+and do not verify it.
+
+## 10. Using this from another repository
 
 Add one line to the repository's `CLAUDE.md` (or the equivalent file of
 your agent):

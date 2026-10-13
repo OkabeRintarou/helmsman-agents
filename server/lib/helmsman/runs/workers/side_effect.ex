@@ -4,7 +4,8 @@ defmodule Helmsman.Runs.Workers.SideEffect do
   decision 12), inserted in the transaction that changed the run and run
   in a new one after it: `auto_claim` when it started, `fallback` when it
   succeeded, `steer_settle` when it succeeded with an acknowledged
-  steering push (`add-run-steering` decision 7). Unique per run and kind;
+  steering push (`add-run-steering` decision 7), `delegate_done` when a
+  delegated run ended and wakes its leader (`add-squads` decision 9). Unique per run and kind;
   each effect is idempotent.
   """
 
@@ -26,5 +27,9 @@ defmodule Helmsman.Runs.Workers.SideEffect do
   def perform(%Oban.Job{args: %{"run_id" => run_id, "kind" => "steer_settle"}}) do
     {:ok, _count} = Steering.settle(run_id)
     :ok
+  end
+
+  def perform(%Oban.Job{args: %{"run_id" => run_id, "kind" => "delegate_done"}}) do
+    :ok = SideEffects.delegate_done(run_id)
   end
 end

@@ -17,6 +17,15 @@ defmodule Helmsman.Dispatch.Continuation do
   the agent, `requested` from its `requested` grant, `answer` from the run
   the question was written in; none → `skipped / no_grant`. The chain
   leaves out the target itself. Everything else is `Helmsman.Runs.enqueue/3`.
+
+  Squads (`add-squads` decision 6): a squad target (the assignee of a
+  reopened or resubmitted task, a mentioned squad) is a run of its current
+  leader as the squad (`Helmsman.Squads.Dispatch`), never when the leader
+  caused the write; `reopen` and `resubmit` inherit the task's `assign`
+  grant of the squad identity. An answer to a question written in a run
+  as a squad, and the callback of a task created in one, run as that squad
+  again. Anyone on the assignee side of a squad's task (the leader, a
+  member) who writes a question calls back its requester.
   """
 
   import Ecto.Query, warn: false
@@ -29,6 +38,9 @@ defmodule Helmsman.Dispatch.Continuation do
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Origin, Outcome, Run, TaskGrant, Triggers}
+  alias Helmsman.Squads
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.Squad
   alias Helmsman.Tasks.Task
 
   @closed [:verified, :cancelled]
@@ -191,12 +203,13 @@ defmodule Helmsman.Dispatch.Continuation do
   defp feedback_plan(scope, task, assignee, input, old, mentions, question, agents) do
     by = scope.actor.id
     kind = input[:kind] || (old && old.kind) || :comment
-    requested = question_items(task, kind, old, assignee == by)
+    requested = question_items(task, kind, old, assignee_side?(assignee, by))
     answer = answer_items(kind, question)
 
     mention =
       mentions
-      |> Mentions.targets(old, by, agents)
+      |> Mentions.targets(old, by, MapSet.new(Map.keys(agents)))
+      |> Enum.reject(&(agents[&1] == by))
       |> Enum.map(&%{kind: :mention, agent_id: &1, extra: %{}})
 
     %{mentions: mentions, items: keep(requested ++ answer, agents, by) ++ mention}
@@ -213,24 +226,45 @@ defmodule Helmsman.Dispatch.Continuation do
 
   defp answer_items(_kind, _question), do: []
 
+  # `agents`: target ID => the leader for a squad, nil for an agent. A
+  # squad is never triggered by its own leader.
   defp keep(items, agents, by),
-    do: Enum.filter(items, &(MapSet.member?(agents, &1.agent_id) and &1.agent_id != by))
+    do:
+      Enum.filter(
+        items,
+        &(Map.has_key?(agents, &1.agent_id) and &1.agent_id != by and agents[&1.agent_id] != by)
+      )
+
+  # `by` is the assignee, or on its side when the assignee is a squad
+  # (`add-squads` decision 11).
+  defp assignee_side?(nil, _by), do: false
+  defp assignee_side?(by, by), do: true
+
+  defp assignee_side?(assignee, by),
+    do: by in Squads.assignee_side(%Task{assignee_id: assignee})
 
   defp targets(transition, nil), do: transition |> Enum.map(& &1.agent_id) |> Enum.uniq()
 
   defp targets(transition, feedback),
     do: (transition ++ feedback.items) |> Enum.map(& &1.agent_id) |> Enum.uniq()
 
-  # Agents only (external ones too: they are locked, but get no result).
+  # Agents (external ones too: they are locked, but get no result) and
+  # squads, as `%{id => leader_id | nil}`.
   defp agent_ids(ids) do
     ids = ids |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
     if ids == [] do
-      MapSet.new()
+      %{}
     else
-      MapSet.new(
-        Repo.all(from(a in Actor, where: a.id in ^ids and a.kind == :agent, select: a.id))
+      Repo.all(
+        from(a in Actor,
+          left_join: s in Squad,
+          on: s.actor_id == a.id,
+          where: a.id in ^ids and a.kind in [:agent, :squad],
+          select: {a.id, s.leader_agent_id}
+        )
       )
+      |> Map.new()
     end
   end
 
@@ -290,12 +324,14 @@ defmodule Helmsman.Dispatch.Continuation do
     {Enum.reject(outcomes, &is_nil/1), task}
   end
 
-  # The target's actor and profile rows are locked (Targets.with_locked/4).
+  # The target's actor and profile rows are locked (Targets.with_locked/4),
+  # with a squad's rows.
   defp fire(scope, task, item, feedback_id) do
     agent = Repo.get!(Actor, item.agent_id)
     profile = Repo.one(from(p in AgentProfile, where: p.actor_id == ^agent.id))
 
     cond do
+      agent.kind == :squad -> scope |> fire_squad(task, item, agent, feedback_id) |> steered(item)
       is_nil(profile) -> nil
       item.kind == :requested and not profile.wake_on_requested -> nil
       true -> scope |> enqueue(task, item, {agent, profile}, feedback_id) |> steered(item)
@@ -305,9 +341,37 @@ defmodule Helmsman.Dispatch.Continuation do
   defp steered(outcome, %{steer_run_id: id}), do: %{outcome | steer_run_id: id}
   defp steered(outcome, _item), do: outcome
 
+  defp fire_squad(scope, task, item, squad_actor, feedback_id) do
+    loaded = Squads.load(Squads.by_actor_id(squad_actor.id))
+
+    trigger = %{
+      kind: item.kind,
+      instructions: nil,
+      feedback_id: feedback_id,
+      extra: Map.merge(item.extra, steer_extra(item))
+    }
+
+    case item.kind do
+      :mention ->
+        SquadDispatch.enqueue(Origin.from_scope(scope), loaded, task, trigger, lane: :reply)
+
+      kind when kind in [:reopen, :resubmit] ->
+        case Repo.get_by(TaskGrant, task_id: task.id, agent_id: squad_actor.id, kind: :assign) do
+          nil ->
+            SquadDispatch.skipped(loaded, kind, :no_grant)
+
+          grant ->
+            origin =
+              inherit(scope, grant.root_initiator_user_id, grant.causal_agent_ids, loaded.leader)
+
+            SquadDispatch.enqueue(origin, loaded, task, trigger, lane: :work)
+        end
+    end
+  end
+
   defp enqueue(scope, task, item, {agent, profile}, feedback_id) do
     case source(scope, task, item, agent) do
-      {:ok, origin, lane, extra} ->
+      {:ok, origin, lane, extra, squad_id} ->
         if lane == :work and task.status in @closed do
           Outcome.skipped(agent, item.kind, :task_closed)
         else
@@ -319,14 +383,21 @@ defmodule Helmsman.Dispatch.Continuation do
           }
 
           target = %{agent: agent, profile: profile, task: task, lane: lane}
-          {:ok, outcome} = Runs.enqueue(origin, target, trigger)
-          outcome
+          enqueue_as(origin, target, squad_id, trigger)
         end
 
       {:skip, reason} ->
         Outcome.skipped(agent, item.kind, reason)
     end
   end
+
+  defp enqueue_as(origin, target, nil, trigger) do
+    {:ok, outcome} = Runs.enqueue(origin, target, trigger)
+    outcome
+  end
+
+  defp enqueue_as(origin, target, squad_id, trigger),
+    do: SquadDispatch.enqueue_as(origin, target, squad_id, trigger)
 
   defp steer_extra(%{steer_run_id: id}), do: %{"steer_run_id" => id}
   defp steer_extra(_item), do: %{}
@@ -344,16 +415,20 @@ defmodule Helmsman.Dispatch.Continuation do
 
       grant ->
         {:ok, inherit(scope, grant.root_initiator_user_id, grant.causal_agent_ids, agent), :work,
-         %{}}
+         %{}, grant.squad_id}
     end
   end
 
+  # `add-squads` decision 10: the answer records what the question's run
+  # was bound to (`bound_assignee_id`), and runs as its squad, if any.
   defp source(scope, _task, %{kind: :answer, question: question}, agent) do
     case question.source_run_id && Repo.get(Run, question.source_run_id) do
       %Run{} = run ->
-        bound = run.lane == :work and Triggers.assignee_bound?(run.triggers)
+        bound = if run.lane == :work, do: bound_actor_id(Triggers.run_bound(run))
         origin = inherit(scope, run.root_initiator_user_id, run.causal_agent_ids, agent)
-        {:ok, origin, run.lane, %{"question_id" => question.id, "assignee_bound" => bound}}
+        extra = %{"question_id" => question.id, "assignee_bound" => not is_nil(bound)}
+        extra = if bound, do: Map.put(extra, "bound_assignee_id", bound), else: extra
+        {:ok, origin, run.lane, extra, run.squad_id}
 
       _none ->
         {:skip, :no_grant}
@@ -361,7 +436,13 @@ defmodule Helmsman.Dispatch.Continuation do
   end
 
   defp source(scope, _task, %{kind: :mention}, _agent),
-    do: {:ok, Origin.from_scope(scope), :reply, %{}}
+    do: {:ok, Origin.from_scope(scope), :reply, %{}, nil}
+
+  defp bound_actor_id(nil), do: nil
+  defp bound_actor_id({:actor, id}), do: id
+
+  defp bound_actor_id({:squad, squad_id}),
+    do: Repo.one(from(s in Squad, where: s.id == ^squad_id, select: s.actor_id))
 
   defp inherit(scope, initiator, chain, agent) do
     %Origin{

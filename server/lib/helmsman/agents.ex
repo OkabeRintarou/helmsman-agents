@@ -194,23 +194,30 @@ defmodule Helmsman.Agents do
     end
   end
 
+  # `add-squads` decision 3: an archived agent leaves every squad it is a
+  # member of (squad rows locked between its identity and profile rows);
+  # the squads it leads keep it, shown as archived.
   def archive(scope, name) do
-    mutate(scope, name, :administer_agent, fn actor, profile ->
-      with :ok <- managed(profile),
-           :ok <- active(profile),
-           {:ok, _} <-
-             profile
-             |> Ecto.Changeset.change(archived_at: DateTime.utc_now(:second))
-             |> Repo.update(),
-           {:ok, actor} <-
-             actor
-             |> Ecto.Changeset.change(disabled_at: actor.disabled_at || DateTime.utc_now(:second))
-             |> Repo.update() do
-        cancel_pending_runs(actor)
-        notify_accounts(actor, profile.provider_account_id, nil)
-        {:ok, actor}
-      end
-    end)
+    mutate(scope, name, :administer_agent, &archive_locked/2,
+      before_profile: &Helmsman.Squads.remove_archived_member/1
+    )
+  end
+
+  defp archive_locked(actor, profile) do
+    with :ok <- managed(profile),
+         :ok <- active(profile),
+         {:ok, _} <-
+           profile
+           |> Ecto.Changeset.change(archived_at: DateTime.utc_now(:second))
+           |> Repo.update(),
+         {:ok, actor} <-
+           actor
+           |> Ecto.Changeset.change(disabled_at: actor.disabled_at || DateTime.utc_now(:second))
+           |> Repo.update() do
+      cancel_pending_runs(actor)
+      notify_accounts(actor, profile.provider_account_id, nil)
+      {:ok, actor}
+    end
   end
 
   # Lock order: actor, profile (`mutate/4`), runs (designs/01 §4). Queued
@@ -221,21 +228,25 @@ defmodule Helmsman.Agents do
     Runs.stop_active(query)
   end
 
-  defp mutate(scope, name, action, fun) do
+  defp mutate(scope, name, action, fun, opts \\ []) do
     Workspaces.write_transaction(scope, :view_agents, nil, fn scope ->
       actor = find_actor(scope, name, "FOR UPDATE")
 
       with %Actor{} <- actor, :ok <- Policy.authorize(scope, action, actor) do
-        profile =
-          Repo.one(from p in AgentProfile, where: p.actor_id == ^actor.id, lock: "FOR UPDATE")
-
-        finish_mutation(fun.(actor, profile))
+        finish_mutation(fun.(actor, lock_profile(actor, opts)))
       else
         nil -> {:error, :not_found}
         error -> error
       end
     end)
     |> scrub_result()
+  end
+
+  # Rows locked between the actor and its profile first (`before_profile`).
+  defp lock_profile(actor, opts) do
+    before_profile = Keyword.get(opts, :before_profile, fn _actor -> :ok end)
+    :ok = before_profile.(actor)
+    Repo.one(from p in AgentProfile, where: p.actor_id == ^actor.id, lock: "FOR UPDATE")
   end
 
   defp finish_mutation({:ok, actor}) do

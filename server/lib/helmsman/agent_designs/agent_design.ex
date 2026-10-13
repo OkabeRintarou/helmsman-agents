@@ -26,7 +26,7 @@ defmodule Helmsman.AgentDesigns.AgentDesign do
     belongs_to :workspace, Workspace
     belongs_to :user, User
     belongs_to :helper_agent, Actor
-    field :kind, Ecto.Enum, values: [:agent], default: :agent
+    field :kind, Ecto.Enum, values: [:agent, :squad], default: :agent
     field :status, Ecto.Enum, values: @statuses, default: :open
     field :draft, :map, default: %{"agents" => []}
     field :draft_version, :integer, default: 0

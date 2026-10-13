@@ -6,6 +6,7 @@ defmodule HelmsmanMCP.Tools do
     CancelRun,
     CreateProject,
     CreateTask,
+    Delegate,
     GetDesign,
     GetProject,
     GetTask,
@@ -19,6 +20,7 @@ defmodule HelmsmanMCP.Tools do
     ListRuns,
     ListTasks,
     ProposeAgent,
+    ProposeSquad,
     RunAgent,
     SearchTasks,
     TransitionTask,
@@ -52,24 +54,39 @@ defmodule HelmsmanMCP.Tools do
     ListFeedback,
     ListAgents,
     RunAgent,
+    Delegate,
     ListRuns,
     CancelRun,
     GetDesign,
     ProposeAgent,
-    WithdrawAgent
+    WithdrawAgent,
+    ProposeSquad
   ]
 
   # The draft tools, listed only for design runs (`add-agent-conversation`
   # decision 7).
-  @design_tools [GetDesign, ProposeAgent, WithdrawAgent]
+  @design_tools [GetDesign, ProposeAgent, WithdrawAgent, ProposeSquad]
 
   @doc "Every tool module."
   @spec all() :: [module()]
   def all, do: @tools
 
+  # Listed only for runs as a squad leader (`add-squads` decision 8).
+  @delegate_tools [Delegate]
+
   @doc "The names of the tools listed only for design runs."
   @spec design_tool_names() :: [String.t()]
   def design_tool_names, do: Enum.map(@design_tools, & &1.name())
+
+  @doc """
+  The run capability each restricted tool needs to be listed: the draft
+  tools `design`, `delegate` its own.
+  """
+  @spec required_capabilities() :: %{String.t() => String.t()}
+  def required_capabilities do
+    Map.new(@design_tools, &{&1.name(), "design"})
+    |> Map.merge(Map.new(@delegate_tools, &{&1.name(), "delegate"}))
+  end
 
   @doc "Finds a tool module by name."
   @spec fetch(String.t()) :: {:ok, module()} | :error

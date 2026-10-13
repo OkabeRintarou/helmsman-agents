@@ -7,6 +7,11 @@ defmodule Helmsman.Runs.Outcome do
   `add-dependency-dispatch` decision 4), or no run was created
   (`:skipped`, with the `reason`). `steer_run_id`: the trigger waits for
   the run it was sent into (`add-run-steering` decision 5).
+
+  `add-squads` decision 5: a trigger of a squad gives the outcome of its
+  leader (`agent`) with the squad's name in `squad`; `refused` lists the
+  leader and members the authorization source may not trigger (only with
+  the reason `:unauthorized`).
   """
 
   alias Helmsman.Actors.Actor
@@ -21,6 +26,8 @@ defmodule Helmsman.Runs.Outcome do
           | :mention
           | :steer
           | :design
+          | :delegated
+          | :delegate_done
   @type result :: :queued | :merged | :deferred | :skipped
   @type reason ::
           :not_started
@@ -34,6 +41,7 @@ defmodule Helmsman.Runs.Outcome do
           | :chain_too_long
           | :rate_limited
           | :no_grant
+          | :squad_disabled
   @type t :: %__MODULE__{
           agent: String.t(),
           agent_id: pos_integer() | nil,
@@ -42,7 +50,9 @@ defmodule Helmsman.Runs.Outcome do
           reason: reason() | nil,
           blocked_by: [String.t()] | nil,
           run_id: pos_integer() | nil,
-          steer_run_id: pos_integer() | nil
+          steer_run_id: pos_integer() | nil,
+          squad: String.t() | nil,
+          refused: [String.t()] | nil
         }
 
   @enforce_keys [:agent, :trigger, :result]
@@ -53,7 +63,9 @@ defmodule Helmsman.Runs.Outcome do
             reason: nil,
             blocked_by: nil,
             run_id: nil,
-            steer_run_id: nil
+            steer_run_id: nil,
+            squad: nil,
+            refused: nil
 
   @doc "A skipped outcome for `agent`."
   @spec skipped(Actor.t(), trigger(), reason()) :: t()
@@ -69,14 +81,17 @@ defmodule Helmsman.Runs.Outcome do
 
   @doc """
   The external form (MCP): `%{agent, trigger, result, reason}`, strings;
-  a `:deferred` outcome also has `blocked_by` (task IDs).
+  a `:deferred` outcome also has `blocked_by` (task IDs); a squad's
+  outcome `squad` and, when refused, `refused` (names).
   """
   @spec view(t()) :: %{
           required(:agent) => String.t(),
           required(:trigger) => String.t(),
           required(:result) => String.t(),
           required(:reason) => String.t() | nil,
-          optional(:blocked_by) => [String.t()]
+          optional(:blocked_by) => [String.t()],
+          optional(:squad) => String.t(),
+          optional(:refused) => [String.t()]
         }
   def view(%__MODULE__{} = outcome) do
     view = %{
@@ -86,10 +101,18 @@ defmodule Helmsman.Runs.Outcome do
       reason: outcome.reason && Atom.to_string(outcome.reason)
     }
 
-    if outcome.result == :deferred,
-      do: Map.put(view, :blocked_by, outcome.blocked_by || []),
-      else: view
+    view =
+      if outcome.result == :deferred,
+        do: Map.put(view, :blocked_by, outcome.blocked_by || []),
+        else: view
+
+    view
+    |> put_set(:squad, outcome.squad)
+    |> put_set(:refused, outcome.refused)
   end
+
+  defp put_set(map, _key, nil), do: map
+  defp put_set(map, key, value), do: Map.put(map, key, value)
 
   @doc """
   The stored form, on the feedback that caused the trigger
@@ -108,8 +131,29 @@ defmodule Helmsman.Runs.Outcome do
       "run_id" => outcome.run_id
     }
 
-    if outcome.result == :deferred,
-      do: Map.put(stored, "blocked_by", outcome.blocked_by),
-      else: stored
+    stored =
+      if outcome.result == :deferred,
+        do: Map.put(stored, "blocked_by", outcome.blocked_by),
+        else: stored
+
+    stored
+    |> put_set("squad", outcome.squad)
+    |> put_set("refused", outcome.refused)
   end
+
+  @doc """
+  The outcome of a trigger of the squad `squad` (its name) for its leader:
+  `outcome` with the squad set.
+  """
+  @spec for_squad(t(), String.t()) :: t()
+  def for_squad(%__MODULE__{} = outcome, squad) when is_binary(squad),
+    do: %{outcome | squad: squad}
+
+  @doc """
+  A skipped outcome of a trigger of the squad `squad` (its name) for its
+  leader `leader`; `refused` with `:unauthorized`.
+  """
+  @spec squad_skipped(Actor.t(), String.t(), trigger(), reason(), [String.t()] | nil) :: t()
+  def squad_skipped(%Actor{} = leader, squad, trigger, reason, refused \\ nil),
+    do: %{skipped(leader, trigger, reason) | squad: squad, refused: refused}
 end

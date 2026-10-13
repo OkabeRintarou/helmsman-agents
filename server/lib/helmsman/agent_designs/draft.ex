@@ -247,12 +247,16 @@ defmodule Helmsman.AgentDesigns.Draft do
   defp error_changeset(errors),
     do: %Ecto.Changeset{data: %{}, types: @types, valid?: false, errors: errors}
 
-  defp replace(draft, nil, stored), do: %{"agents" => agents(draft) ++ [stored]}
+  # Other parts of the draft (a squad conversation's `squad`) are kept.
+  defp replace(draft, nil, stored), do: Map.put(draft, "agents", agents(draft) ++ [stored])
 
   defp replace(draft, existing, stored),
-    do: %{
-      "agents" => Enum.map(agents(draft), &if(&1 == existing, do: stored, else: &1))
-    }
+    do:
+      Map.put(
+        draft,
+        "agents",
+        Enum.map(agents(draft), &if(&1 == existing, do: stored, else: &1))
+      )
 
   defp edit(nil, stored, keys) do
     fields = keys |> Enum.map(&Atom.to_string/1) |> Enum.reject(&(&1 == "name")) |> Enum.sort()
@@ -274,7 +278,7 @@ defmodule Helmsman.AgentDesigns.Draft do
   def remove(draft, name) do
     case find(draft, name) do
       nil -> {:error, :not_found}
-      entry -> {:ok, %{"agents" => List.delete(agents(draft), entry)}, entry}
+      entry -> {:ok, Map.put(draft, "agents", List.delete(agents(draft), entry)), entry}
     end
   end
 

@@ -13,8 +13,8 @@ defmodule Helmsman.Runs.Retry do
   and a marker `%{"kind" => "retry", "retry_of" => id, "auto" => bool,
   "by_actor_id", "at"}`, keeps its authorization source, causal chain,
   priority, lane and task, and goes to the agent's current runtime. It
-  merges into the queued run of the same `(task, agent, lane)` if there is
-  one (`Helmsman.Runs.upsert_pending/2`). It is checked again when claimed.
+  merges into the queued run of the same `(task, agent, lane, squad)` if
+  there is one (`Helmsman.Runs.upsert_pending/2`). It is checked again when claimed.
   """
 
   import Ecto.Query, warn: false
@@ -101,13 +101,20 @@ defmodule Helmsman.Runs.Retry do
     cond do
       not automatic?(run) -> {:ok, :skipped}
       retried?(run) != nil -> {:ok, :skipped}
-      unavailable(agent, profile, runtime, run, task) != nil -> {:ok, :skipped}
-      true -> requeue(run, auto: true, runtime_id: runtime.id) |> retried()
+      unavailable(agent, profile, runtime, run, task) != nil -> not_requeued(run)
+      true -> requeue(run, auto: true, runtime_id: runtime.id) |> retried(run)
     end
   end
 
-  defp retried({:ok, _run}), do: {:ok, :retried}
-  defp retried({:error, _reason}), do: {:ok, :skipped}
+  defp retried({:ok, _run}, _original), do: {:ok, :retried}
+  defp retried({:error, _reason}, original), do: not_requeued(original)
+
+  # `add-squads` decision 9: a delegated run whose automatic retry did not
+  # happen wakes its leader now.
+  defp not_requeued(run) do
+    if Runs.delegated?(run), do: Runs.delegate_done!(run)
+    {:ok, :skipped}
+  end
 
   defp unavailable(agent, profile, runtime, run, task),
     do: agent_unavailable(agent, profile) || runtime_unavailable(runtime) || closed(run, task)
@@ -216,7 +223,9 @@ defmodule Helmsman.Runs.Retry do
       attempt: if(lease?, do: run.attempt, else: run.attempt + 1),
       auto_retries: auto_retries(run, auto?, lease?),
       retry_of_id: run.id,
-      not_before: not_before(run, auto?)
+      not_before: not_before(run, auto?),
+      # A retry runs as the same squad, if any (`add-squads` decision 6).
+      squad_id: run.squad_id
     }
 
     case Runs.upsert_pending(attrs, rate_limit?: not auto?) do

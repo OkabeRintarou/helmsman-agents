@@ -22,6 +22,7 @@ defmodule Helmsman do
       Runs.Outcome,
       Runs.RunTokens,
       Dispatch,
+      Squads,
       Accounts,
       Accounts.Scope,
       Accounts.User,

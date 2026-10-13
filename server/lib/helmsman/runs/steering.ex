@@ -36,6 +36,9 @@ defmodule Helmsman.Runs.Steering do
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Lifecycle, Origin, Outcome, Prompt, Revalidation, Run, RunSteer, Triggers}
+  alias Helmsman.Squads
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.Squad
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Workspace
@@ -118,10 +121,14 @@ defmodule Helmsman.Runs.Steering do
   def guess(workspace_id, run_id) do
     Repo.all(
       from(r in Run,
+        left_join: s in Squad,
+        on: s.id == r.squad_id,
         where: r.id == ^run_id and r.workspace_id == ^workspace_id,
-        select: r.agent_id
+        select: [r.agent_id, s.actor_id]
       )
     )
+    |> List.flatten()
+    |> Enum.reject(&is_nil/1)
   end
 
   @doc """
@@ -139,9 +146,17 @@ defmodule Helmsman.Runs.Steering do
     end
   end
 
-  @doc "The agent IDs `target/2`'s result adds to the locked targets."
+  @doc """
+  The agent IDs `target/2`'s result adds to the locked targets; for a run
+  as a squad leader also the squad identity (its rows are locked too,
+  `add-squads` decision 6).
+  """
   @spec target_ids({:ok, Run.t() | nil} | {:error, term()}) :: [pos_integer()]
-  def target_ids({:ok, %Run{agent_id: id}}), do: [id]
+  def target_ids({:ok, %Run{agent_id: id, squad_id: nil}}), do: [id]
+
+  def target_ids({:ok, %Run{agent_id: id, squad_id: squad_id}}),
+    do: [id | Repo.all(from(s in Squad, where: s.id == ^squad_id, select: s.actor_id))]
+
   def target_ids(_none), do: []
 
   @doc """
@@ -158,7 +173,10 @@ defmodule Helmsman.Runs.Steering do
   def run_feedback(%Scope{} = scope, plan, %Task{} = task, %Entry{} = entry, %Run{} = run) do
     agent = Repo.get!(Actor, run.agent_id)
 
-    case Agents.trigger_check(task.workspace_id, scope.user.id, agent) do
+    case steer_check(scope, task, agent, run) do
+      {:squad, outcome} ->
+        Continuation.run_feedback(scope, plan, task, entry) ++ [%{outcome | steer_run_id: run.id}]
+
       :ok ->
         outcomes =
           Continuation.run_feedback(scope, plan, task, entry, steer: {agent.id, run.id})
@@ -180,6 +198,18 @@ defmodule Helmsman.Runs.Steering do
   defp refusal(:not_managed), do: :unauthorized
   defp refusal(reason), do: reason
 
+  # Steering a run as a squad leader: the author must be allowed to trigger
+  # the squad (`add-squads` decision 6).
+  defp steer_check(scope, task, agent, %Run{squad_id: nil}),
+    do: Agents.trigger_check(task.workspace_id, scope.user.id, agent)
+
+  defp steer_check(scope, _task, _agent, %Run{squad_id: squad_id}) do
+    case SquadDispatch.check(Origin.from_scope(scope), Squads.load(squad_id), :steer) do
+      :ok -> :ok
+      {:skip, outcome} -> {:squad, outcome}
+    end
+  end
+
   defp fallback_queued?(%Outcome{} = outcome, run),
     do:
       outcome.agent_id == run.agent_id and outcome.steer_run_id == run.id and
@@ -192,20 +222,22 @@ defmodule Helmsman.Runs.Steering do
         Outcome.skipped(agent, :steer, :task_closed)
       else
         profile = Repo.one!(from(p in AgentProfile, where: p.actor_id == ^agent.id))
+        target = %{agent: agent, profile: profile, task: task, lane: run.lane}
 
-        {:ok, outcome} =
-          Runs.enqueue(
-            Origin.from_scope(scope),
-            %{agent: agent, profile: profile, task: task, lane: run.lane},
-            %{
-              kind: :steer,
-              instructions: nil,
-              feedback_id: entry.id,
-              extra: %{"steer_run_id" => run.id}
-            }
-          )
+        trigger = %{
+          kind: :steer,
+          instructions: nil,
+          feedback_id: entry.id,
+          extra: %{"steer_run_id" => run.id}
+        }
 
-        outcome
+        # The fallback of a run as a squad leader runs as the squad too.
+        if run.squad_id do
+          SquadDispatch.enqueue_as(Origin.from_scope(scope), target, run.squad_id, trigger)
+        else
+          {:ok, outcome} = Runs.enqueue(Origin.from_scope(scope), target, trigger)
+          outcome
+        end
       end
 
     %{outcome | steer_run_id: run.id}

@@ -15,6 +15,7 @@ defmodule Helmsman.GitHub.PullRequests.Snapshot do
   alias Helmsman.Projects.Project
   alias Helmsman.Repo
   alias Helmsman.Runs.{GitRepo, Run}
+  alias Helmsman.Squads
   alias Helmsman.Tasks.{Task, TaskEvent}
   alias Helmsman.Workspaces.Workspace
 
@@ -59,10 +60,12 @@ defmodule Helmsman.GitHub.PullRequests.Snapshot do
         latest_push: latest_push(pushes),
         active_run_id: active_run_id(task.id),
         verification: verification(task.id),
+        assignee_side: Squads.assignee_side(task),
         max_auto_reopens: Config.max_auto_reopens(),
         public_url: Config.public_url()
       }
 
+      snap = Map.put(snap, :squad_names, squad_names(snap))
       {:ok, snap, %{repository: repository, installation: installation}}
     else
       _ -> :skip
@@ -148,6 +151,20 @@ defmodule Helmsman.GitHub.PullRequests.Snapshot do
     )
   end
 
+  # The names of the squads on the assignee side, then or now (`add-squads`
+  # decision 11), for the decision's notes.
+  defp squad_names(snap) do
+    ids = snap.assignee_side ++ ((snap.verification && snap.verification.assignee_side_ids) || [])
+
+    Repo.all(
+      from(a in Actor,
+        where: a.id in ^Enum.uniq(ids) and a.kind == :squad,
+        select: {a.id, a.name}
+      )
+    )
+    |> Map.new()
+  end
+
   @doc "The latest move of `task_id` to `verified` in the shape of the decision, or nil."
   @spec verification(pos_integer()) :: map() | nil
   def verification(task_id) do
@@ -166,6 +183,7 @@ defmodule Helmsman.GitHub.PullRequests.Snapshot do
           actor_kind: a.kind,
           actor_name: a.name,
           verified_sha: e.verified_sha,
+          assignee_side_ids: e.assignee_side_ids,
           run_causal_agent_ids: r.causal_agent_ids,
           inserted_at: e.inserted_at
         }

@@ -15,7 +15,9 @@ defmodule Helmsman.Runs.Claim do
     5. per candidate, only `try` locks: the workspace maintenance lock
        (shared), the task lock (the task may have no other active run),
        then, with `SKIP LOCKED`, the membership rows of the users the check
-       reads (by ID), the actor row, the profile row (`FOR UPDATE`: the
+       reads (by ID), the actor row, the identity and `squads` rows of the
+       squads the check reads (`add-squads` decision 10), the profile row
+       (`FOR UPDATE`: the
        agent's concurrency limit), the task row and the runtime row. A row
        held by a writer leaves the candidate queued; a membership row that
        does not exist is read as no longer a member;
@@ -62,6 +64,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec, Steering, Triggers}
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -226,12 +229,21 @@ defmodule Helmsman.Runs.Claim do
   defp lock_rows(run, daemon_user_id) do
     with {:ok, members} <- lock_members(run, daemon_user_id),
          {:ok, agent} <- try_lock(from(a in Actor, where: a.id == ^run.agent_id), :share),
+         {:ok, squads} <- SquadDispatch.lock_for_check(run, :try),
          {:ok, profile} <-
            try_lock(from(p in AgentProfile, where: p.actor_id == ^run.agent_id), :update),
          {:ok, task} <- try_task_row(run),
          {:ok, runtime} <- try_lock(from(r in Runtime, where: r.id == ^run.runtime_id), :share),
          false <- is_nil(agent) do
-      {:ok, %{members: members, agent: agent, profile: profile, task: task, runtime: runtime}}
+      {:ok,
+       %{
+         members: members,
+         agent: agent,
+         squads: squads,
+         profile: profile,
+         task: task,
+         runtime: runtime
+       }}
     else
       _skip -> :skip
     end
@@ -380,7 +392,8 @@ defmodule Helmsman.Runs.Claim do
           status: :claimed,
           daemon_id: state.daemon.id,
           claimed_at: DateTime.utc_now(),
-          capabilities: Runs.capabilities(locked.profile, locked.task, run.triggers),
+          capabilities:
+            Runs.capabilities(locked.profile, locked.task, run.triggers, run.squad_id),
           provider_account_id: locked.profile.provider_account_id
         ] ++ changes
       )

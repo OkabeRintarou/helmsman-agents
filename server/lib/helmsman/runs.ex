@@ -7,7 +7,7 @@ defmodule Helmsman.Runs do
   transaction that caused them (designs/01 §4): `enqueue/3` checks the
   authorization source, the agent and its runtime, the trigger chain and
   the per-task rate, then adds the trigger to the queued run of the same
-  `(task, agent, lane)` or creates one. Every notification is sent after
+  `(task, agent, lane, squad)` or creates one. Every notification is sent after
   the commit, once per transaction and run.
   """
 
@@ -28,6 +28,7 @@ defmodule Helmsman.Runs do
   alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
   alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent, Triggers}
+  alias Helmsman.Runs.Workers.SideEffect, as: SideEffectJob
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Workspaces.Workspace
@@ -43,7 +44,8 @@ defmodule Helmsman.Runs do
           required(:agent) => Actor.t(),
           required(:profile) => AgentProfile.t(),
           required(:task) => Task.t() | nil,
-          optional(:lane) => :work | :reply
+          optional(:lane) => :work | :reply,
+          optional(:squad_id) => pos_integer() | nil
         }
   @type trigger :: %{
           required(:kind) => Outcome.trigger(),
@@ -57,6 +59,7 @@ defmodule Helmsman.Runs do
           required(:task) => String.t() | nil,
           required(:agent) => String.t(),
           required(:agent_owner_id) => pos_integer(),
+          required(:squad) => %{id: pos_integer(), name: String.t()} | nil,
           required(:lane) => String.t(),
           required(:status) => String.t(),
           required(:triggers) => [map()],
@@ -108,6 +111,7 @@ defmodule Helmsman.Runs do
   @spec enqueue(Origin.t(), target(), trigger()) :: {:ok, Outcome.t()}
   def enqueue(%Origin{} = origin, %{agent: %Actor{} = agent, profile: profile} = target, trigger) do
     kind = trigger.kind
+    squad_id = Map.get(target, :squad_id)
 
     with :ok <- authorized(origin, agent),
          {:ok, runtime} <- available_runtime(profile),
@@ -124,8 +128,9 @@ defmodule Helmsman.Runs do
         trigger: entry,
         root_initiator_user_id: origin.initiator_user_id,
         causal_agent_ids: Enum.uniq(origin.chain ++ [agent.id]),
-        capabilities: capabilities(profile, target.task, [entry]),
-        priority: if(kind == :design, do: 3, else: priority(target.task))
+        capabilities: capabilities(profile, target.task, [entry], squad_id),
+        priority: if(kind == :design, do: 3, else: priority(target.task)),
+        squad_id: squad_id
       }
 
       case upsert_pending(attrs, rate_limit?: true) do
@@ -266,17 +271,26 @@ defmodule Helmsman.Runs do
   task `write_task`, and `create_tasks` when the agent's profile has it.
   A design run (`design_run?/1` of its `triggers`) has exactly `read` and
   `design`, whatever the profile (`add-agent-conversation` decision 7).
+  A run as a squad leader (`squad_id` set, `add-squads` decision 7) has
+  `read`, `write_task` (with a task), `create_tasks` and `delegate`,
+  whatever the profile.
   """
-  @spec capabilities(AgentProfile.t(), Task.t() | nil, [map()]) :: [String.t()]
-  def capabilities(profile, task, triggers \\ [])
+  @spec capabilities(AgentProfile.t(), Task.t() | nil, [map()], pos_integer() | nil) ::
+          [String.t()]
+  def capabilities(profile, task, triggers \\ [], squad_id \\ nil)
 
-  def capabilities(%AgentProfile{capabilities: caps}, task, triggers) do
-    if design_run?(triggers) do
-      ["read", "design"]
-    else
-      ["read"] ++
-        if(task, do: ["write_task"], else: []) ++
-        if("create_tasks" in (caps || []), do: ["create_tasks"], else: [])
+  def capabilities(%AgentProfile{capabilities: caps}, task, triggers, squad_id) do
+    cond do
+      design_run?(triggers) ->
+        ["read", "design"]
+
+      not is_nil(squad_id) ->
+        ["read"] ++ if(task, do: ["write_task"], else: []) ++ ["create_tasks", "delegate"]
+
+      true ->
+        ["read"] ++
+          if(task, do: ["write_task"], else: []) ++
+          if("create_tasks" in (caps || []), do: ["create_tasks"], else: [])
     end
   end
 
@@ -303,15 +317,16 @@ defmodule Helmsman.Runs do
   ## Merging
 
   @doc """
-  Adds the trigger to the queued run of `(task_id, agent_id, lane)` or
-  creates a run (decision 3, steps 4-6).
+  Adds the trigger to the queued run of `(task_id, agent_id, lane,
+  squad_id)` or creates a run (decision 3, steps 4-6; `add-squads`
+  decision 2: a run as a squad leader never merges with one that is not).
 
   `attrs`: `workspace_id`, `agent_id`, `runtime_id`, `task_id` (nil: never
   merged), `lane`, `status` (`:queued`, the default, or `:deferred`, the
   status asked for: `add-dependency-dispatch` decision 4), `trigger` (one
   entry of `triggers`) or `triggers` (the
   entries to add), `root_initiator_user_id`, `causal_agent_ids`,
-  `capabilities` and `priority`; a retry (`Helmsman.Runs.Retry`) also
+  `capabilities`, `priority` and optionally `squad_id`; a retry (`Helmsman.Runs.Retry`) also
   gives `attempt`, `auto_retries`, `retry_of_id` and `not_before`, used
   only by a new run.
 
@@ -350,14 +365,21 @@ defmodule Helmsman.Runs do
   end
 
   defp lock_pending(attrs) do
-    Repo.one(
+    query =
       from(r in Run,
         where:
           r.task_id == ^attrs.task_id and r.agent_id == ^attrs.agent_id and
             r.lane == ^attrs.lane and r.status in ^Run.pending_statuses(),
         lock: "FOR UPDATE"
       )
-    )
+
+    query =
+      case Map.get(attrs, :squad_id) do
+        nil -> where(query, [r], is_nil(r.squad_id))
+        squad_id -> where(query, [r], r.squad_id == ^squad_id)
+      end
+
+    Repo.one(query)
   end
 
   @merge_set """
@@ -371,10 +393,11 @@ defmodule Helmsman.Runs do
   @insert_sql """
   INSERT INTO runs (workspace_id, agent_id, runtime_id, task_id, lane, status, triggers,
     root_initiator_user_id, causal_agent_ids, capabilities, priority, inserted_at, updated_at,
-    attempt, auto_retries, retry_of_id, not_before)
+    attempt, auto_retries, retry_of_id, not_before, squad_id)
   VALUES ($1, $2, $3, $4, $5, $16, $6, $7, $8, $9, $10, $11, $11, $12, $13, $14,
-    coalesce($15::timestamp, $11))
-  ON CONFLICT (task_id, agent_id, lane) WHERE status IN ('deferred','queued')
+    coalesce($15::timestamp, $11), $17)
+  ON CONFLICT (task_id, agent_id, lane, coalesce(squad_id, 0))
+    WHERE status IN ('deferred','queued')
   DO UPDATE SET #{@merge_set}
   RETURNING id, (xmax = 0), (SELECT r.status FROM runs r WHERE r.id = runs.id)
   """
@@ -420,7 +443,8 @@ defmodule Helmsman.Runs do
       Map.get(attrs, :auto_retries, 0),
       Map.get(attrs, :retry_of_id),
       Map.get(attrs, :not_before),
-      attrs |> Map.get(:status, :queued) |> Atom.to_string()
+      attrs |> Map.get(:status, :queued) |> Atom.to_string(),
+      Map.get(attrs, :squad_id)
     ]
   end
 
@@ -506,14 +530,54 @@ defmodule Helmsman.Runs do
   # Called in the transaction that ended `runs` (any status before): a
   # design run gets the settlement of its turn
   # (`Helmsman.AgentDesigns.SettleTurn`, `add-agent-conversation`
-  # decision 9). Every path that ends a run calls it: `Lifecycle.end!/3`,
-  # `cancel_pending/2` and `Helmsman.Runs.Stop.cancel_for_initiator/2`.
+  # decision 9); a delegated run that wakes its leader gets its
+  # `delegate_done` effect (`add-squads` decision 9). Every path that ends
+  # a run calls it: `Lifecycle.end!/3`, `cancel_pending/2` and
+  # `Helmsman.Runs.Stop.cancel_for_initiator/2`.
   @spec after_ended([Run.t()]) :: :ok
   def after_ended(runs) do
     runs
     |> Enum.filter(&design_run?/1)
     |> Enum.each(fn run -> {:ok, _job} = Oban.insert(SettleTurn.new(%{run_id: run.id})) end)
+
+    runs |> Enum.filter(&wakes_leader?/1) |> Enum.each(&delegate_done!/1)
   end
+
+  @doc false
+  # Inserts the `delegate_done` effect of the ended delegated `run`, at
+  # most once (`Helmsman.Runs.Workers.SideEffect` is unique per run and
+  # kind): also by `Helmsman.Runs.Retry` when an automatic retry did not
+  # requeue it.
+  @spec delegate_done!(Run.t()) :: :ok
+  def delegate_done!(%Run{id: id}) do
+    {:ok, _job} = Oban.insert(SideEffectJob.new(%{run_id: id, kind: "delegate_done"}))
+    :ok
+  end
+
+  @doc """
+  Whether a run that ended wakes the leader that delegated it (`add-squads`
+  decision 9): it has a `delegated` trigger and it succeeded, failed
+  without an automatic retry, or was stopped other than by a person.
+  """
+  @spec wakes_leader?(Run.t()) :: boolean()
+  def wakes_leader?(%Run{} = run) do
+    delegated?(run) and
+      case run.status do
+        :succeeded -> true
+        :failed -> not Retry.automatic?(run)
+        :cancelled -> not stopped_by_person?(run)
+        _other -> false
+      end
+  end
+
+  @doc "Whether `run` has a `delegated` trigger."
+  @spec delegated?(Run.t()) :: boolean()
+  def delegated?(%Run{triggers: triggers}), do: Enum.any?(triggers, &(&1["kind"] == "delegated"))
+
+  defp stopped_by_person?(%Run{cancel_requested_by_id: nil}), do: false
+
+  defp stopped_by_person?(%Run{cancel_requested_by_id: id}),
+    do: Repo.exists?(from(a in Actor, where: a.id == ^id and a.kind == :human))
 
   @doc """
   Moves the pending runs of the agent `agent_id` to the runtime
@@ -875,12 +939,14 @@ defmodule Helmsman.Runs do
       names(ProviderAccount, runs |> Enum.map(& &1.provider_account_id) |> Enum.reject(&is_nil/1))
 
     retries = Retry.targets(runs)
+    squads = squad_names(runs |> Enum.map(& &1.squad_id) |> Enum.reject(&is_nil/1))
 
     Enum.map(runs, fn run ->
       %{
         id: run.id,
         task: run.task && run.task.ident,
         agent: run.agent.name,
+        squad: run.squad_id && %{id: run.squad_id, name: squads[run.squad_id]},
         agent_owner_id: run.agent.owner_id,
         lane: Atom.to_string(run.lane),
         status: Atom.to_string(run.status),
@@ -910,6 +976,22 @@ defmodule Helmsman.Runs do
     end)
   end
 
+  # `add-squads` decision 4: the squad a run works as.
+  defp squad_names([]), do: %{}
+
+  defp squad_names(ids),
+    do:
+      Map.new(
+        Repo.all(
+          from(s in Helmsman.Squads.Squad,
+            join: a in Actor,
+            on: a.id == s.actor_id,
+            where: s.id in ^Enum.uniq(ids),
+            select: {s.id, a.name}
+          )
+        )
+      )
+
   defp names(Daemon, ids),
     do: Map.new(Repo.all(from(d in Daemon, where: d.id in ^ids, select: {d.id, d.name})))
 
@@ -929,9 +1011,12 @@ defmodule Helmsman.Runs do
       instructions: trigger["instructions"]
     }
 
-    if trigger["kind"] == "retry",
-      do: Map.merge(view, %{auto: trigger["auto"] == true, retry_of: trigger["retry_of"]}),
-      else: view
+    case trigger["kind"] do
+      "retry" -> Map.merge(view, %{auto: trigger["auto"] == true, retry_of: trigger["retry_of"]})
+      # `add-squads` decision 9: the member whose delegated run ended.
+      "delegate_done" -> Map.put(view, :member, view.by)
+      _other -> view
+    end
   end
 
   defp actor_ref(nil), do: nil

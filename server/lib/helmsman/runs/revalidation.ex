@@ -5,16 +5,28 @@ defmodule Helmsman.Runs.Revalidation do
   rows the caller locked (decision 24); it never reads the database.
 
   A run is obsolete when its agent is disabled or archived, its runtime is
-  disabled or no longer the agent's, a `work` run's task is `cancelled` or
-  `verified`, or it runs only because of its task's assignee
-  (`Helmsman.Runs.Triggers.assignee_bound?/1`) and the assignee is no
-  longer the agent.
+  disabled or no longer the agent's, or a `work` run's task is
+  `cancelled` or `verified`. A run as a squad leader (`add-squads`
+  decision 10) is obsolete when the squad is disabled or gone
+  (`:squad_disabled`) or its agent no longer leads it (`:not_leader`).
 
-  Each trigger with an authorization source (`initiator_user_id`) is
-  checked again like `Helmsman.Agents.trigger_check/3`, on the locked
-  membership rows. Invalid triggers are dropped; none left is
-  `:unauthorized`. A run without any such trigger is checked with its
-  `root_initiator_user_id`.
+  Then the triggers are dropped one by one (`add-squads` decision 10):
+
+    1. those settled by steering (below);
+    2. those bound to an assignee (`Helmsman.Runs.Triggers.bound_assignee/2`)
+       that is no longer the task's assignee, and the `delegated` ones
+       whose squad is disabled or gone or no longer has the run's agent as
+       a member;
+    3. those whose authorization source (`initiator_user_id`) may no
+       longer trigger the agent, checked like
+       `Helmsman.Agents.trigger_check/3` on the locked membership rows (a
+       run as a squad leader checks the leader only). A run without any
+       such trigger is checked with its `root_initiator_user_id`.
+
+  When the earliest trigger is dropped, the next one's source and chain
+  are used (`derive/2`). Nothing left but neutral markers: the step that
+  dropped the last ones decides — authorization `:unauthorized`, the
+  others obsolete (`:steered`, `:reassigned`).
 
   First of all, the triggers settled by steering are removed
   (`Helmsman.Runs.Steering.prune/2`, `add-run-steering` decision 7) with
@@ -33,12 +45,14 @@ defmodule Helmsman.Runs.Revalidation do
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Daemons.Runtime
   alias Helmsman.Runs.{Run, Steering, Triggers}
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Membership
 
   @type locked :: %{
           required(:members) => %{pos_integer() => Membership.role()},
           required(:agent) => Actor.t(),
+          optional(:squads) => %{pos_integer() => SquadDispatch.info()},
           required(:profile) => AgentProfile.t() | nil,
           required(:task) => Task.t() | nil,
           required(:runtime) => Runtime.t() | nil,
@@ -54,6 +68,8 @@ defmodule Helmsman.Runs.Revalidation do
           | :reassigned
           | :steered
           | :design_ended
+          | :squad_disabled
+          | :not_leader
   @type changes :: %{
           triggers: [map()],
           root_initiator_user_id: pos_integer(),
@@ -84,9 +100,61 @@ defmodule Helmsman.Runs.Revalidation do
   end
 
   defp check_valid(run, locked) do
-    case obsolete(run, locked) do
-      nil -> authorization(run, locked)
+    with nil <- obsolete(run, locked),
+         {:ok, kept} <- drop_unbound(run, locked) do
+      authorize_kept(run, kept, locked)
+    else
+      {:obsolete, why} -> {:obsolete, why}
       why -> {:obsolete, why}
+    end
+  end
+
+  defp authorize_kept(%Run{triggers: kept} = run, kept, locked), do: authorization(run, locked)
+
+  defp authorize_kept(run, kept, locked) do
+    changes = derive(run, kept)
+
+    case authorization(struct!(run, changes), locked) do
+      :ok -> {:pruned, changes}
+      other -> other
+    end
+  end
+
+  # Step 2: the triggers bound to an assignee that is no longer the task's.
+  # A run without a task keeps them all.
+  defp drop_unbound(%Run{task_id: nil} = run, _locked), do: {:ok, run.triggers}
+  defp drop_unbound(run, %{task: nil}), do: {:ok, run.triggers}
+
+  defp drop_unbound(run, %{task: task} = locked) do
+    squads = Map.get(locked, :squads, %{})
+
+    kept =
+      Enum.filter(run.triggers, &(Triggers.neutral?(&1) or bound_valid?(&1, run, task, squads)))
+
+    left? = Enum.any?(kept, &(not Triggers.neutral?(&1)))
+    had? = Enum.any?(run.triggers, &(not Triggers.neutral?(&1)))
+
+    if had? and not left?, do: {:obsolete, :reassigned}, else: {:ok, kept}
+  end
+
+  defp bound_valid?(trigger, run, task, squads) do
+    case Triggers.bound_assignee(trigger, run) do
+      nil ->
+        true
+
+      {:actor, id} ->
+        task.assignee_id == id
+
+      {:squad, squad_id} ->
+        case squads[squad_id] do
+          nil ->
+            false
+
+          squad ->
+            task.assignee_id == squad.actor_id and
+              (trigger["kind"] != "delegated" or
+                 (not squad.disabled and run.agent_id in squad.member_ids))
+        end
     end
   end
 
@@ -124,7 +192,19 @@ defmodule Helmsman.Runs.Revalidation do
 
   defp obsolete(run, %{agent: agent, profile: profile, runtime: runtime, task: task} = locked) do
     agent_obsolete(agent, profile) || runtime_obsolete(run, profile, runtime) ||
-      task_obsolete(run, task, agent) || design_obsolete(locked)
+      task_obsolete(run, task) || design_obsolete(locked) || squad_obsolete(run, locked)
+  end
+
+  # `add-squads` decision 10: a run as a squad leader.
+  defp squad_obsolete(%Run{squad_id: nil}, _locked), do: nil
+
+  defp squad_obsolete(%Run{squad_id: squad_id, agent_id: agent_id}, locked) do
+    case Map.get(locked, :squads, %{})[squad_id] do
+      nil -> :squad_disabled
+      %{disabled: true} -> :squad_disabled
+      %{leader_agent_id: ^agent_id} -> nil
+      _other -> :not_leader
+    end
   end
 
   # `add-agent-conversation` decision 10: a design run is valid only while
@@ -148,23 +228,14 @@ defmodule Helmsman.Runs.Revalidation do
     end
   end
 
-  defp task_obsolete(run, task, agent) do
-    cond do
-      closed_work?(run, task) -> :task_closed
-      reassigned?(run, task, agent) -> :reassigned
-      true -> nil
-    end
+  defp task_obsolete(run, task) do
+    if closed_work?(run, task), do: :task_closed
   end
 
   defp closed_work?(%Run{lane: :work}, %Task{status: status}),
     do: status in [:cancelled, :verified]
 
   defp closed_work?(_run, _task), do: false
-
-  defp reassigned?(_run, nil, _agent), do: false
-
-  defp reassigned?(run, %Task{assignee_id: assignee_id}, %Actor{id: agent_id}),
-    do: assignee_id != agent_id and Triggers.assignee_bound?(run.triggers)
 
   defp authorization(run, locked) do
     sources = Enum.filter(run.triggers, &source?/1)

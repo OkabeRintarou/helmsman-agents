@@ -29,7 +29,8 @@ defmodule Helmsman.ActorsTest do
   end
 
   describe "list_assignable/1" do
-    test "humans then agents by name; no system, squads or disabled identities" do
+    # `add-squads` decision 4: squads that are not disabled come last.
+    test "humans, agents then squads by name; no system or disabled identities" do
       owner = user_fixture(%{email: "zed@example.com"})
       ws = workspace_fixture(owner)
       member = user_fixture(%{email: "amy@example.com"})
@@ -48,6 +49,7 @@ defmodule Helmsman.ActorsTest do
       )
 
       insert.(kind: :squad, name: "team")
+      insert.(kind: :squad, name: "gone", disabled_at: DateTime.utc_now(:second))
 
       other = user_fixture()
       other_ws = workspace_fixture(other)
@@ -66,7 +68,8 @@ defmodule Helmsman.ActorsTest do
                human: "amy",
                human: "zed",
                agent: "claude",
-               agent: "keel/dev"
+               agent: "keel/dev",
+               squad: "team"
              ]
 
       assert Enum.find(actors, &(&1.name == "keel/dev")).owner.id == member.id

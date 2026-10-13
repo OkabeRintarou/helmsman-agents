@@ -28,6 +28,7 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{GitRepo, LocalRepo, Prompt, Run}
+  alias Helmsman.Squads
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
   alias HelmsmanProtocol.RunSpec
@@ -59,7 +60,9 @@ defmodule Helmsman.Runs.Spec do
         retried: retried(run),
         feedback: quoted_feedback(run, task),
         resume?: not is_nil(resume_session_id),
-        repo: repo
+        repo: repo,
+        squad: run.squad_id && Squads.load(run.squad_id),
+        delegations: delegations(run)
       }
 
       RunSpec.new(%{
@@ -249,6 +252,29 @@ defmodule Helmsman.Runs.Spec do
         entry -> Map.put(acc, id, entry)
       end
     end)
+  end
+
+  # `add-squads` decision 9: the members' runs a `delegate_done` reports
+  # (their last output) and the squads `delegated` triggers name.
+  defp delegations(run) do
+    run_ids = for %{"kind" => "delegate_done", "delegated_run_id" => id} <- run.triggers, do: id
+    squad_ids = for %{"kind" => "delegated", "squad_id" => id} <- run.triggers, do: id
+
+    runs =
+      Map.new(Repo.all(from(r in Run, where: r.id in ^run_ids, select: {r.id, r.summary})))
+
+    squads =
+      Repo.all(
+        from(s in Squads.Squad,
+          join: a in Actor,
+          on: a.id == s.actor_id,
+          where: s.id in ^squad_ids,
+          select: {s.id, a.name}
+        )
+      )
+      |> Map.new()
+
+    %{summaries: runs, squads: squads}
   end
 
   defp retried(run) do

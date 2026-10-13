@@ -117,13 +117,16 @@ defmodule Helmsman.Runs.RevalidateTest do
                {:obsolete, :reassigned}
     end
 
-    test "is ignored with a trigger a person started", %{locked: locked} do
+    # add-squads decision 10: only the assignment is dropped; the run keeps
+    # the trigger a person started.
+    test "drops the assignment only, with a trigger a person started", %{locked: locked} do
       manual_retry = %{"kind" => "retry", "retry_of" => 3, "auto" => false, "by_actor_id" => 1001}
 
-      assert Runs.revalidate(run([trigger("assign", @alice), trigger("manual", @bob)]), locked) ==
-               :ok
+      assert {:pruned, %{triggers: [%{"kind" => "manual"}], root_initiator_user_id: @bob}} =
+               Runs.revalidate(run([trigger("assign", @alice), trigger("manual", @bob)]), locked)
 
-      assert Runs.revalidate(run([trigger("assign", @alice), manual_retry]), locked) == :ok
+      assert {:pruned, %{triggers: [^manual_retry], root_initiator_user_id: @alice}} =
+               Runs.revalidate(run([trigger("assign", @alice), manual_retry]), locked)
     end
 
     test "makes a run of reopen only obsolete (add-continuation-triggers)", %{locked: locked} do

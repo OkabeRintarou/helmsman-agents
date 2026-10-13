@@ -25,6 +25,10 @@ defmodule Helmsman.Runs.TaskGrant do
     belongs_to :root_initiator_user, User
     field :causal_agent_ids, {:array, :integer}, default: []
     belongs_to :granted_by, Actor
+    # `add-squads` decision 2: the squad of an assignment to a squad
+    # (`agent_id` is then the squad identity), or of the run that created
+    # the task as a squad leader (`requested`).
+    belongs_to :squad, Helmsman.Squads.Squad
     field :inserted_at, :utc_datetime_usec
   end
 end

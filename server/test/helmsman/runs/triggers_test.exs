@@ -1,5 +1,6 @@
 defmodule Helmsman.Runs.TriggersTest do
-  # add-continuation-triggers 1.6: `assignee_bound?/1` (decision 8);
+  # add-continuation-triggers 1.6: the assignee binding (decision 8), now
+  # `run_bound/1` and `bound_assignee/2` (add-squads decision 10);
   # add-dependency-dispatch 1.3: `dependency_gated?/1` and the neutral
   # `unblocked` marker (decision 3).
   use ExUnit.Case, async: true
@@ -30,7 +31,51 @@ defmodule Helmsman.Runs.TriggersTest do
       ] do
     @expected expected
     test "#{name} → #{expected}" do
-      assert Triggers.assignee_bound?(unquote(triggers)) == @expected
+      bound = Triggers.run_bound(%{triggers: unquote(triggers), agent_id: 7, squad_id: nil})
+      assert bound == if(@expected, do: {:actor, 7})
+    end
+  end
+
+  describe "bound_assignee/2 (add-squads decision 10)" do
+    @plain %{agent_id: 7, squad_id: nil}
+    @leader %{agent_id: 7, squad_id: 3}
+
+    test "assignment triggers and delegate_done: the squad of a leader run, else the agent" do
+      for kind <- ~w(assign reopen resubmit delegate_done) do
+        assert Triggers.bound_assignee(t(kind), @plain) == {:actor, 7}
+        assert Triggers.bound_assignee(t(kind), @leader) == {:squad, 3}
+      end
+    end
+
+    test "delegated: the squad of the entry" do
+      assert Triggers.bound_assignee(t("delegated", %{"squad_id" => 4}), @plain) == {:squad, 4}
+    end
+
+    test "answers: the recorded assignee; older entries the run's agent" do
+      assert Triggers.bound_assignee(t("answer", %{"bound_assignee_id" => 9}), @plain) ==
+               {:actor, 9}
+
+      assert Triggers.bound_assignee(
+               t("answer", %{"assignee_bound" => true, "bound_assignee_id" => 9}),
+               @leader
+             ) == {:actor, 9}
+
+      assert Triggers.bound_assignee(answer(true), @leader) == {:actor, 7}
+      assert Triggers.bound_assignee(answer(false), @leader) == nil
+    end
+
+    test "nothing else is bound" do
+      for kind <- ~w(manual mention requested steer unblocked retry delegated) do
+        assert Triggers.bound_assignee(t(kind), @leader) == nil
+      end
+    end
+
+    test "run_bound/1 needs one target for every trigger" do
+      run = %{triggers: [t("assign"), t("delegate_done")], agent_id: 7, squad_id: 3}
+      assert Triggers.run_bound(run) == {:squad, 3}
+
+      run = %{run | triggers: [t("assign"), t("answer", %{"bound_assignee_id" => 7})]}
+      assert Triggers.run_bound(run) == nil
     end
   end
 

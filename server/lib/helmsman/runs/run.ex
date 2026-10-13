@@ -113,6 +113,10 @@ defmodule Helmsman.Runs.Run do
     # decision 12); nil once the account is deleted.
     belongs_to :provider_account, Helmsman.ProviderAccounts.ProviderAccount
 
+    # The squad whose leader the run works as (`add-squads` decision 2);
+    # nil for every other run.
+    belongs_to :squad, Helmsman.Squads.Squad
+
     timestamps(type: :utc_datetime_usec)
   end
 

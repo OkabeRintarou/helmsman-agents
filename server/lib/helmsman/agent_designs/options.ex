@@ -96,8 +96,24 @@ defmodule Helmsman.AgentDesigns.Options do
           name: a.name,
           kind: fragment("CASE WHEN ? IS NULL THEN 'external' ELSE 'managed' END", p.id),
           provider: p.provider,
-          description: p.description
+          description: p.description,
+          owner_id: a.owner_id
         }
+      )
+    )
+  end
+
+  @doc """
+  The people of the workspace (`add-squads` decision 12: members a squad
+  may have): `%{name, kind: "human"}`, by name.
+  """
+  @spec people(pos_integer()) :: [map()]
+  def people(workspace_id) do
+    Repo.all(
+      from(a in Actor,
+        where: a.workspace_id == ^workspace_id and a.kind == :human and is_nil(a.disabled_at),
+        order_by: a.name,
+        select: %{name: a.name, kind: "human"}
       )
     )
   end

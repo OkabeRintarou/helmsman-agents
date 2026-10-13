@@ -348,6 +348,24 @@ defmodule Helmsman.PolicyMatrixTest do
             # design: only run scopes with the capability (policy_test.exs)
             for role <- @roles, kind <- [:human, :agent] do
               {:design, role, kind, @none, :forbidden}
+            end,
+            # manage_squads (add-squads decision 3): the coarse check is member
+            # and above; with the leader, admin and above or the leader's owner;
+            # agents never
+            for role <- @roles, kind <- [:human, :agent], owner_id <- [nil, 10, 11] do
+              resource =
+                if owner_id, do: %Actor{workspace_id: 1, kind: :agent, owner_id: owner_id}
+
+              allowed =
+                kind == :human and
+                  (role in [:owner, :admin] or
+                     (role == :member and owner_id in [nil, 10]))
+
+              {:manage_squads, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
+            end,
+            # delegate: only run scopes with the capability (squads tests)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:delegate, role, kind, @none, :forbidden}
             end
           ]
           |> List.flatten()

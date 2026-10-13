@@ -62,8 +62,11 @@ defmodule Helmsman.AgentDesigns.SchemaTest do
   test "CHECK constraints refuse unknown kinds, statuses and roles", ctx do
     id = ctx.design.id
 
+    # `add-squads` decision 2 adds `squad`.
+    assert {:ok, _} = sql("UPDATE agent_designs SET kind = 'squad' WHERE id = $1", [id])
+
     assert {:error, %Postgrex.Error{postgres: %{constraint: "agent_designs_kind_check"}}} =
-             sql("UPDATE agent_designs SET kind = 'squad' WHERE id = $1", [id])
+             sql("UPDATE agent_designs SET kind = 'team' WHERE id = $1", [id])
 
     assert {:error, %Postgrex.Error{postgres: %{constraint: "agent_designs_status_check"}}} =
              sql("UPDATE agent_designs SET status = 'paused' WHERE id = $1", [id])

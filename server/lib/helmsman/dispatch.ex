@@ -18,6 +18,8 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Origin, Outcome, TaskGrant}
+  alias Helmsman.Squads
+  alias Helmsman.Squads.Dispatch, as: SquadDispatch
   alias Helmsman.Tasks
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces
@@ -43,6 +45,12 @@ defmodule Helmsman.Dispatch do
   unless `start?` is false (`:not_started`) or the task is not `new` or
   `in_progress` (`:task_closed`). Returns the outcomes: `[]` for a person,
   an external agent or no assignee, else one.
+
+  A squad (`add-squads` decision 6; its rows locked by `Helmsman.Tasks`
+  through `Helmsman.Squads.Dispatch.lock_rows/1`): the origin must be
+  allowed to trigger the squad and the leader's trigger chain allow it;
+  the grant is recorded for the squad identity (`squad_id` set, the
+  origin's chain), and the run is the leader's as the squad.
   """
   @spec on_assignee_change(Scope.t(), Task.t(), pos_integer() | nil, boolean()) ::
           {:ok, [Outcome.t()]}
@@ -51,8 +59,62 @@ defmodule Helmsman.Dispatch do
     Dependencies.cancel_reassigned(task)
 
     case managed_agent(task) do
-      nil -> {:ok, []}
+      nil -> {:ok, assign_squad(scope, task, start?)}
       {agent, profile} -> {:ok, [assign(scope, task, agent, profile, start?)]}
+    end
+  end
+
+  defp assign_squad(_scope, %Task{assignee_id: nil}, _start?), do: []
+
+  defp assign_squad(scope, %Task{assignee_id: id} = task, start?) do
+    case Squads.by_actor_id(id) do
+      nil -> []
+      squad -> [assign_squad(scope, task, Squads.load(squad), start?)]
+    end
+  end
+
+  defp assign_squad(scope, task, loaded, start?) do
+    origin = Origin.from_scope(scope)
+
+    with :ok <- SquadDispatch.check(origin, loaded, :assign),
+         :ok <- squad_chain(origin, loaded, task),
+         :ok <- squad_grant(task, loaded, origin),
+         :ok <- squad_startable(loaded, task, start?) do
+      SquadDispatch.enqueue(origin, loaded, task, %{kind: :assign, instructions: nil},
+        check: false
+      )
+    else
+      {:skip, %Outcome{} = outcome} -> outcome
+    end
+  end
+
+  defp squad_chain(origin, loaded, task) do
+    case Runs.check_chain(origin, loaded.leader, task) do
+      :ok -> :ok
+      {:skip, reason} -> {:skip, SquadDispatch.skipped(loaded, :assign, reason)}
+    end
+  end
+
+  defp squad_grant(task, loaded, origin) do
+    Repo.insert!(%TaskGrant{
+      workspace_id: task.workspace_id,
+      task_id: task.id,
+      agent_id: loaded.actor.id,
+      squad_id: loaded.squad.id,
+      kind: :assign,
+      root_initiator_user_id: origin.initiator_user_id,
+      causal_agent_ids: origin.chain,
+      granted_by_id: origin.by_actor_id,
+      inserted_at: DateTime.utc_now()
+    })
+
+    :ok
+  end
+
+  defp squad_startable(loaded, task, start?) do
+    case startable(task, start?) do
+      :ok -> :ok
+      {:skip, reason} -> {:skip, SquadDispatch.skipped(loaded, :assign, reason)}
     end
   end
 
@@ -119,7 +181,8 @@ defmodule Helmsman.Dispatch do
   token, or the role), `:not_found` (agent or task), `:not_managed` (an
   external agent), `:instructions_required`,
   `{:invalid_instructions, :too_long | :not_a_string}`, `:task_closed` (a `verified` or
-  `cancelled` task) and `:no_actor`.
+  `cancelled` task), `:is_squad` (a squad: assign the task to it or
+  mention it instead, `add-squads` decision 4) and `:no_actor`.
   """
   @spec run_agent(Scope.t(), String.t(), String.t() | nil, String.t() | nil) ::
           {:ok, %{outcome: Outcome.t(), run: Runs.summary() | nil}} | {:error, term()}
@@ -182,12 +245,14 @@ defmodule Helmsman.Dispatch do
     actor =
       Repo.one(
         from(a in Actor,
-          where: a.workspace_id == ^workspace_id and a.name == ^name and a.kind == :agent,
+          where:
+            a.workspace_id == ^workspace_id and a.name == ^name and a.kind in [:agent, :squad],
           lock: "FOR SHARE"
         )
       )
 
     with %Actor{} <- actor || {:error, :not_found},
+         :ok <- if(actor.kind == :squad, do: {:error, :is_squad}, else: :ok),
          %AgentProfile{} = profile <-
            Repo.one(from(p in AgentProfile, where: p.actor_id == ^actor.id, lock: "FOR SHARE")) ||
              {:error, :not_managed} do

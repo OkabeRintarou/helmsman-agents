@@ -21,8 +21,11 @@ defmodule Helmsman.GitHub.PullRequests.Decide do
     * `latest_push` - the latest `pushed` one (decision 6) or nil
     * `active_run_id` - a `claimed | running | cancelling` run or nil
     * `verification` - the latest move to `verified`: `%{id, actor_id,
-      actor_kind, actor_name, verified_sha, run_causal_agent_ids,
-      inserted_at}` or nil
+      actor_kind, actor_name, verified_sha, assignee_side_ids,
+      run_causal_agent_ids, inserted_at}` or nil (`assignee_side_ids`: the
+      assignee side when it was verified, nil before `add-squads`)
+    * `assignee_side` - the assignee side now (`Helmsman.Squads.assignee_side/1`)
+    * `squad_names` - `%{actor_id => name}` of the squads among both sides
     * `max_auto_reopens`, `public_url`
 
   ## GitHub input
@@ -364,6 +367,12 @@ defmodule Helmsman.GitHub.PullRequests.Decide do
   @doc """
   Whether the verification `v` is independent of the work (decision 7
   step 2): `:ok` or `{:error, note}` saying which rule fails.
+
+  `add-squads` decision 11: the assignee side is the union of the one
+  recorded when `v` was made and the one now; a verifier on it, or an
+  agent verifying in a run whose causal chain meets it, is not
+  independent. A verification recorded before (no `assignee_side_ids`)
+  is judged by the current side only.
   """
   @spec independence(map(), map()) :: :ok | {:error, String.t()}
   def independence(snap, v) do
@@ -376,19 +385,62 @@ defmodule Helmsman.GitHub.PullRequests.Decide do
       v.actor_id in provenance ->
         {:error, "Not independent: #{v.actor_name} contributed commits to this branch."}
 
-      v.actor_kind == :agent and
-          not MapSet.disjoint?(MapSet.new(v.run_causal_agent_ids || []), provenance) ->
+      caused_by?(v, provenance) ->
         {:error,
          "Not independent: #{v.actor_name} verified in a run caused by an agent " <>
            "that contributed commits."}
 
-      v.actor_id == snap.task.assignee_id ->
-        {:error, "Not independent: #{v.actor_name} is the assignee (self-verification)."}
+      true ->
+        side_independence(snap, v)
+    end
+  end
+
+  defp caused_by?(v, ids),
+    do:
+      v.actor_kind == :agent and
+        not MapSet.disjoint?(MapSet.new(v.run_causal_agent_ids || []), ids)
+
+  defp side_independence(snap, v) do
+    recorded = v[:assignee_side_ids] || []
+    current = Map.get(snap, :assignee_side) || List.wrap(snap.task.assignee_id)
+    names = Map.get(snap, :squad_names, %{})
+
+    cond do
+      v.actor_id in current ->
+        {:error, on_side(v, :now, squad_of(current, names))}
+
+      v.actor_id in recorded ->
+        {:error, on_side(v, :then, squad_of(recorded, names))}
+
+      caused_by?(v, MapSet.new(recorded ++ current)) ->
+        {:error,
+         "Not independent: #{v.actor_name} verified in a run caused by the assignee side" <>
+           squad_suffix(squad_of(recorded, names) || squad_of(current, names)) <> "."}
 
       true ->
         :ok
     end
   end
+
+  defp on_side(v, :now, nil),
+    do: "Not independent: #{v.actor_name} is the assignee (self-verification)."
+
+  defp on_side(v, :now, squad),
+    do: "Not independent: #{v.actor_name} is on the assignee side (squad #{squad})."
+
+  defp on_side(v, :then, nil),
+    do: "Not independent: #{v.actor_name} was the assignee when verifying."
+
+  defp on_side(v, :then, squad),
+    do:
+      "Not independent: #{v.actor_name} was on the assignee side (squad #{squad}) when verifying."
+
+  # The squad of an assignee side: its first identity, when a squad.
+  defp squad_of([first | _], names), do: Map.get(names, first)
+  defp squad_of(_side, _names), do: nil
+
+  defp squad_suffix(nil), do: ""
+  defp squad_suffix(squad), do: " (squad #{squad})"
 
   @doc "The agents that contributed commits: every push's agent and causal chain."
   @spec provenance([map()]) :: MapSet.t()

@@ -163,6 +163,11 @@ defmodule Helmsman.CommittedData do
         [workspace_ids, user_ids]
       )
 
+      # Squads (add-squads) refer to actors; runs and grants were deleted.
+      for table <- ["squad_members", "squads"] do
+        Repo.query!("DELETE FROM #{table} WHERE workspace_id = ANY($1)", [workspace_ids])
+      end
+
       Repo.query!(
         "DELETE FROM actors WHERE workspace_id = ANY($1) OR user_id = ANY($2) OR owner_id = ANY($2)",
         [workspace_ids, user_ids]

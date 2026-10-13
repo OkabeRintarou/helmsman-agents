@@ -164,9 +164,10 @@ defmodule Helmsman.Actors do
 
   @doc """
   Lists the identities a task may be assigned to (`:read_tasks`): the
-  workspace's humans and agents that are not disabled, as
-  `Helmsman.Tasks.update/4` accepts them. Humans first, then agents, each
-  by name; agents have their `owner` preloaded.
+  workspace's humans, agents and squads (`add-squads` decision 4) that are
+  not disabled, as `Helmsman.Tasks.update/4` accepts them. Humans first,
+  then agents, then squads, each by name; agents have their `owner`
+  preloaded.
   """
   @spec list_assignable(Scope.t()) :: {:ok, [Actor.t()]} | {:error, :forbidden}
   def list_assignable(%Scope{workspace: %Workspace{id: workspace_id}} = scope) do
@@ -174,9 +175,12 @@ defmodule Helmsman.Actors do
       actors =
         from(a in Actor,
           where:
-            a.workspace_id == ^workspace_id and a.kind in [:human, :agent] and
+            a.workspace_id == ^workspace_id and a.kind in [:human, :agent, :squad] and
               is_nil(a.disabled_at),
-          order_by: [asc: fragment("? = 'agent'", a.kind), asc: a.name],
+          order_by: [
+            asc: fragment("CASE ? WHEN 'human' THEN 0 WHEN 'agent' THEN 1 ELSE 2 END", a.kind),
+            asc: a.name
+          ],
           preload: :owner
         )
         |> Repo.all()

@@ -550,7 +550,9 @@ defmodule Helmsman.Feedback do
       result: item["result"],
       reason: item["reason"],
       run_id: item["run_id"],
-      steer_run_id: item["steer_run_id"]
+      steer_run_id: item["steer_run_id"],
+      squad: item["squad"],
+      refused: item["refused"]
     }
   end
 

@@ -28,6 +28,27 @@ defmodule HelmsmanMCP.ErrorText do
        "conversation). The draft was not changed; end your reply."}
   end
 
+  # `add-squads` decision 12.
+  def format({:design, :not_squad}, _ctx),
+    do: {:ok, "This is not a squad conversation: propose_squad is not available."}
+
+  def format({:referenced_by_squad, name}, _ctx) do
+    {:ok,
+     "#{name} is the leader or a member of the draft's squad. Change the squad first " <>
+       "(propose_squad), then remove it."}
+  end
+
+  def format({:invalid_squad, %Ecto.Changeset{} = changeset}, _ctx) do
+    lines =
+      changeset.errors
+      |> Enum.map(fn {field, error} -> "#{field}: #{interpolate(error)}" end)
+      |> Enum.uniq()
+
+    {:ok,
+     "The squad was not changed in the draft. Fix these fields and call propose_squad " <>
+       "again:\n" <> Enum.join(lines, "\n")}
+  end
+
   def format(:draft_full, _ctx) do
     {:ok,
      "The draft already has #{Helmsman.AgentDesigns.max_agents()} agents. " <>
@@ -149,6 +170,20 @@ defmodule HelmsmanMCP.ErrorText do
      "Unknown status #{inspect(input)}. Use one of: #{Enum.map_join(valid, ", ", &status/1)}."}
   end
 
+  # `add-squads` decision 11: on the assignee side of a squad's task.
+  def format({:self_verify_requires_tests, name}, %Context{scope: %{workspace: %{id: ws}}} = ctx)
+      when is_binary(name) and is_integer(ws) do
+    if Helmsman.Squads.squad_name?(ws, name) do
+      {:ok,
+       "You are on the assignee side of #{arg(ctx.args, "task_id") || "the task"} " <>
+         "(squad #{name}). Pass tests={passed: true, ...} or let the requester verify."}
+    else
+      {:ok,
+       "You (#{name}) are the assignee. Pass tests={passed: true, ...} or let the requester " <>
+         "verify."}
+    end
+  end
+
   def format({:self_verify_requires_tests, name}, _ctx) do
     you = if is_binary(name), do: "You (#{name})", else: "You"
 
@@ -235,6 +270,16 @@ defmodule HelmsmanMCP.ErrorText do
        "started. Pick a managed agent from list_agents."}
   end
 
+  # `add-squads` decision 4.
+  def format(:is_squad, %Context{args: args}) do
+    name = args["agent"] || "This identity"
+
+    {:ok, "#{name} is a squad; assign the task to it or mention @#{name} instead."}
+  end
+
+  def format(:instructions_required, %Context{tool: "delegate"}),
+    do: {:ok, "Give the member instructions: what to do in its run."}
+
   def format(:instructions_required, _ctx) do
     {:ok, "Give instructions when you start an agent without a task (task_id)."}
   end
@@ -257,6 +302,47 @@ defmodule HelmsmanMCP.ErrorText do
      "#{arg(args, "task_id") || "The task"} is verified or cancelled: no agent can be " <>
        "started on it. Reopen it first, or create a new task."}
   end
+
+  # `add-squads` decision 8: `delegate`.
+  def format({:delegate, :task_closed, ident}, _ctx),
+    do: {:ok, "#{ident} is not new or in progress: there is nothing to delegate."}
+
+  def format({:delegate, :not_squad_task, squad}, %Context{args: args}) do
+    {:ok,
+     "#{arg(args, "task_id") || "This task"} is no longer assigned to your squad #{squad}; " <>
+       "you can only delegate your squad's task. End this run."}
+  end
+
+  def format({:delegate, :squad_disabled, squad}, _ctx),
+    do: {:ok, "The squad #{squad} is disabled: nothing can be delegated. End this run."}
+
+  def format({:delegate, :not_leader, squad}, _ctx),
+    do: {:ok, "You no longer lead the squad #{squad}: you cannot delegate. End this run."}
+
+  def format({:delegate, :not_member, {squad, names}}, %Context{args: args}) do
+    can =
+      case names do
+        [] -> "No member agent can be delegated now."
+        names -> "You can delegate to: #{Enum.join(names, ", ")}."
+      end
+
+    {:ok, "#{args["to"] || "That agent"} is not a member agent of the squad #{squad}. " <> can}
+  end
+
+  def format({:delegate, :person_member, name}, _ctx) do
+    {:ok,
+     "#{name} is a person in the squad and cannot be delegated a run. When you need their " <>
+       "decision, write a question on the task with add_feedback (kind \"question\")."}
+  end
+
+  def format({:delegate_not_dispatched, %{reason: :unauthorized} = skipped}, _ctx) do
+    {:ok,
+     "cannot_invoke: #{skipped.initiator || "the person this run acts for"} may not trigger " <>
+       "#{skipped.member}. Pick another member, or say so in a question on the task."}
+  end
+
+  def format({:delegate_not_dispatched, %{reason: reason, member: member}}, _ctx),
+    do: {:ok, "#{member} was not started: #{not_dispatched(reason)}."}
 
   def format({:not_dispatched, reason}, %Context{args: args}) do
     {:ok, "#{args["agent"] || "The agent"} was not started: #{not_dispatched(reason)}."}

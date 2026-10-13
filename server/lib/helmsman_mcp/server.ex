@@ -108,24 +108,47 @@ defmodule HelmsmanMCP.Server do
       end)
 
     all = tools ++ Enum.sort_by(Map.values(registered.tools), & &1.name)
+    required = Tools.required_capabilities()
 
-    if design_tools?(frame.context),
-      do: all,
-      else: Enum.reject(all, &(&1.name in Tools.design_tool_names()))
+    case run_capabilities(frame.context) do
+      :all ->
+        all
+
+      caps ->
+        all
+        |> Enum.reject(&(Map.has_key?(required, &1.name) and required[&1.name] not in caps))
+        |> squad_tools(frame.context)
+    end
+  end
+
+  # `add-squads` decision 12: `propose_squad` only in squad conversations.
+  defp squad_tools(tools, context) do
+    if Enum.any?(tools, &(&1.name == "propose_squad")) and not squad_design?(context),
+      do: Enum.reject(tools, &(&1.name == "propose_squad")),
+      else: tools
+  end
+
+  defp squad_design?(context) do
+    case request_scope(context) do
+      {:ok, %Scope{via: :run, run: run}} -> Helmsman.AgentDesigns.squad_run?(run)
+      _other -> false
+    end
   end
 
   # `add-agent-conversation` decision 7: the draft tools are listed only
-  # for a design run's token (resolved from the request's own headers).
-  # anubis also looks a called tool up here: a call keeps every tool, so
-  # that calling a draft tool without a design run gets its error text
-  # rather than "tool not found". `HelmsmanWeb.Plugs.MCPMethod` puts the
-  # JSON-RPC method in the `x-helmsman-rpc-method` header.
-  defp design_tools?(%{headers: %{"x-helmsman-rpc-method" => "tools/call"}}), do: true
+  # for a design run's token (resolved from the request's own headers);
+  # `add-squads` decision 8: `delegate` only for a run with that
+  # capability. anubis also looks a called tool up here: a call keeps every
+  # tool, so that calling a restricted tool without the capability gets
+  # its error text rather than "tool not found".
+  # `HelmsmanWeb.Plugs.MCPMethod` puts the JSON-RPC method in the
+  # `x-helmsman-rpc-method` header.
+  defp run_capabilities(%{headers: %{"x-helmsman-rpc-method" => "tools/call"}}), do: :all
 
-  defp design_tools?(context) do
+  defp run_capabilities(context) do
     case request_scope(context) do
-      {:ok, %Scope{via: :run, run: run}} -> "design" in run.capabilities
-      _other -> false
+      {:ok, %Scope{via: :run, run: run}} -> run.capabilities
+      _other -> []
     end
   end
 

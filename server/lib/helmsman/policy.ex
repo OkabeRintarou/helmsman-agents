@@ -110,7 +110,9 @@ defmodule Helmsman.Policy do
     :write_task,
     :link_tasks,
     :design_agents,
-    :design
+    :design,
+    :manage_squads,
+    :delegate
   ]
 
   # The capability a run token needs for each action it may attempt; any
@@ -130,7 +132,8 @@ defmodule Helmsman.Policy do
     revise_feedback: "write_task",
     write_task: "write_task",
     link_tasks: "write_task",
-    design: "design"
+    design: "design",
+    delegate: "delegate"
   }
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -361,6 +364,29 @@ defmodule Helmsman.Policy do
   # is checked by `Helmsman.AgentDesigns`.
   defp check(%Scope{via: :run, run: %Run{capabilities: caps}}, :design, _resource),
     do: allow_if("design" in caps)
+
+  ## Squads (`add-squads` decision 3; a management action: agents never)
+
+  # The coarse check before the squad's rows are locked: member and above.
+  defp check(%Scope{} = scope, :manage_squads, nil),
+    do: allow_if(role_at_least?(scope, :member))
+
+  # `leader`: the squad's leader (the one asked for when creating, the
+  # current one, and also the new one when changing it). Admin and above,
+  # or a member who owns the leader.
+  defp check(%Scope{} = scope, :manage_squads, %Actor{} = leader),
+    do:
+      allow_if(
+        in_workspace?(scope, leader) and
+          (role_at_least?(scope, :admin) or
+             (role_at_least?(scope, :member) and same_user?(scope, leader)))
+      )
+
+  # `delegate` (`add-squads` decision 8): a run as a squad leader (the run
+  # gate checked the capability); the squad rules are checked by
+  # `Helmsman.Squads.delegate/4`.
+  defp check(%Scope{via: :run, run: %Run{capabilities: caps}} = scope, :delegate, _resource),
+    do: allow_if("delegate" in caps and role_at_least?(scope, :member))
 
   ## Runs (not management actions)
 

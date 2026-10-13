@@ -20,7 +20,14 @@ defmodule HelmsmanWeb.RunLive.ShowTest do
     ctx = dispatch_fixture(%{access: "workspace"})
     {carol, _} = member_scope_fixture(ctx.workspace)
     {vic, _} = member_scope_fixture(ctx.workspace, :viewer)
-    {:ok, task} = Tasks.create(ctx.alice_scope, ctx.project.key, %{title: "修复登录"})
+    # Assigned to keel/dev (no run of its own): the `assign` trigger stays
+    # valid when the run is claimed (add-squads decision 10).
+    {:ok, task} =
+      Tasks.create(ctx.alice_scope, ctx.project.key, %{
+        title: "修复登录",
+        assignee: "keel/dev",
+        start: false
+      })
 
     triggers = [
       trigger("assign", ctx.workspace, ctx.alice, ctx.agent),

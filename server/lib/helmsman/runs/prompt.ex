@@ -18,11 +18,19 @@ defmodule Helmsman.Runs.Prompt do
   run (rescue branches, the base branch when reopened for a merge
   conflict) and to resolve conflicts first. A resumed session gets those
   lines too, after why it was started.
+
+  A run as a squad leader (`add-squads` decision 7) gets the squad's
+  section after the agent's instructions and before the separator: the
+  squad, its instructions (left out of a resumed session), its members and
+  how to lead them. Its assignment and mention lines name the squad. The
+  prompt of any other run is unchanged.
   """
 
   alias Helmsman.Actors.Actor
+  alias Helmsman.AgentDesigns.Prompt, as: DesignPrompt
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Runs.{GitRepo, LocalRepo, Run, Spec}
+  alias Helmsman.Squads
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
@@ -35,10 +43,18 @@ defmodule Helmsman.Runs.Prompt do
           required(:retried) => %{pos_integer() => atom() | nil},
           required(:resume?) => boolean(),
           optional(:repo) => GitRepo.t() | LocalRepo.t() | nil,
-          optional(:feedback) => %{pos_integer() => %{id: String.t(), content: String.t()}}
+          optional(:feedback) => %{pos_integer() => %{id: String.t(), content: String.t()}},
+          optional(:squad) => Squads.loaded() | nil,
+          optional(:delegations) => %{
+            summaries: %{pos_integer() => String.t() | nil},
+            squads: %{pos_integer() => String.t()}
+          }
         }
 
   @max_quote_bytes 8192
+  @squad_description_bytes 400
+  @role_note_bytes 300
+  @member_description_bytes 200
 
   @doc """
   The prompt of `run`. `ctx`: the agent, its profile, the workspace, the
@@ -50,7 +66,12 @@ defmodule Helmsman.Runs.Prompt do
   """
   @spec build(Run.t(), ctx()) :: String.t()
   def build(%Run{} = run, %{resume?: true, task: %Task{}} = ctx) do
-    Enum.join([why(run, ctx)] ++ repo_lines(run, ctx[:repo]) ++ [get_task(ctx.task)], "\n")
+    body = Enum.join([why(run, ctx)] ++ repo_lines(run, ctx[:repo]) ++ [get_task(ctx.task)], "\n")
+
+    case ctx[:squad] do
+      nil -> body
+      squad -> squad_section(squad, false) <> "\n\n---\n" <> body
+    end
   end
 
   def build(%Run{} = run, ctx) do
@@ -67,10 +88,118 @@ defmodule Helmsman.Runs.Prompt do
         "\n"
       )
 
-    case String.trim(ctx.profile.instructions || "") do
-      "" -> body
-      _ -> ctx.profile.instructions <> "\n\n---\n" <> body
+    head =
+      case String.trim(ctx.profile.instructions || "") do
+        "" -> []
+        _ -> [ctx.profile.instructions]
+      end
+
+    head = head ++ if(ctx[:squad], do: [squad_section(ctx.squad, true)], else: [])
+
+    case head do
+      [] -> body
+      _ -> Enum.join(head, "\n\n") <> "\n\n---\n" <> body
     end
+  end
+
+  ## The squad section (`add-squads` decision 7)
+
+  @doc """
+  The section of a run as the leader of the `t:Helmsman.Squads.loaded/0`
+  squad, with its instructions or not (a resumed session). The squad's
+  description, the members' role notes and agent descriptions are bounded
+  summaries (#{@squad_description_bytes}, #{@role_note_bytes} and
+  #{@member_description_bytes} bytes, `Helmsman.AgentDesigns.Prompt.prefix/2`);
+  the instructions are whole.
+  """
+  @spec squad_section(Squads.loaded(), boolean()) :: String.t()
+  def squad_section(loaded, instructions?) do
+    name = loaded.actor.name
+    {description, _cut?} = summary(loaded.squad.description, @squad_description_bytes)
+    intro = String.trim("In this run you lead the squad #{name}. #{description}")
+
+    instructions =
+      case loaded.squad.instructions do
+        text when instructions? and is_binary(text) and text != "" ->
+          ["", "Squad instructions:", text]
+
+        _none ->
+          []
+      end
+
+    members =
+      case loaded.members do
+        [] -> ["- (none yet)"]
+        members -> Enum.map(members, &member_line/1)
+      end
+
+    Enum.join(
+      ["## Squad #{name}", intro] ++
+        instructions ++ ["", "Members:"] ++ members ++ ["", "How to lead:"] ++ how_to_lead(),
+      "\n"
+    )
+  end
+
+  defp member_line(%{actor: %Actor{kind: :agent} = actor, profile: profile, member: member}) do
+    profile = profile || %AgentProfile{}
+    {note, note_cut?} = summary(member.role_note, @role_note_bytes)
+    {desc, desc_cut?} = summary(profile.description, @member_description_bytes)
+    member_text(agent_head(actor, profile), note, desc, note_cut? or desc_cut?)
+  end
+
+  defp member_line(%{actor: actor, member: member}) do
+    {note, cut?} = summary(member.role_note, @role_note_bytes)
+    member_text("- #{actor.name} (person)", note, "", cut?)
+  end
+
+  defp agent_head(actor, profile) do
+    disabled = if actor.disabled_at, do: "; disabled, cannot be delegated now", else: ""
+
+    "- #{actor.name} (agent; #{profile.provider}, model #{profile.model || "CLI default"}, " <>
+      "effort #{profile.effort || "CLI default"}#{disabled})"
+  end
+
+  defp member_text(head, note, desc, cut?) do
+    text =
+      case {note, desc} do
+        {"", ""} -> head
+        {note, ""} -> "#{head}: #{note}"
+        {"", desc} -> "#{head}: #{desc}"
+        {note, desc} -> "#{head}: #{note} — #{desc}"
+      end
+
+    if cut?, do: text <> " (truncated; list_agents has the full text)", else: text
+  end
+
+  # On one line, at most `max` bytes (cut between code points, `…` added).
+  defp summary(nil, _max), do: {"", false}
+
+  defp summary(text, max) do
+    text = text |> String.replace(~r/\s*[\r\n]+\s*/u, " ") |> String.trim()
+
+    case DesignPrompt.prefix(text, max) do
+      {kept, true} -> {kept <> "…", true}
+      {kept, false} -> {kept, false}
+    end
+  end
+
+  defp how_to_lead do
+    [
+      "- Hand work on this task to a member agent with delegate(task_id, to, instructions). " <>
+        "The member works on the same task, branch and pull request, but only after this run " <>
+        "ends: after delegating, finish this run without waiting. Helmsman wakes you with the " <>
+        "member's final output when its run ends.",
+      "- Parts that can be delivered on their own can become subtasks: create_task with a " <>
+        "member as assignee, ordered with epic / depends_on. You are woken when they are done " <>
+        "or rejected, or when the assignee asks a question.",
+      "- Prefer delegate for code changes: they land in one pull request that is verified once.",
+      "- You cannot create agents or change the squad. If a role is missing, say so in a " <>
+        "question on the task; a person can add one.",
+      "- People in the squad cannot be delegated runs; write a question when you need their " <>
+        "decision.",
+      "- When the whole goal is met, move the task to done with commits and tests; its " <>
+        "requester verifies it. Do not verify it yourself or have a member verify it."
+    ]
   end
 
   defp identity(ctx) do
@@ -98,9 +227,21 @@ defmodule Helmsman.Runs.Prompt do
     do: "This run: task #{ident} (project #{project_key(ident)}): #{title}"
 
   defp why(run, ctx) do
-    lines = run.triggers |> Enum.map(&trigger_line(&1, run, ctx)) |> Enum.reject(&is_nil/1)
+    lines =
+      run.triggers
+      |> Enum.uniq_by(&line_key/1)
+      |> Enum.map(&trigger_line(&1, run, ctx))
+      |> Enum.reject(&is_nil/1)
+
     Enum.join(["Why you were started:" | lines], "\n")
   end
+
+  # Several sources of one member's run wake the leader once in the prompt.
+  defp line_key(%{"kind" => "delegate_done", "delegated_run_id" => id}), do: {:delegate_done, id}
+  defp line_key(trigger), do: {:trigger, make_ref(), trigger}
+
+  defp trigger_line(%{"kind" => "assign"} = trigger, _run, %{squad: %{actor: squad}} = ctx),
+    do: "- #{by(trigger, ctx)} assigned #{ident(ctx)} to your squad #{squad.name}."
 
   defp trigger_line(%{"kind" => "assign"} = trigger, _run, ctx),
     do: "- #{by(trigger, ctx)} assigned #{ctx.task && ctx.task.ident} to you."
@@ -217,9 +358,51 @@ defmodule Helmsman.Runs.Prompt do
   end
 
   defp trigger_line(%{"kind" => "mention"} = trigger, _run, ctx) do
+    whom =
+      case ctx[:squad] do
+        %{actor: squad} -> "your squad #{squad.name}"
+        nil -> "you"
+      end
+
     join([
-      quoted("- #{by(trigger, ctx)} mentioned you in", trigger["feedback_id"], ctx),
+      quoted("- #{by(trigger, ctx)} mentioned #{whom} in", trigger["feedback_id"], ctx),
       "Reply with add_feedback. You were asked to reply, not to take over #{ident(ctx)}."
+    ])
+  end
+
+  # `add-squads` decision 8: a member's run.
+  defp trigger_line(%{"kind" => "delegated"} = trigger, _run, ctx) do
+    squad = get_in(ctx, [:delegations, :squads, trigger["squad_id"]]) || "your squad"
+
+    join([
+      "- #{by(trigger, ctx)}, leading the squad #{squad}, delegated #{ident(ctx)} to you:",
+      blockquote(trigger["instructions"] || ""),
+      "Do this in this run and end it with a short summary of what you did: the leader " <>
+        "reads it. Do not move #{ident(ctx)} to done unless asked to, and do not verify it."
+    ])
+  end
+
+  # `add-squads` decision 9: a leader woken by its member's run.
+  defp trigger_line(%{"kind" => "delegate_done"} = trigger, _run, ctx) do
+    id = trigger["delegated_run_id"]
+
+    status =
+      case {trigger["status"], trigger["failure_reason"]} do
+        {"failed", reason} when is_binary(reason) -> "failed (#{reason})"
+        {status, _reason} -> status
+      end
+
+    output =
+      case get_in(ctx, [:delegations, :summaries, id]) do
+        text when is_binary(text) and text != "" -> blockquote(text)
+        _none -> "(no output)"
+      end
+
+    join([
+      "- The run of #{trigger["member"]} (run #{id}) that you delegated #{ident(ctx)} to " <>
+        "has ended: #{status}.",
+      "Its final output:",
+      output
     ])
   end
 
