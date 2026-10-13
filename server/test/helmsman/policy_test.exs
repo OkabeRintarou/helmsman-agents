@@ -55,6 +55,37 @@ defmodule Helmsman.PolicyTest do
     assert :manage_provider_accounts in Policy.management_actions()
   end
 
+  describe ":manage_autopilots (add-autopilots 1.2, decision 4)" do
+    test "a run token is refused every autopilot operation, whatever its capabilities", ctx do
+      run = run_fixture(ctx.agent, %{status: :running, capabilities: Run.capabilities()})
+      {scope, _token} = run_scope_fixture(run)
+
+      for resource <- [
+            nil,
+            %{op: :manage, may_trigger: true},
+            %{op: :disable, may_trigger: true}
+          ] do
+        assert Policy.authorize(scope, :manage_autopilots, resource) == {:error, :forbidden}
+      end
+
+      assert :manage_autopilots in Policy.management_actions()
+    end
+
+    test "an hm_ token of a person (REST run now) follows the person", ctx do
+      %{api_token: token} = api_token_fixture(ctx.alice_scope)
+
+      scope = %{
+        token_scope_fixture(ctx.alice, ctx.workspace, :api, token)
+        | actor: ctx.alice_scope.actor
+      }
+
+      assert Policy.authorize(scope, :manage_autopilots, %{op: :manage, may_trigger: true}) == :ok
+
+      assert Policy.authorize(%{scope | actor: ctx.agent}, :manage_autopilots, nil) ==
+               {:error, :forbidden}
+    end
+  end
+
   describe ":merge_pull_request (add-pr-reconcile-merge decision 14)" do
     defp merge(scope), do: Policy.authorize(scope, :merge_pull_request)
 

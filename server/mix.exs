@@ -45,6 +45,8 @@ defmodule Helmsman.MixProject do
   defp deps do
     [
       {:oban, "~> 2.20"},
+      {:crontab, "~> 1.1"},
+      {:tz, "~> 0.28"},
       {:cloak_ecto, "~> 1.3"},
       {:jose, "~> 1.11"},
       {:bcrypt_elixir, "~> 3.0"},

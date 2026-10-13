@@ -17,6 +17,7 @@ defmodule Helmsman.Runs.GitRepo do
 
   require Logger
 
+  alias Helmsman.Autopilots
   alias Helmsman.Daemons
   alias Helmsman.Daemons.Daemon
   alias Helmsman.GitHub
@@ -29,13 +30,14 @@ defmodule Helmsman.Runs.GitRepo do
   @max_prefetch 20
 
   @type token :: %{token: String.t(), expires_at: DateTime.t()}
-  @type tokens :: %{pos_integer() => token()}
+  @type tokens :: %{(pos_integer() | {:read, pos_integer()}) => token()}
   @type t :: %{
-          repository: Repository.t(),
-          base_branch: String.t(),
-          branch: String.t(),
-          rescue_branches: [String.t()],
-          token: token()
+          required(:repository) => Repository.t(),
+          required(:base_branch) => String.t(),
+          required(:branch) => String.t() | nil,
+          required(:rescue_branches) => [String.t()],
+          required(:token) => token(),
+          optional(:mode) => :task | :snapshot
         }
 
   @doc "The task branch of task `ident` in workspace `workspace_id`."
@@ -60,11 +62,53 @@ defmodule Helmsman.Runs.GitRepo do
     with %Daemon{} = daemon <- Repo.get(Daemon, daemon_id),
          :ok <- Daemons.authorized(daemon, epoch),
          [_ | _] = ids <- Claim.runtime_ids(daemon) do
+      tokens = ids |> due_repositories() |> Enum.reduce(%{}, &fetch_token/2)
+
+      # `add-autopilots` decision 13: read-only tokens for the checkouts of
+      # run-only autopilot runs, keyed `{:read, repository_id}`.
       ids
-      |> due_repositories()
-      |> Enum.reduce(%{}, &fetch_token/2)
+      |> due_snapshot_repositories()
+      |> Enum.reduce(tokens, &fetch_read_token/2)
     else
       _none -> %{}
+    end
+  end
+
+  defp due_snapshot_repositories(runtime_ids) do
+    Repo.all(
+      from(r in Run,
+        join: ar in "autopilot_runs",
+        on: ar.run_id == r.id,
+        join: p in Project,
+        on: p.id == type(fragment("(?->>'project_id')::bigint", ar.config), :integer),
+        join: repo in Repository,
+        on: repo.id == p.repository_id and repo.workspace_id == r.workspace_id,
+        join: i in Installation,
+        on: i.id == repo.installation_id,
+        where:
+          r.runtime_id in ^runtime_ids and r.status == :queued and is_nil(r.task_id) and
+            r.not_before <= ^DateTime.utc_now() and is_nil(repo.removed_at) and
+            not repo.archived and is_nil(i.disconnected_at) and is_nil(i.suspended_at),
+        group_by: repo.id,
+        order_by: [asc: min(r.inserted_at), asc: repo.id],
+        limit: @max_prefetch,
+        select: repo
+      )
+    )
+  end
+
+  defp fetch_read_token(%Repository{} = repository, tokens) do
+    case GitHub.read_token(repository) do
+      {:ok, %{token: token, expires_at: expires_at}} ->
+        Map.put(tokens, {:read, repository.id}, %{token: token, expires_at: expires_at})
+
+      {:error, reason} ->
+        Logger.warning(
+          "no read token for repository #{repository.owner}/#{repository.name} " <>
+            "(#{repository.id}): #{inspect(reason)}"
+        )
+
+        tokens
     end
   end
 
@@ -121,7 +165,12 @@ defmodule Helmsman.Runs.GitRepo do
   """
   @spec resolve(Run.t(), Task.t() | nil, tokens()) ::
           :none | :no_token | {:unavailable, String.t()} | {:ok, t()}
-  def resolve(%Run{}, nil, _tokens), do: :none
+  def resolve(%Run{} = run, nil, tokens) do
+    case Autopilots.run_project(run) do
+      nil -> :none
+      project -> resolve_snapshot(run, project, tokens)
+    end
+  end
 
   def resolve(%Run{} = run, %Task{} = task, tokens) do
     project = Repo.get!(Project, task.project_id)
@@ -145,6 +194,38 @@ defmodule Helmsman.Runs.GitRepo do
                branch: branch(run.workspace_id, task.ident),
                rescue_branches: rescue_branches(task.id, repository.id),
                token: token
+             }}
+
+          true ->
+            :no_token
+        end
+    end
+  end
+
+  # `add-autopilots` decision 13: a run-only autopilot run gets a
+  # read-only checkout of the base branch of its frozen project's
+  # repository, with a read-only token.
+  defp resolve_snapshot(run, project, tokens) do
+    case project.repository_id && Repositories.get(run.workspace_id, project.repository_id) do
+      nil ->
+        :none
+
+      {repository, installation} ->
+        cond do
+          not Repositories.available?(repository, installation) ->
+            {:unavailable,
+             "Repository #{repository.owner}/#{repository.name} is not available " <>
+               "(removed, archived, or the GitHub installation is disconnected)"}
+
+          token = Map.get(tokens, {:read, repository.id}) ->
+            {:ok,
+             %{
+               repository: repository,
+               base_branch: project.base_branch || repository.default_branch,
+               branch: nil,
+               rescue_branches: [],
+               token: token,
+               mode: :snapshot
              }}
 
           true ->

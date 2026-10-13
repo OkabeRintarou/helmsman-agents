@@ -51,6 +51,7 @@ defmodule HelmsmanWeb.Endpoint do
 
   # Needs the raw request body, so it runs before Plug.Parsers.
   plug HelmsmanWeb.GitHubWebhookPlug
+  plug HelmsmanWeb.AutopilotWebhookPlug
 
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],

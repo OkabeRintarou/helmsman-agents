@@ -352,6 +352,10 @@ defmodule Helmsman.GitHub do
   @spec push_token(Repository.t()) :: {:ok, map()} | {:error, term()}
   defdelegate push_token(repository), to: Repositories
 
+  @doc "See `Helmsman.GitHub.Repositories.read_token/1`."
+  @spec read_token(Repository.t()) :: {:ok, map()} | {:error, term()}
+  defdelegate read_token(repository), to: Repositories
+
   @doc """
   Checks that `branch` exists in the repository: `{:ok, true | false}`.
   Unavailable repositories return `{:error, :repository_unavailable}`.

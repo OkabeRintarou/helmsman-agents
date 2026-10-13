@@ -37,7 +37,9 @@ defmodule Helmsman.Runs.Revalidation do
 
   A design run whose conversation is no longer open, or whose turn it no
   longer is (`design: :ended`, read by the caller), is obsolete
-  (`add-agent-conversation` decision 10).
+  (`add-agent-conversation` decision 10). So is a run-only autopilot run
+  whose record is gone or no longer `started` (`autopilot: :ended`,
+  `add-autopilots` decision 11).
   """
 
   alias Helmsman.Actors.Actor
@@ -57,7 +59,8 @@ defmodule Helmsman.Runs.Revalidation do
           required(:task) => Task.t() | nil,
           required(:runtime) => Runtime.t() | nil,
           optional(:steers) => Steering.facts(),
-          optional(:design) => :current | :ended | nil
+          optional(:design) => :current | :ended | nil,
+          optional(:autopilot) => :current | :ended | nil
         }
   @type obsolete_why ::
           :agent_disabled
@@ -70,6 +73,7 @@ defmodule Helmsman.Runs.Revalidation do
           | :design_ended
           | :squad_disabled
           | :not_leader
+          | :autopilot_ended
   @type changes :: %{
           triggers: [map()],
           root_initiator_user_id: pos_integer(),
@@ -192,8 +196,14 @@ defmodule Helmsman.Runs.Revalidation do
 
   defp obsolete(run, %{agent: agent, profile: profile, runtime: runtime, task: task} = locked) do
     agent_obsolete(agent, profile) || runtime_obsolete(run, profile, runtime) ||
-      task_obsolete(run, task) || design_obsolete(locked) || squad_obsolete(run, locked)
+      task_obsolete(run, task) || design_obsolete(locked) || squad_obsolete(run, locked) ||
+      autopilot_obsolete(locked)
   end
+
+  # `add-autopilots` decision 11: a run-only autopilot run is valid only
+  # while its record exists and is `started`.
+  defp autopilot_obsolete(%{autopilot: :ended}), do: :autopilot_ended
+  defp autopilot_obsolete(_locked), do: nil
 
   # `add-squads` decision 10: a run as a squad leader.
   defp squad_obsolete(%Run{squad_id: nil}, _locked), do: nil

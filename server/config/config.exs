@@ -31,16 +31,30 @@ config :helmsman, Helmsman.RateLimit,
   password_ip: {10, :timer.minutes(1)},
   register_ip: {10, :timer.hours(1)},
   daemon_device_ip: {10, :timer.minutes(1)},
-  daemon_device_user: {20, :timer.minutes(1)}
+  daemon_device_user: {20, :timer.minutes(1)},
+  autopilot_webhook: {10, :timer.minutes(1)}
 
 # Requests per minute per API token (designs/03 §2).
 config :helmsman, :api_token_rate_limit, 600
+
+# Autopilots (`add-autopilots`): cron times are computed in IANA zones;
+# consecutive failures before an autopilot is disabled.
+config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+config :helmsman, Helmsman.Autopilots, max_consecutive_failures: 5
 
 # Background jobs (designs/15 §1): GitHub calls and syncs run in Oban.
 config :helmsman, Oban,
   engine: Oban.Engines.Basic,
   repo: Helmsman.Repo,
-  queues: [github: 5, github_sync: 1, github_pr: 3, default: 10, daemons: 2, runs: 10],
+  queues: [
+    github: 5,
+    github_sync: 1,
+    github_pr: 3,
+    default: 10,
+    daemons: 2,
+    runs: 10,
+    autopilots: 5
+  ],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
     {Oban.Plugins.Cron,
@@ -54,7 +68,9 @@ config :helmsman, Oban,
        {"*/15 * * * *", Helmsman.GitHub.Workers.ReconcileSweep},
        {"*/10 * * * *", Helmsman.Dispatch.Workers.DependencySweep},
        {"* * * * *", Helmsman.AgentDesigns.Sweep},
-       {"20 * * * *", Helmsman.AgentDesigns.Expire}
+       {"20 * * * *", Helmsman.AgentDesigns.Expire},
+       {"*/10 * * * *", Helmsman.Autopilots.Workers.Sweep},
+       {"50 4 * * *", Helmsman.Autopilots.Workers.Prune}
      ]}
   ]
 

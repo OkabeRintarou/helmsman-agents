@@ -56,6 +56,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Actors.Actor
   alias Helmsman.AgentDesigns
   alias Helmsman.Agents.AgentProfile
+  alias Helmsman.Autopilots
   alias Helmsman.Daemons.{Daemon, DaemonWorkspace, Runtime}
   alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Links
@@ -188,7 +189,8 @@ defmodule Helmsman.Runs.Claim do
       locked =
         Map.merge(locked, %{
           steers: Steering.facts(run.triggers),
-          design: AgentDesigns.turn_state(run)
+          design: AgentDesigns.turn_state(run),
+          autopilot: Helmsman.Autopilots.record_state(run)
         })
 
       decide(run, locked, state)
@@ -344,6 +346,29 @@ defmodule Helmsman.Runs.Claim do
   end
 
   defp with_repo(run, locked, changes, state) do
+    case snapshot_refusal(run, locked.task, state) do
+      nil -> with_local_repo(run, locked, changes, state)
+      message -> fail_prepare!(run, message, state)
+    end
+  end
+
+  # `add-autopilots` decision 13: a run-only autopilot run in a repository
+  # needs a daemon that can check it out read-only; only that machine (a
+  # local repository) or that daemon claimed it, so it would wait forever.
+  defp snapshot_refusal(run, nil, state) do
+    with %{} = project <- Autopilots.run_project(run),
+         true <- not is_nil(project.repository_id) or not is_nil(project.local_repository_id),
+         true <- state.protocol < Autopilots.snapshot_version() do
+      "the daemon on #{state.daemon.name} is too old to run autopilots in a repository; " <>
+        "upgrade it"
+    else
+      _ -> nil
+    end
+  end
+
+  defp snapshot_refusal(_run, _task, _state), do: nil
+
+  defp with_local_repo(run, locked, changes, state) do
     case LocalRepo.resolve(run, locked.task, state.daemon, state.protocol) do
       :none ->
         with_github_repo(run, locked, changes, state)

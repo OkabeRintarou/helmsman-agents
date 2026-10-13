@@ -22,6 +22,7 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Actors.Actor
   alias Helmsman.AgentDesigns.Prompt, as: DesignPrompt
   alias Helmsman.Agents
+  alias Helmsman.Autopilots
   alias Helmsman.Feedback.Entry
   alias Helmsman.Feedback.Id, as: FeedbackId
   alias Helmsman.ProviderAccounts.{Headers, ProviderAccount}
@@ -62,6 +63,7 @@ defmodule Helmsman.Runs.Spec do
         resume?: not is_nil(resume_session_id),
         repo: repo,
         squad: run.squad_id && Squads.load(run.squad_id),
+        autopilot: Autopilots.prompt_context(run),
         delegations: delegations(run)
       }
 

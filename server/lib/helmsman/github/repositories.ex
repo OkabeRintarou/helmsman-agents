@@ -81,6 +81,21 @@ defmodule Helmsman.GitHub.Repositories do
   end
 
   @doc """
+  Like `push_token/1`, but read-only (`contents: read`): a run-only
+  autopilot run's checkout (`add-autopilots` decision 13).
+  """
+  @spec read_token(Repository.t()) ::
+          {:ok, Tokens.token()} | {:error, :not_found | :repository_unavailable | Client.error()}
+  def read_token(%Repository{workspace_id: workspace_id, id: id}) do
+    with {:ok, {repository, installation}} <- fetch_available(workspace_id, id) do
+      Tokens.get(installation.installation_id,
+        repository_ids: [repository.github_id],
+        permissions: %{"contents" => "read"}
+      )
+    end
+  end
+
+  @doc """
   Checks that `branch` exists in `repository` (an installation token
   narrowed to the repository).
   """

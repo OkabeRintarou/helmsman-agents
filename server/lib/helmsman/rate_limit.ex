@@ -9,6 +9,8 @@ defmodule Helmsman.RateLimit do
     * `:magic_link_email` - magic link requests per normalized email
     * `:password_ip` - password log in attempts per client IP
     * `:register_ip` - registration submissions per client IP
+    * `:autopilot_webhook` - authenticated webhook requests per autopilot
+      (`add-autopilots` decision 14)
   """
 
   use Hammer, backend: :ets
@@ -20,6 +22,7 @@ defmodule Helmsman.RateLimit do
           | :register_ip
           | :daemon_device_ip
           | :daemon_device_user
+          | :autopilot_webhook
 
   @doc """
   Counts one request against `bucket` for `key`.
@@ -34,6 +37,20 @@ defmodule Helmsman.RateLimit do
     case hit({bucket, key}, scale_ms, limit) do
       {:allow, _count} -> :ok
       {:deny, _retry_after} -> {:error, :rate_limited}
+    end
+  end
+
+  @doc """
+  Like `check/2`, but a refusal says after how many milliseconds the
+  bucket allows a request again.
+  """
+  @spec check_retry(bucket(), term()) :: :ok | {:error, :rate_limited, non_neg_integer()}
+  def check_retry(bucket, key) do
+    {limit, scale_ms} = limit_for(bucket)
+
+    case hit({bucket, key}, scale_ms, limit) do
+      {:allow, _count} -> :ok
+      {:deny, retry_after} -> {:error, :rate_limited, retry_after}
     end
   end
 

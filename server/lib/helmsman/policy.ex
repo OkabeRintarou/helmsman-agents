@@ -117,6 +117,7 @@ defmodule Helmsman.Policy do
     :design_agents,
     :design,
     :manage_squads,
+    :manage_autopilots,
     :delegate
   ]
 
@@ -412,6 +413,25 @@ defmodule Helmsman.Policy do
           (role_at_least?(scope, :admin) or
              (role_at_least?(scope, :member) and same_user?(scope, leader)))
       )
+
+  ## Autopilots (`add-autopilots` decision 4; a management action: agents
+  ## and run tokens never)
+
+  # The coarse check before the autopilot row is locked: member and above.
+  defp check(%Scope{} = scope, :manage_autopilots, nil),
+    do: allow_if(role_at_least?(scope, :member))
+
+  # Creating, saving, enabling, running now, webhook changes: member and
+  # above who may trigger the target (owners and admins too only then).
+  defp check(%Scope{} = scope, :manage_autopilots, %{op: :manage, may_trigger: may?})
+       when is_boolean(may?),
+       do: allow_if(role_at_least?(scope, :member) and may?)
+
+  # Disabling and deleting: also admin and above, so that a runaway
+  # autopilot can be stopped by someone who may not trigger its agent.
+  defp check(%Scope{} = scope, :manage_autopilots, %{op: :disable, may_trigger: may?})
+       when is_boolean(may?),
+       do: allow_if(role_at_least?(scope, :admin) or (role_at_least?(scope, :member) and may?))
 
   # `delegate` (`add-squads` decision 8): a run as a squad leader (the run
   # gate checked the capability); the squad rules are checked by

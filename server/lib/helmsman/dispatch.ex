@@ -57,6 +57,8 @@ defmodule Helmsman.Dispatch do
   def on_assignee_change(%Scope{} = scope, %Task{} = task, _prev_assignee_id, start?) do
     Repo.delete_all(from(g in TaskGrant, where: g.task_id == ^task.id and g.kind == :assign))
     Dependencies.cancel_reassigned(task)
+    # `add-autopilots` decision 8: a task an autopilot started settles.
+    Helmsman.Autopilots.after_task_changed(task.id)
 
     case managed_agent(task) do
       nil -> {:ok, assign_squad(scope, task, start?)}

@@ -27,6 +27,11 @@ defmodule Helmsman.Application do
       Helmsman.Presence,
       {Helmsman.RateLimit, clean_period: :timer.minutes(1)},
       HelmsmanMCP.Supervisor,
+      # `add-autopilots` decision 5: reconcile the schedules once at boot.
+      Supervisor.child_spec(
+        {Task, fn -> if boot_sweep?(), do: Helmsman.Autopilots.sweep_soon() end},
+        id: :autopilots_boot_sweep
+      ),
       # Start to serve requests, typically the last entry
       HelmsmanWeb.Endpoint
     ]
@@ -36,6 +41,8 @@ defmodule Helmsman.Application do
     opts = [strategy: :one_for_one, name: Helmsman.Supervisor]
     Supervisor.start_link(children, opts)
   end
+
+  defp boot_sweep?, do: Application.get_env(:helmsman, :autopilots_boot_sweep, true)
 
   defp warn_if_mailer_only_logs do
     if Application.get_env(:helmsman, Helmsman.Mailer)[:adapter] == Swoosh.Adapters.Logger do

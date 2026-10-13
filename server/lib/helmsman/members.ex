@@ -22,6 +22,7 @@ defmodule Helmsman.Members do
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Autopilots
   alias Helmsman.Events
   alias Helmsman.Policy
   alias Helmsman.Repo
@@ -194,6 +195,10 @@ defmodule Helmsman.Members do
       Repo.delete_all(
         from(m in Membership, where: m.workspace_id == ^workspace_id and m.user_id == ^user_id)
       )
+
+    # After the membership row, before the identity rows (designs/01 §4,
+    # `add-autopilots` decision 2).
+    :ok = Autopilots.initiator_left(workspace_id, user_id)
 
     Repo.update_all(
       from(a in Actor,

@@ -383,6 +383,33 @@ defmodule Helmsman.PolicyMatrixTest do
 
               {:manage_squads, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
             end,
+            # manage_autopilots (add-autopilots decision 4): the coarse check is
+            # member and above; managing needs to be able to trigger the
+            # target; disabling also allows admin and above; agents never
+            for role <- @roles,
+                kind <- [:human, :agent],
+                resource <- [
+                  nil,
+                  %{op: :manage, may_trigger: true},
+                  %{op: :manage, may_trigger: false},
+                  %{op: :disable, may_trigger: true},
+                  %{op: :disable, may_trigger: false}
+                ] do
+              allowed =
+                kind == :human and
+                  case resource do
+                    nil ->
+                      role != :viewer
+
+                    %{op: :manage, may_trigger: may?} ->
+                      role != :viewer and may?
+
+                    %{op: :disable, may_trigger: may?} ->
+                      role in [:owner, :admin] or (role == :member and may?)
+                  end
+
+              {:manage_autopilots, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
+            end,
             # delegate: only run scopes with the capability (squads tests)
             for role <- @roles, kind <- [:human, :agent] do
               {:delegate, role, kind, @none, :forbidden}

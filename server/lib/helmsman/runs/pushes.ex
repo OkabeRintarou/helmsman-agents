@@ -31,7 +31,8 @@ defmodule Helmsman.Runs.Pushes do
   ## git_token
 
   @doc """
-  A new push token for `run_id` (decision 4): the run must have been
+  A new push token for `run_id` (decision 4; read-only for a run-only
+  autopilot run, `add-autopilots` decision 13): the run must have been
   claimed by this daemon and have a repository (`:not_found` otherwise),
   and be `claimed`, `running`, `cancelling` or have ended less than 30
   minutes ago (late wrap-up; `:wrong_state` otherwise). A repository no
@@ -49,11 +50,11 @@ defmodule Helmsman.Runs.Pushes do
              {:ok, run} <- Lifecycle.lock_run(ctx, run_id, :share),
              {:ok, repository_id} <- repository_id(run),
              :ok <- token_window(run) do
-          {:ok, Repo.get!(Repository, repository_id)}
+          {:ok, {Repo.get!(Repository, repository_id), Runs.autopilot_run?(run)}}
         end
       end)
 
-    with {:ok, repository} <- result, do: push_token(repository)
+    with {:ok, {repository, read_only?}} <- result, do: push_token(repository, read_only?)
   end
 
   defp repository_id(%Run{repository_id: nil}), do: {:error, :not_found}
@@ -70,8 +71,12 @@ defmodule Helmsman.Runs.Pushes do
 
   defp token_window(_run), do: {:error, :wrong_state}
 
-  defp push_token(repository) do
-    case GitHub.push_token(repository) do
+  # `add-autopilots` decision 13: a run-only autopilot run's checkout only
+  # ever gets a read-only token.
+  defp push_token(repository, read_only?) do
+    result = if read_only?, do: GitHub.read_token(repository), else: GitHub.push_token(repository)
+
+    case result do
       {:ok, %{token: token, expires_at: expires_at}} ->
         {:ok, %{token: token, expires_at: expires_at}}
 
@@ -87,7 +92,8 @@ defmodule Helmsman.Runs.Pushes do
 
   @doc """
   Records a push of the run (decision 5), whatever its status: the push
-  happened on the remote. The run must have been claimed by this daemon
+  happened on the remote. A run-only autopilot run's read-only checkout
+  never pushes: `:wrong_state` (`add-autopilots` decision 13). The run must have been claimed by this daemon
   (`:not_found`) and have a repository, GitHub or local (`:wrong_state`).
   The report must
   name its task branch, a rescue branch `<branch>-run-<n>` of a run of
@@ -110,6 +116,7 @@ defmodule Helmsman.Runs.Pushes do
       Tx.run(fn ->
         with {:ok, _daemon} <- Lifecycle.lock_daemon(ctx),
              {:ok, run} <- Lifecycle.lock_run(ctx, run_id),
+             :ok <- not_read_only(run),
              {:ok, _id} <- with_repository(run),
              :ok <- validate(run, report, ctx.daemon_id) do
           record(run, report)
@@ -118,6 +125,10 @@ defmodule Helmsman.Runs.Pushes do
 
     with {:ok, :ok} <- result, do: :ok
   end
+
+  # `add-autopilots` decision 13: a read-only checkout never pushes.
+  defp not_read_only(run),
+    do: if(Runs.autopilot_run?(run), do: {:error, :wrong_state}, else: :ok)
 
   defp with_repository(%Run{repository_id: nil, local_repository_id: nil}),
     do: {:error, :wrong_state}

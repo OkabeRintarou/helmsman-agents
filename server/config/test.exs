@@ -51,6 +51,10 @@ config :helmsman, Helmsman.Vault,
 # Jobs are only inserted; tests run them with Oban.Testing.perform_job/2.
 config :helmsman, Oban, testing: :manual
 
+# The schedules are not reconciled at boot (the sandbox owns the
+# connections); autopilot tests run `Helmsman.Autopilots.Workers.Sweep`.
+config :helmsman, :autopilots_boot_sweep, false
+
 # GitHub calls go to Req.Test stubs; the App configuration is read on every
 # call (no cache), so tests can switch it.
 config :helmsman, Helmsman.GitHub.Client, req_options: [plug: {Req.Test, Helmsman.GitHub.Client}]

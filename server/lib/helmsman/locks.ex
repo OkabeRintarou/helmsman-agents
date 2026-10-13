@@ -13,6 +13,7 @@ defmodule Helmsman.Locks do
   | 3    | task lock                                 |
   | 4    | daemon lock                               |
   | 5    | pull request reconciliation (session lock) |
+  | 6    | creating an autopilot in a workspace      |
 
   All functions but the session ones take `pg_*_xact_lock`s and must run
   inside a transaction; the locks are released when it ends. The
@@ -29,9 +30,9 @@ defmodule Helmsman.Locks do
   @id_bits 48
   @max_id 1 <<< @id_bits
 
-  @types %{global: 0, maint: 1, graph: 2, task: 3, daemon: 4, reconcile: 5}
+  @types %{global: 0, maint: 1, graph: 2, task: 3, daemon: 4, reconcile: 5, autopilots: 6}
 
-  @type lock_type :: :global | :maint | :graph | :task | :daemon | :reconcile
+  @type lock_type :: :global | :maint | :graph | :task | :daemon | :reconcile | :autopilots
 
   @doc """
   Returns the advisory lock key for `type` and `id`.
@@ -65,6 +66,15 @@ defmodule Helmsman.Locks do
   @spec try_maint_shared(pos_integer()) :: boolean()
   def try_maint_shared(workspace_id),
     do: try_lock("pg_try_advisory_xact_lock_shared", key(:maint, workspace_id))
+
+  @doc """
+  Takes the lock that serializes creating autopilots in a workspace
+  (exclusive; the per-workspace limit, `add-autopilots` decision 1). Taken
+  after the membership row, where the autopilot rows go.
+  """
+  @spec autopilots!(pos_integer()) :: :ok
+  def autopilots!(workspace_id),
+    do: lock!("pg_advisory_xact_lock", key(:autopilots, workspace_id))
 
   @doc "Takes the workspace graph lock (exclusive)."
   @spec graph!(pos_integer()) :: :ok

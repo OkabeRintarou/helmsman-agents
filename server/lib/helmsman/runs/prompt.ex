@@ -24,11 +24,18 @@ defmodule Helmsman.Runs.Prompt do
   squad, its instructions (left out of a resumed session), its members and
   how to lead them. Its assignment and mention lines name the squad. The
   prompt of any other run is unchanged.
+
+  A run-only autopilot run (`add-autopilots` decision 11, `autopilot` in
+  the context) has no task: after who it is, which autopilot started it
+  and how, the frozen instructions, a manual note, a webhook payload (at
+  most 32 KB, marked as untrusted data), its temporary working
+  directory, what it may do and that its last message is the result.
   """
 
   alias Helmsman.Actors.Actor
   alias Helmsman.AgentDesigns.Prompt, as: DesignPrompt
   alias Helmsman.Agents.AgentProfile
+  alias Helmsman.Autopilots.{Content, Record}
   alias Helmsman.Runs.{GitRepo, LocalRepo, Run, Spec}
   alias Helmsman.Squads
   alias Helmsman.Tasks.Task
@@ -45,6 +52,7 @@ defmodule Helmsman.Runs.Prompt do
           optional(:repo) => GitRepo.t() | LocalRepo.t() | nil,
           optional(:feedback) => %{pos_integer() => %{id: String.t(), content: String.t()}},
           optional(:squad) => Squads.loaded() | nil,
+          optional(:autopilot) => %{record: Record.t(), note_by: String.t() | nil} | nil,
           optional(:delegations) => %{
             summaries: %{pos_integer() => String.t() | nil},
             squads: %{pos_integer() => String.t()}
@@ -52,6 +60,7 @@ defmodule Helmsman.Runs.Prompt do
         }
 
   @max_quote_bytes 8192
+  @autopilot_payload_bytes 32_768
   @squad_description_bytes 400
   @role_note_bytes 300
   @member_description_bytes 200
@@ -71,6 +80,15 @@ defmodule Helmsman.Runs.Prompt do
     case ctx[:squad] do
       nil -> body
       squad -> squad_section(squad, false) <> "\n\n---\n" <> body
+    end
+  end
+
+  def build(%Run{}, %{autopilot: %{record: %Record{}} = autopilot} = ctx) do
+    body = Enum.join([identity(ctx), "", this_run(nil), autopilot_section(autopilot, ctx)], "\n")
+
+    case String.trim(ctx.profile.instructions || "") do
+      "" -> body
+      _ -> ctx.profile.instructions <> "\n\n---\n" <> body
     end
   end
 
@@ -204,9 +222,16 @@ defmodule Helmsman.Runs.Prompt do
 
   defp identity(ctx) do
     scope_line =
-      case ctx.task do
-        %Task{ident: ident} -> "You may only change #{ident}."
-        nil -> "You may read the workspace but you cannot change any task in this run."
+      case {ctx.task, ctx[:autopilot]} do
+        {%Task{ident: ident}, _} ->
+          "You may only change #{ident}."
+
+        {nil, %{record: %Record{config: %{"create_tasks" => true}}}} ->
+          "You may read the workspace and create tasks, but you cannot change any existing " <>
+            "task in this run."
+
+        {nil, _} ->
+          "You may read the workspace but you cannot change any task in this run."
       end
 
     Enum.join(
@@ -225,6 +250,62 @@ defmodule Helmsman.Runs.Prompt do
 
   defp this_run(%Task{ident: ident, title: title}),
     do: "This run: task #{ident} (project #{project_key(ident)}): #{title}"
+
+  ## A run-only autopilot run (`add-autopilots` decision 11)
+
+  defp autopilot_section(%{record: record} = autopilot, ctx) do
+    config = record.config
+
+    [
+      "Why you were started:",
+      "- Autopilot #{config["name"]} started you (#{autopilot_source(record, autopilot)}).",
+      "",
+      "Instructions:",
+      config["instructions"]
+    ]
+    |> Kernel.++(note_lines(record, autopilot))
+    |> Kernel.++(payload_lines(record))
+    |> Kernel.++(["", autopilot_directory(ctx[:repo])])
+    |> Kernel.++([
+      "Your last message is recorded as the result of this autopilot run; end with a " <>
+        "concise summary."
+    ])
+    |> Enum.join("\n")
+  end
+
+  defp autopilot_source(%Record{source: :schedule} = record, _autopilot),
+    do:
+      "scheduled for " <>
+        Content.local_time(record.scheduled_for || record.inserted_at, record.config["timezone"])
+
+  defp autopilot_source(%Record{source: :manual}, autopilot),
+    do: "run now by #{autopilot.note_by || "someone"}"
+
+  defp autopilot_source(%Record{source: :webhook} = record, _autopilot),
+    do: "webhook delivery #{record.delivery_id || "without an ID"}"
+
+  defp note_lines(%Record{note: note}, _autopilot) when note in [nil, ""], do: []
+
+  defp note_lines(%Record{note: note}, autopilot),
+    do: ["", String.trim_leading(Content.note_block(note, autopilot.note_by || "someone"))]
+
+  defp payload_lines(%Record{payload: nil}), do: []
+
+  defp payload_lines(%Record{payload: payload}),
+    do: [
+      "",
+      String.trim_leading(
+        Content.payload_block(payload, @autopilot_payload_bytes, "at most 32 KB")
+      )
+    ]
+
+  defp autopilot_directory(%{base_branch: base}),
+    do:
+      "Working directory: a temporary checkout of #{base}; nothing you change is kept or " <>
+        "pushed."
+
+  defp autopilot_directory(_none),
+    do: "Working directory: a temporary directory for this run only; nothing in it is kept."
 
   defp why(run, ctx) do
     lines =

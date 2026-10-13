@@ -46,10 +46,12 @@ defmodule Helmsman.Runs.Retry do
 
   @doc """
   Whether the failed `run` is retried automatically (decision 14). A
-  design run never is (`add-agent-conversation` decision 10).
+  design run never is (`add-agent-conversation` decision 10), nor a
+  run-only autopilot run (`add-autopilots` decision 11).
   """
   @spec automatic?(Run.t()) :: boolean()
-  def automatic?(%Run{} = run), do: not Runs.design_run?(run) and retryable?(run)
+  def automatic?(%Run{} = run),
+    do: not Runs.design_run?(run) and not Runs.autopilot_run?(run) and retryable?(run)
 
   defp retryable?(%Run{status: :failed, failure_reason: :lease_expired}), do: true
 
@@ -113,6 +115,9 @@ defmodule Helmsman.Runs.Retry do
   # happen wakes its leader now.
   defp not_requeued(run) do
     if Runs.delegated?(run), do: Runs.delegate_done!(run)
+    # `add-autopilots` decision 8: the autopilot that started its task
+    # settles now.
+    Helmsman.Autopilots.after_task_changed(run.task_id)
     {:ok, :skipped}
   end
 
@@ -255,7 +260,8 @@ defmodule Helmsman.Runs.Retry do
   `:forbidden`, `:not_ended` (not `failed` or `cancelled`),
   `:agent_disabled`, `:agent_archived`, `:no_runtime`, `:runtime_disabled`,
   `:task_closed`, `:not_retryable` (a design run,
-  `add-agent-conversation` decision 10), `{:already_retried, id}` (its retry is no longer queued;
+  `add-agent-conversation` decision 10, or a run-only autopilot run,
+  `add-autopilots` decision 11), `{:already_retried, id}` (its retry is no longer queued;
   a queued one is returned) and `:rate_limited`.
 
   Lock order: actor, profile, task (`FOR UPDATE`), runtime, run.
@@ -314,7 +320,11 @@ defmodule Helmsman.Runs.Retry do
 
   # `add-agent-conversation` decision 10: the user sends the turn again.
   defp not_design(run),
-    do: if(Runs.design_run?(run), do: {:error, :not_retryable}, else: :ok)
+    do:
+      if(Runs.design_run?(run) or Runs.autopilot_run?(run),
+        do: {:error, :not_retryable},
+        else: :ok
+      )
 
   defp ended(%Run{status: status}) when status in [:failed, :cancelled], do: :ok
   defp ended(_run), do: {:error, :not_ended}

@@ -44,6 +44,15 @@ defmodule Helmsman.CommittedData do
         )
       end
 
+      # Autopilots (add-autopilots) refer to agents, projects, tasks and
+      # runs; their records go with them.
+      Repo.query!("DELETE FROM autopilots WHERE workspace_id = ANY($1)", [workspace_ids])
+
+      Repo.query!(
+        "DELETE FROM oban_jobs WHERE worker LIKE 'Helmsman.Autopilots.Workers.%' " <>
+          "AND (args->>'autopilot_id')::bigint NOT IN (SELECT id FROM autopilots)"
+      )
+
       # Creation conversations (add-agent-conversation) refer to runs and
       # agents; their settlement jobs to runs.
       Repo.query!(

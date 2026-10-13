@@ -6,6 +6,7 @@ defmodule Helmsman do
       RateLimit,
       Vault,
       AgentDesigns,
+      Autopilots,
       Agents,
       Agents.AgentProfile,
       Daemons,

@@ -12,6 +12,7 @@ defmodule Helmsman.Runs.LocalRepo do
 
   import Ecto.Query, warn: false
 
+  alias Helmsman.Autopilots
   alias Helmsman.Daemons.Daemon
   alias Helmsman.LocalRepositories.LocalRepository
   alias Helmsman.Projects.Project
@@ -20,12 +21,13 @@ defmodule Helmsman.Runs.LocalRepo do
   alias Helmsman.Tasks.Task
 
   @type t :: %{
-          kind: :local,
-          local_repository: LocalRepository.t(),
-          daemon_name: String.t(),
-          base_branch: String.t(),
-          branch: String.t(),
-          rescue_branches: [String.t()]
+          required(:kind) => :local,
+          required(:local_repository) => LocalRepository.t(),
+          required(:daemon_name) => String.t(),
+          required(:base_branch) => String.t(),
+          required(:branch) => String.t() | nil,
+          required(:rescue_branches) => [String.t()],
+          optional(:mode) => :task | :snapshot
         }
 
   @doc """
@@ -42,7 +44,15 @@ defmodule Helmsman.Runs.LocalRepo do
   """
   @spec resolve(Run.t(), Task.t() | nil, Daemon.t(), pos_integer()) ::
           :none | {:unavailable, String.t()} | {:ok, t()}
-  def resolve(%Run{}, nil, _daemon, _protocol), do: :none
+  def resolve(%Run{} = run, nil, %Daemon{} = daemon, protocol) do
+    case Autopilots.run_project(run) do
+      %Project{local_repository_id: id} = project when is_integer(id) ->
+        check(run, nil, project, Repo.get!(LocalRepository, id), daemon, protocol)
+
+      _none ->
+        :none
+    end
+  end
 
   def resolve(%Run{} = run, %Task{} = task, %Daemon{} = daemon, protocol) do
     project = Repo.get!(Project, task.project_id)
@@ -81,6 +91,20 @@ defmodule Helmsman.Runs.LocalRepo do
         {:unavailable,
          "Local repository #{repo.name} on #{machine} has no base branch: set the " <>
            "project's base branch"}
+
+      # `add-autopilots` decision 13: a run-only autopilot run checks the
+      # base branch out read-only.
+      is_nil(task) ->
+        {:ok,
+         %{
+           kind: :local,
+           mode: :snapshot,
+           local_repository: repo,
+           daemon_name: machine,
+           base_branch: base_branch,
+           branch: nil,
+           rescue_branches: []
+         }}
 
       true ->
         {:ok,

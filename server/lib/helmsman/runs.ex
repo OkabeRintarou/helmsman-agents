@@ -271,6 +271,9 @@ defmodule Helmsman.Runs do
   task `write_task`, and `create_tasks` when the agent's profile has it.
   A design run (`design_run?/1` of its `triggers`) has exactly `read` and
   `design`, whatever the profile (`add-agent-conversation` decision 7).
+  A run-only autopilot run (`autopilot_run?/1`) has `read`, and
+  `create_tasks` only when its trigger says so, whatever the profile
+  (`add-autopilots` decision 11).
   A run as a squad leader (`squad_id` set, `add-squads` decision 7) has
   `read`, `write_task` (with a task), `create_tasks` and `delegate`,
   whatever the profile.
@@ -283,6 +286,9 @@ defmodule Helmsman.Runs do
     cond do
       design_run?(triggers) ->
         ["read", "design"]
+
+      autopilot_run?(triggers) ->
+        autopilot_capabilities(triggers)
 
       not is_nil(squad_id) ->
         ["read"] ++ if(task, do: ["write_task"], else: []) ++ ["create_tasks", "delegate"]
@@ -304,6 +310,22 @@ defmodule Helmsman.Runs do
 
   def design_run?(triggers) when is_list(triggers),
     do: Enum.any?(triggers, &(&1["kind"] == "design"))
+
+  @doc """
+  Whether a run is a run-only autopilot run (`add-autopilots` decision
+  11): one of its triggers is `autopilot`. Takes the run or its triggers.
+  """
+  @spec autopilot_run?(Run.t() | [map()]) :: boolean()
+  def autopilot_run?(%Run{triggers: triggers}), do: autopilot_run?(triggers)
+
+  def autopilot_run?(triggers) when is_list(triggers),
+    do: Enum.any?(triggers, &(&1["kind"] == "autopilot"))
+
+  defp autopilot_capabilities(triggers) do
+    if Enum.any?(triggers, &(&1["kind"] == "autopilot" and &1["create_tasks"] == true)),
+      do: ["read", "create_tasks"],
+      else: ["read"]
+  end
 
   @doc "The conversation of a design run (its trigger's `design_id`), or nil."
   @spec design_id(Run.t()) :: pos_integer() | nil
@@ -541,6 +563,7 @@ defmodule Helmsman.Runs do
     |> Enum.each(fn run -> {:ok, _job} = Oban.insert(SettleTurn.new(%{run_id: run.id})) end)
 
     runs |> Enum.filter(&wakes_leader?/1) |> Enum.each(&delegate_done!/1)
+    Helmsman.Autopilots.after_runs_ended(runs)
   end
 
   @doc false
@@ -574,9 +597,12 @@ defmodule Helmsman.Runs do
   @spec delegated?(Run.t()) :: boolean()
   def delegated?(%Run{triggers: triggers}), do: Enum.any?(triggers, &(&1["kind"] == "delegated"))
 
-  defp stopped_by_person?(%Run{cancel_requested_by_id: nil}), do: false
+  @doc false
+  # Whether a person asked to stop `run` (rather than the system).
+  @spec stopped_by_person?(Run.t()) :: boolean()
+  def stopped_by_person?(%Run{cancel_requested_by_id: nil}), do: false
 
-  defp stopped_by_person?(%Run{cancel_requested_by_id: id}),
+  def stopped_by_person?(%Run{cancel_requested_by_id: id}),
     do: Repo.exists?(from(a in Actor, where: a.id == ^id and a.kind == :human))
 
   @doc """
