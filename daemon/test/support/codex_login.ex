@@ -14,6 +14,11 @@ defmodule HelmsmanDaemon.CodexLogin do
         /usr/bin/env | /usr/bin/cut -d= -f1 > "$0.env-names"
         printf '%s' "$$" > "$0.pid"
         case "$(/bin/cat "$0.mode")" in
+          barrier)
+            : > "$0.ready"
+            while [ ! -f "$0.release" ]; do /bin/sleep 0.01; done
+            exit "$(/bin/cat "$0.result")"
+            ;;
           hang) /bin/sleep 30 ;;
           *) printf 'PRIVATE_LOGIN_OUTPUT'; exit "$(/bin/cat "$0.mode")" ;;
         esac

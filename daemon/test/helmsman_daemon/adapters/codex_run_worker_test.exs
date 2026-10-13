@@ -43,6 +43,34 @@ defmodule HelmsmanDaemon.Adapters.CodexRunWorkerTest do
     end
   end
 
+  test "resumed Codex reports only the session confirmed by the CLI", %{tmp_dir: dir} do
+    for {id, fixture, expected} <- [
+          {32, "resume_missing", nil},
+          {33, "resume_ok", "01a12e89-c855-72a1-bf5d-f11f2ab7e973"}
+        ] do
+      path = scenario!(Path.join(dir, "resume-#{id}"), CodexFixtures.scenario(fixture))
+      run = %{spec(id, path) | resume_session_id: "candidate-session"}
+
+      worker =
+        start_supervised!({RunWorker, {run, [adapter: CodexReplay, reporter: TestReporter]}})
+
+      assert_receive {:report, ^id, %Report.Started{session_id: nil}, _, _, _}, 2_000
+      {finished, events} = collect(id, [])
+      assert finished.session_id == expected
+
+      if expected do
+        assert finished.status == :succeeded
+        assert Enum.any?(events, &(&1.type == :session and &1.data.session_id == expected))
+      else
+        assert finished.failure_reason == :cli_error
+        refute Enum.any?(events, &(&1.type == :session))
+      end
+
+      eventually(fn -> not Process.alive?(worker) end)
+      stop_supervised(RunWorker)
+    end
+  end
+
   test "Codex replay rejects 40 MiB JSON output without waiting for idle timeout", %{tmp_dir: dir} do
     path = scenario!(Path.join(dir, "oversize"), "json_line_bytes 41943040\nsleep 600\n")
     run = spec(1, path)

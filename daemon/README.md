@@ -83,43 +83,71 @@ WantedBy=default.target
 进程组成员身份每 10 秒持久化；CLI 退出后清理全部已知组员，完成后才上报结果。
 无法确认身份或清理超时时保留 state 记录并记录日志，供下次启动恢复；不会向身份不明的 PGID 发信号。
 
-Codex uses `codex app-server` (minimum 0.162.0). Its persistent configuration and
-sessions live in `<HELMSMAN_HOME>/codex/`, normally `~/.helmsman/codex/`;
-Helmsman creates that directory with 0700 and only reads its `config.toml`.
-The machine owner configures authentication there once, for example
-`CODEX_HOME=~/.helmsman/codex codex login`, or a custom `model_provider` and
-`model_providers` table. Use `env_key` / `env_http_headers` for secrets from the
-Agent environment. Config override values (`-c`) appear in process arguments.
-Do not define MCP servers or `project_root_markers` in the daemon config.
-Helmsman injects its MCP configuration in thread/start or thread/resume stdin;
-workspaces with project `.codex/config.toml` are rejected before launch.
-The daemon never copies the machine owner's `~/.codex` config or authentication.
+Codex uses `codex app-server` (minimum 0.162.0). By default it uses the daemon's
+inherited `CODEX_HOME`, or `$HOME/.codex`. It reads the owner's existing login,
+provider, gateway and headers in place. The daemon does not create or modify this
+user directory; run Codex once or `codex login` if it is missing. Codex itself saves
+managed sessions and history there. To use a private directory, set an absolute
+path or a `~/` path in the daemon's `config.toml`:
+
+```toml
+[codex]
+home = "~/.helmsman/codex"
+```
+
+Helmsman creates an explicitly configured private directory with 0700. On migration
+it prints a hint if the old `<HELMSMAN_HOME>/codex/` contains files. Sessions from
+the old directory may fail to resume once; retry to start a new session.
+
+User MCP servers are disabled by name in thread/start and thread/resume stdin.
+Extra Agent MCP servers that collide with user names are dropped with a warning.
+Rename any user MCP server named `helmsman`, or choose a private home: its settings
+would merge with Helmsman's injected server. Invalid TOML, `project_root_markers`,
+top-level legacy `profile`, and the reserved `model_providers.helmsman_account`
+also make Codex unavailable. Unselected `[profiles.*]` tables are ignored;
+Agent profile arguments are filtered. Project `.codex/config.toml` is rejected.
+
 Before each run, Helmsman checks the bound account, effective `model_provider`
-(last Agent override, then daemon config), and `codex login status` in the dedicated
-home. Missing sources fail immediately with `provider_auth` and configuration
-instructions. A login probe that times out after 10 seconds or fails unexpectedly
-allows the run with a warning. Codex 0.162.1 app-server's built-in OpenAI provider
-does not use `OPENAI_API_KEY`, `CODEX_API_KEY`, or `OPENAI_BASE_URL` from the process
-environment; use a provider account, a configured custom provider, or daemon login.
-At daemon startup, a missing source produces one local hint without disabling the
-runtime, since individual agents can bind provider accounts.
+(last Agent override, then the selected home's config), and `codex login status`
+in that same home. Custom providers must be built-in `ollama` / `lmstudio`, defined
+in Agent arguments, or defined in the file. A file provider's `env_key` must exist
+and be nonempty in the actual CLI environment; `requires_openai_auth` checks login.
+Use Agent env or the environment that launches the daemon for credentials and
+`env_http_headers`. A service manager does not inherit variables set only in an
+interactive shell. Missing header variables produce a warning with variable names.
+Config override values (`-c`) appear in process arguments.
+
+Missing model sources fail before CLI launch with `provider_auth` and instructions.
+A login probe that times out after 10 seconds or fails unexpectedly allows the run
+with a warning. Codex 0.162.1 app-server's built-in OpenAI provider does not use
+`OPENAI_API_KEY`, `CODEX_API_KEY`, or `OPENAI_BASE_URL` from the process environment;
+use login in the selected home, a provider account, or a defined custom provider.
+A missing source produces one startup hint without disabling the runtime.
+
+User hooks and `notify` commands execute during managed runs and can see
+`HELMSMAN_RUN_TOKEN`. The daemon user and Agent share the same trust boundary,
+as with Claude hooks. User `shell_environment_policy` may filter variables such
+as `GIT_AUTHOR_NAME` from Agent shell commands; check it when debugging commits.
+Both shell snapshot features are disabled for every run. Old snapshots are cleaned
+only in explicitly configured private homes; the user's own snapshots are preserved.
 
 Both new and resumed threads use `approvalPolicy: never` and
 `sandbox: danger-full-access`. They do not need bubblewrap or user namespaces.
 The app-server startup message about bubblewrap is harmless in this mode;
 stderr is retained for diagnostics and does not become a run error or event.
 
-For development the owner configures `~/.helmsman-dev/codex/` separately:
+Development uses the same user home by default. `mix helmsman.dev_run --home <dir>`
+reads `<dir>/config.toml`, including `[codex] home`:
 
 ```sh
 mise exec -- mix helmsman.dev_run --provider codex --model gpt-6-luna --effort low --task DEV-9 --prompt "Reply exactly OK"
-HELMSMAN_REAL_CLI=1 mise exec -- mix test test/real_cli/codex_smoke_test.exs --only real_cli
+HELMSMAN_REAL_CLI=1 mise exec -- mix test test/helmsman_daemon/adapters/provider_real_cli_test.exs --only real_cli
 ```
 
-`HELMSMAN_REAL_HOME` overrides the smoke test home and `HELMSMAN_REAL_MODEL`
-overrides its model. Optional `HELMSMAN_REAL_MCP_URL` and `HELMSMAN_REAL_MCP_TOKEN`
-add an MCP check. The dev_run command accepts `HELMSMAN_RUN_TOKEN` from its
-process environment so MCP tokens need not appear in shell arguments or URLs.
+The automated real CLI provider tests use temporary HOME / CODEX_HOME and a
+loopback fake provider. They never use the owner's real Codex configuration.
+The dev_run command accepts `HELMSMAN_RUN_TOKEN` from its process environment
+so MCP tokens need not appear in shell arguments or URLs.
 Codex startup disables update checking. Stdout messages are buffered intact up
 to 32 MiB; larger messages stop the run with `cli_error`. Session storage remains
 after runs finish so thread/resume works.

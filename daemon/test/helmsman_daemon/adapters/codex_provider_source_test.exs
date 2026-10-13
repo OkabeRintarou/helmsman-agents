@@ -27,7 +27,7 @@ defmodule HelmsmanDaemon.Adapters.CodexProviderSourceTest do
          {:ok, :custom_provider}},
         {"quoted key", "openai", ["-c", ~s("model_provider"='gateway')], %{}, "1",
          {:ok, :custom_provider}},
-        {"CLI raw string fallback", nil, ["-c", "model_provider=gateway"], %{}, "1",
+        {"CLI raw string fallback", "openai", ["-c", "model_provider=gateway"], %{}, "1",
          {:ok, :custom_provider}},
         {"filtered positional argument", nil, [~s(model_provider="gateway")], %{}, "1",
          {:error, :none}},
@@ -57,7 +57,11 @@ defmodule HelmsmanDaemon.Adapters.CodexProviderSourceTest do
 
   defp configure(provider) do
     File.mkdir_p!(Config.home())
-    File.write!(Path.join(Config.home(), "config.toml"), "model_provider=\"#{provider}\"")
+
+    File.write!(
+      Path.join(Config.home(), "config.toml"),
+      "model_provider=\"#{provider}\"\n[model_providers.gateway]\nname=\"Gateway\"\nbase_url=\"http://localhost/v1\""
+    )
   end
 
   test "account bypasses login and conflicting custom arguments", %{cli: cli} do

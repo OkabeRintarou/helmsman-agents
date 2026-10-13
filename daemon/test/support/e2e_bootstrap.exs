@@ -20,6 +20,20 @@ opts = [
   heartbeat_interval_ms: Map.get(options, "heartbeat_interval_ms", 30_000)
 ]
 
+opts =
+  case System.get_env("HELMSMAN_E2E_CODEX_CLI") do
+    nil ->
+      opts
+
+    cli ->
+      Application.put_env(:helmsman_daemon, :codex_executable, cli)
+
+      Keyword.merge(opts,
+        adapters: [HelmsmanDaemon.Adapters.Codex],
+        run_worker_opts: Keyword.put(run_worker_opts, :adapter, HelmsmanDaemon.Adapters.Codex)
+      )
+  end
+
 {:ok, supervisor} = HelmsmanDaemon.TestSupport.start(opts)
 
 {:ok, _control} =

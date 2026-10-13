@@ -1,13 +1,26 @@
 defmodule HelmsmanDaemon.Adapters.Codex.Output do
   @moduledoc false
   alias HelmsmanDaemon.Adapters.Codex
-  alias HelmsmanDaemon.Adapters.Codex.Config
+  alias HelmsmanDaemon.Adapters.Codex.{Config, Home}
   alias HelmsmanProtocol.Event
   @retry_budget_ms 300_000
   @tools ~w(commandExecution fileChange mcpToolCall webSearch)
 
   def init(spec) do
-    {servers, _} = Config.mcp(spec)
+    names =
+      with {:ok, location} <- Home.resolve(),
+           {:ok, config} <- Config.read_validated(location) do
+        Config.mcp_names(config)
+      else
+        _ -> []
+      end
+
+    {servers, _} = Config.mcp(spec, names)
+    init(spec, servers)
+  end
+
+  def init(spec, servers) do
+    servers = Map.reject(servers, fn {_name, entry} -> entry["enabled"] == false end)
 
     %{
       spec: spec,

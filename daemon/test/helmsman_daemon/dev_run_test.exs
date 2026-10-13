@@ -1,6 +1,7 @@
 defmodule HelmsmanDaemon.DevRunTest do
   use ExUnit.Case
   import ExUnit.CaptureIO
+  alias HelmsmanDaemon.Adapters.Codex
   alias Mix.Tasks.Helmsman.DevRun
   @moduletag :tmp_dir
 
@@ -19,6 +20,25 @@ defmodule HelmsmanDaemon.DevRunTest do
 
     for dir <- Path.wildcard(Path.join([home, "runs", "*"])),
         do: assert(File.ls!(dir) == ["raw.log"])
+  end
+
+  test "dev_run uses the requested daemon config for a private Codex home", %{tmp_dir: dir} do
+    home = Path.join(dir, "daemon")
+    private = Path.join(dir, "private-codex")
+    File.mkdir_p!(home)
+    File.write!(Path.join(home, "config.toml"), "[codex]\nhome=\"#{private}\"")
+    cli = HelmsmanDaemon.CodexLogin.install(dir, "1")
+    args = ["--provider", "codex", "--prompt", "x", "--home", home]
+    output = capture_io(fn -> DevRun.run(args, [Codex]) end)
+    assert output =~ "provider_auth"
+    assert output =~ private
+    assert File.read!(cli <> ".home") == private
+    refute File.exists?(cli <> ".started")
+    File.write!(Path.join(home, "config.toml"), "[codex]\nhome=\"relative\"")
+
+    assert_raise Mix.Error, "Invalid daemon config.toml", fn ->
+      DevRun.run(args, [Codex])
+    end
   end
 
   test "invalid arguments fail before creating directories" do

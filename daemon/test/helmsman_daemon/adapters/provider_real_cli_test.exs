@@ -32,6 +32,125 @@ defmodule HelmsmanDaemon.Adapters.ProviderRealCLITest do
     {:ok, account_url: account_url, sentinel_url: sentinel_url, base_env: env}
   end
 
+  test "real Codex rejects an unbound agent with an empty user home before app-server starts",
+       ctx do
+    assert {:ok, _} = Codex.detect()
+    refute File.exists?(Path.join(Config.home(), "config.toml"))
+    refute File.exists?(Path.join(Config.home(), "auth.json"))
+
+    run = spec(1)
+    run = %{run | agent: %{run.agent | provider: :codex, custom_args: []}}
+
+    env =
+      Map.merge(ctx.base_env, %{
+        "CODEX_HOME" => ctx.base_env["HOME"],
+        "OPENAI_API_KEY" => "USER_SENTINEL",
+        "CODEX_API_KEY" => "USER_SENTINEL",
+        "OPENAI_BASE_URL" => ctx.sentinel_url <> "/env/v1"
+      })
+
+    worker = launch(run, Codex, env)
+    monitor = Process.monitor(worker)
+
+    assert_receive {:report, 1,
+                    %Report.Finished{
+                      status: :failed,
+                      failure_reason: :provider_auth,
+                      error: message
+                    }, _, _, _},
+                   15_000
+
+    assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 5_000
+    assert message =~ "Bind a provider account"
+    assert message =~ Config.home()
+    refute_receive {:report, 1, %Report.Started{}, _, _, _}
+    refute File.exists?(Path.join(Paths.run(1), "raw.log"))
+    refute_receive {:provider_request, _, _}
+  end
+
+  test "real Codex rejects undefined user provider before launching", ctx do
+    File.write!(Path.join(Config.home(), "config.toml"), ~s(model_provider="undefined"))
+    run = spec(1)
+    run = %{run | agent: %{run.agent | provider: :codex, custom_args: []}}
+    worker = launch(run, Codex, ctx.base_env)
+    {finished, _} = collect(1, [])
+    assert finished.failure_reason == :provider_auth
+    assert finished.error =~ "undefined"
+    assert finished.error =~ Config.home()
+    eventually(fn -> not Process.alive?(worker) end)
+    refute_receive {:report, 1, %Report.Started{}, _, _, _}
+    refute File.exists?(Path.join(Paths.run(1), "raw.log"))
+    refute_receive {:provider_request, _, _}
+  end
+
+  test "real Codex uses user gateway with unused profiles, disables docs and preserves snapshots",
+       ctx do
+    marker = Path.join(ctx.tmp_dir, "docs-started")
+    script = Path.join(ctx.tmp_dir, "docs-cli")
+    File.write!(script, "#!/bin/sh\nprintf STARTED > " <> marker <> "\nexit 1\n")
+    File.chmod!(script, 0o700)
+    home = Config.home()
+
+    File.write!(Path.join(home, "config.toml"), """
+    model_provider = "gateway"
+    model = "account-model"
+    [model_providers.gateway]
+    name = "Local fake gateway"
+    base_url = "#{ctx.account_url}/account/v1"
+    wire_api = "responses"
+    env_key = "TEST_GATEWAY_KEY"
+    [profiles.work]
+    model_provider = "undefined"
+    [mcp_servers.docs]
+    command = "#{script}"
+    [features]
+    shell_snapshot = true
+    shell_snapshot_v2 = true
+    """)
+
+    File.mkdir_p!(Path.join(home, "shell_snapshots"))
+    mine = Path.join(home, "shell_snapshots/mine.sh")
+    File.write!(mine, "OWNER_SNAPSHOT")
+    before = File.stat!(mine, time: :posix)
+    assert {:ok, _} = Codex.detect()
+    run = bound(:codex, ctx.account_url <> "/account/v1")
+
+    run = %{
+      run
+      | agent: %{
+          run.agent
+          | provider_account: nil,
+            model: nil,
+            custom_args: ["--enable", "shell_snapshot", "--enable", "shell_snapshot_v2"]
+        }
+    }
+
+    worker = launch(run, Codex, Map.put(ctx.base_env, "TEST_GATEWAY_KEY", "ACCOUNT_SENTINEL"))
+    {finished, events} = collect(1, [])
+    assert finished.status == :succeeded
+    assert finished.summary == "OK"
+
+    assert Enum.any?(
+             events,
+             &(&1.type == :tool_result and String.contains?(&1.data.output, "SHELL_EXECUTED"))
+           )
+
+    refute File.exists?(marker)
+    assert File.ls!(Path.join(home, "shell_snapshots")) == ["mine.sh"]
+    assert File.read!(mine) == "OWNER_SNAPSHOT"
+    assert File.stat!(mine, time: :posix).mtime == before.mtime
+    verify_requests()
+    verify_cleanup(worker, ctx.tmp_dir)
+  end
+
+  test "real Codex refuses top-level legacy profile without exposing values" do
+    File.write!(Path.join(Config.home(), "config.toml"), ~s(profile="PROFILE_SENTINEL"))
+    assert {:error, message} = Codex.detect()
+    assert message =~ "legacy profiles"
+    refute message =~ "PROFILE_SENTINEL"
+    refute_receive {:provider_request, _, _}
+  end
+
   test "real Claude overrides fake user and project config; only account credentials reach loopback",
        ctx do
     assert {:ok, _} = Claude.detect()
@@ -108,7 +227,10 @@ defmodule HelmsmanDaemon.Adapters.ProviderRealCLITest do
     config =
       "model_provider=\"userprov\"\nmodel=\"user-model\"\n[model_providers.userprov]\nname=\"User sentinel\"\nbase_url=\"#{ctx.sentinel_url}/user/v1\"\nwire_api=\"responses\"\nenv_key=\"USER_KEY\"\n"
 
-    config = config <> "[features]\nshell_snapshot=true\nshell_snapshot_v2=true\n"
+    config =
+      config <>
+        "[profiles.work]\nmodel_provider=\"undefined\"\n[features]\nshell_snapshot=true\nshell_snapshot_v2=true\n"
+
     File.write!(Path.join(Config.home(), "config.toml"), config)
 
     File.write!(

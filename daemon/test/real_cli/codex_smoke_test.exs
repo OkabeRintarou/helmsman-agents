@@ -4,17 +4,27 @@ defmodule HelmsmanDaemon.CodexSmokeTest do
   @moduletag :tmp_dir
   @moduletag timeout: 300_000
   alias HelmsmanDaemon.Adapters.Codex
-  alias HelmsmanDaemon.RunWorker
+  alias HelmsmanDaemon.Adapters.Codex.Config
+  alias HelmsmanDaemon.{Env, ProviderHTTP, RunWorker}
 
   setup do
-    home = Path.expand(System.get_env("HELMSMAN_REAL_HOME", "~/.helmsman-dev"))
-    System.put_env("HELMSMAN_HOME", home)
-    Paths.ensure!()
+    {url, stop} = ProviderHTTP.start(self(), :account, "SMOKE_SENTINEL")
+    on_exit(stop)
+
+    File.write!(Path.join(Config.home(), "config.toml"), """
+    model_provider = "fake_gateway"
+    [model_providers.fake_gateway]
+    name = "Loopback smoke"
+    base_url = "#{url}/account/v1"
+    wire_api = "responses"
+    env_key = "TEST_GATEWAY_KEY"
+    """)
+
     start_execution()
-    :ok
+    {:ok, env: Map.put(Env.child(), "TEST_GATEWAY_KEY", "SMOKE_SENTINEL")}
   end
 
-  test "real Codex succeeds, resumes, optionally calls MCP and stops without group remnants" do
+  test "real Codex succeeds, resumes and stops with a loopback provider", %{env: env} do
     assert {:ok, _} = Codex.detect()
     run = spec(10)
 
@@ -24,64 +34,54 @@ defmodule HelmsmanDaemon.CodexSmokeTest do
         agent: %{
           run.agent
           | provider: :codex,
-            model: System.get_env("HELMSMAN_REAL_MODEL", "gpt-6-luna"),
+            model: "account-model",
             effort: "low",
             custom_args: []
         },
         limits: %{run.limits | timeout_ms: 120_000, idle_timeout_ms: 120_000}
     }
 
-    {first, _} = execute(run)
+    {first, _} = execute(run, env)
     assert first.status == :succeeded
     assert is_binary(first.session_id) and first.session_id != ""
     assert first.summary =~ "OK"
 
     {second, _} =
-      execute(%{
-        run
-        | run_id: 11,
-          resume_session_id: first.session_id,
-          prompt: "What did you reply last time?"
-      })
+      execute(
+        %{
+          run
+          | run_id: 11,
+            resume_session_id: first.session_id,
+            prompt: "What did you reply last time?"
+        },
+        env
+      )
 
     assert second.status == :succeeded
     assert second.session_id == first.session_id
     assert second.summary =~ "OK"
 
-    if System.get_env("HELMSMAN_REAL_MCP_URL") && System.get_env("HELMSMAN_REAL_MCP_TOKEN") do
-      {third, events} =
-        execute(%{
-          run
-          | run_id: 12,
-            mcp: %{
-              run.mcp
-              | url: System.fetch_env!("HELMSMAN_REAL_MCP_URL"),
-                token: System.fetch_env!("HELMSMAN_REAL_MCP_TOKEN")
-            },
-            prompt: "Call helmsman whoami. Reply OK."
-        })
+    {cancelled, _} =
+      execute(%{run | run_id: 13, prompt: "Run sleep 30, then reply DONE."}, env, true)
 
-      assert third.status == :succeeded
-
-      assert Enum.any?(
-               events,
-               &(&1.type == :tool_call and &1.data.name == "mcp__helmsman__whoami")
-             )
-    end
-
-    {cancelled, _} = execute(%{run | run_id: 13, prompt: "Run sleep 30, then reply DONE."}, true)
     assert cancelled.status == :cancelled
   end
 
-  defp execute(run, stop? \\ false) do
-    worker = start_supervised!({RunWorker, {run, [adapter: Codex, reporter: TestReporter]}})
+  defp execute(run, env, stop? \\ false) do
+    worker =
+      start_supervised!(
+        {RunWorker, {run, [adapter: Codex, reporter: TestReporter, base_env: env]}}
+      )
+
     monitor = Process.monitor(worker)
 
     eventually(fn -> is_integer(:sys.get_state(worker).pgid) end)
     pgid = :sys.get_state(worker).pgid
 
     if stop? do
-      Process.sleep(3_000)
+      # Wait for app-server output so this exercises a running CLI cancellation,
+      # rather than deleting an empty run directory before its first output.
+      eventually(fn -> File.exists?(Path.join(Paths.run(run.run_id), "raw.log")) end, 1_000)
       GenServer.cast(worker, {:stop, :cancel})
     end
 

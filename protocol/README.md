@@ -44,7 +44,7 @@ Report 模块在 `HelmsmanProtocol.Report`，Reply 在 `HelmsmanProtocol.Reply`�
 | sync | daemon → server | Sync: machine, clis, max_concurrency, local_repositories（v3，可空） | Join: 同 join |
 | claim | daemon → server | Claim: 空 | Claim: runs（RunSpec 列表） |
 | starting | daemon → server | Starting: run_id | Starting: action（proceed / abort）, reason（abort 必须有） |
-| started | daemon → server | Started: run_id, session_id（可空） | Empty: 空 |
+| started | daemon → server | Started: run_id, session_id（保留兼容，已不使用，恒为空） | Empty: 空 |
 | events | daemon → server | Events: run_id, events（1–200 个 Event，批内 seq 严格递增） | Events: acked_seq |
 | heartbeat | daemon → server | Heartbeat: runs（run_id, last_seq） | Heartbeat: terminate_run_ids |
 | steer_ack | daemon → server | SteerAck: run_id, feedback_id | Empty: 空 |

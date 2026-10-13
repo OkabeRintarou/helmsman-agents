@@ -19,7 +19,18 @@ defmodule HelmsmanDaemon.GitTokenLeakTest do
     for adapter <- [Claude, Codex, Fake] do
       configured =
         if adapter == Codex,
-          do: %{spec | agent: %{spec.agent | custom_args: ["-c", ~s(model_provider="test")]}},
+          do: %{
+            spec
+            | agent: %{
+                spec.agent
+                | custom_args: [
+                    "-c",
+                    ~s(model_provider="test"),
+                    "-c",
+                    ~s(model_providers.test.name="Test")
+                  ]
+              }
+          },
           else: spec
 
       assert {:ok, launch} = adapter.prepare(configured, run_dir, state.path)

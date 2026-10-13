@@ -49,7 +49,11 @@ defmodule HelmsmanDaemon.Adapters.CodexPrepareTest do
 
     refute File.exists?(cli <> ".home")
 
-    File.write!(Path.join(Config.home(), "config.toml"), ~s(model_provider="gateway"))
+    File.write!(
+      Path.join(Config.home(), "config.toml"),
+      ~s(model_provider="gateway"\n[model_providers.gateway]\nname="Gateway"\nbase_url="http://localhost/v1")
+    )
+
     assert {:ok, _} = Codex.prepare(run, dir, dir)
     refute File.exists?(cli <> ".home")
     openai = %{run | agent: %{run.agent | custom_args: ["-c", ~s(model_provider="openai")]}}
@@ -57,7 +61,11 @@ defmodule HelmsmanDaemon.Adapters.CodexPrepareTest do
     CodexLogin.mode(cli, "0")
     assert {:ok, _} = Codex.prepare(openai, dir, dir)
 
-    File.write!(Path.join(Config.home(), "config.toml"), ~s(model_provider="openai"))
+    File.write!(
+      Path.join(Config.home(), "config.toml"),
+      ~s(model_provider="openai"\n[model_providers.gateway]\nname="Gateway"\nbase_url="http://localhost/v1")
+    )
+
     CodexLogin.mode(cli, "1")
 
     custom = %{

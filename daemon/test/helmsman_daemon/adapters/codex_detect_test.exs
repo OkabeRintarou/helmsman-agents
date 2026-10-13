@@ -21,13 +21,24 @@ defmodule HelmsmanDaemon.Adapters.CodexDetectTest do
 
     for {text, fragment} <- [
           {"[bad", "not valid TOML"},
-          {"[mcp_servers.docs]\nurl = \"SECRET\"", "docs"},
-          {"project_root_markers = [\"SECRET\"]", "project_root_markers"}
+          {"project_root_markers = [\"SECRET\"]", "project_root_markers"},
+          {"[model_providers.helmsman_account]\nname=\"SECRET\"", "helmsman_account"},
+          {"profile=\"SECRET\"", "legacy profiles"},
+          {"[mcp_servers.HELMSMAN]\nurl=\"SECRET\"", "helmsman"}
         ] do
       File.write!(path, text)
       assert {:error, message} = Codex.detect(fn _ -> {:ok, "codex-cli 0.162.1"} end)
       assert message =~ fragment
       refute message =~ "SECRET"
     end
+  end
+
+  test "user MCP and unused profiles do not disable offline detection" do
+    File.write!(
+      Path.join(System.fetch_env!("CODEX_HOME"), "config.toml"),
+      ~s([mcp_servers.docs]\ncommand="SECRET"\n[profiles.work]\nmodel_provider="undefined")
+    )
+
+    assert {:ok, _} = Codex.detect(fn _ -> {:ok, "codex-cli 0.162.1"} end)
   end
 end

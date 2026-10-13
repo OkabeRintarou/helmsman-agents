@@ -32,10 +32,11 @@ defmodule HelmsmanDaemon.RunWorkerTest do
   end
 
   test "success reports started then events then finished and cleans private files" do
-    {:ok, worker} = Runs.start_run(spec(1), reporter: TestReporter)
+    run = %{spec(1) | resume_session_id: "candidate-session"}
+    {:ok, worker} = Runs.start_run(run, reporter: TestReporter)
     ref = Process.monitor(worker)
     assert_receive {:report, 1, %Report.Starting{}, _, _, _}
-    assert_receive {:report, 1, %Report.Started{}, _, _, _}, 1_000
+    assert_receive {:report, 1, %Report.Started{session_id: nil}, _, _, _}, 1_000
     assert_receive {:report, 1, %Report.Events{events: events}, _, _, _}, 2_000
     assert Enum.map(events, & &1.seq) == [1, 2]
     assert_receive {:report, 1, %Report.Finished{status: :succeeded}, _, _, _}, 2_000
@@ -151,7 +152,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     run = spec(9, "ignore_term")
     run = %{run | agent: %{run.agent | env: %{"FAKE_CLI_CHILD_PID_FILE" => pid_file}}}
     {:ok, worker} = Runs.start_run(run, reporter: TestReporter, kill_timeout_ms: 200)
-    assert_receive {:report, 9, %Report.Started{}, _, _, _}, 1_000
+    assert_receive {:report, 9, %Report.Started{session_id: nil}, _, _, _}, 1_000
     eventually(fn -> File.exists?(pid_file) end)
     child = File.read!(pid_file) |> String.trim() |> String.to_integer()
     Runs.cancel(9)
@@ -315,7 +316,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     end)
 
     {:ok, worker} = Runs.start_run(run, reporter: TestReporter)
-    assert_receive {:report, 20, %Report.Started{}, _, _, _}, 1_000
+    assert_receive {:report, 20, %Report.Started{session_id: nil}, _, _, _}, 1_000
     pgid = :sys.get_state(worker).pgid
 
     for n <- 1..10 do
@@ -385,7 +386,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     run = spec(21)
     run = %{run | agent: %{run.agent | env: %{"FAKE_CLI_CHILD_PID_FILE" => child_file}}}
     {:ok, worker} = Runs.start_run(run, reporter: TestReporter, kill_timeout_ms: 200)
-    assert_receive {:report, 21, %Report.Started{}, _, _, _}, 1_000
+    assert_receive {:report, 21, %Report.Started{session_id: nil}, _, _, _}, 1_000
     eventually(fn -> File.exists?(child_file) end)
     child = File.read!(child_file) |> String.trim() |> String.to_integer()
     {:ok, record} = HelmsmanDaemon.StateStore.read(21)
@@ -465,7 +466,7 @@ defmodule HelmsmanDaemon.RunWorkerTest do
       run = spec(id)
       run = %{run | agent: %{run.agent | env: %{"FAKE_CLI_CHILD_PID_FILE" => child_file}}}
       {:ok, worker} = Runs.start_run(run, reporter: TestReporter, adapter: adapter)
-      assert_receive {:report, ^id, %Report.Started{}, _, _, _}, 1_000
+      assert_receive {:report, ^id, %Report.Started{session_id: nil}, _, _, _}, 1_000
       eventually(fn -> File.exists?(child_file) end)
       child = File.read!(child_file) |> String.trim() |> String.to_integer()
 

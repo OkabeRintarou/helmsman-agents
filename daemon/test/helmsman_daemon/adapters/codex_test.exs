@@ -5,7 +5,19 @@ defmodule HelmsmanDaemon.Adapters.CodexTest do
 
   test "start and resume request full access without approvals", %{tmp_dir: dir} do
     run = spec(1)
-    run = %{run | agent: %{run.agent | custom_args: ["-c", ~s(model_provider="test")]}}
+
+    run = %{
+      run
+      | agent: %{
+          run.agent
+          | custom_args: [
+              "-c",
+              ~s(model_provider="test"),
+              "-c",
+              ~s(model_providers.test.name="Test")
+            ]
+        }
+    }
 
     for resume <- [nil, "session"] do
       assert {:ok, launch} = Codex.prepare(%{run | resume_session_id: resume}, dir, dir)

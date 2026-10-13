@@ -34,6 +34,8 @@ defmodule HelmsmanDaemon.Adapter do
               {:ok, Launch.t()} | {:error, {atom(), String.t()}}
   @optional_callbacks prepare: 4
   @callback init_state(RunSpec.t()) :: term()
+  @callback init_state(RunSpec.t(), Launch.t()) :: term()
+  @optional_callbacks init_state: 2
   @callback handle_output(:stdout | :stderr, binary(), term()) ::
               {[{atom(), map()}], [action()], term()}
   @callback finish(non_neg_integer(), term()) ::

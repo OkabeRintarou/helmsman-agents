@@ -104,7 +104,7 @@ defmodule HelmsmanDaemon.RunWorker do
           state
           | adapter: adapter,
             launch: launch,
-            adapter_state: adapter.init_state(state.spec),
+            adapter_state: init_adapter_state(adapter, state.spec, launch),
             max_line_bytes:
               if(function_exported?(adapter, :max_line_bytes, 0),
                 do: adapter.max_line_bytes(),
@@ -335,7 +335,7 @@ defmodule HelmsmanDaemon.RunWorker do
         state =
           report(state, :started, %Report.Started{
             run_id: state.spec.run_id,
-            session_id: state.spec.resume_session_id
+            session_id: nil
           })
 
         if state.launch.stdin, do: :exec.send(pid, IO.iodata_to_binary(state.launch.stdin))
@@ -353,22 +353,23 @@ defmodule HelmsmanDaemon.RunWorker do
 
   defp launch_cli(state, options), do: Exec.start_cli(state.launch.argv, options, state.opts)
 
+  defp init_adapter_state(adapter, spec, launch) do
+    if function_exported?(adapter, :init_state, 2),
+      do: adapter.init_state(spec, launch),
+      else: adapter.init_state(spec)
+  end
+
   defp prepare_adapter(adapter, state, run_dir, work_dir) do
     if function_exported?(adapter, :prepare, 4) do
-      env =
-        state.opts
-        |> Keyword.get(:base_env, System.get_env())
-        |> Env.agent(state.spec.agent.env)
-
-      adapter.prepare(state.spec, run_dir, work_dir, env)
+      adapter.prepare(state.spec, run_dir, work_dir, base_environment(state))
     else
       adapter.prepare(state.spec, run_dir, work_dir)
     end
   end
 
   defp environment(state) do
-    {reserved, allowed} =
-      Enum.split_with(state.spec.agent.env, fn {key, _} ->
+    reserved =
+      Enum.filter(state.spec.agent.env, fn {key, _} ->
         String.starts_with?(key, "HELMSMAN_")
       end)
 
@@ -377,6 +378,11 @@ defmodule HelmsmanDaemon.RunWorker do
         {:status, %{level: :warning, message: "Ignored reserved environment variable #{key}"}}
       end)
 
+    env = base_environment(state) |> Map.merge(Map.new(state.launch.env))
+    {Enum.to_list(env), warnings}
+  end
+
+  defp base_environment(state) do
     own = %{
       "HELMSMAN_RUN_TOKEN" => state.spec.mcp.token,
       "HELMSMAN_SERVER_URL" => server_url(state),
@@ -385,17 +391,13 @@ defmodule HelmsmanDaemon.RunWorker do
       "TMPDIR" => Path.join(Paths.run(state.spec.run_id), "tmp")
     }
 
-    env =
-      Keyword.get(state.opts, :base_env, System.get_env())
-      |> Env.agent(Map.new(allowed))
-      |> Map.merge(own)
-      |> Map.merge(Map.new(state.launch.env))
-      |> Map.merge(
-        if(state.spec.repo, do: Git.identity(state.spec.agent.name, server_url(state)), else: %{})
-      )
-      |> Map.delete("HELMSMAN_GIT_TOKEN")
-
-    {Enum.to_list(env), warnings}
+    Keyword.get(state.opts, :base_env, System.get_env())
+    |> Env.agent(state.spec.agent.env)
+    |> Map.merge(own)
+    |> Map.merge(
+      if(state.spec.repo, do: Git.identity(state.spec.agent.name, server_url(state)), else: %{})
+    )
+    |> Map.delete("HELMSMAN_GIT_TOKEN")
   end
 
   defp server_url(state),

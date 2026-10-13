@@ -105,12 +105,21 @@ defmodule HelmsmanDaemon.Detector do
   end
 
   defp check_codex_hint do
-    home = CodexConfig.home()
+    alias HelmsmanDaemon.Adapters.Codex.{Home, Source}
 
-    if CodexConfig.provider_source(nil, home, Env.child()) == {:error, :none} do
-      Logger.warning(
-        "Codex is installed but not configured for the Helmsman daemon; Codex agents without a provider account will fail. Configure it with CODEX_HOME=#{home} codex login, or a model_provider in #{home}/config.toml."
-      )
+    with {:ok, {_mode, home} = location} <- Home.resolve() do
+      if hint = Home.migration_hint(location), do: Logger.warning(hint)
+
+      case CodexConfig.provider_source(nil, home, Env.child()) do
+        {:error, reason} ->
+          Logger.warning(
+            "Codex is installed but not configured for the Helmsman daemon; Codex agents without a provider account will fail. " <>
+              Source.error(reason, home)
+          )
+
+        _ ->
+          :ok
+      end
     end
   end
 end

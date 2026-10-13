@@ -36,7 +36,11 @@ defmodule HelmsmanDaemon.DetectorCodexHintTest do
       else
         CodexLogin.mode(cli, "1")
         File.mkdir_p!(Config.home())
-        File.write!(Path.join(Config.home(), "config.toml"), ~s(model_provider="gateway"))
+
+        File.write!(
+          Path.join(Config.home(), "config.toml"),
+          ~s(model_provider="gateway"\n[model_providers.gateway]\nname="Gateway"\nbase_url="http://localhost/v1")
+        )
       end
 
       output =

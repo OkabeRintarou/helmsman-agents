@@ -1,146 +1,105 @@
 defmodule HelmsmanDaemon.Adapters.Codex.Config do
   @moduledoc false
-  alias HelmsmanDaemon.Adapters.Codex
-  alias HelmsmanDaemon.{Exec, Paths}
+  alias HelmsmanDaemon.Adapters.Codex.{Home, Source}
 
-  @blocked ~w(mcp_servers approval_policy approvals_reviewer sandbox_mode sandbox_workspace_write model model_reasoning_effort project_root_markers projects)
+  @blocked ~w(mcp_servers approval_policy approvals_reviewer sandbox_mode sandbox_workspace_write model model_reasoning_effort project_root_markers projects profile profiles)
 
-  def home, do: Path.join(Paths.home(), "codex")
-
-  # codex-cli 0.162.1 app-server does not consume OPENAI_API_KEY or CODEX_API_KEY
-  # for its built-in provider. Custom providers are accepted independently.
-  def provider_source(%{agent: %{provider_account: account}}, _home, _env)
-      when not is_nil(account),
-      do: {:ok, :account}
-
-  def provider_source(spec, home, env) do
-    args = if spec, do: elem(filter(spec.agent.custom_args), 0), else: []
-
-    case effective_provider(args, home) do
-      {:ok, "openai"} -> login_source(home, env)
-      {:ok, provider} when is_binary(provider) and provider != "" -> {:ok, :custom_provider}
-      _ -> {:unknown, :config}
-    end
+  def home do
+    {:ok, {_mode, path}} = Home.resolve()
+    path
   end
 
-  defp effective_provider(args, home) do
-    case argument_provider(args, nil) do
-      nil ->
-        case File.read(Path.join(home, "config.toml")) do
-          {:error, :enoent} -> {:ok, "openai"}
-          {:ok, text} -> file_provider(text)
-          _ -> {:unknown, :config}
+  def provider_source(spec, home, env), do: Source.check(spec, home, env)
+
+  def read(home) do
+    case File.read(Path.join(home, "config.toml")) do
+      {:error, :enoent} ->
+        {:ok, %{}}
+
+      {:ok, text} ->
+        case Toml.decode(text) do
+          {:ok, values} -> {:ok, values}
+          _ -> {:error, "#{Path.join(home, "config.toml")} is not valid TOML"}
         end
 
-      provider ->
-        provider
-    end
-  end
-
-  defp file_provider(text) do
-    case Toml.decode(text) do
-      {:ok, config} -> {:ok, Map.get(config, "model_provider", "openai")}
-      _ -> {:unknown, :config}
-    end
-  end
-
-  defp argument_provider([], provider), do: provider
-
-  defp argument_provider([arg | rest], provider) do
-    [flag | inline] = String.split(arg, "=", parts: 2)
-    {value, rest} = value(inline, rest)
-
-    provider =
-      if flag in ["-c", "--config"] and config_key(value) == "model_provider",
-        do: parse_provider(value),
-        else: provider
-
-    argument_provider(rest, provider)
-  end
-
-  defp parse_provider(value) do
-    case String.split(value, "=", parts: 2) do
-      [_, raw] -> decode_provider(raw)
-      _ -> {:unknown, :config}
-    end
-  end
-
-  defp decode_provider(raw) do
-    case Toml.decode("model_provider=" <> raw) do
-      {:ok, %{"model_provider" => provider}} -> {:ok, provider}
-      _ -> {:ok, String.trim(raw)}
-    end
-  end
-
-  defp login_source(home, env) do
-    env = Map.put(Map.new(env), "CODEX_HOME", home)
-
-    case System.find_executable(Codex.executable()) do
-      nil ->
-        {:unknown, :not_found}
-
-      path ->
-        timeout = Application.get_env(:helmsman_daemon, :codex_login_timeout_ms, 10_000)
-
-        case Exec.command([path, "login", "status"], env: env, timeout: timeout) do
-          {:ok, _output} -> {:ok, :login}
-          {:error, {{:exit_status, 256}, _output}} -> {:error, :none}
-          {:error, {{:exit_status, status}, _output}} -> {:unknown, {:exit, div(status, 256)}}
-          {:error, {:timeout, _output}} -> {:unknown, :timeout}
-          {:error, {:output_limit, _output}} -> {:unknown, :output_limit}
-          _ -> {:unknown, :command_failed}
-        end
+      _ ->
+        {:error, "#{Path.join(home, "config.toml")} cannot be read"}
     end
   end
 
   def validate do
-    path = Path.join(home(), "config.toml")
+    with {:ok, location} <- Home.resolve(), do: validate(location)
+  end
 
-    case File.read(path) do
-      {:error, :enoent} -> :ok
-      {:error, _} -> {:error, "#{path} cannot be read"}
-      {:ok, text} -> validate_toml(path, text)
+  def validate({mode, path}, version \\ "0.162.1") do
+    with {:ok, _config} <- read_validated({mode, path}, version), do: :ok
+  end
+
+  def read_validated({mode, path}, version \\ "0.162.1") do
+    with :ok <- directory(mode, path), {:ok, config} <- read(path) do
+      config_path = Path.join(path, "config.toml")
+      names = mcp_names(config)
+
+      cond do
+        reserved_provider?(config) ->
+          {:error,
+           "#{config_path} defines model_providers.helmsman_account, which is reserved for Helmsman provider accounts; remove it"}
+
+        Map.has_key?(config, "project_root_markers") ->
+          {:error, "#{config_path} sets project_root_markers, which Helmsman does not support"}
+
+        Map.has_key?(config, "profile") ->
+          {:error,
+           "#{config_path} sets profile, which Codex #{version} no longer supports (legacy profiles); remove it, or move that profile to <name>.config.toml"}
+
+        Enum.any?(names, &(String.downcase(&1) == "helmsman")) ->
+          {:error,
+           "#{config_path} defines an MCP server named helmsman; rename it (Helmsman injects its own server under that name for each run) or set [codex] home"}
+
+        Map.has_key?(config, "mcp_servers") and not is_map(config["mcp_servers"]) ->
+          {:error, "#{config_path} defines invalid MCP servers"}
+
+        true ->
+          {:ok, config}
+      end
     end
   end
 
-  defp validate_toml(path, text) do
-    case Toml.decode(text) do
-      {:ok, config} ->
-        cond do
-          reserved_provider?(config) ->
-            {:error,
-             "#{path} defines model_providers.helmsman_account, which is reserved for Helmsman provider accounts; remove it"}
-
-          Map.has_key?(config, "project_root_markers") ->
-            {:error, "#{path} sets project_root_markers, which Helmsman does not support"}
-
-          configured_mcp?(config["mcp_servers"]) ->
-            names = config["mcp_servers"] |> Map.keys() |> Enum.sort() |> Enum.join(", ")
-
-            {:error,
-             "#{path} defines MCP servers (#{names}); remove them, Helmsman injects its own MCP servers per run"}
-
-          Map.has_key?(config, "mcp_servers") and not is_map(config["mcp_servers"]) ->
-            {:error, "#{path} defines invalid MCP servers"}
-
-          true ->
-            :ok
-        end
-
-      _ ->
-        {:error, "#{path} is not valid TOML"}
+  def unchanged(location, original) do
+    with {:ok, current} <- read_validated(location) do
+      if current == original,
+        do: :ok,
+        else:
+          {:error,
+           "#{Path.join(elem(location, 1), "config.toml")} changed during the Codex provider check; retry the run"}
     end
   end
 
-  defp configured_mcp?(servers) when is_map(servers), do: map_size(servers) > 0
-  defp configured_mcp?(_servers), do: false
+  defp directory(:user, path) do
+    if File.dir?(path),
+      do: :ok,
+      else:
+        {:error,
+         "Codex home #{path} does not exist; sign in with codex login (or run codex once), or set [codex] home in #{Path.join(HelmsmanDaemon.Paths.home(), "config.toml")}"}
+  end
+
+  defp directory(:private, _path), do: :ok
+
+  def mcp_names(config) do
+    case config["mcp_servers"] do
+      servers when is_map(servers) -> Map.keys(servers)
+      _ -> []
+    end
+  end
 
   defp reserved_provider?(%{"model_providers" => providers}) when is_map(providers),
     do: Map.has_key?(providers, "helmsman_account")
 
   defp reserved_provider?(_config), do: false
 
-  def cleanup_snapshots(home) do
+  def cleanup_snapshots({:user, _home}), do: []
+
+  def cleanup_snapshots({:private, home}) do
     case File.rm_rf(Path.join(home, "shell_snapshots")) do
       {:ok, _} ->
         []
@@ -233,7 +192,7 @@ defmodule HelmsmanDaemon.Adapters.Codex.Config do
       not Enum.any?(blocked, &(key == &1 or String.starts_with?(key, &1 <> ".")))
   end
 
-  def mcp(spec) do
+  def mcp(spec, user_names \\ []) do
     {extra, removed} =
       Enum.reduce(spec.agent.extra_mcp_servers, {%{}, []}, fn {name, entry}, {kept, removed} ->
         case convert(name, entry) do
@@ -242,10 +201,15 @@ defmodule HelmsmanDaemon.Adapters.Codex.Config do
         end
       end)
 
+    folded = MapSet.new(user_names, &String.downcase/1)
+    collisions = Enum.filter(Map.keys(extra), &MapSet.member?(folded, String.downcase(&1)))
+    disabled = Map.new(user_names, &{&1, %{"enabled" => false}})
+    extra = extra |> Map.drop(collisions) |> Map.merge(disabled)
+
     {Map.put(extra, "helmsman", %{
        "url" => spec.mcp.url,
        "bearer_token_env_var" => "HELMSMAN_RUN_TOKEN"
-     }), Enum.sort(removed)}
+     }), Enum.sort(removed ++ collisions)}
   end
 
   defp convert(name, entry) when is_map(entry) do

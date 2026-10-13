@@ -1,7 +1,8 @@
 defmodule HelmsmanDaemon.Config do
   @moduledoc "Validated local TOML configuration."
   use GenServer
-  alias HelmsmanDaemon.Paths
+  alias HelmsmanDaemon.Adapters.Codex.Home
+  alias HelmsmanDaemon.{Env, Paths}
 
   def load do
     Paths.ensure!()
@@ -23,14 +24,27 @@ defmodule HelmsmanDaemon.Config do
     level = Map.get(values, "log_level", "info")
 
     if is_integer(concurrency) and concurrency in 1..32 and level in ~w(debug info warning error) do
-      {:ok,
-       %{
-         server_url: Map.get(values, "server_url"),
-         max_concurrency: concurrency,
-         log_level: String.to_existing_atom(level)
-       }}
+      with {:ok, codex_home} <- codex_home(values) do
+        {:ok,
+         %{
+           codex_home: codex_home,
+           server_url: Map.get(values, "server_url"),
+           max_concurrency: concurrency,
+           log_level: String.to_existing_atom(level)
+         }}
+      end
     else
       {:error, :invalid_config}
+    end
+  end
+
+  defp codex_home(values) do
+    case Map.get(values, "codex", %{}) do
+      codex when is_map(codex) ->
+        Home.configured(codex["home"], System.get_env())
+
+      _ ->
+        {:error, :invalid_codex_home}
     end
   end
 
@@ -42,7 +56,10 @@ defmodule HelmsmanDaemon.Config do
     with {:ok, _kill} <- HelmsmanDaemon.Exec.resolve_kill(),
          {:ok, _ps} <- HelmsmanDaemon.Exec.resolve_ps(),
          {:ok, config} <- load() do
-      {:ok, config}
+      location =
+        Home.location(config.codex_home, Env.child())
+
+      {:ok, Map.put(config, :codex_location, location)}
     else
       {:error, reason} -> {:stop, reason}
     end

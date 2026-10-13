@@ -35,6 +35,12 @@ defmodule HelmsmanDaemon.Adapters.CodexProviderTest do
 
   setup %{tmp_dir: dir} do
     HelmsmanDaemon.CodexLogin.install(dir)
+
+    File.write!(
+      Path.join(dir, "config.toml"),
+      "[codex]\nhome=" <> JSON.encode!(Path.join(dir, "codex"))
+    )
+
     :ok
   end
 

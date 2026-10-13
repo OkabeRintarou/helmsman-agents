@@ -13,14 +13,24 @@ defmodule HelmsmanDaemon.Case do
   end
 
   setup context do
-    previous = System.get_env("HELMSMAN_HOME")
-    System.put_env("HELMSMAN_HOME", context.tmp_dir)
+    keys = ["HELMSMAN_HOME", "HOME", "CODEX_HOME"]
+    previous = Map.take(System.get_env(), keys)
+    user_home = Path.join(context.tmp_dir, "user-home")
+    codex_home = Path.join(context.tmp_dir, "codex")
+    File.mkdir_p!(user_home)
+    File.mkdir_p!(codex_home)
+
+    System.put_env(%{
+      "HELMSMAN_HOME" => context.tmp_dir,
+      "HOME" => user_home,
+      "CODEX_HOME" => codex_home
+    })
+
     Paths.ensure!()
 
     on_exit(fn ->
-      if previous,
-        do: System.put_env("HELMSMAN_HOME", previous),
-        else: System.delete_env("HELMSMAN_HOME")
+      Enum.each(keys, &System.delete_env/1)
+      System.put_env(previous)
     end)
 
     :ok

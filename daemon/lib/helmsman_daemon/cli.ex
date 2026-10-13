@@ -64,7 +64,7 @@ defmodule HelmsmanDaemon.CLI do
 
       if cli.provider == :codex do
         IO.puts(
-          "Configure Codex provider or login in #{Path.join(HelmsmanDaemon.Paths.home(), "codex")}; omit MCP servers from config.toml. Use Agent env for credentials; -c values are visible in process arguments."
+          "Codex uses inherited CODEX_HOME or $HOME/.codex by default; set [codex] home in daemon config.toml for a private directory. User MCP servers are disabled; rename a user helmsman MCP server. Use Agent env for credentials; -c values are visible in process arguments."
         )
       end
     end)

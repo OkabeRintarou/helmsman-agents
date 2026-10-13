@@ -11,7 +11,18 @@ defmodule HelmsmanDaemon.Adapters.CodexReplay do
   def prepare(spec, run_dir, work_dir) do
     with {:ok, launch} <-
            Codex.prepare(
-             %{spec | agent: %{spec.agent | custom_args: ["-c", ~s(model_provider="replay")]}},
+             %{
+               spec
+               | agent: %{
+                   spec.agent
+                   | custom_args: [
+                       "-c",
+                       ~s(model_provider="replay"),
+                       "-c",
+                       ~s(model_providers.replay.name="Replay")
+                     ]
+                 }
+             },
              run_dir,
              work_dir
            ) do
@@ -20,6 +31,7 @@ defmodule HelmsmanDaemon.Adapters.CodexReplay do
   end
 
   defdelegate init_state(spec), to: Codex
+  defdelegate init_state(spec, launch), to: Codex
   defdelegate handle_output(stream, line, state), to: Codex
   defdelegate finish(code, state), to: Codex
   defdelegate interrupt(state), to: Codex

@@ -18,12 +18,15 @@ defmodule Mix.Tasks.Helmsman.DevRun do
   ]
 
   @impl true
-  def run(args) do
+  def run(args), do: run(args, Adapter.registered())
+
+  @doc false
+  def run(args, adapters) do
     if Mix.env() not in [:dev, :test], do: Mix.raise("helmsman.dev_run requires dev or test")
     flags = parse!(args)
 
     adapter =
-      Enum.find(Adapter.registered(), &(Atom.to_string(&1.provider()) == flags[:provider]))
+      Enum.find(adapters, &(Atom.to_string(&1.provider()) == flags[:provider]))
 
     if !adapter, do: Mix.raise("No adapter for #{flags[:provider]}")
     Mix.Task.run("app.start")
@@ -80,6 +83,12 @@ defmodule Mix.Tasks.Helmsman.DevRun do
 
   defp execute(spec, adapter) do
     Paths.ensure!()
+
+    case HelmsmanDaemon.Config.load() do
+      {:ok, _} -> :ok
+      _ -> Mix.raise("Invalid daemon config.toml")
+    end
+
     {:ok, registry} = Registry.start_link(keys: :unique, name: HelmsmanDaemon.RunRegistry)
 
     try do
