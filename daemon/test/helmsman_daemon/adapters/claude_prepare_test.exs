@@ -35,6 +35,7 @@ defmodule HelmsmanDaemon.Adapters.ClaudePrepareTest do
              "--output-format",
              "stream-json",
              "--verbose",
+             "--replay-user-messages",
              "--permission-mode",
              "bypassPermissions",
              "--strict-mcp-config",

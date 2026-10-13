@@ -1,5 +1,15 @@
 defmodule HelmsmanDaemon.Adapter do
-  @moduledoc "Extension point for agent CLI detection, launching and stream normalization."
+  @moduledoc """
+  Extension point for agent CLI detection, launching and stream normalization.
+
+  Steering (`add-run-steering` decision 11): `steer/3` encodes a message
+  for the running CLI under the caller's reference `ref` (the feedback
+  ID). `:delivered` means the CLI has taken it once the bytes are
+  written; `:pending` means a later `{:steer_result, ref, result}` action
+  of `handle_output/3` says so (`:delivered`) or not (`{:rejected,
+  reason}`, together with a warning `status` event of the adapter's own).
+  `:unsupported` when the CLI cannot take input now or at all.
+  """
   alias HelmsmanDaemon.Launch
   alias HelmsmanProtocol.RunSpec
 
@@ -18,7 +28,12 @@ defmodule HelmsmanDaemon.Adapter do
           | :context_overflow
           | :cli_error
           | :unknown
-  @type action :: :close_stdin | {:write, iodata()} | {:abort, daemon_failure(), String.t()}
+  @type steer_result :: :delivered | {:rejected, String.t()}
+  @type action ::
+          :close_stdin
+          | {:write, iodata()}
+          | {:abort, daemon_failure(), String.t()}
+          | {:steer_result, term(), steer_result()}
   @callback provider() :: :claude | :codex | :copilot | :cursor
   @callback executable() :: String.t()
   @callback min_version() :: Version.t()
@@ -43,7 +58,8 @@ defmodule HelmsmanDaemon.Adapter do
   @callback interrupt(term()) :: {:write, iodata()} | :signal
   @callback max_line_bytes() :: pos_integer()
   @optional_callbacks max_line_bytes: 0
-  @callback steer(String.t(), term()) :: {:ok, iodata(), term()} | :unsupported
+  @callback steer(ref :: term(), text :: String.t(), state :: term()) ::
+              {:ok, iodata(), :delivered | :pending, term()} | :unsupported
 
   @adapters Application.compile_env(:helmsman_daemon, :adapters, [])
   def registered, do: @adapters

@@ -8,7 +8,7 @@ defmodule HelmsmanDaemon.Adapters.Framing do
   defdelegate detect(), to: Fake
   defdelegate prepare(spec, run_dir, work_dir), to: Fake
   defdelegate interrupt(state), to: Fake
-  defdelegate steer(text, state), to: Fake
+  defdelegate steer(ref, text, state), to: Fake
   def max_line_bytes, do: Application.get_env(:helmsman_daemon, :framing_limit, 32 * 1_048_576)
   def init_state(spec), do: spec.agent.name
 
@@ -46,5 +46,5 @@ defmodule HelmsmanDaemon.Adapters.FramingLauncher do
   defdelegate handle_output(stream, line, state), to: Framing
   defdelegate finish(code, state), to: Framing
   defdelegate interrupt(state), to: Framing
-  defdelegate steer(text, state), to: Framing
+  defdelegate steer(ref, text, state), to: Framing
 end

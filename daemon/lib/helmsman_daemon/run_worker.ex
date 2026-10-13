@@ -1,5 +1,14 @@
 defmodule HelmsmanDaemon.RunWorker do
-  @moduledoc "One temporary worker per run, from workspace preparation to confirmed completion."
+  @moduledoc """
+  One temporary worker per run, from workspace preparation to confirmed completion.
+
+  Steering (`add-run-steering` decision 9): a message for the run is
+  handled only while the CLI runs and no stop was asked for, once per
+  feedback ID (`steers`: `:pending` until the adapter confirms it,
+  `:delivered` after). Each delivery is acknowledged with `steer_ack`
+  through the report pipeline, so `finished` waits for its reply; a
+  delivered message pushed again is only acknowledged again.
+  """
   use GenServer, restart: :temporary
   require Logger
 
@@ -68,7 +77,9 @@ defmodule HelmsmanDaemon.RunWorker do
       git_workspace: nil,
       worktree_lock: nil,
       finalized?: false,
-      prepare_events: []
+      prepare_events: [],
+      steers: %{},
+      steer_notes: MapSet.new()
     }
 
     Process.send_after(self(), :tick, 100)
@@ -196,6 +207,9 @@ defmodule HelmsmanDaemon.RunWorker do
 
   @impl true
   def handle_cast({:stop, reason}, state), do: {:noreply, stop_cli(state, reason)}
+
+  def handle_cast({:steer, feedback_id, text}, state),
+    do: {:noreply, steer(state, feedback_id, text)}
 
   @impl true
   def handle_info({stream, pid, data}, %{pgid: pid} = state) when stream in [:stdout, :stderr] do
@@ -482,13 +496,79 @@ defmodule HelmsmanDaemon.RunWorker do
     do: state
 
   defp perform_actions(state, actions) do
-    Enum.each(actions, fn
-      :close_stdin -> :exec.send(state.pgid, :eof)
-      {:write, bytes} -> :exec.send(state.pgid, IO.iodata_to_binary(bytes))
-    end)
+    Enum.reduce(actions, state, fn
+      :close_stdin, acc ->
+        :exec.send(acc.pgid, :eof)
+        acc
 
-    state
+      {:write, bytes}, acc ->
+        :exec.send(acc.pgid, IO.iodata_to_binary(bytes))
+        acc
+
+      {:steer_result, ref, result}, acc ->
+        steer_result(acc, ref, result)
+    end)
   end
+
+  ## Steering (add-run-steering decision 9)
+
+  defp steer(%{phase: :running, stop_reason: nil, adapter_aborted?: false} = state, id, text)
+       when not is_nil(state.pgid) do
+    case Map.get(state.steers, id) do
+      :delivered -> ack_steer(state, id)
+      :pending -> state
+      nil -> steer_new(state, id, text)
+    end
+  end
+
+  defp steer(state, _id, _text), do: state
+
+  defp steer_new(state, id, text) do
+    case state.adapter.steer(id, text, state.adapter_state) do
+      {:ok, bytes, status, adapter_state} when status in [:delivered, :pending] ->
+        :exec.send(state.pgid, IO.iodata_to_binary(bytes))
+
+        state = %{
+          state
+          | adapter_state: adapter_state,
+            steers: Map.put(state.steers, id, status)
+        }
+
+        if status == :delivered, do: ack_steer(state, id), else: state
+
+      :unsupported ->
+        steer_unsupported(state, id)
+    end
+  end
+
+  defp steer_unsupported(state, id) do
+    if MapSet.member?(state.steer_notes, id) do
+      state
+    else
+      message =
+        "This CLI cannot take input while it runs; the message is queued for a run after this one"
+
+      %{state | steer_notes: MapSet.put(state.steer_notes, id)}
+      |> enqueue([{:status, %{level: :info, message: message}}])
+    end
+  end
+
+  defp steer_result(state, ref, result) do
+    case {Map.get(state.steers, ref), result} do
+      {:pending, :delivered} ->
+        ack_steer(%{state | steers: Map.put(state.steers, ref, :delivered)}, ref)
+
+      # The adapter's own warning event says why; a later push may try again.
+      {:pending, {:rejected, _reason}} ->
+        %{state | steers: Map.delete(state.steers, ref)}
+
+      _other ->
+        state
+    end
+  end
+
+  defp ack_steer(state, id),
+    do: report(state, :steer_ack, %Report.SteerAck{run_id: state.spec.run_id, feedback_id: id})
 
   defp abort_adapter(state, reason, message) do
     state = %{state | adapter_aborted?: true}

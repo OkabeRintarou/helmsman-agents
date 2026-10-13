@@ -1,5 +1,14 @@
 defmodule HelmsmanDaemon.Adapters.Fake do
-  @moduledoc "Test-only configurable POSIX fake CLI adapter."
+  @moduledoc """
+  Test-only configurable POSIX fake CLI adapter.
+
+  `custom_args`: the scenario, then the steering mode (`add-run-steering`
+  decision 11): `unsupported` (default), `delivered` (taken once written)
+  or `pending` (the fake CLI answers `steer_ok <ref>` or
+  `steer_rejected <ref> <reason>`). A steering mode keeps stdin open; a
+  message is written as one line `steer <ref> <text as a JSON string>`, which
+  the fake CLI puts back into its result JSON as it is (`result_steered`).
+  """
   @behaviour HelmsmanDaemon.Adapter
   alias HelmsmanDaemon.{Exec, Launch}
   alias HelmsmanProtocol.Event
@@ -27,11 +36,49 @@ defmodule HelmsmanDaemon.Adapters.Fake do
      %Launch{
        argv: [executable(), "--scenario", scenario],
        stdin: spec.prompt <> "\n",
-       close_stdin?: not String.ends_with?(scenario, "/echo")
+       close_stdin?: not String.ends_with?(scenario, "/echo") and steer_mode(spec) == :unsupported
      }}
   end
 
-  def init_state(_spec), do: %{result: nil, session_id: nil, stderr: ""}
+  defp steer_mode(spec) do
+    case Enum.at(spec.agent.custom_args, 1) do
+      "delivered" -> :delivered
+      "pending" -> :pending
+      _other -> :unsupported
+    end
+  end
+
+  def init_state(spec),
+    do: %{
+      result: nil,
+      session_id: nil,
+      stderr: "",
+      steer_mode: steer_mode(spec),
+      pending_steers: MapSet.new()
+    }
+
+  def handle_output(:stdout, "steer_ok " <> ref, state) do
+    ref = String.to_integer(String.trim(ref))
+
+    if MapSet.member?(state.pending_steers, ref),
+      do:
+        {[{:status, %{level: :info, message: "steer delivered"}}],
+         [{:steer_result, ref, :delivered}],
+         %{state | pending_steers: MapSet.delete(state.pending_steers, ref)}},
+      else: {[], [], state}
+  end
+
+  def handle_output(:stdout, "steer_rejected " <> rest, state) do
+    [ref, reason] = String.split(rest, " ", parts: 2)
+    ref = String.to_integer(ref)
+
+    if MapSet.member?(state.pending_steers, ref),
+      do:
+        {[{:status, %{level: :warning, message: "steer rejected: " <> reason}}],
+         [{:steer_result, ref, {:rejected, reason}}],
+         %{state | pending_steers: MapSet.delete(state.pending_steers, ref)}},
+      else: {[], [], state}
+  end
 
   def handle_output(stream, line, state) do
     case Jason.decode(line) do
@@ -75,5 +122,17 @@ defmodule HelmsmanDaemon.Adapters.Fake do
   end
 
   def interrupt(_state), do: :signal
-  def steer(_text, _state), do: :unsupported
+  def steer(_ref, _text, %{steer_mode: :unsupported}), do: :unsupported
+
+  def steer(ref, text, %{steer_mode: mode} = state) do
+    line = "steer #{ref} " <> Jason.encode!(text) <> "\n"
+
+    case mode do
+      :delivered ->
+        {:ok, line, :delivered, state}
+
+      :pending ->
+        {:ok, line, :pending, %{state | pending_steers: MapSet.put(state.pending_steers, ref)}}
+    end
+  end
 end

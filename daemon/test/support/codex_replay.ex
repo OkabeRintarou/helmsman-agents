@@ -35,7 +35,7 @@ defmodule HelmsmanDaemon.Adapters.CodexReplay do
   defdelegate handle_output(stream, line, state), to: Codex
   defdelegate finish(code, state), to: Codex
   defdelegate interrupt(state), to: Codex
-  defdelegate steer(text, state), to: Codex
+  defdelegate steer(ref, text, state), to: Codex
 end
 
 defmodule HelmsmanDaemon.CodexFixtures do

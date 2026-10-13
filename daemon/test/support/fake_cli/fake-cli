@@ -35,6 +35,24 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
     write) printf '%s\n' "$value" > hello.txt ;;
     git_commit) git -c core.hooksPath=/dev/null -c credential.helper= add -A && git -c core.hooksPath=/dev/null -c credential.helper= commit -m "$value" ;;
     barrier) printf ready > "$value.ready"; while [ ! -f "$value.release" ]; do sleep 0.01; done ;;
+    # add-run-steering: wait for a steering line on stdin, then answer it.
+    await_steer|reject_steer)
+      ref=
+      while IFS= read -r input; do
+        case "$input" in
+          # The text is a JSON string literal: kept escaped, without its quotes.
+          "steer "*) rest=${input#steer }; ref=${rest%% *}; text=${rest#* }; text=${text#\"}; text=${text%\"}; break ;;
+        esac
+      done
+      if [ "$command" = await_steer ]; then
+        steered="${steered:+$steered | }$text"
+        printf 'steer_ok %s\n' "$ref"
+      else
+        printf 'steer_rejected %s %s\n' "$ref" "$value"
+      fi
+      ;;
+    await_line) while IFS= read -r input; do case "$input" in *"$value"*) break ;; esac; done ;;
+    result_steered) printf '{"type":"result","data":{"success":true,"text":"done; steered: %s"}}\n' "$steered" ;;
     exit) exit "$value" ;;
     ''|'#'*) ;;
     *) printf 'unknown instruction: %s\n' "$command" >&2; exit 2 ;;

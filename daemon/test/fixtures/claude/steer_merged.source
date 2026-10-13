@@ -1,0 +1,3 @@
+Recorded live with Claude Code 2.1.246 for add-run-steering 2.1 (the user environment, an Anthropic-compatible gateway).
+S1: prompt "Run the Bash command `sleep 20`, then reply with exactly FIRST."; second frame "Also reply SECOND" written at +5 s; --replay-user-messages. The second frame is echoed (isReplay) after the tool result and answered by the single result.
+Redacted the working directory, home paths and URLs; removed 71 system/thinking_tokens lines.

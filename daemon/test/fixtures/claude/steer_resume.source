@@ -1,0 +1,3 @@
+Recorded live with Claude Code 2.1.246 for add-run-steering 2.1 (the user environment, an Anthropic-compatible gateway).
+S4: --resume of the steer_merged session with --replay-user-messages; prompt "List every message I have sent you in this session, one per line, quoted exactly." The answer quotes "Also reply SECOND".
+Redacted the working directory, home paths and URLs; removed 143 system/thinking_tokens lines.

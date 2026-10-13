@@ -8,7 +8,7 @@ defmodule HelmsmanDaemon.Adapters.AbortFake do
   end
 
   defdelegate finish(code, state), to: Fake
-  defdelegate steer(text, state), to: Fake
+  defdelegate steer(ref, text, state), to: Fake
 
   def init_state(spec),
     do: Map.put(Fake.init_state(spec), :reason, String.to_existing_atom(spec.prompt))

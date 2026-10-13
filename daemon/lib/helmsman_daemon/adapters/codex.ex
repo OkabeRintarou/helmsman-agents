@@ -172,7 +172,9 @@ defmodule HelmsmanDaemon.Adapters.Codex do
 
   def interrupt(_), do: :signal
 
-  def steer(text, %{turn_id: id, closed?: false} = state) when is_binary(id) do
+  # `add-codex-adapter` decision 12; the reply to the request settles
+  # `ref` (`add-run-steering` decision 11).
+  def steer(ref, text, %{turn_id: id, closed?: false} = state) when is_binary(id) do
     number = state.next_steer
 
     bytes =
@@ -186,9 +188,9 @@ defmodule HelmsmanDaemon.Adapters.Codex do
         }
       })
 
-    {:ok, bytes,
-     %{state | next_steer: number + 1, pending_steers: MapSet.put(state.pending_steers, number)}}
+    {:ok, bytes, :pending,
+     %{state | next_steer: number + 1, pending_steers: Map.put(state.pending_steers, number, ref)}}
   end
 
-  def steer(_, _), do: :unsupported
+  def steer(_ref, _text, _state), do: :unsupported
 end

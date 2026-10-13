@@ -1,0 +1,3 @@
+Recorded live with Claude Code 2.1.246 for add-run-steering 2.1 (the user environment, an Anthropic-compatible gateway).
+S3: as S2, and stdin closed right after the first result; --replay-user-messages. The CLI still echoes and answers the second frame, then exits 0.
+Redacted the working directory, home paths and URLs; removed 141 system/thinking_tokens lines.

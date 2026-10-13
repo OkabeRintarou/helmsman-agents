@@ -32,6 +32,19 @@ defmodule HelmsmanDaemon.Runs do
     :ok
   end
 
+  @doc "Hands a steering message to the run's worker (`add-run-steering` decision 9)."
+  def steer(id, feedback_id, text) do
+    case Registry.lookup(HelmsmanDaemon.RunRegistry, id) do
+      [] ->
+        Logger.debug("Steering for run #{id}, which is not running here")
+
+      workers ->
+        Enum.each(workers, fn {pid, _} -> GenServer.cast(pid, {:steer, feedback_id, text}) end)
+    end
+
+    :ok
+  end
+
   def start_run(spec, opts \\ []), do: GenServer.call(__MODULE__, {:start_run, spec, opts})
 
   @impl true

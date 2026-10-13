@@ -45,7 +45,7 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
       usage: empty_usage(),
       allowed_servers: MapSet.new(Map.keys(servers)),
       next_steer: 100,
-      pending_steers: MapSet.new()
+      pending_steers: %{}
     }
   end
 
@@ -106,15 +106,20 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
     do: {[], [], %{state | turn_id: id}}
 
   defp output(%{"id" => id} = reply, state) do
-    if MapSet.member?(state.pending_steers, id) do
-      events =
-        if reply["error"],
-          do: Codex.warning("steer rejected: " <> safe_error(error_text(reply["error"]), 1_024)),
-          else: [{:status, %{level: :info, message: "steer delivered"}}]
+    case Map.pop(state.pending_steers, id) do
+      {nil, _pending} ->
+        {[], [], state}
 
-      {events, [], %{state | pending_steers: MapSet.delete(state.pending_steers, id)}}
-    else
-      {[], [], state}
+      {ref, pending} ->
+        {events, result} =
+          if reply["error"] do
+            reason = safe_error(error_text(reply["error"]), 1_024)
+            {Codex.warning("steer rejected: " <> reason), {:rejected, reason}}
+          else
+            {[{:status, %{level: :info, message: "steer delivered"}}], :delivered}
+          end
+
+        {events, [{:steer_result, ref, result}], %{state | pending_steers: pending}}
     end
   end
 

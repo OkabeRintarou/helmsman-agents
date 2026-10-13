@@ -650,8 +650,8 @@ defmodule HelmsmanDaemon.Connection do
         Credentials.delete()
         fatal(socket, 3, "Daemon token revoked; login again")
 
-      {:ok, %HelmsmanProtocol.Push.Steer{}} ->
-        Logger.debug("Steering awaits add-run-steering")
+      {:ok, %HelmsmanProtocol.Push.Steer{run_id: id, feedback_id: feedback_id, text: text}} ->
+        Runs.steer(id, feedback_id, text)
         {:ok, socket}
 
       _ ->

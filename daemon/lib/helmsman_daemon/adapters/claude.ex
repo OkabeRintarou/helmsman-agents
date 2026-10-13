@@ -1,6 +1,20 @@
 defmodule HelmsmanDaemon.Adapters.Claude do
-  @moduledoc "Claude Code stream JSON launch, event normalization and failure classification."
+  @moduledoc """
+  Claude Code stream JSON launch, event normalization and failure classification.
+
+  Steering (`add-run-steering` decision 12; live test S1–S4 in
+  `reviews/impl-notes-1.md`, Claude 实测): with `--replay-user-messages`
+  the CLI echoes each user message (`isReplay: true`) when it takes it into
+  the session, whether into the current turn or as a new one, and the next
+  `result` answers every message echoed before it. A steering message is
+  delivered at its echo, compared in full with the earliest one still
+  waiting. stdin is closed at a `result` only when no steering message
+  still waits for its echo (or the result is an error). An echoed message
+  stays unanswered until the next `result`; exiting with a message not
+  echoed or not answered yet is a failure, whatever an earlier result said.
+  """
   @behaviour HelmsmanDaemon.Adapter
+  require Logger
   alias HelmsmanDaemon.Adapters.Claude.Provider
   alias HelmsmanDaemon.{Exec, Launch}
   alias HelmsmanProtocol.Event
@@ -97,6 +111,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
              "--output-format",
              "stream-json",
              "--verbose",
+             "--replay-user-messages",
              "--permission-mode",
              "bypassPermissions",
              "--strict-mcp-config",
@@ -184,8 +199,15 @@ defmodule HelmsmanDaemon.Adapters.Claude do
       usage: nil,
       stderr: [],
       diagnostics: MapSet.new(),
-      closed?: false
+      closed?: false,
+      prompt: prompt(spec),
+      prompt_echoed?: false,
+      steers: [],
+      unanswered?: false
     }
+
+  defp prompt(%{prompt: prompt}) when is_binary(prompt), do: prompt
+  defp prompt(_spec), do: nil
 
   defp provider_account?(%{agent: %{provider_account: account}}), do: not is_nil(account)
   defp provider_account?(_spec), do: false
@@ -256,6 +278,12 @@ defmodule HelmsmanDaemon.Adapters.Claude do
        when is_list(content),
        do: {Enum.flat_map(content, &assistant_block/1), [], state}
 
+  defp output(
+         %{"type" => "user", "isReplay" => true, "message" => %{"content" => content}},
+         state
+       ),
+       do: echoed(content_text(content), state)
+
   defp output(%{"type" => "user", "message" => %{"content" => content}}, state)
        when is_list(content),
        do: {Enum.flat_map(content, &user_block/1), [], state}
@@ -269,13 +297,18 @@ defmodule HelmsmanDaemon.Adapters.Claude do
       {:result, %{text: safe(text, 32_768), success: value["is_error"] === false}}
     ]
 
-    {events, [:close_stdin],
+    # Every message echoed so far is answered; one still waiting for its
+    # echo will get a turn of its own (live test S2, S3).
+    close? = state.steers == [] or value["is_error"] !== false
+
+    {events, if(close?, do: [:close_stdin], else: []),
      %{
        state
        | result: value,
          session_id: value["session_id"] || state.session_id,
-         usage: usage,
-         closed?: true
+         usage: add_usage(state.usage, usage),
+         closed?: close?,
+         unanswered?: false
      }}
   end
 
@@ -345,6 +378,17 @@ defmodule HelmsmanDaemon.Adapters.Claude do
     }
   end
 
+  # Token counts are per result; `total_cost_usd` is the session's so far.
+  defp add_usage(nil, usage), do: usage
+
+  defp add_usage(total, usage) do
+    Map.new(usage, fn
+      {:cost_usd, cost} -> {:cost_usd, cost || total.cost_usd}
+      {key, nil} -> {key, total[key]}
+      {key, value} -> {key, (total[key] || 0) + value}
+    end)
+  end
+
   defp count(value) when is_integer(value) and value >= 0, do: value
   defp count(_), do: nil
 
@@ -369,21 +413,31 @@ defmodule HelmsmanDaemon.Adapters.Claude do
         "\n"
       )
 
-    result =
-      cond do
-        (code == 0 and state.result) && state.result["is_error"] === false ->
-          :succeeded
-
-        is_nil(state.result) ->
-          {:failed, missing_result_reason(code, error),
-           "Claude exited without result (exit #{code}): " <> safe(error, 4_096)}
-
-        true ->
-          {:failed, classify(error), "Claude exit #{code}: " <> safe(error, 4_096)}
-      end
-
+    result = outcome(code, state, error)
     {result, %{session_id: state.session_id, summary: safe(text, 4_096), usage: state.usage}}
   end
+
+  defp outcome(code, state, error) do
+    cond do
+      clean_success?(code, state) and state.steers == [] and not state.unanswered? ->
+        :succeeded
+
+      clean_success?(code, state) ->
+        {:failed, :cli_error,
+         "Claude exited before answering every steering message (exit 0); " <>
+           "the last result does not cover them"}
+
+      is_nil(state.result) ->
+        {:failed, missing_result_reason(code, error),
+         "Claude exited without result (exit #{code}): " <> safe(error, 4_096)}
+
+      true ->
+        {:failed, classify(error), "Claude exit #{code}: " <> safe(error, 4_096)}
+    end
+  end
+
+  defp clean_success?(0, %{result: %{"is_error" => false}}), do: true
+  defp clean_success?(_code, _state), do: false
 
   defp missing_result_reason(0, _error), do: :cli_error
   defp missing_result_reason(_code, error), do: classify(error)
@@ -395,8 +449,27 @@ defmodule HelmsmanDaemon.Adapters.Claude do
       end)
 
   def interrupt(_state), do: :signal
-  def steer(_text, %{closed?: true}), do: :unsupported
-  def steer(text, state), do: {:ok, frame(text), state}
+  def steer(_ref, _text, %{closed?: true}), do: :unsupported
+
+  def steer(ref, text, state),
+    do: {:ok, frame(text), :pending, %{state | steers: state.steers ++ [{ref, text}]}}
+
+  # `add-run-steering` decision 12: the prompt's own echo is not a steering
+  # message; any other echo is compared, in full, with the earliest message
+  # still waiting. No match: no receipt (the fallback stays).
+  defp echoed(text, %{prompt_echoed?: false, prompt: text} = state),
+    do: {[], [], %{state | prompt_echoed?: true}}
+
+  defp echoed(text, %{steers: [{ref, text} | rest]} = state) do
+    {[{:status, %{level: :info, message: "steer delivered"}}], [{:steer_result, ref, :delivered}],
+     %{state | steers: rest, unanswered?: true}}
+  end
+
+  defp echoed(_text, state) do
+    Logger.debug("Claude echoed a message that is not the next steering message")
+    {[], [], state}
+  end
+
   defp warning(message), do: [{:status, %{level: :warning, message: message}}]
 
   defp safe(text, limit) do

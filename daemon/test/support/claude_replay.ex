@@ -5,6 +5,7 @@ defmodule HelmsmanDaemon.Adapters.ClaudeReplay do
   defdelegate handle_output(stream, line, state), to: Claude
   defdelegate finish(status, state), to: Claude
   defdelegate interrupt(state), to: Claude
+  defdelegate steer(ref, text, state), to: Claude
 
   def prepare(spec, run_dir, work_dir) do
     scenario = List.first(spec.agent.custom_args)

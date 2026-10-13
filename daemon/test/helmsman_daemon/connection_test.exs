@@ -163,7 +163,7 @@ defmodule HelmsmanDaemon.ConnectionTest do
     refute_push("daemon:1", "events", _, 100)
   end
 
-  test "config_changed sends one sync, detector change sync and steer sends nothing" do
+  test "config_changed sends one sync, detector change sync; steer for no run sends nothing" do
     client = start_connection()
     join_connection(client)
     push(client, "daemon:1", "config_changed", %{})
@@ -174,6 +174,39 @@ defmodule HelmsmanDaemon.ConnectionTest do
     refute_push("daemon:1", "sync", _, 100)
     push(client, "daemon:1", "steer", %{"run_id" => 1, "feedback_id" => 1, "text" => "hello"})
     refute_push("daemon:1", "steer_ack", _, 100)
+  end
+
+  # add-run-steering 2.4 (decision 9).
+  test "steer is handed to the run's worker" do
+    client = start_connection()
+    join_connection(client)
+    Registry.register(HelmsmanDaemon.RunRegistry, 7, %{last_seq: 0, pgid: nil})
+    push(client, "daemon:1", "steer", %{"run_id" => 7, "feedback_id" => 31, "text" => "hello"})
+    assert_receive {:"$gen_cast", {:steer, 31, "hello"}}, 1_000
+  end
+
+  test "a steer_ack in flight is sent again after a reconnect" do
+    client = start_connection(reconnect_after_ms: [10])
+    join_connection(client)
+    ack = Connection.report(1, %Report.SteerAck{run_id: 1, feedback_id: 31})
+    assert_push("daemon:1", "steer_ack", first_wire, _, 1_000)
+    assert first_wire == %{"run_id" => 1, "feedback_id" => 31}
+    send(client, Slipstream.Signatures.event(%Slipstream.Events.ChannelClosed{reason: :closed}))
+    eventually(fn -> not :sys.get_state(client).assigns.joined? end)
+    Process.sleep(20)
+    join_connection(client)
+    assert_push("daemon:1", "steer_ack", ^first_wire, ref, 1_000)
+    reply(client, ref, :ok)
+    assert_receive {:report_result, ^ack, {:ok, %Reply.Empty{}}}
+  end
+
+  test "a steer_ack answered wrong_state is reported to the worker" do
+    client = start_connection()
+    join_connection(client)
+    ack = Connection.report(1, %Report.SteerAck{run_id: 1, feedback_id: 31})
+    assert_push("daemon:1", "steer_ack", _, ref, 1_000)
+    reply(client, ref, {:error, %{"reason" => "wrong_state", "message" => "ended"}})
+    assert_receive {:report_result, ^ack, {:error, %{reason: :wrong_state}}}
   end
 
   test "claim in flight prevents parallel claiming" do

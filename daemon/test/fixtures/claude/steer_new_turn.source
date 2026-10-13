@@ -1,0 +1,3 @@
+Recorded live with Claude Code 2.1.246 for add-run-steering 2.1 (the user environment, an Anthropic-compatible gateway).
+S2: prompt "Reply with the numbers 1 to 30, one per line, and nothing else."; second frame "Also reply SECOND" written when the first assistant text arrived; --replay-user-messages. First result, then a new turn (system init), the echo of the second frame, and a second result.
+Redacted the working directory, home paths and URLs; removed 130 system/thinking_tokens lines.
