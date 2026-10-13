@@ -101,7 +101,9 @@ erDiagram
 | `feedback` | `workspace_id`、`task_id`、`seq`、`thread_seq`、`author_id`、`kind`、`content`、`mentions bigint[]`、`status`（active \| superseded）、`supersedes_id`、`superseded_by_id`、`source_run_id`、`fallback bool`、`dispatch jsonb`（这条记录引起的触发结果，`add-continuation-triggers`）、`search tsvector`（GIN 索引；Ecto 字段 `load_in_query: false`，`add-fulltext-search`）、`inserted_at` | 唯一 `(task_id, seq)`；GIN `search`；`thread_seq` 见 06 §3，`mentions` 见 06 §3a；`source_run_id` = 用运行令牌写入时所在的运行（自动填）；`fallback` = 服务端代写的兜底回帖（13 §7），部分唯一 `(source_run_id) WHERE fallback`。`source_run_id`、`fallback` 在 M5 加列、`search` 在 M10 加列 |
 | `task_links` | `workspace_id`、`from_task_id`、`to_task_id`、`type`（replaces \| depends_on）、`actor_id`、`inserted_at` | 主键 `(from_task_id, to_task_id, type)`；CHECK `from <> to`；索引 `to_task_id` |
 | `saved_filters` | `workspace_id`、`owner_id`（user）、`name citext`（≤ 80 个字符）、`bql`（≤ 2000 个字符）、`visibility`（private \| workspace）、`lock_version`、时间戳 | 唯一 `(workspace_id, owner_id, name)`；每人每工作区最多 100 个（`add-bql-filters` 决策 10） |
-| `imports` | `workspace_id`、`user_id`、`mode`、`source`（helmsman \| bosun）、`file_sha256`、`counts jsonb`、`inserted_at` | 每次导入一条审计记录（11 §1.2） |
+| `imports` | `workspace_id`、`user_id`（`SET NULL`）、`mode`（merge \| replace）、`dry_run`、`source`（helmsman \| bosun）、`file_sha256`、`file_name`、`status`（queued \| running \| succeeded \| failed）、`report jsonb`、`errors jsonb`、`upload`（数据目录里的上传文件，处理完置空）、`started_at`、`finished_at`、时间戳 | 每次导入（含试运行与失败的）一条审计记录，永久保留（11 §1.2，`add-export-import`） |
+| `exports` | `workspace_id`、`user_id`（发起人，CASCADE）、`status`、`file`（数据目录里的相对名）、`size`、`sha256`、`counts jsonb`、`error`、`expires_at`、时间戳 | 只给发起人下载，完成 24 小时后连同文件删除（11 §1.1） |
+| `actor_claims` | `workspace_id`、`actor_id`（未认领的 human，CASCADE）、`user_id`（申请人，CASCADE）、`status`（pending \| approved \| rejected \| cancelled）、`decided_by_id`、`decided_at`、时间戳 | 部分唯一 `(actor_id, user_id) WHERE status = 'pending'`；批准即合并（11 §1.2） |
 
 说明：
 

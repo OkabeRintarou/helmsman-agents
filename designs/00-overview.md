@@ -180,6 +180,11 @@ helmsman-agents/
 | `SECRET_KEY_BASE` | Phoenix 密钥 |
 | `HELMSMAN_VAULT_KEY` | cloak_ecto 加密密钥（Agent 环境变量、GitHub 私钥等） |
 | `PHX_HOST` / `PORT` | 对外域名 / 端口；守护进程和 GitHub webhook 都要能访问到 |
+| `PHX_URL_SCHEME` / `PHX_URL_PORT` | 对外 URL 的协议与端口，缺省 `https` / 443；内网纯 HTTP 部署设 `http`（会话 Cookie 的 `secure` 随之关闭，`add-release-distribution`） |
+| `HELMSMAN_TRUSTED_PROXIES` | 反向代理的 CIDR（逗号分隔）；只信任它们的 `X-Forwarded-For` / `X-Forwarded-Proto`，不设置则忽略这些头 |
+| `HELMSMAN_DATA_DIR` | 数据目录（导出 / 导入文件，11 §1），缺省 `/var/lib/helmsman` |
+| `HELMSMAN_DAEMON_DIST_DIR` / `HELMSMAN_DAEMON_DOWNLOAD_URL` | 守护进程二进制所在目录（镜像内置）/ 目录里没有时重定向的下载前缀（14 §1） |
+| `HELMSMAN_LOG_FORMAT` / `HELMSMAN_LOG_LEVEL` | `json`（发布包缺省）\| `text`；缺省 `info` |
 | `HELMSMAN_SIGNUP` | `invite`（缺省）\| `open` |
 | `HELMSMAN_MAILER_*` | Swoosh 配置；不配时 magic link 打到日志（仅限 dev） |
 | `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET` / `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` | 可选；也可以在 `/admin/github` 用 manifest 流程创建（15 §1） |

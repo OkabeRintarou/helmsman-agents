@@ -6,24 +6,29 @@
 ## 1. 分发与命令
 
 - 打包：Burrito 打成单文件，目标 linux-x64、linux-arm64、macos-arm64、macos-x64；首期不支持 Windows。
-  依赖里有原生代码（erlexec 的端口程序），所以每个目标在**对应平台的 CI runner 上原生构建**，不走交叉编译。
-- 安装：`curl -fsSL https://<server>/install.sh | sh`（从服务端下载与服务端版本匹配的二进制），或 GitHub Releases。
+  依赖里有原生代码（erlexec 的端口程序），所以每个目标在**对应平台的 CI runner 上原生构建**（`ubuntu-24.04`、`ubuntu-24.04-arm`、`macos-15`、Intel macOS），不走交叉编译。版本与服务端相同（仓库根 `VERSION`），`helmsman --version` 输出版本、协议版本与目标。
+- 安装：`curl -fsSL https://<server>/install.sh | sh`：脚本识别系统与架构，从服务端 `/downloads/daemon/<target>` 下载与服务端同版本的二进制并按 `.sha256` 校验，原子安装到 `~/.local/bin/helmsman`（`HELMSMAN_INSTALL_DIR` 可改），不需要 root、不自动重启已在运行的服务；也可从 GitHub Releases 下载。macOS 不签名公证（`curl` 下载不带隔离属性）。
 - 服务端在 `join` 时检查守护进程的协议版本（§3）；不兼容时拒绝并提示升级，守护进程停止重连。
 
 | 命令 | 作用 |
 |---|---|
 | `helmsman login --server URL` | 设备码登录，得到 `hmd_` 令牌（12 §3.1） |
-| `helmsman daemon start [--foreground]` | 启动；缺省后台运行（Linux 写 systemd user unit，macOS 写 launchd plist）。后台服务管理随 `add-release-distribution` 交付，此前只有前台运行 |
-| `helmsman daemon stop \| restart \| status \| logs -f` | 管理后台服务（随 `add-release-distribution`） |
+| `helmsman daemon start [--foreground]` | 启动；缺省安装为后台服务并启动（Linux 写 systemd 用户服务，需要 `loginctl enable-linger` 才能不登录也运行；macOS 写 launchd 代理），服务环境 = 执行时的 `PATH` + `daemon.env`；只有安装后的二进制能装服务；没有 systemd 用户会话时用 `--foreground` 交给自己的进程管理器 |
+| `helmsman daemon stop \| restart \| status [--json] \| logs [-f] [-n N]` | `stop` 停止并取消自启（运行中的运行由服务端按规则重试）；`restart` 先用当前二进制与 `PATH` 重写服务定义（升级后用它）；`status` 看服务、连接、在跑的运行与磁盘占用；`logs` 在 Linux 读 journald、macOS 读 `logs/daemon.log` |
 | `helmsman runtimes` | 列出检测到的 CLI、版本、绑定的工作区 |
-| `helmsman logout` | 吊销本机令牌 |
+| `helmsman --version` | 版本、协议版本、目标平台 |
+| `helmsman logout` | 先停后台服务，再吊销本机令牌、删除本地凭据（含钥匙串项） |
 
 本地文件：
 
 ```
 ~/.helmsman/
 ├── config.toml           # 服务器地址、并发上限、工作根目录、[[local_repositories]]（本地仓库模式，15 §8）
-├── credentials           # 服务器地址、daemon_id、hmd_ 令牌、签发时间（0600）；macOS 钥匙串随 add-release-distribution
+├── credentials           # 服务器地址、daemon_id、签发时间（0600）；hmd_ 令牌：macOS 缺省在登录钥匙串（`[credentials] store`；每代一项，文件只记已提交 / 写入中 / 待删除的代次，崩溃后可恢复），其他平台在这个文件里
+├── status.json           # 运行状态：PID、版本、连接、在跑的运行（0600，不含令牌；`daemon status` 读它）
+├── daemon.env            # 可选：后台服务的环境变量（KEY=VALUE，0600），例如 CURSOR_API_KEY
+├── logs/                 # macOS 后台服务的日志（10 MB × 5 轮转）；Linux 用 journald
+├── service/              # macOS 后台服务定义的正本（启用时复制到 ~/Library/LaunchAgents，stop 时删除副本并持久停用）
 ├── machine_id            # 首次运行时生成的随机 ID
 ├── state/                # 当前运行的本地记录（崩溃恢复用）
 ├── repos/<host>/<owner>/<repo>.git     # 仓库的 bare 镜像缓存
@@ -114,7 +119,7 @@
 |---|---|---|---|---|---|
 | **Claude Code** | `claude -p --input-format stream-json --output-format stream-json --verbose --permission-mode bypassPermissions --strict-mcp-config --mcp-config <run_dir>/mcp.json [--model] [--effort] [--resume <id>]` | stdin 写一帧 stream-json 用户消息，stdin 保持打开；收到 `result` 后关闭 stdin | `--mcp-config` 指向私有目录里的 JSON（HTTP 服务器 + `Authorization: Bearer ${HELMSMAN_RUN_TOKEN}`，CLI 展开环境变量，令牌不落盘；2.1.246 实测，`add-claude-adapter` 决策 16） | `--resume` | stdin 再写一帧用户消息；送达信号与关闭 stdin 的时机以实测为准，找不到可靠信号则不支持（`add-run-steering` 决策 12） |
 | **Codex** | `codex app-server --disable shell_snapshot --disable shell_snapshot_v2`（stdio 上的 JSON-RPC：`initialize` → `thread/start` 或 `thread/resume` → `turn/start`；审批 `never`、沙箱 `danger-full-access`），环境变量 `CODEX_HOME` = 用户的 Codex 目录（继承的 `CODEX_HOME` 或 `~/.codex`；守护进程配置 `[codex] home` 时为该私有目录） | `turn/start` 的参数 | `thread/start` 的 `config` 写 `mcp_servers.helmsman = {url, bearer_token_env_var = "HELMSMAN_RUN_TOKEN"}`（streamable HTTP，令牌不落盘、不进命令行）。缺省用用户自己的 Codex 目录（`update-codex-user-home`，与 Claude 用 `~/.claude` 一致）：终端里配好的登录、provider、网关与请求头直接生效，托管会话出现在用户的 Codex 历史里；守护进程对该目录只读（不建、不写、不删）。该目录 `config.toml` 里的 MCP 服务器在托管运行里按名字设为不启用（运行时守卫兜底），用户自己定义了 `helmsman` 服务器时 CLI 不可用（会与注入的逐键合并）；用户目录不存在时 CLI 不可用；工作目录或仓库根有 `.codex/config.toml` 时拒绝运行（`workspace_prepare`，未信任的项目配置也会生效）。不支持 MCP prompts（提示词只依赖工具与资源） | `thread/resume` | 当前 turn 内追加输入（`turn/steer`），成功回复即送达（`add-run-steering` 决策 11） |
-| **Copilot CLI** | `copilot --output-format json --allow-all --no-ask-user --disable-builtin-mcps --additional-mcp-config @<run_dir>/mcp.json (--session-id <新 UUID> \| --resume <id>) [--model] [--reasoning-effort] --no-auto-update --log-dir <run_dir>/copilot-logs`，环境变量 `COPILOT_HOME=<守护进程主目录>/copilot-home`（私有、持久，所有运行共用；会话存在这里）、`COPILOT_AUTO_UPDATE=false`，继承环境与 Agent `env` 里的其他 `COPILOT_*` 去掉（只留 `COPILOT_GITHUB_TOKEN`、`COPILOT_GH_HOST`、`COPILOT_PROVIDER_*`）；登录用用户的 `gh`（CLI 自己调用 `gh auth token`）或 `COPILOT_GITHUB_TOKEN`，用户 `~/.copilot` 里的自有登录不可用（1.0.96 实测，`add-copilot-adapter`） | stdin（写完关闭；不用 `-p`，没有单参数 128 KB 的上限） | `--additional-mcp-config @文件`（注意 `@` 前缀），请求头写 `${HELMSMAN_RUN_TOKEN}`（展开已实测；不能加 `--secret-env-vars`，它会破坏展开）、`disableToolCache: true`。它**追加**到 `$COPILOT_HOME/mcp-config.json`，所以私有目录里不能有任何用户配置（MCP、hooks、插件、`trustedFolders` 等，有则 CLI 不可用）；仓库的 `.mcp.json` / `.github/mcp.json` 与 hooks 只在目录受信任时加载，守护进程从不信任目录（`COPILOT_ALLOW_ALL=true` 会信任，所以不传）；运行时守卫：出现未配置的已连接 MCP 服务器即中止 | `--resume`（会话 ID 只在输出最后一行出现，所以新会话用 `--session-id` 预先指定） | 不支持（`-p` 模式忽略运行中的 stdin）→ 结束后续跑 |
+| **Copilot CLI** | `copilot --output-format json --allow-all --no-ask-user --disable-builtin-mcps --additional-mcp-config @<run_dir>/mcp.json (--session-id <新 UUID> \| --resume <id>) [--model] [--reasoning-effort] --no-auto-update --log-dir <run_dir>/copilot-logs`，环境变量 `COPILOT_HOME=<守护进程主目录>/copilot-home`（私有、持久，所有运行共用；会话存在这里）、`COPILOT_AUTO_UPDATE=false`，继承环境与 Agent `env` 里的其他 `COPILOT_*` 去掉（只留 `COPILOT_GITHUB_TOKEN`、`COPILOT_GH_HOST`、`COPILOT_PROVIDER_*`）；登录用用户的 `gh`（CLI 自己调用 `gh auth token`）或 `COPILOT_GITHUB_TOKEN`，用户 `~/.copilot` 里的自有登录不可用（1.0.96 实测，`add-copilot-adapter`） | stdin（写完关闭；不用 `-p`，没有单参数 128 KB 的上限） | `--additional-mcp-config @文件`（注意 `@` 前缀），请求头写 `${HELMSMAN_RUN_TOKEN}`（展开已实测；不能加 `--secret-env-vars`，它会破坏展开）、`disableToolCache: true`。它**追加**到 `$COPILOT_HOME/mcp-config.json`，所以私有目录里不能有任何用户配置（MCP、hooks、插件等文件；`config.json` / `settings.json` 只允许 CLI 自建的 `firstLaunchAt` 与空值，内联 `hooks`、`statusLine`、`trustedFolders` 等任何其他设置都算用户配置；有则 CLI 不可用，`add-copilot-adapter` 决策 16）；仓库的 `.mcp.json` / `.github/mcp.json` 与 hooks 只在目录受信任时加载，守护进程从不信任目录（`COPILOT_ALLOW_ALL=true` 会信任，所以不传）；运行时守卫：出现未配置的已连接 MCP 服务器即中止 | `--resume`（会话 ID 只在输出最后一行出现，所以新会话用 `--session-id` 预先指定） | 不支持（`-p` 模式忽略运行中的 stdin）→ 结束后续跑 |
 | **Cursor CLI** | **缺省不启用**：守护进程配置 `[cursor] enabled = true` 才可用（团队管理员策略与仓库 `.cursor/hooks.json` 关不掉，`add-cursor-adapter` 决策 1）。`cursor-agent -p --force --output-format stream-json --sandbox disabled --disable-codebase-ref --disable-project-configs --model <模型或 auto> (--new-session-id <uuid> \| --resume <id>)`；环境变量 `HOME=<run_dir>/home`（每次运行一个私有 HOME，随运行删除；共用会让并发运行的 `mcp.json` 串用）、`CURSOR_CONFIG_DIR` / `CURSOR_DATA_DIR` = 同一根目录下的 `config/` / `data/`（持久）、`AGENT_CLI_CREDENTIAL_STORE=memory`；只用 `CURSOR_API_KEY` 登录（不读写任何 `auth.json`）；`[cursor] home_links`（缺省 `.gitconfig`）把真实 HOME 的条目链接进来（2026.10.01 实测） | stdin（写完关闭） | 写进这次运行私有 HOME 的用户级 `.cursor/mcp.json`（内容只来自本次运行描述；用户级不需要批准；请求头 `${env:HELMSMAN_RUN_TOKEN}` 展开已实测，令牌不落盘）。仓库的 `.cursor/mcp.json` 等需要批准、私有 `DATA` 里从不写批准记录，所以不会被连接；不用 `--approve-mcps`（会批准并持久保存仓库的服务器）；`--disable-project-configs` 防止仓库 `.cursor/cli.json` 挡掉 Helmsman 工具；检测时 `mcp list` 列出任何服务器（只可能是团队下发）即不可用；调用未配置的 MCP 服务器即中止 | `--resume`（不存在的 ID 会静默开新会话，所以启动前检查会话记录） | 不支持 → 结束后续跑 |
 
 - 上表参数按本机现有版本核对过帮助信息（claude、codex-cli 0.161、Copilot CLI 1.0.95、cursor-agent 2026.04）。各 CLI 演进很快：每个适配器开工时先做一次实测，确认输出事件格式、MCP 注入、会话恢复、私有配置目录下的登录真的可用，再定稿适配器（Claude、Codex 的实测与决策见 `add-claude-adapter`、`add-codex-adapter`）。
@@ -211,6 +216,7 @@ Codex 因此以 `sandbox: danger-full-access` 运行，不用它自带的 bubble
 - 建议运行守护进程的系统用户**不配置任何 GitHub 凭据**（§5），这样推送和合并只能经过 Helmsman。
 - 守护进程不会把**启动它的那个会话**的凭据通道（编辑器终端的 git askpass 与 IPC、被注入的 git 配置）交给 Agent（§5 的清理），但会把守护进程用户自己的凭据交给它；从服务管理器或干净的登录 shell 启动最稳妥。
 - 登录时只为**勾选的工作区**注册运行时（12 §3.1），`hmd_` 令牌泄露的影响限于这些工作区。
+- macOS 把 `hmd_` 令牌放进登录钥匙串，防的是它以明文出现在文件、备份与同步盘里；同一用户的进程（包括 Agent）仍能用 `security` 读出它，与上面「没有边界」一致。
 
 Helmsman 自己能保证的：
 

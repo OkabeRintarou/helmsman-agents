@@ -303,4 +303,4 @@ SELECT r.* FROM runs r
 
 - 领域：`Helmsman.Runs.enqueue/3`（只由触发器和手动入口调用）、`claim/2`、`starting/2`、`append_events/3`、`pushed/3`、`finish/3`、`cancel/2`、`retry/2`、`steer_ack/3`（守护进程回执）、`steerable/2`（界面是否显示插话勾选框）；插话本身是 `Helmsman.Feedback.add/3` 的 `steer_run_id`（`add-run-steering`）。
 - MCP：`run_agent(agent, task_id?, instructions?)`、`list_runs(task_id)`、`cancel_run(run_id)`。
-- REST：`/api/v1/w/:slug/runs`、`/runs/:id`、`/runs/:id/events`、`/runs/:id/cancel`、`/runs/:id/retry`。
+- REST（`/api/v1/w/:slug` 下，`add-rest-api`）：`POST /runs`（同 `run_agent`）、`GET /tasks/:id/runs`（同 `list_runs`）、`GET /runs/:id`、`GET /runs/:id/events`、`POST /runs/:id/cancel`、`POST /runs/:id/retry`；跨任务找运行用 BQL（`/query?bql=run = running`）。

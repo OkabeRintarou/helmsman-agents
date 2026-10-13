@@ -132,4 +132,4 @@ from t in Task, where: t.workspace_id == ^ws and ^dynamic, order_by: ..., limit:
 - member 以上的人能保存（viewer 只读，运行令牌只能运行共享的）；所有者离开工作区时删除他的私有筛选器，共享的保留（`add-bql-filters` 决策 10）。
 - 保存前先解析一次，非法 BQL 不能保存。
 - 侧栏列出「我的」和「共享」两组；`/w/:slug/query?filter=<id>` 打开。
-- MCP：`list_filters` `save_filter(name?, bql?, filter_id?, shared?)`（带 `filter_id` 是更新，只改给出的字段；新建时 `name`、`bql` 必填）`delete_filter(filter_id)`；`query_tasks` 接受 `bql` 或 `filter_id`（二选一）。
+- MCP：`list_filters` `save_filter(name?, bql?, filter_id?, shared?, lock_version?)`（带 `filter_id` 是更新，只改给出的字段，带 `lock_version` 时版本不等返回 `stale`；新建时 `name`、`bql` 必填）`delete_filter(filter_id)`；`query_tasks` 接受 `bql` 或 `filter_id`（二选一）。

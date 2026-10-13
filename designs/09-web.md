@@ -19,6 +19,7 @@
 | `/w/:slug/agent-design` | `AgentDesignLive` | 对话创建 Agent（12 §6）：对话 + 实时草稿、确认创建；只有本人能看；不放在 `/agents/*name` 下以免与 Agent 名冲突；`add-agent-conversation-ui` |
 | `/w/:slug/runs/:id` | `RunLive.Show` | 单次运行的完整执行记录（任务页里的弹窗也能看，这里便于分享链接） |
 | `/w/:slug/squads` | `SquadLive.Index` | 小队（16 §3） |
+| `/w/:slug/squads/*name` | `SquadLive.Show` | 小队详情：说明、成员、你能否触发（挡住的成员）；通配段同 Agent 详情页（名字可含 `/`），也是 `actor_chip` 里小队的落点；`add-squads-autopilots-ui` D1 |
 | `/w/:slug/autopilots`、`/w/:slug/autopilots/:id` | `AutopilotLive.*` | 自动化（16 §3） |
 | `/w/:slug/settings` | `SettingsLive.General` | 常规：工作区名称、slug（owner）、退出工作区；设置的第一个标签，侧栏「设置」指向这里 |
 | `/w/:slug/settings/members` | `SettingsLive.Members` | 成员、角色、邀请 |
@@ -80,6 +81,7 @@
 | `workspace:<id>:runtimes` | `RuntimesLive`、`AgentLive.*` | 机器上线 / 离线 |
 | `run:<id>` | 运行记录弹窗、`RunLive.Show` | 追加执行事件；事件很多时只保留最近 500 条在页面上，更早的按需加载 |
 | `agent_design:<id>` | `AgentDesignLive`（`get` 成功后才订阅） | 对话、草稿或状态变了 → 重读（消息只含 ID）；当前轮的实时文本另订阅它的 `run:<id>` |
+| `workspace:<id>:filters`、`workspace:<id>:filters:<user_id>` | 外壳（与 `workspace:<id>` 同一处订阅；后者只订阅当前用户自己的） | `{:filters_changed, _}` → 重读并刷新侧栏的筛选器，再交给页面（`QueryLive` 刷新当前筛选器与列表面板）；`add-bql-filters` 决策 10、`add-search-query-ui` D8 |
 | `user:<id>` | 根布局 | 被移出工作区 / 角色变化 → 重新挂载 |
 
 列表页用 LiveView streams，不在 socket 里保存整张表；分页用「加载更多」。执行记录同样用 streams。

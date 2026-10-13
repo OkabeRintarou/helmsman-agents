@@ -63,7 +63,7 @@ end
 | 状态 | `transition_task(task_id, to, comment?, commits?, tests?, feedback?)` | `feedback = {kind, content}`：迁移原因，与迁移在同一事务里写入（06）；bosun 没有这个参数，不传时行为与 bosun 一致 |
 | 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | 返回 `from` 的详情；`type` 为 `depends_on`（from 等 to）或 `replaces`（from 接手 to，to 未结束时被撤销）；重复添加、删除不存在的都成功（`add-task-links`） |
 | 反馈 | `add_feedback(task_id, content, kind?)` `update_feedback(feedback_id, content, kind?)` `list_feedback(task_id)` | |
-| 查询 | `query_tasks(bql?, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name?, bql?, filter_id?, shared?)` `delete_filter(filter_id)` | `save_filter` 新建时 `name`、`bql` 必填，更新只改给出的字段；`currentUser()` 需要当前身份，没有时返回 `no_identity`；`query_tasks` 的 `bql` 与 `filter_id` 二选一，`limit` 缺省 50、最多 200；`save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致）；运行令牌只能查询与列出共享筛选器（`add-bql-filters`） |
+| 查询 | `query_tasks(bql?, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name?, bql?, filter_id?, shared?, lock_version?)` `delete_filter(filter_id)` | `save_filter` 新建时 `name`、`bql` 必填，更新只改给出的字段；`currentUser()` 需要当前身份，没有时返回 `no_identity`；`query_tasks` 的 `bql` 与 `filter_id` 二选一，`limit` 缺省 50、最多 200；`save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致）；运行令牌只能查询与列出共享筛选器（`add-bql-filters`） |
 
 新增：
 
@@ -109,6 +109,8 @@ end
 | 运行替代别的未结束任务（07 §5） | `This run cannot replace BOS-2: it would cancel a task other than BOS-7. Ask a person to do it.` |
 | `:not_found` / `{:not_found, ident}` | `Task BOS-99 not found in workspace acme.`（两端的工具指出是哪一端） |
 | `%Ecto.Changeset{}` | 字段名 + 错误信息逐条列出 |
+
+REST 用同一组领域错误，由 `HelmsmanWeb.ErrorMapper` 映射成 HTTP 状态码与稳定的错误码（11 §2）；`test/support/domain_error_reasons.ex` 列出全部错误原因，`ErrorText` 与 `ErrorMapper` 的测试都遍历它，新增错误原因两边都得处理。
 
 ## 6. 测试
 
