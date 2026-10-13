@@ -78,6 +78,45 @@ defmodule Helmsman.LocalRepositories.MergeStateTest do
     assert LocalRepositories.merged?(ctx.task.id)
   end
 
+  test "标记时已有新交付: expected_head_sha is checked under the row lock", ctx do
+    delivered(ctx, sha("1"))
+    delivered(ctx, sha("2"))
+
+    assert {:error, {:head_changed, head}} =
+             LocalRepositories.mark_merged(ctx.alice_scope, ctx.task.ident, "ok",
+               expected_head_sha: sha("1")
+             )
+
+    assert head == sha("2")
+    assert %TaskLocalBranch{state: "open", merge_note: nil} = local_branch(ctx.task.id)
+
+    assert {:ok, %{state: "merged", head_sha: ^head}} =
+             LocalRepositories.mark_merged(ctx.alice_scope, ctx.task.ident, nil,
+               expected_head_sha: head
+             )
+  end
+
+  test "the branch view: effective base branch and last change", ctx do
+    delivered(ctx, sha("1"))
+    row = local_branch(ctx.task.id)
+
+    assert {:ok, %{base_branch: "main", updated_at: updated_at}} =
+             LocalRepositories.get_branch(ctx.alice_scope, ctx.task.ident)
+
+    assert updated_at == row.updated_at
+
+    {:ok, _} =
+      Projects.bind_local_repository(ctx.alice_scope, ctx.project.key, ctx.local_repo.id,
+        base_branch: "develop"
+      )
+
+    assert {:ok, %{base_branch: "develop"}} =
+             LocalRepositories.get_branch(ctx.alice_scope, ctx.task.ident)
+
+    assert {:ok, %{base_branch: "develop", updated_at: %DateTime{}}} =
+             LocalRepositories.mark_merged(ctx.alice_scope, ctx.task.ident)
+  end
+
   test "squash merged, marked by a person with a note (scenario)", ctx do
     delivered(ctx, sha("c"))
     assert :ok = LocalRepositories.apply_status(ctx.dctx, status(ctx, sha("c"), :no))

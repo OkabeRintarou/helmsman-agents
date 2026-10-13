@@ -311,8 +311,12 @@ defmodule Helmsman.LocalRepositories do
 
   @doc """
   The local branch of task `ident` (`:read_tasks`): `%{branch, head_sha,
-  state, merged_at, merged_by, merge_note, local_repository}` or nil when
-  the task has none; `local_repository` as in `list/1`.
+  state, merged_at, merged_by, merge_note, base_branch, updated_at,
+  local_repository}` or nil when the task has none; `local_repository` as
+  in `list/1`, `base_branch` the branch merges are checked against (the
+  project's, else the repository's default branch, as in the `watch` of
+  `reply_entries/1`; nil when neither is known) and `updated_at` when the
+  row last changed (a delivery or a merge state change).
   """
   @spec get_branch(Scope.t(), String.t()) ::
           {:ok, map() | nil} | {:error, :forbidden | :not_found}
@@ -322,13 +326,17 @@ defmodule Helmsman.LocalRepositories do
          {:ok, task} <- fetch_task(workspace_id, ident) do
       case Repo.get_by(TaskLocalBranch, task_id: task.id) do
         nil -> {:ok, nil}
-        branch -> {:ok, branch_view(branch, scope)}
+        branch -> {:ok, branch_view(branch, task, scope)}
       end
     end
   end
 
-  defp branch_view(branch, scope) do
+  defp branch_view(branch, task, scope) do
     merged_by = branch.merged_by_id && Repo.get(Actor, branch.merged_by_id)
+    repo = Map.get(views_by_id([branch.local_repository_id], scope), branch.local_repository_id)
+
+    project_branch =
+      Repo.one!(from(p in Project, where: p.id == ^task.project_id, select: p.base_branch))
 
     %{
       branch: branch.branch,
@@ -337,11 +345,9 @@ defmodule Helmsman.LocalRepositories do
       merged_at: branch.merged_at,
       merged_by: merged_by && %{name: merged_by.name, kind: merged_by.kind},
       merge_note: branch.merge_note,
-      local_repository:
-        Map.get(
-          views_by_id([branch.local_repository_id], scope),
-          branch.local_repository_id
-        )
+      base_branch: project_branch || (repo && repo.default_branch),
+      updated_at: branch.updated_at,
+      local_repository: repo
     }
   end
 
@@ -568,17 +574,35 @@ defmodule Helmsman.LocalRepositories do
   (squash, rebase, cherry-pick). People only (an agent: `:forbidden`),
   with the right to move tasks (`:transition_task`). The branch must be
   `open` (`{:error, {:invalid_state, state}}`); no branch: `:not_found`.
-  """
-  @spec mark_merged(Scope.t(), String.t(), String.t() | nil) ::
-          {:ok, map()} | {:error, term()}
-  def mark_merged(scope, ident, note \\ nil)
 
-  def mark_merged(%Scope{} = scope, ident, note) when is_binary(ident) do
+  With `expected_head_sha: sha` in `opts` (the commit the person saw),
+  the branch's `head_sha` is compared under its row lock: a later
+  delivery gives `{:error, {:head_changed, current_sha}}` and nothing is
+  written.
+  """
+  @spec mark_merged(Scope.t(), String.t(), String.t() | nil, keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def mark_merged(scope, ident, note \\ nil, opts \\ [])
+
+  def mark_merged(%Scope{} = scope, ident, note, opts) when is_binary(ident) and is_list(opts) do
+    expected = Keyword.get(opts, :expected_head_sha)
+
     with :ok <- person(scope),
          {:ok, note} <- normalize_note(note) do
-      branch_write(scope, ident, &mark_merged_locked(&1, &2, scope.actor, note))
+      branch_write(scope, ident, &mark_expected_locked(&1, &2, scope.actor, note, expected))
     end
   end
+
+  defp mark_expected_locked(task, branch, actor, note, expected) do
+    with :ok <- expected_head(branch, expected),
+         do: mark_merged_locked(task, branch, actor, note)
+  end
+
+  defp expected_head(_branch, nil), do: :ok
+  defp expected_head(%TaskLocalBranch{head_sha: sha}, sha), do: :ok
+
+  defp expected_head(%TaskLocalBranch{head_sha: sha}, _expected),
+    do: {:error, {:head_changed, sha}}
 
   @doc """
   Clears the merged mark of the local branch of task `ident` (people
@@ -672,7 +696,7 @@ defmodule Helmsman.LocalRepositories do
              ),
            %TaskLocalBranch{} = branch <- lock_branch(task.id),
            :ok <- fun.(task, branch) do
-        {:ok, branch_view(Repo.reload!(branch), scope)}
+        {:ok, branch_view(Repo.reload!(branch), task, scope)}
       else
         {:error, _reason} = error -> error
         _missing -> {:error, :not_found}

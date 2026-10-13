@@ -90,6 +90,38 @@ defmodule Helmsman.Projects.Project do
   end
 
   @doc """
+  Changeset for a local repository binding
+  (`Helmsman.Projects.bind_local_repository/4`): the repository and, when
+  `opts` has `:base_branch`, the base branch (nil or `""` = the
+  repository's default branch). Unbinding clears the base branch and
+  ignores `:base_branch` (`add-local-repositories` decision 18).
+  """
+  @spec local_binding_changeset(t(), pos_integer() | nil, keyword()) :: Ecto.Changeset.t()
+  def local_binding_changeset(project, nil, _opts),
+    do: change(project, local_repository_id: nil, base_branch: nil)
+
+  def local_binding_changeset(project, local_repository_id, opts) do
+    changeset = change(project, local_repository_id: local_repository_id)
+
+    case Keyword.fetch(opts, :base_branch) do
+      :error -> changeset
+      {:ok, branch} when branch in [nil, ""] -> put_change(changeset, :base_branch, nil)
+      {:ok, branch} when is_binary(branch) -> put_base_branch(changeset, branch)
+      {:ok, _other} -> add_error(changeset, :base_branch, "is invalid")
+    end
+  end
+
+  defp put_base_branch(changeset, branch) do
+    changeset
+    |> put_change(:base_branch, branch)
+    |> validate_length(:base_branch, min: 1, max: 255, count: :codepoints)
+    |> check_constraint(:base_branch,
+      name: :projects_base_branch_length,
+      message: "must be 1-255 characters"
+    )
+  end
+
+  @doc """
   Changeset for a new project. The key is upcased and the name trimmed
   before validation; `workspace_id` is set by the caller.
   """

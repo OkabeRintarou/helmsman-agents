@@ -359,20 +359,36 @@ defmodule Helmsman.Projects do
   GitHub repository (`:manage_github`). The repository may be offline or
   unavailable, but not removed (`:not_found`). A project bound to a
   GitHub repository: `{:error, :repository_already_bound}` (unbind it
-  first). The base branch stays the project's; nil means the local
-  repository's default branch. Lock order: project row, then the local
-  repository row `FOR SHARE`.
+  first). Lock order: project row, then the local repository row
+  `FOR SHARE`.
+
+  Without the `:base_branch` option the base branch stays the project's
+  (nil means the local repository's default branch). With it, the base
+  branch is set in the same transaction: nil or `""` for the default
+  branch, else a branch name checked like the GitHub settings' (1-255
+  characters; a changeset error, never checked on the machine). Binding
+  the repository already bound only changes the base branch. Unbinding
+  (nil) clears the base branch, whatever `:base_branch` says, as
+  unbinding a GitHub repository does (decision 18).
   """
-  @spec bind_local_repository(Scope.t(), String.t(), pos_integer() | nil) ::
+  @spec bind_local_repository(Scope.t(), String.t(), pos_integer() | nil, keyword()) ::
           {:ok, Project.t()} | {:error, error()}
-  def bind_local_repository(%Scope{workspace: %Workspace{}} = scope, key, local_repository_id)
-      when is_binary(key) and (is_nil(local_repository_id) or is_integer(local_repository_id)) do
+  def bind_local_repository(scope, key, local_repository_id, opts \\ [])
+
+  def bind_local_repository(
+        %Scope{workspace: %Workspace{}} = scope,
+        key,
+        local_repository_id,
+        opts
+      )
+      when is_binary(key) and (is_nil(local_repository_id) or is_integer(local_repository_id)) and
+             is_list(opts) do
     result =
       Workspaces.write_transaction(scope, :manage_github, fn scope ->
         with {:ok, project} <- lock_project(scope, key),
              :ok <- bindable(scope, project, local_repository_id) do
           project
-          |> Ecto.Changeset.change(local_repository_id: local_repository_id)
+          |> Project.local_binding_changeset(local_repository_id, opts)
           |> save()
         end
       end)
@@ -381,6 +397,7 @@ defmodule Helmsman.Projects do
   end
 
   defp bindable(_scope, _project, nil), do: :ok
+  defp bindable(_scope, %Project{local_repository_id: id}, id), do: :ok
 
   defp bindable(_scope, %Project{repository_id: id}, _local_id) when not is_nil(id),
     do: {:error, :repository_already_bound}

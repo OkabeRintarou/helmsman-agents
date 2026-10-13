@@ -24,6 +24,7 @@ defmodule Helmsman.Dispatch.AvailabilityTest do
              Dispatch.availability(bob_scope)
 
     assert runtime == %{
+             daemon_id: ctx.runtime.daemon_id,
              daemon_name: "test-machine",
              provider: "claude",
              status: "online",

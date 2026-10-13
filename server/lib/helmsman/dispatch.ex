@@ -211,6 +211,7 @@ defmodule Helmsman.Dispatch do
                | :daemon_outdated},
           runtime:
             %{
+              daemon_id: pos_integer(),
               daemon_name: String.t(),
               provider: String.t(),
               status: String.t(),
@@ -291,6 +292,7 @@ defmodule Helmsman.Dispatch do
 
   defp runtime_view(runtime, daemon_name) do
     %{
+      daemon_id: runtime.daemon_id,
       daemon_name: daemon_name,
       provider: runtime.provider,
       status: runtime.status,
