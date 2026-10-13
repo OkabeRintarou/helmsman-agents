@@ -3,6 +3,7 @@ defmodule Mix.Tasks.Helmsman.DevRun do
   @shortdoc "Run an agent locally without a server connection"
   use Mix.Task
   alias HelmsmanDaemon.{Adapter, Paths, RunWorker}
+  alias HelmsmanDaemon.Adapters.{Copilot, Cursor}
   alias HelmsmanProtocol.{Reply, Report, RunSpec}
 
   @switches [
@@ -18,8 +19,8 @@ defmodule Mix.Tasks.Helmsman.DevRun do
   ]
 
   @impl true
-  def run(args),
-    do: run(args, Enum.uniq(Adapter.registered() ++ [HelmsmanDaemon.Adapters.Copilot]))
+  # Cursor is off unless `[cursor] enabled = true`, registered or not.
+  def run(args), do: run(args, Enum.uniq(Adapter.registered() ++ [Copilot, Cursor]))
 
   @doc false
   def run(args, adapters) do

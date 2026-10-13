@@ -1,0 +1,2 @@
+# CURSOR_API_KEY inherited from parent env unless overridden; stdin=/dev/null
+cd <WORKDIR> && env HOME=<FAKE_HOME> CURSOR_CONFIG_DIR=<SCRATCH>/cfg5 CURSOR_DATA_DIR=<DATA_DIR> XDG_CONFIG_HOME=<SCRATCH>/xdg5 TMPDIR=<SCRATCH>/tmp5 HELMSMAN_RUN_TOKEN=hmr_probe_DUMMY_12345 cursor-agent -p --force --output-format stream-json --model auto --resume 00000000-0000-4000-8000-000000000000 What\ did\ you\ reply\ last\ time\?

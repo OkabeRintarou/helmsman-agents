@@ -24,6 +24,7 @@ defmodule HelmsmanDaemon.RunWorker do
     LocalMergeCheck,
     Paths,
     ProcGroup,
+    ProcScan,
     RepoCache,
     StateStore,
     Workspace
@@ -69,6 +70,8 @@ defmodule HelmsmanDaemon.RunWorker do
       last_error: "",
       proc_group: Keyword.get(opts, :proc_group, ProcGroup),
       members: [],
+      tracking: nil,
+      uncertain: [],
       snapshot_at: 0,
       group_kill_at: nil,
       group_deadline: nil,
@@ -301,7 +304,48 @@ defmodule HelmsmanDaemon.RunWorker do
   defp on_reply(_kind, _result, state), do: {:noreply, state}
 
   defp launch(state) do
-    {env, warnings} = environment(state)
+    case tracking(state) do
+      {:ok, tracking} ->
+        launch(%{state | tracking: tracking}, tracking)
+
+      {:error, message} ->
+        finish_failure(state, :cli_error, message)
+    end
+  end
+
+  # add-cursor-adapter decision 10: a tag of this launch's own in the CLI's
+  # environment, recorded before the CLI starts so that crash recovery finds
+  # every descendant.
+  defp tracking(%{launch: %{track_descendants: true}} = state) do
+    if ProcScan.supported?() do
+      tracking = %{
+        tag: ProcScan.new_tag(state.spec.run_id),
+        since: ProcScan.now_ticks(),
+        reader: Keyword.get(state.opts, :proc_reader, &File.read/1)
+      }
+
+      :ok =
+        StateStore.write(
+          state.spec.run_id,
+          Map.merge(
+            %{os_pid: nil, pgid: nil, proc_start: nil, started_at: DateTime.utc_now()},
+            tracking_record(tracking)
+          )
+        )
+
+      {:ok, tracking}
+    else
+      {:error, ProcScan.unsupported_reason()}
+    end
+  end
+
+  defp tracking(_state), do: {:ok, nil}
+
+  defp tracking_record(nil), do: %{}
+  defp tracking_record(tracking), do: %{proc_tag: tracking.tag, proc_since: tracking.since}
+
+  defp launch(state, tracking) do
+    {env, warnings} = environment(state, tracking)
 
     options = [
       :stdin,
@@ -323,12 +367,13 @@ defmodule HelmsmanDaemon.RunWorker do
           end
 
         :ok =
-          StateStore.write(state.spec.run_id, %{
-            os_pid: pid,
-            pgid: pid,
-            proc_start: start,
-            started_at: DateTime.utc_now()
-          })
+          StateStore.write(
+            state.spec.run_id,
+            Map.merge(
+              %{os_pid: pid, pgid: pid, proc_start: start, started_at: DateTime.utc_now()},
+              tracking_record(tracking)
+            )
+          )
 
         {:ok, members} = state.proc_group.snapshot(pid)
         Registry.update_value(HelmsmanDaemon.RunRegistry, state.spec.run_id, &%{&1 | pgid: pid})
@@ -387,7 +432,7 @@ defmodule HelmsmanDaemon.RunWorker do
     end
   end
 
-  defp environment(state) do
+  defp environment(state, tracking) do
     reserved =
       Enum.filter(state.spec.agent.env, fn {key, _} ->
         String.starts_with?(key, "HELMSMAN_")
@@ -403,6 +448,7 @@ defmodule HelmsmanDaemon.RunWorker do
       |> Map.drop(state.launch.drop_env)
       |> Map.merge(Map.new(state.launch.env))
 
+    env = if tracking, do: Map.put(env, ProcScan.var(), tracking.tag), else: env
     {Enum.to_list(env), warnings}
   end
 
@@ -709,8 +755,14 @@ defmodule HelmsmanDaemon.RunWorker do
 
   defp refresh_members(state), do: state
 
+  defp group_step(%{tracking: nil} = state, signal),
+    do: state.proc_group.step(state.pgid, state.members, signal)
+
+  defp group_step(state, signal),
+    do: state.proc_group.step(state.pgid, state.members, signal, state.tracking)
+
   defp signal_cli(state, signal) do
-    case state.proc_group.step(state.pgid, state.members, signal) do
+    case group_step(state, signal) do
       {:ok, group} ->
         %{state | members: group.members, snapshot_at: System.monotonic_time(:millisecond)}
         |> persist_members()
@@ -829,14 +881,17 @@ defmodule HelmsmanDaemon.RunWorker do
     now = System.monotonic_time(:millisecond)
     signal = if now >= state.group_kill_at, do: 9, else: nil
 
-    case state.proc_group.step(state.pgid, state.members, signal) do
+    case group_step(state, signal) do
       {:ok, %{empty?: true}} ->
         cancel_timer(state.kill_timer)
         Exec.release_cli(state.cli_guardian)
         tick(%{state | phase: :draining, kill_timer: nil, cli_guardian: nil})
 
       {:ok, group} ->
-        state = %{state | members: group.members} |> persist_members()
+        state =
+          %{state | members: group.members, uncertain: Map.get(group, :uncertain, [])}
+          |> persist_members()
+
         if now >= state.group_deadline, do: group_cleanup_failed(state), else: {:noreply, state}
 
       _ ->
@@ -880,9 +935,17 @@ defmodule HelmsmanDaemon.RunWorker do
   defp group_cleanup_failed(state) do
     Logger.error("Process group cleanup timed out for run #{state.spec.run_id}; state retained")
 
+    message =
+      if state.uncertain == [],
+        do: "process group cleanup timed out",
+        else:
+          "process group cleanup timed out; descendant cleanup uncertain: " <>
+            ProcGroup.describe(state.uncertain)
+
     result =
-      Map.update(state.result, :error, "process group cleanup timed out", fn error ->
-        (error || "") <> "; process group cleanup timed out"
+      Map.update(state.result, :error, message, fn
+        nil -> message
+        error -> error <> "; " <> message
       end)
 
     tick(%{state | phase: :draining, preserve_record?: true, result: result})

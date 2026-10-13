@@ -5,6 +5,7 @@ defmodule HelmsmanDaemon.Paths do
   def credentials, do: Path.join(home(), "credentials")
   def state, do: Path.join(home(), "state")
   def copilot_home, do: private_dir!(Path.join(home(), "copilot-home"))
+  def cursor_root, do: Path.join(home(), "cursor")
 
   def run(id) when is_integer(id) and id > 0,
     do: Path.join([home(), "runs", Integer.to_string(id)])

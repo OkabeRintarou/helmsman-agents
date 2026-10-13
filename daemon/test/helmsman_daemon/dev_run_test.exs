@@ -84,6 +84,15 @@ defmodule HelmsmanDaemon.DevRunTest do
     assert File.dir?(Path.join(dir, "copilot-home"))
   end
 
+  test "dev_run accepts Cursor, which stays off without the daemon config switch", %{
+    tmp_dir: home
+  } do
+    args = ["--provider", "cursor", "--prompt", "x", "--home", home]
+    output = capture_io(fn -> DevRun.run(args) end)
+    assert output =~ "status: :failed"
+    assert output =~ "[cursor] enabled = true"
+  end
+
   test "invalid arguments fail before creating directories" do
     assert_raise Mix.Error, fn -> DevRun.run(["--provider", "claude"]) end
     assert_raise Mix.Error, fn -> DevRun.run(["--provider", "missing", "--prompt", "x"]) end

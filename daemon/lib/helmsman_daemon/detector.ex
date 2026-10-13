@@ -2,7 +2,7 @@ defmodule HelmsmanDaemon.Detector do
   @moduledoc "Periodic adapter detection and protocol CLI inventory."
   use GenServer
   require Logger
-  alias HelmsmanDaemon.{Adapter, Env}
+  alias HelmsmanDaemon.{Adapter, Env, ProcScan}
   alias HelmsmanDaemon.Adapters.Codex.Config, as: CodexConfig
   alias HelmsmanProtocol.CLI
 
@@ -13,10 +13,20 @@ defmodule HelmsmanDaemon.Detector do
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   defp detect(adapter) do
-    case adapter.detect() do
-      {:ok, info} -> detected(adapter, info)
-      {:error, reason} -> cli(adapter, nil, [], false, reason)
+    if tracks_descendants?(adapter) and not ProcScan.supported?() do
+      cli(adapter, nil, [], false, ProcScan.unsupported_reason())
+    else
+      case adapter.detect() do
+        {:ok, info} -> detected(adapter, info)
+        {:error, reason} -> cli(adapter, nil, [], false, reason)
+      end
     end
+  end
+
+  # add-cursor-adapter decision 10: fail closed where descendants cannot be followed.
+  defp tracks_descendants?(adapter) do
+    Code.ensure_loaded(adapter)
+    function_exported?(adapter, :track_descendants?, 0) and adapter.track_descendants?()
   end
 
   defp detected(adapter, info) do

@@ -2,6 +2,7 @@ defmodule HelmsmanDaemon.Config do
   @moduledoc "Validated local TOML configuration."
   use GenServer
   alias HelmsmanDaemon.Adapters.Codex.Home
+  alias HelmsmanDaemon.Adapters.Cursor.Home, as: CursorHome
   alias HelmsmanDaemon.{Env, Paths}
 
   def load do
@@ -28,6 +29,7 @@ defmodule HelmsmanDaemon.Config do
         {:ok,
          %{
            codex_home: codex_home,
+           cursor: CursorHome.configured(Map.get(values, "cursor")),
            server_url: Map.get(values, "server_url"),
            max_concurrency: concurrency,
            log_level: String.to_existing_atom(level)

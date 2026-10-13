@@ -1,6 +1,7 @@
 defmodule HelmsmanDaemon.ProcGroup do
   @moduledoc "Process-group continuity based on known member identities, shared by live and recovery cleanup."
-  alias HelmsmanDaemon.{Env, Exec}
+  require Logger
+  alias HelmsmanDaemon.{Env, Exec, ProcScan}
 
   def snapshot(pgid) do
     with {:ok, processes} <- processes() do
@@ -79,6 +80,69 @@ defmodule HelmsmanDaemon.ProcGroup do
     end
   end
 
+  @doc """
+  `step/3` that also covers the descendants carrying the launch's tag
+  (`add-cursor-adapter` decision 10). Tagged processes and unknown ones
+  linked to members join `members` and are signalled one by one; uncertain
+  processes are never signalled, but `empty?` stays false while any lives.
+  `settled?` ignores them (crash recovery only warns about them).
+  """
+  def step(pgid, known, signal, nil), do: step(pgid, known, signal)
+
+  def step(pgid, known, signal, tracking) do
+    with {:ok, processes} <- processes(),
+         {:ok, infos, own} <- ProcScan.scan(tracking) do
+      starts = Map.new(processes, fn {pid, _, start} -> {pid, start} end)
+      current = for {pid, group, start} <- processes, group == pgid, do: {pid, start}
+      continuous = not is_nil(pgid) and continuous?(pgid, known, current)
+      alive = Enum.filter(known, &alive?(&1, starts))
+      known = if continuous, do: merge(known, current), else: known
+      alive_known = MapSet.new(alive ++ if(continuous, do: current, else: []), &elem(&1, 0))
+
+      links = if continuous, do: [pgid], else: []
+      {tracked, uncertain} = ProcScan.classify(infos, tracking, own, links, alive_known)
+
+      tracked = Enum.flat_map(tracked, &identity(&1, starts))
+      known = merge(known, tracked)
+      survivors = Enum.uniq(Enum.filter(known, &alive?(&1, starts)) ++ tracked)
+      signal_tracked(pgid, survivors, continuous, signal)
+      {:ok, tracked_result(known, current, survivors, uncertain, continuous)}
+    end
+  end
+
+  defp tracked_result(known, current, survivors, uncertain, continuous) do
+    %{
+      members: known,
+      empty?: current == [] and survivors == [] and uncertain == [],
+      settled?: survivors == [] and (current == [] or not continuous),
+      continuous?: continuous,
+      unknown?: current != [] and not continuous,
+      uncertain: Enum.map(uncertain, &{&1.pid, &1.comm})
+    }
+  end
+
+  defp alive?({pid, start}, starts), do: starts[pid] == start
+
+  defp signal_tracked(_pgid, _survivors, _continuous, nil), do: :ok
+
+  defp signal_tracked(pgid, survivors, continuous, signal) do
+    if continuous, do: Exec.signal_group(pgid, signal)
+    Enum.each(survivors, fn {pid, _} -> Exec.signal_process(pid, signal) end)
+  end
+
+  defp identity(%{pid: pid}, starts) do
+    case Map.fetch(starts, pid) do
+      {:ok, start} ->
+        [{pid, start}]
+
+      :error ->
+        case Exec.proc_start(pid) do
+          {:ok, start} -> [{pid, start}]
+          _ -> []
+        end
+    end
+  end
+
   def kill_group(pgid, known, signal), do: step(pgid, known, signal)
 
   defp signal_members(_pgid, _members, _continuous, nil), do: :ok
@@ -89,8 +153,44 @@ defmodule HelmsmanDaemon.ProcGroup do
 
   def recover(pgid, known, opts \\ []) do
     deadline = System.monotonic_time(:millisecond) + Keyword.get(opts, :cleanup_timeout_ms, 5_000)
-    recover_until(pgid, known, deadline)
+
+    case Keyword.get(opts, :tracking) do
+      nil -> recover_until(pgid, known, deadline)
+      tracking -> recover_tracked(pgid, known, tracking, deadline)
+    end
   end
+
+  # Crash recovery by tag: the members are ended; uncertain processes only
+  # get a warning, as a reused process group does.
+  defp recover_tracked(pgid, known, tracking, deadline) do
+    case step(pgid, known, 9, tracking) do
+      {:ok, %{settled?: true, unknown?: unknown?, uncertain: uncertain}} ->
+        warn_uncertain(uncertain)
+        if unknown?, do: {:error, :unrecognized_group}, else: :ok
+
+      {:ok, %{members: members}} ->
+        if System.monotonic_time(:millisecond) >= deadline do
+          {:error, :group_cleanup_timeout}
+        else
+          Process.sleep(100)
+          recover_tracked(pgid, members, tracking, deadline)
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp warn_uncertain([]), do: :ok
+
+  defp warn_uncertain(uncertain) do
+    Logger.warning(
+      "Left running, cannot tell whether they descend from the run: " <> describe(uncertain)
+    )
+  end
+
+  def describe(uncertain),
+    do: Enum.map_join(uncertain, ", ", fn {pid, comm} -> "pid #{pid} (#{comm})" end)
 
   defp recover_until(pgid, known, deadline) do
     case step(pgid, known, 9) do

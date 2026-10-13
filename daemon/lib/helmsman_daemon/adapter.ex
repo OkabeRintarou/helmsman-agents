@@ -58,6 +58,9 @@ defmodule HelmsmanDaemon.Adapter do
   @callback interrupt(term()) :: {:write, iodata()} | :signal
   @callback max_line_bytes() :: pos_integer()
   @optional_callbacks max_line_bytes: 0
+  @doc "Whether runs follow descendants that leave the process group (Linux only)."
+  @callback track_descendants?() :: boolean()
+  @optional_callbacks track_descendants?: 0
   @callback steer(ref :: term(), text :: String.t(), state :: term()) ::
               {:ok, iodata(), :delivered | :pending, term()} | :unsupported
 

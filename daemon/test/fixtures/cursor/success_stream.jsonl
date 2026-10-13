@@ -1,0 +1,10 @@
+{"type":"system","subtype":"init","apiKeySource":"env","cwd":"<WORK>/w1","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","model":"Auto Balance","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Reply exactly OK"}]},"session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a"}
+{"type":"thinking","subtype":"delta","text":"The user requested a","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","timestamp_ms":1791891572234}
+{"type":"thinking","subtype":"delta","text":" reply of exactly \"OK\".","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","timestamp_ms":1791891579081}
+{"type":"thinking","subtype":"delta","text":"\n\nI am checking whether","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","timestamp_ms":1791891579081}
+{"type":"thinking","subtype":"delta","text":" demanding an exact ","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","timestamp_ms":1791891579081}
+{"type":"thinking","subtype":"delta","text":"phrase counts as a jailbreak.","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","timestamp_ms":1791891579081}
+{"type":"thinking","subtype":"completed","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","timestamp_ms":1791891579082}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"OK"}]},"session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a"}
+{"type":"result","subtype":"success","duration_ms":15797,"duration_api_ms":15797,"is_error":false,"result":"OK","session_id":"024c7d2f-94e9-409c-ab52-2b3d3c925d5a","request_id":"41449cbd-05ff-4182-8171-d04af8256d34","usage":{"inputTokens":5461,"outputTokens":510,"cacheReadTokens":5888,"cacheWriteTokens":0}}

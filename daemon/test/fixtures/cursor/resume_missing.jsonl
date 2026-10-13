@@ -1,0 +1,2 @@
+{"type":"system","subtype":"init","apiKeySource":"env","cwd":"<WORK>/w5","session_id":"00000000-0000-4000-8000-000000000000","model":"Auto Balance","permissionMode":"default"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"What did you reply last time?"}]},"session_id":"00000000-0000-4000-8000-000000000000"}

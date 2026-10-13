@@ -33,6 +33,7 @@ while IFS= read -r line <&3 || [ -n "$line" ]; do
     dump_pwd) pwd ;;
     dump_server_url) printf '%s\n' "$HELMSMAN_SERVER_URL" ;;
     write) printf '%s\n' "$value" > hello.txt ;;
+    sh) sh -c "$value" ;;
     git_commit) git -c core.hooksPath=/dev/null -c credential.helper= add -A && git -c core.hooksPath=/dev/null -c credential.helper= commit -m "$value" ;;
     barrier) printf ready > "$value.ready"; while [ ! -f "$value.release" ]; do sleep 0.01; done ;;
     # add-run-steering: wait for a steering line on stdin, then answer it.

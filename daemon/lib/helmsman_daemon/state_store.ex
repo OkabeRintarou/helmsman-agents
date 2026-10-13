@@ -53,6 +53,15 @@ defmodule HelmsmanDaemon.StateStore do
     result
   end
 
+  def kill_record(%{"proc_tag" => tag} = record) when is_binary(tag) do
+    pgid = if is_integer(record["pgid"]) and record["pgid"] > 0, do: record["pgid"]
+    since = if is_integer(record["proc_since"]), do: record["proc_since"], else: 0
+    tracking = %{tag: tag, since: since}
+    result = ProcGroup.recover(pgid, ProcGroup.from_record(record), tracking: tracking)
+    if result != :ok, do: Logger.warning("Process group identity or cleanup unresolved")
+    result
+  end
+
   def kill_record(%{"pgid" => pgid} = record) when is_integer(pgid) and pgid > 0 do
     result = ProcGroup.recover(pgid, ProcGroup.from_record(record))
     if result != :ok, do: Logger.warning("Process group identity or cleanup unresolved")
