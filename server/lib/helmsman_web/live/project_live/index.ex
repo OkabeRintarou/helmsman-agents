@@ -8,7 +8,7 @@ defmodule HelmsmanWeb.ProjectLive.Index do
   use HelmsmanWeb, :live_view
 
   alias Helmsman.{Policy, Projects}
-  alias HelmsmanWeb.{FormErrors, TaskComponents, Url}
+  alias HelmsmanWeb.{FormErrors, GitHubComponents, TaskComponents, Url}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -161,6 +161,12 @@ defmodule HelmsmanWeb.ProjectLive.Index do
             >
               {TaskComponents.excerpt(project.description, 140)}
             </span>
+            <GitHubComponents.repo_chip
+              :if={project.repository}
+              id={"project-#{project.key}-repository"}
+              repository={project.repository}
+              link={false}
+            />
             <span class="mt-auto text-caption text-fg-subtle" data-count>
               {dngettext("ui", "%{count} 个任务", "%{count} 个任务", project.task_seq,
                 count: project.task_seq

@@ -48,6 +48,23 @@ defmodule HelmsmanWeb.ProjectLive.IndexTest do
       assert html =~ "Bosun"
     end
 
+    test "a bound repository shows its name; unbinding elsewhere removes it", ctx do
+      project_fixture(ctx.owner, key: "BOS", name: "Bosun")
+      project_fixture(ctx.owner, key: "OPS", name: "Ops")
+      installation = Helmsman.GitHubFixtures.installation_fixture(ctx.ws)
+      web = Helmsman.GitHubFixtures.repository_fixture(installation, owner: "acme", name: "web")
+      {:ok, _} = Projects.update_github_settings(ctx.owner, "BOS", %{repository_id: web.id})
+
+      {:ok, view, _html} = live(as(ctx.conn, ctx.users, :viewer), "/w/#{ctx.slug}/projects")
+
+      assert has_element?(view, "#project-BOS-repository [data-repository]", "acme/web")
+      refute has_element?(view, "#project-BOS-repository a")
+      refute has_element?(view, "#project-OPS-repository")
+
+      {:ok, _} = Projects.update_github_settings(ctx.owner, "BOS", %{repository_id: nil})
+      refute has_element?(view, "#project-BOS-repository")
+    end
+
     test "long descriptions are cut to 140 characters", ctx do
       description = String.duplicate("说", 150) <> String.duplicate("明", 50)
       project_fixture(ctx.owner, key: "BOS", name: "Bosun", description: description)

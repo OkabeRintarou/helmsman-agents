@@ -11,11 +11,28 @@ defmodule HelmsmanWeb.TaskLive.Index do
   D15, R5), read once per loaded page. A run change of a loaded task (`workspace:<id>:runs`)
   re-reads only those tasks, coalesced by `HelmsmanWeb.Throttle`, and re-inserts the rows
   whose agents changed; runs of tasks that are not loaded are ignored.
+
+  The header shows the bound GitHub repository, and owners / admins edit it with the
+  merge settings in the 仓库与合并 panel (`?panel=project-github`, add-github-ui D6, D7;
+  state in `HelmsmanWeb.ProjectGitHubForm`). Branch suggestions and the save (which checks
+  the branch on GitHub) run with `start_async/3`; closing the panel cancels the save.
   """
   use HelmsmanWeb, :live_view
 
-  alias Helmsman.{Events, Policy, Projects, Tasks}
-  alias HelmsmanWeb.{Filters, FormErrors, RunData, TaskComponents, TaskData, Throttle, Url}
+  alias Helmsman.{Events, GitHub, Policy, Projects, Tasks}
+
+  alias HelmsmanWeb.{
+    Filters,
+    FormErrors,
+    GitHubComponents,
+    ProjectGitHubForm,
+    RunData,
+    TaskComponents,
+    TaskData,
+    Throttle,
+    Url
+  }
+
   alias HelmsmanWeb.TaskLive.Filter
 
   @impl true
@@ -46,6 +63,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
        agents: agents,
        assignable: TaskData.assignable(scope, agents),
        can_manage?: Policy.authorize(scope, :update_project) == :ok,
+       can_github?: Policy.authorize(scope, :manage_github) == :ok,
+       github: nil,
        shown: MapSet.new(),
        working: %{},
        working_pending: MapSet.new(),
@@ -85,13 +104,15 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
     cond do
       not can? ->
-        assign(socket, panel: nil, edit: nil)
+        close_github(socket)
 
       socket.assigns.panel == "edit-project" ->
         socket
 
       true ->
-        assign(socket,
+        socket
+        |> close_github()
+        |> assign(
           panel: "edit-project",
           edit: %{
             params: %{"name" => project.name, "description" => project.description || ""},
@@ -101,7 +122,42 @@ defmodule HelmsmanWeb.TaskLive.Index do
     end
   end
 
-  defp put_panel(socket, _panel), do: assign(socket, panel: nil, edit: nil)
+  defp put_panel(socket, "project-github") do
+    %{current_scope: scope, project: project, can_github?: can?} = socket.assigns
+
+    cond do
+      not can? ->
+        close_github(socket)
+
+      socket.assigns.panel == "project-github" ->
+        socket
+
+      true ->
+        form = ProjectGitHubForm.new(scope, project)
+
+        socket
+        |> assign(panel: "project-github", edit: nil, github: form)
+        |> load_branches()
+    end
+  end
+
+  defp put_panel(socket, _panel), do: close_github(socket)
+
+  defp close_github(socket) do
+    socket
+    |> cancel_async(:project_github_save)
+    |> cancel_async(:project_github_branches)
+    |> assign(panel: nil, edit: nil, github: nil)
+  end
+
+  # Branch suggestions of the selected repository; a failure shows none.
+  defp load_branches(%{assigns: %{github: %{params: %{repository_id: id}}}} = socket)
+       when is_integer(id) do
+    scope = socket.assigns.current_scope
+    start_async(socket, :project_github_branches, fn -> {id, GitHub.list_branches(scope, id)} end)
+  end
+
+  defp load_branches(socket), do: cancel_async(socket, :project_github_branches)
 
   defp load(socket, filters) do
     %{current_scope: scope, project: project} = socket.assigns
@@ -151,6 +207,11 @@ defmodule HelmsmanWeb.TaskLive.Index do
     end
   end
 
+  def handle_event("project_github_" <> event, params, %{assigns: %{github: %{}}} = socket),
+    do: github_event(event, params, socket)
+
+  def handle_event("project_github_" <> _event, _params, socket), do: {:noreply, socket}
+
   def handle_event("archive", _params, socket),
     do: set_archived(socket, &Projects.archive/2, dgettext("ui", "项目已归档"))
 
@@ -190,6 +251,130 @@ defmodule HelmsmanWeb.TaskLive.Index do
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, failure(reason))}
     end
+  end
+
+  defp github_event(_event, _params, %{assigns: %{github: %{saving?: true}}} = socket),
+    do: {:noreply, socket}
+
+  defp github_event("repository", %{"id" => id}, socket) do
+    id =
+      case Integer.parse(to_string(id)) do
+        {id, ""} -> id
+        _ -> nil
+      end
+
+    form = ProjectGitHubForm.select_repository(socket.assigns.github, id)
+    {:noreply, socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)}
+  end
+
+  defp github_event("change", %{"project_github" => params}, socket) do
+    form = ProjectGitHubForm.change(socket.assigns.github, params)
+    {:noreply, socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)}
+  end
+
+  # The submit carries the latest fields: a debounced change may not have been sent.
+  defp github_event("save", params, socket) do
+    form = ProjectGitHubForm.change(socket.assigns.github, Map.get(params, "project_github", %{}))
+    socket = socket |> assign(:github, form) |> branches_if_moved(socket.assigns.github)
+    attrs = ProjectGitHubForm.attrs(form)
+
+    if attrs == %{} do
+      {:noreply, socket}
+    else
+      scope = socket.assigns.current_scope
+      key = form.key
+
+      {:noreply,
+       socket
+       |> assign(:github, ProjectGitHubForm.saving(form))
+       |> start_async(:project_github_save, fn ->
+         Projects.update_github_settings(scope, key, attrs)
+       end)}
+    end
+  end
+
+  defp github_event(_event, _params, socket), do: {:noreply, socket}
+
+  defp branches_if_moved(socket, old) do
+    if socket.assigns.github.params.repository_id != old.params.repository_id,
+      do: load_branches(socket),
+      else: socket
+  end
+
+  @impl true
+  def handle_async(:project_github_branches, {:ok, {id, {:ok, names}}}, socket) do
+    case socket.assigns.github do
+      %{params: %{repository_id: ^id}} = form ->
+        {:noreply, assign(socket, :github, %{form | branches: names})}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_async(:project_github_branches, _result, socket), do: {:noreply, socket}
+
+  def handle_async(
+        :project_github_save,
+        result,
+        %{assigns: %{github: %{saving?: true}}} = socket
+      ),
+      do: {:noreply, saved(socket, result)}
+
+  def handle_async(:project_github_save, _result, socket), do: {:noreply, socket}
+
+  defp saved(socket, {:ok, {:ok, project}}) do
+    socket
+    |> assign(project: project, page_title: project.name, panel: nil, github: nil)
+    |> put_flash(:info, dgettext("ui", "已保存仓库与合并设置"))
+    |> push_patch(to: Url.drop_params(socket.assigns.uri, ["panel"]))
+  end
+
+  defp saved(socket, {:ok, {:error, reason}}), do: save_failed(socket, reason)
+
+  defp saved(socket, {:exit, _reason}), do: save_failed(socket, :exit)
+
+  defp save_failed(socket, reason) do
+    %{current_scope: scope, github: form, project: project} = socket.assigns
+
+    fresh =
+      if reason in [:stale, :not_found] do
+        Projects.get(scope, project.key)
+      end
+
+    case {reason, fresh} do
+      {_reason, {:error, _}} ->
+        close_with_error(socket, dgettext("ui", "项目不存在"))
+
+      {:stale, {:ok, project}} ->
+        {:form, form, _reload?} = ProjectGitHubForm.errors(form, :stale)
+
+        form =
+          form |> ProjectGitHubForm.stale(project) |> ProjectGitHubForm.reload_repositories(scope)
+
+        socket
+        |> assign(project: project, page_title: project.name, github: form)
+        |> load_branches()
+
+      _ ->
+        case ProjectGitHubForm.errors(form, reason) do
+          {:form, form, true} ->
+            assign(socket, :github, ProjectGitHubForm.reload_repositories(form, scope))
+
+          {:form, form, false} ->
+            assign(socket, :github, form)
+
+          {:close, message} ->
+            close_with_error(socket, message)
+        end
+    end
+  end
+
+  defp close_with_error(socket, message) do
+    socket
+    |> assign(panel: nil, github: nil)
+    |> put_flash(:error, message)
+    |> push_patch(to: Url.drop_params(socket.assigns.uri, ["panel"]))
   end
 
   defp failure(:forbidden), do: dgettext("ui", "没有权限执行此操作")
@@ -247,12 +432,32 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
   def handle_info({:projects_changed}, socket) do
     case Projects.get(socket.assigns.current_scope, socket.assigns.project.key) do
-      {:ok, project} -> {:noreply, assign(socket, project: project, page_title: project.name)}
-      {:error, _} -> {:noreply, socket}
+      {:ok, project} ->
+        {:noreply,
+         socket
+         |> assign(project: project, page_title: project.name)
+         |> rebase_github(project)}
+
+      {:error, _} ->
+        {:noreply, socket}
     end
   end
 
+  def handle_info({:github_changed}, %{assigns: %{github: %{} = form}} = socket) do
+    form = ProjectGitHubForm.reload_repositories(form, socket.assigns.current_scope)
+    {:noreply, assign(socket, :github, form)}
+  end
+
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  # While saving the panel keeps its state: the save's result decides (D6).
+  defp rebase_github(%{assigns: %{github: %{saving?: false} = form}} = socket, project) do
+    socket
+    |> assign(:github, ProjectGitHubForm.rebase(form, project))
+    |> branches_if_moved(form)
+  end
+
+  defp rebase_github(socket, _project), do: socket
 
   # The agents working on each task of `summaries` (R5): one query.
   defp read_working(_scope, []), do: %{}
@@ -357,7 +562,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
               id="project-menu"
               label={dgettext("ui", "项目菜单")}
               align={:end}
-              items={project_menu(@archived?, @uri)}
+              items={project_menu(@archived?, @uri, @can_github?)}
               trigger_class="h-8 w-8 justify-center"
             >
               <:trigger><.icon name="lucide-ellipsis" class="size-4" /></:trigger>
@@ -376,6 +581,13 @@ defmodule HelmsmanWeb.TaskLive.Index do
           </:actions>
         </.page_header>
       </:header>
+      <div :if={@project.repository} id="project-repository" class="flex px-4 pt-3">
+        <GitHubComponents.repo_chip
+          id="project-repository-chip"
+          repository={@project.repository}
+          branch={@project.effective_base_branch}
+        />
+      </div>
       <div
         :if={@archived?}
         id="project-archived-banner"
@@ -552,11 +764,19 @@ defmodule HelmsmanWeb.TaskLive.Index do
           </div>
         </:footer>
       </.side_panel>
+
+      <ProjectGitHubForm.panel
+        :if={@github}
+        form={@github}
+        project={@project}
+        slug={@slug}
+        close_path={@close_path}
+      />
     </Layouts.app>
     """
   end
 
-  defp project_menu(archived?, uri) do
+  defp project_menu(archived?, uri, can_github?) do
     edit = %{
       id: "project-menu-edit",
       label: dgettext("ui", "编辑项目"),
@@ -564,26 +784,35 @@ defmodule HelmsmanWeb.TaskLive.Index do
       patch: Url.put_params(uri, %{panel: "edit-project"})
     }
 
+    github = %{
+      id: "project-menu-github",
+      label: dgettext("ui", "仓库与合并"),
+      icon: "lucide-git-branch",
+      patch: Url.put_params(uri, %{panel: "project-github"})
+    }
+
+    items = if can_github?, do: [edit, github], else: [edit]
+
     if archived? do
-      [
-        edit,
-        %{
-          id: "project-menu-unarchive",
-          label: dgettext("ui", "恢复项目"),
-          icon: "lucide-archive-restore",
-          on_select: "unarchive"
-        }
-      ]
+      items ++
+        [
+          %{
+            id: "project-menu-unarchive",
+            label: dgettext("ui", "恢复项目"),
+            icon: "lucide-archive-restore",
+            on_select: "unarchive"
+          }
+        ]
     else
-      [
-        edit,
-        %{
-          id: "project-menu-archive",
-          label: dgettext("ui", "归档项目"),
-          icon: "lucide-archive",
-          on_select: JS.exec("data-show", to: "#archive-project-dialog")
-        }
-      ]
+      items ++
+        [
+          %{
+            id: "project-menu-archive",
+            label: dgettext("ui", "归档项目"),
+            icon: "lucide-archive",
+            on_select: JS.exec("data-show", to: "#archive-project-dialog")
+          }
+        ]
     end
   end
 

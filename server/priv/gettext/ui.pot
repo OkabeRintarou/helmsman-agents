@@ -228,6 +228,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
+#: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "取消"
@@ -654,6 +655,7 @@ msgstr ""
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/run_live/show.ex
+#: lib/helmsman_web/live/settings_live/github.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
@@ -883,6 +885,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/github.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
@@ -936,6 +939,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "保存"
@@ -1432,6 +1436,7 @@ msgstr ""
 #: lib/helmsman_web/agent_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/github.ex
 #, elixir-autogen, elixir-format
 msgid "已归档"
 msgstr ""
@@ -1757,6 +1762,7 @@ msgid "长度须为 1–80 个字符"
 msgstr ""
 
 #: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "项目不存在"
 msgstr ""
@@ -2668,6 +2674,8 @@ msgid "viewer 不能运行 Agent"
 msgstr ""
 
 #: lib/helmsman_web/agent_components.ex
+#: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "不可用"
 msgstr ""
@@ -3079,6 +3087,7 @@ msgid "不指定任务时必须填写说明"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "不绑定"
 msgstr ""
@@ -4352,4 +4361,375 @@ msgstr ""
 #: lib/helmsman_web/form_errors.ex
 #, elixir-autogen, elixir-format
 msgid "须为 https 地址"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "Agent 验收的需要人在 GitHub 上合并或点立即合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub App：%{name}"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 上没有分支 %{branch}"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 已经断开"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 未配置"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "不自动合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "个人账号"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "人或独立的 Agent 验收后，CI 通过即合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "仓库"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "仓库不可用"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "仓库不可用（安装已断开、已暂停或仓库已移出范围）"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "仓库不可用，不会开 PR 或合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "仓库不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "仓库与合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "仓库与合并 · %{key}"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "仓库或基础分支刚被其他人修改，已载入最新设置，请确认后重新保存"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "代码仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "保存中…"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "保存失败，请重试"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "先在 GitHub 设置中连接 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "先选择仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "前往 GitHub 设置"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "前往实例管理"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "压缩合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "变基合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "只在人验收后自动合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "只开 PR，由人合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "只有工作区的所有者或管理员可以修改仓库设置"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "只有工作区的所有者或管理员可以管理 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "只解除本工作区与安装 %{account} 的关联，不会在 GitHub 上卸载 App。断开后仓库变为不可用：不再开 PR、不再合并，Agent 无法推送；项目的仓库绑定保留，重新连接同一安装即恢复。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "可用"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "合并"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "合并后删除任务分支"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "合并提交"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "合并方式"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "合并策略"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "在 GitHub 上管理仓库访问"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "基础分支"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "安装 Helmsman 的 GitHub App 并选择仓库，Agent 的提交将以 PR 交付，验收后自动合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "安装已断开、已暂停，或仓库已移出安装范围"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "安装没有授权任何仓库"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "实例管理员需要先创建 GitHub App"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "工作区没有连接 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "已保存仓库与合并设置"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "已在 GitHub 上暂停"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "已开始同步仓库"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "已断开"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "已断开 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "已连接"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "按名称筛选仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "推荐"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "改绑后，原仓库里已开的 PR 不再由 Helmsman 管理（不再转草稿、关闭或合并），需要在 GitHub 上处理；进行中的任务的下一次运行会在新仓库建分支。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "断开"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "断开 GitHub？"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "暂停期间仓库不可用，在 GitHub 上恢复后自动可用"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "暂时无法连接 GitHub，设置没有保存，请稍后重试"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "没有仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "没有任何检查时也不合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "没有符合条件的仓库"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "留空使用仓库的默认分支；保存时会在 GitHub 上确认分支存在"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "私有"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "组织"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "绑定仓库后生效"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "缺省：%{branch}"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "要求 CI 通过"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "请工作区的所有者或管理员连接"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "连接 GitHub"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "选择仓库"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "重新同步"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "重新连接"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "项目的仓库绑定已保留，重新连接同一安装即恢复"
+msgstr ""
+
+#: lib/helmsman_web/project_github_form.ex
+#, elixir-autogen, elixir-format
+msgid "验收后自动合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "默认分支"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/github.ex
+#, elixir-autogen, elixir-format
+msgid "只有工作区的所有者或管理员可以断开 GitHub"
 msgstr ""

@@ -202,7 +202,7 @@ defmodule HelmsmanWeb.GitHubControllerTest do
       refute Repo.exists?(Installation)
     end
 
-    test "links the installation and redirects to the workspace", %{
+    test "links the installation and returns to the GitHub settings", %{
       conn: conn,
       user: user,
       workspace: workspace
@@ -230,7 +230,7 @@ defmodule HelmsmanWeb.GitHubControllerTest do
           state: install_state(workspace, user)
         })
 
-      assert redirected_to(conn) == ~p"/w/#{workspace.slug}"
+      assert redirected_to(conn) == ~p"/w/#{workspace.slug}/settings/github"
       assert Phoenix.Flash.get(conn.assigns.flash, :info)
 
       assert %Installation{workspace_id: workspace_id} =
@@ -239,7 +239,7 @@ defmodule HelmsmanWeb.GitHubControllerTest do
       assert workspace_id == workspace.id
     end
 
-    test "an error from the connection is shown on the workspace", %{
+    test "an error from the connection is shown on the GitHub settings", %{
       conn: conn,
       user: user,
       workspace: workspace
@@ -252,7 +252,7 @@ defmodule HelmsmanWeb.GitHubControllerTest do
           state: install_state(workspace, user)
         })
 
-      assert redirected_to(conn) == ~p"/w/#{workspace.slug}"
+      assert redirected_to(conn) == ~p"/w/#{workspace.slug}/settings/github"
       assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "OAuth"
     end
   end

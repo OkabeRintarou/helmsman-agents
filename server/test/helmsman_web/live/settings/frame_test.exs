@@ -33,7 +33,12 @@ defmodule HelmsmanWeb.SettingsLive.FrameTest do
     assert has_element?(view, "header h1", "常规")
     assert page_title(view) == "常规 · Acme"
 
-    for {label, path} <- [{"常规", ""}, {"成员", "/members"}, {"API Token", "/tokens"}] do
+    for {label, path} <- [
+          {"常规", ""},
+          {"成员", "/members"},
+          {"API Token", "/tokens"},
+          {"GitHub", "/github"}
+        ] do
       assert has_element?(
                view,
                ~s(nav[aria-label="设置"] a[href="/w/#{ws.slug}/settings#{path}"]),

@@ -11,7 +11,9 @@ defmodule HelmsmanWeb.GitHubController do
     * `GET /github/setup` - the installation's return (with OAuth `code`)
 
   `state` is a `Phoenix.Token` valid 10 minutes, bound to the user (and
-  for installations to the workspace).
+  for installations to the workspace); see `HelmsmanWeb.GitHubState`. The
+  installation flow returns to the workspace's GitHub settings page
+  (add-github-ui D4).
   """
 
   use HelmsmanWeb, :controller
@@ -20,10 +22,7 @@ defmodule HelmsmanWeb.GitHubController do
   alias Helmsman.GitHub
   alias Helmsman.Policy
   alias Helmsman.Workspaces
-
-  @manifest_salt "github-manifest"
-  @install_salt "github-install"
-  @state_max_age 600
+  alias HelmsmanWeb.GitHubState
 
   ## App manifest flow
 
@@ -49,7 +48,7 @@ defmodule HelmsmanWeb.GitHubController do
       public?: Map.get(params, "public") == "true"
     }
 
-    state = Phoenix.Token.sign(conn, @manifest_salt, %{u: scope.user.id})
+    state = GitHubState.sign_manifest(scope.user.id)
 
     case GitHub.manifest(scope, Map.put(input, :base_url, url(~p"/"))) do
       {:ok, %{action_url: action_url, manifest_json: manifest}} ->
@@ -75,7 +74,7 @@ defmodule HelmsmanWeb.GitHubController do
     scope = conn.assigns.current_scope
 
     with :ok <- Policy.authorize(scope, :manage_github_app),
-         :ok <- verify_manifest_state(conn, scope, params["state"]),
+         :ok <- GitHubState.verify_manifest(params["state"], scope.user.id),
          code when is_binary(code) and code != "" <- params["code"] do
       case GitHub.complete_manifest(scope, code) do
         {:ok, _overview} ->
@@ -95,15 +94,6 @@ defmodule HelmsmanWeb.GitHubController do
     end
   end
 
-  defp verify_manifest_state(conn, scope, state) when is_binary(state) do
-    case Phoenix.Token.verify(conn, @manifest_salt, state, max_age: @state_max_age) do
-      {:ok, %{u: user_id}} when user_id == scope.user.id -> :ok
-      _ -> :error
-    end
-  end
-
-  defp verify_manifest_state(_conn, _scope, _state), do: :error
-
   defp back_to_admin(conn, message),
     do: conn |> put_flash(:error, message) |> redirect(to: ~p"/admin/github")
 
@@ -113,8 +103,7 @@ defmodule HelmsmanWeb.GitHubController do
     scope = workspace_scope!(conn.assigns.current_scope, slug)
 
     with :ok <- Policy.authorize(scope, :manage_github),
-         state =
-           Phoenix.Token.sign(conn, @install_salt, %{w: scope.workspace.id, u: scope.user.id}),
+         state = GitHubState.sign_install(scope.workspace.id, scope.user.id),
          {:ok, url} <- GitHub.install_url(state) do
       redirect(conn, external: url)
     else
@@ -124,19 +113,19 @@ defmodule HelmsmanWeb.GitHubController do
       {:error, :github_not_configured} ->
         conn
         |> put_flash(:error, dgettext("ui", "实例管理员还没有配置 GitHub App。"))
-        |> redirect(to: ~p"/w/#{scope.workspace.slug}")
+        |> redirect(to: settings_path(scope))
 
       {:error, _reason} ->
         conn
         |> put_flash(:error, dgettext("ui", "暂时无法连接 GitHub，请稍后重试。"))
-        |> redirect(to: ~p"/w/#{scope.workspace.slug}")
+        |> redirect(to: settings_path(scope))
     end
   end
 
   def setup(conn, params) do
     user_scope = conn.assigns.current_scope
 
-    with {:ok, workspace_id} <- verify_install_state(conn, user_scope, params["state"]),
+    with {:ok, workspace_id} <- GitHubState.verify_install(params["state"], user_scope.user.id),
          {:ok, scope} <- workspace_scope(user_scope, workspace_id) do
       result =
         case parse_id(params["installation_id"]) do
@@ -149,7 +138,7 @@ defmodule HelmsmanWeb.GitHubController do
 
       conn
       |> put_flash(flash_kind(result), setup_message(result))
-      |> redirect(to: ~p"/w/#{scope.workspace.slug}")
+      |> redirect(to: settings_path(scope))
     else
       _invalid ->
         conn
@@ -158,14 +147,7 @@ defmodule HelmsmanWeb.GitHubController do
     end
   end
 
-  defp verify_install_state(conn, scope, state) when is_binary(state) do
-    case Phoenix.Token.verify(conn, @install_salt, state, max_age: @state_max_age) do
-      {:ok, %{w: workspace_id, u: user_id}} when user_id == scope.user.id -> {:ok, workspace_id}
-      _ -> :error
-    end
-  end
-
-  defp verify_install_state(_conn, _scope, _state), do: :error
+  defp settings_path(scope), do: ~p"/w/#{scope.workspace.slug}/settings/github"
 
   defp parse_id(value) when is_binary(value) do
     case Integer.parse(value) do

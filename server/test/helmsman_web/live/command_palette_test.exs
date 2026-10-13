@@ -199,6 +199,19 @@ defmodule HelmsmanWeb.CommandPaletteTest do
       assert palette(view) =~ "常规设置"
     end
 
+    test "the GitHub settings are found as a page", %{conn: conn, viewer: viewer, slug: slug} do
+      conn = log_in_user(conn, viewer)
+      {:ok, view, _html} = live(conn, "/w/#{slug}/projects")
+
+      search(view, "github")
+      assert palette(view) =~ "GitHub"
+      palette_event(view, "execute", %{})
+      assert_redirect(view, "/w/#{slug}/settings/github")
+
+      {:ok, view, _html} = live(conn, "/w/#{slug}/settings/github")
+      assert has_element?(view, ~s(nav[aria-label="设置"] a[aria-current="page"]), "GitHub")
+    end
+
     test "viewers get no 新建任务 action", %{conn: conn, viewer: viewer, slug: slug} do
       {:ok, view, _html} = live(log_in_user(conn, viewer), "/w/#{slug}/projects")
       html = palette(view)
