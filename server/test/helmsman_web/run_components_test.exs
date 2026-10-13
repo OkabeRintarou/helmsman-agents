@@ -35,6 +35,32 @@ defmodule HelmsmanWeb.RunComponentsTest do
       end
     end
 
+    test "deferred (add-dependency-dispatch): waits for the blocking tasks" do
+      assert RunComponents.dispatch_message(%{
+               agent: "keel/dev",
+               result: :deferred,
+               blocked_by: ["BOS-1", "BOS-2"]
+             }) == {:info, "已指派给 keel/dev，等 BOS-1、BOS-2 完成后开始"}
+
+      assert RunComponents.dispatch_message(%{agent: "keel/dev", result: "deferred"}) ==
+               {:info, "已指派给 keel/dev，等前置任务完成后开始"}
+
+      assert RunComponents.dispatch_flash([
+               %{agent: "a", result: "deferred", blocked_by: ["BOS-1"]},
+               %{agent: "b", result: "queued"}
+             ]) == {:info, "已指派给 a，等 BOS-1 完成后开始；已派发给 b"}
+    end
+
+    test "an unknown result is logged, not a crash" do
+      log =
+        capture_log(fn ->
+          assert RunComponents.dispatch_message(%{agent: "keel/dev", result: "later"}) ==
+                   {:info, "已指派给 keel/dev"}
+        end)
+
+      assert log =~ "unknown dispatch result"
+    end
+
     test "string forms (the MCP view) work too" do
       assert RunComponents.dispatch_message(%{
                agent: "a",

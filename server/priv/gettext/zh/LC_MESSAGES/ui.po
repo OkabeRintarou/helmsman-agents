@@ -63,6 +63,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/task_evidence.ex
+#: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
 msgid "不能为空"
 msgstr ""
@@ -231,6 +232,7 @@ msgstr ""
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/task_local_branch.ex
+#: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
 msgid "取消"
 msgstr ""
@@ -329,6 +331,7 @@ msgid "外接"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "失败"
@@ -715,6 +718,7 @@ msgid "移除筛选：%{label}"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/github_components.ex
 #, elixir-autogen, elixir-format
 msgid "等待中"
 msgstr ""
@@ -843,6 +847,7 @@ msgid "还没有数据"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/github_components.ex
 #, elixir-autogen, elixir-format
 msgid "进行中"
 msgstr ""
@@ -1375,6 +1380,7 @@ msgid "历史"
 msgstr ""
 
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
 msgid "原因"
 msgstr ""
@@ -1739,6 +1745,7 @@ msgstr ""
 msgid "连续创建"
 msgstr ""
 
+#: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "通过"
@@ -2808,6 +2815,7 @@ msgstr ""
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
 msgid "操作失败，请重试"
 msgstr ""
@@ -3766,6 +3774,7 @@ msgstr ""
 msgid "追加参数（每行一项）"
 msgstr ""
 
+#: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
@@ -4526,6 +4535,7 @@ msgid "可用"
 msgstr ""
 
 #: lib/helmsman_web/project_github_form.ex
+#: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
 msgid "合并"
 msgstr ""
@@ -4535,6 +4545,7 @@ msgstr ""
 msgid "合并后删除任务分支"
 msgstr ""
 
+#: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "合并提交"
@@ -4822,6 +4833,7 @@ msgstr ""
 msgid "在机器上用"
 msgstr ""
 
+#: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/local_repository_components.ex
 #, elixir-autogen, elixir-format
 msgid "复制分支名"
@@ -4852,6 +4864,7 @@ msgstr ""
 msgid "已保存仓库设置"
 msgstr ""
 
+#: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/local_repository_components.ex
 #: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
@@ -5119,4 +5132,472 @@ msgstr ""
 #: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "还没有交付到当前绑定仓库的分支，验收不会记下提交"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{actor} 请求了立即合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 分钟"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 天"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 小时"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 进行中"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{passed}/%{total} 通过"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "CI"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "CI 6 小时内没有结果；处理后点重试"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "CI 失败或冲突时自动重开让 Agent 修复，最多 %{n} 次"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "CI 通过后自动合并到 %{branch}"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 拒绝合并（分支保护等），需要在 GitHub 上处理"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 的说明"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "PR 不存在或已变化"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "PR 在 GitHub 上被关闭，需要在 GitHub 上重新打开"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "PR 已关闭"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "PR 已变化，请重新确认"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "PR 有了新提交（%{sha}），没有重新验收；请查看后重新确认"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "PR 的最新提交不是 Helmsman 运行推送的，不能重新验收；请在 GitHub 上处理"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 1000 字节"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "仓库 %{repository} 不可用，不会开 PR"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "仓库不可用（安装已断开或仓库移出范围）"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "仓库不可用，不会合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务分支在 GitHub 上不存在，无法开 PR"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务完成后转为可评审"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "任务已不是已验收状态"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "你不独立于这份代码的出处（或你是执行方），不会自动合并"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "你没有权限执行此操作"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "分支"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "分支上有不是 Helmsman 运行推送的提交，需要在 GitHub 上合并"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "原因不能为空，且不能超过 1000 字节"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "原因会以系统身份记入任务的 Feedback"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "可评审"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "合并时再检查"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "填写原因并合并"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "复制验收提交 %{hash}"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "头部"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "将以你的名义验收 %{sha}，并记一条评审意见；之后按这个提交检查独立性、CI 并合并。"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "将记下的提交"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "已关闭"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "已删除的身份"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "已合并到 %{branch}"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "已按 %{sha} 重新验收 %{pr}"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "已提交，合并结果稍后显示在 PR 卡片"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "已自动重开 %{n} 次仍有合并冲突，需要人处理"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "已自动重开 %{n} 次仍然 CI 失败，需要人处理"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "已重试"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "已阻止"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "当前状态不能重新验收"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "手动合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "拉取请求"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "按当前提交重新验收"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "按当前提交重新验收？"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "放行项目的合并策略；CI、头部未变、无运行中、推送链等其他前提照常检查，满足后才合并。结果稍后显示在这里。"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "无检查"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "暂时无法连接 GitHub，没有重新验收，请稍后重试"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "由 Agent 验收；项目要求人验收后才自动合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "立即合并"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "立即合并 %{pr}？"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等 %{n} 个"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等待 CI"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等待 CI · 已等待 %{duration}"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等待分支保护要求的检查"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等待合并检查"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等待运行结束后合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "等待验收"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "自动重开"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "草稿"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "被验收提交"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "被验收的提交不是 Helmsman 运行推送到当前仓库的，可按当前提交重新验收，或在 GitHub 上合并"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "跳过独立性并合并 %{pr}"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "还没有 PR。Agent 推送提交后会自动创建草稿 PR。"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "还没有运行推送的提交，验收不会记下提交，也不会自动合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "这次验收没有记下提交，可按当前提交重新验收"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "重新验收"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "重新验收中…"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "重新验收失败，请重试"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "重试中…"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "需要人处理"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目要求人验收后才自动合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目设置为不自动合并，需要在 GitHub 上合并或点立即合并"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "项目设置为不自动合并：在 GitHub 上合并，或点立即合并"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "验收不独立。作为所有者，你可以填写原因跳过独立性检查"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "验收不独立：验收人参与了这份代码（出处或触发链上），或是执行方自验收"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "验收后"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "验收后分支上有新提交"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "验收后分支上有新提交，需要按当前提交重新验收"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "验收后有新提交"
+msgstr ""
+
+#: lib/helmsman_web/task_components.ex
+#, elixir-autogen, elixir-format
+msgid "验收提交"
+msgstr ""
+
+#: lib/helmsman_web/task_pull_request.ex
+#, elixir-autogen, elixir-format
+msgid "（PR 已变化，卡片显示的是当前的 PR）"
+msgstr ""
+
+#: lib/helmsman_web/github_components.ex
+#, elixir-autogen, elixir-format
+msgid "（跳过独立性检查）"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "已指派给 %{agent}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "已指派给 %{agent}，等 %{tasks} 完成后开始"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "已指派给 %{agent}，等前置任务完成后开始"
 msgstr ""

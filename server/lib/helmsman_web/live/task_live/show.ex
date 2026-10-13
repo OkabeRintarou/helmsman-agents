@@ -18,12 +18,14 @@ defmodule HelmsmanWeb.TaskLive.Show do
   require Logger
 
   alias Helmsman.{Events, Feedback, Policy, Tasks}
+  alias Helmsman.GitHub.PullRequests
   alias Helmsman.Tasks.StateMachine
 
   alias HelmsmanWeb.{
     FeedbackComponents,
     FeedbackTimeline,
     FormErrors,
+    GitHubComponents,
     LocalRepositoryComponents,
     Markdown,
     MarkdownEditor,
@@ -35,6 +37,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     TaskData,
     TaskEvidence,
     TaskLocalBranch,
+    TaskPullRequest,
     TaskRuns,
     TaskTransitions,
     Throttle
@@ -93,6 +96,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
      |> TaskRuns.init()
      |> TaskRuns.load()
      |> TaskLocalBranch.load(detail)
+     |> TaskPullRequest.init()
      |> RunLog.init()
      |> RunActions.init()
      |> then(
@@ -229,6 +233,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
   def handle_event("runs_" <> _ = event, _params, socket),
     do: {:noreply, TaskRuns.handle_event(event, socket)}
 
+  def handle_event("pr_" <> _ = event, params, socket),
+    do: {:noreply, TaskPullRequest.handle_event(event, params, socket, &refresh/1)}
+
   def handle_event("run_log_" <> _ = event, params, socket),
     do: {:noreply, RunLog.handle_event(event, params, socket)}
 
@@ -332,7 +339,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
           params: %{"result" => "none"},
           errors: %{},
           top: nil,
-          blocked: nil
+          blocked: nil,
+          preview: merge_preview(socket, button.to)
         }
 
         # D9: the 验收 preview shows the branch as it is now.
@@ -419,6 +427,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
+  # The merge preview of the 验收 panel (add-github-ui D11), nil without a repository.
+  defp merge_preview(socket, "verified") do
+    case PullRequests.verify_preview(socket.assigns.current_scope, socket.assigns.task.id) do
+      {:ok, preview} -> preview
+      {:error, _} -> nil
+    end
+  end
+
+  defp merge_preview(_socket, _to), do: nil
+
   defp direct_button(from, to) when is_binary(from) do
     Enum.find(
       TaskTransitions.buttons(from, [to]),
@@ -463,7 +481,24 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   @impl true
   def handle_info({:task_updated, _ident}, socket), do: {:noreply, refresh(socket)}
-  def handle_info({:task_transitioned, _payload}, socket), do: {:noreply, refresh(socket)}
+
+  def handle_info({:task_transitioned, _payload}, socket),
+    do: {:noreply, socket |> refresh() |> TaskPullRequest.reload()}
+
+  # The pull request card (add-github-ui D13): only the PR, or the project's repository
+  # and the PR, are read again.
+  def handle_info({:pull_request_changed, _ident}, socket),
+    do: {:noreply, TaskPullRequest.reload(socket)}
+
+  def handle_info({:projects_changed}, socket),
+    do: {:noreply, socket |> TaskLocalBranch.reload_project() |> TaskPullRequest.reload_project()}
+
+  def handle_info({:github_changed}, socket),
+    do: {:noreply, TaskPullRequest.reload_project(socket)}
+
+  def handle_info(:pr_retried, socket),
+    do: {:noreply, TaskPullRequest.handle_info(:pr_retried, socket)}
+
   def handle_info({:feedback_added, _view}, socket), do: {:noreply, refresh(socket)}
 
   def handle_info({:run_events, _id, _events} = message, socket),
@@ -475,7 +510,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
     do: {:noreply, Throttle.schedule(socket, :reload_runs)}
 
   def handle_info(:reload_runs, socket),
-    do: {:noreply, socket |> Throttle.done(:reload_runs) |> TaskRuns.load()}
+    do:
+      {:noreply,
+       socket |> Throttle.done(:reload_runs) |> TaskRuns.load() |> TaskPullRequest.reload()}
 
   def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
     do: {:noreply, assign(socket, :availability, availability(socket.assigns.current_scope))}
@@ -483,14 +520,17 @@ defmodule HelmsmanWeb.TaskLive.Show do
   def handle_info({:local_branch_changed, _ident}, socket),
     do: {:noreply, TaskLocalBranch.reload(socket)}
 
-  def handle_info(message, socket)
-      when message in [{:local_repositories_changed}, {:projects_changed}],
-      do: {:noreply, TaskLocalBranch.reload_project(socket)}
+  def handle_info({:local_repositories_changed}, socket),
+    do: {:noreply, TaskLocalBranch.reload_project(socket)}
 
   def handle_info(:local_branch_cooldown_over, socket),
     do: {:noreply, TaskLocalBranch.cooldown_over(socket)}
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:pr_reverify = name, result, socket),
+    do: {:noreply, TaskPullRequest.handle_async(name, result, socket, &refresh/1)}
 
   ## Helpers
 
@@ -1045,6 +1085,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
               @task.assignee != nil and Map.has_key?(@availability, @task.assignee.name)
             }
           />
+          <TaskPullRequest.card state={@task_pr} task={@task} runs={@task_runs} />
           <TaskLocalBranch.card state={@local_branch} />
           <section aria-labelledby="task-history-title">
             <h2 id="task-history-title" class="mb-1 text-label font-medium text-fg-muted">
@@ -1082,6 +1123,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       />
       <TaskLocalBranch.mark_panel state={@local_branch} />
       <TaskLocalBranch.unmark_dialog state={@local_branch} />
+      <TaskPullRequest.dialogs state={@task_pr} />
       <.modal
         id="run-log-modal"
         show={@run_log != nil}
@@ -1610,6 +1652,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
         :if={@panel.to == "verified" and @local_branch != nil}
         state={@local_branch}
       />
+      <GitHubComponents.merge_preview :if={@panel.kind == :evidence} preview={@panel[:preview]} />
       <.form
         for={%{}}
         as={:transition}

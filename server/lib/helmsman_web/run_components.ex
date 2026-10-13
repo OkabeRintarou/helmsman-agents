@@ -16,7 +16,9 @@ defmodule HelmsmanWeb.RunComponents do
 
   @doc """
   The flash of a dispatch outcome (`%Helmsman.Runs.Outcome{}` or a map with `agent`,
-  `result`, `reason`): `{:info | :warning, text}`.
+  `result`, `reason`, and `blocked_by` for `deferred` — add-dependency-dispatch: the
+  agent was assigned and starts once the blocking tasks are done):
+  `{:info | :warning, text}`. An unknown result is logged and shown as assigned.
   """
   def dispatch_message(%{agent: agent, result: result} = outcome) do
     case to_atom(result) do
@@ -31,8 +33,25 @@ defmodule HelmsmanWeb.RunComponents do
           :not_started -> {:info, dgettext("ui", "已指派给 %{agent}，暂不开始", agent: agent)}
           reason -> {:warning, not_started(agent, reason)}
         end
+
+      :deferred ->
+        {:info, deferred(agent, Map.get(outcome, :blocked_by) || [])}
+
+      other ->
+        Logger.warning("unknown dispatch result: #{inspect(other)}")
+        {:info, dgettext("ui", "已指派给 %{agent}", agent: agent)}
     end
   end
+
+  defp deferred(agent, []),
+    do: dgettext("ui", "已指派给 %{agent}，等前置任务完成后开始", agent: agent)
+
+  defp deferred(agent, blocked_by),
+    do:
+      dgettext("ui", "已指派给 %{agent}，等 %{tasks} 完成后开始",
+        agent: agent,
+        tasks: Enum.join(blocked_by, "、")
+      )
 
   @doc """
   The flash of a task's `dispatch` list: `nil` when empty, otherwise one message joined
@@ -105,7 +124,7 @@ defmodule HelmsmanWeb.RunComponents do
 
   defp to_atom(value) when is_binary(value) do
     Enum.find(
-      @known_reasons ++ [:queued, :merged, :skipped],
+      @known_reasons ++ [:queued, :merged, :skipped, :deferred],
       value,
       &(Atom.to_string(&1) == value)
     )

@@ -77,10 +77,11 @@ defmodule HelmsmanWeb.TaskComponents do
   defp chip_actor(%{name: name, kind: kind}, _agents), do: %{name: name, kind: kind}
 
   @doc """
-  One history entry (oldest first in the timeline): actor, action (创建了任务 or
-  `from → to`), relative time, the 自动 mark, the reason (a link to its feedback) or
-  else the comment, commits and test result. Works with entries without `commits`,
-  `tests`, `auto` or `feedback`.
+  One history entry (oldest first in the timeline): actor, action (创建了任务, 重新验收
+  for `verified → verified`, or `from → to`), relative time, the 自动 mark, the reason
+  (a link to its feedback) or else the comment, commits, test result and the verified
+  commit (add-github-ui D12). Works with entries without `commits`, `tests`, `auto`,
+  `feedback` or `verified_sha`.
   """
   attr :id, :string, required: true
   attr :entry, :map, required: true
@@ -97,7 +98,9 @@ defmodule HelmsmanWeb.TaskComponents do
         auto: Map.get(entry, :auto, false) == true,
         comment: Map.get(entry, :comment),
         reason: Map.get(entry, :feedback),
-        reason_seq: HelmsmanWeb.FeedbackTimeline.seq_of(Map.get(entry, :feedback))
+        reason_seq: HelmsmanWeb.FeedbackTimeline.seq_of(Map.get(entry, :feedback)),
+        reverified?: entry.from == "verified" and entry.to == "verified",
+        verified_sha: entry.to == "verified" && Map.get(entry, :verified_sha)
       )
 
     ~H"""
@@ -105,7 +108,13 @@ defmodule HelmsmanWeb.TaskComponents do
       <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-body">
         <.actor_ref actor={@entry.actor} agents={@agents} />
         <span :if={is_nil(@entry.from)} class="text-fg-muted">{dgettext("ui", "创建了任务")}</span>
-        <span :if={@entry.from} class="inline-flex items-center gap-1 text-fg-muted">
+        <span :if={@reverified?} data-reverified class="inline-flex items-center gap-1 text-fg-muted">
+          <.status_icon status="verified" />{dgettext("ui", "重新验收")}
+        </span>
+        <span
+          :if={@entry.from && !@reverified?}
+          class="inline-flex items-center gap-1 text-fg-muted"
+        >
           <.status_icon status={@entry.from} />
           <span data-from>{status_label(@entry.from)}</span>
           <.icon name="lucide-arrow-right" class="size-3.5 text-fg-subtle" label="→" />
@@ -147,6 +156,19 @@ defmodule HelmsmanWeb.TaskComponents do
           />
         </li>
       </ul>
+      <p :if={@verified_sha} data-verified-sha class="flex items-center gap-1 text-body">
+        <span class="text-fg-muted">{dgettext("ui", "验收提交")}</span>
+        <code class="font-mono text-label text-fg-muted" title={@verified_sha}>{String.slice(
+          @verified_sha,
+          0,
+          7
+        )}</code>
+        <.copy_button
+          id={"#{@id}-verified-sha"}
+          text={@verified_sha}
+          label={dgettext("ui", "复制验收提交 %{hash}", hash: @verified_sha)}
+        />
+      </p>
       <div :if={@tests} data-tests class="flex flex-wrap items-center gap-1.5 text-body">
         <.icon
           :if={@tests.passed == true}

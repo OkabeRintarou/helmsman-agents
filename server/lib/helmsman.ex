@@ -50,6 +50,7 @@ defmodule Helmsman do
       GitHub,
       GitHub.Installation,
       GitHub.Repository,
+      GitHub.PullRequests,
       Policy,
       Events,
       Presence,
