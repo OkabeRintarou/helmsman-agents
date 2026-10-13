@@ -8,4 +8,5 @@ defmodule HelmsmanDaemon.Launch do
           events: [{atom(), map()}]
         }
   defstruct argv: [], env: [], stdin: nil, close_stdin?: true, events: []
+  use HelmsmanProtocol.Redacted, [:env]
 end

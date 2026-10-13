@@ -1,0 +1,1 @@
+Derived from provider_thread_start.jsonl (codex-cli 0.162.1); only result.modelProvider and result.thread.modelProvider changed to openai to exercise the guard. Provider 由本地假服务模拟；没有真实供应商调用。

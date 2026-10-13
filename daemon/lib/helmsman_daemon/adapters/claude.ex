@@ -1,6 +1,7 @@
 defmodule HelmsmanDaemon.Adapters.Claude do
   @moduledoc "Claude Code stream JSON launch, event normalization and failure classification."
   @behaviour HelmsmanDaemon.Adapter
+  alias HelmsmanDaemon.Adapters.Claude.Provider
   alias HelmsmanDaemon.{Exec, Launch}
   alias HelmsmanProtocol.Event
 
@@ -64,7 +65,9 @@ defmodule HelmsmanDaemon.Adapters.Claude do
         })
     }
 
-    {custom, removed} = filter_args(spec.agent.custom_args, [], [])
+    {args, provider_removed} = provider_args(spec.agent.custom_args, spec.agent.provider_account)
+    {custom, removed} = filter_args(args, [], [])
+    removed = removed ++ provider_removed
 
     events =
       if Map.has_key?(extra, "helmsman"),
@@ -80,7 +83,9 @@ defmodule HelmsmanDaemon.Adapters.Claude do
               "Ignored conflicting Claude arguments: " <> Enum.join(Enum.uniq(removed), ", ")
             )
 
-    with :ok <- File.write(path, JSON.encode!(config)), :ok <- File.chmod(path, 0o600) do
+    with :ok <- File.write(path, JSON.encode!(config)),
+         :ok <- File.chmod(path, 0o600),
+         {:ok, provider_args, env, provider_events} <- Provider.prepare(spec.agent, run_dir) do
       {:ok,
        %Launch{
          argv:
@@ -98,16 +103,34 @@ defmodule HelmsmanDaemon.Adapters.Claude do
              "--mcp-config",
              path
            ] ++
+             provider_args ++
              option("--model", spec.agent.model) ++
              option("--effort", spec.agent.effort) ++
              option("--resume", spec.resume_session_id) ++ custom,
          stdin: frame(spec.prompt),
          close_stdin?: false,
-         events: events
+         env: env,
+         events: events ++ provider_events
        }}
     else
       {:error, reason} ->
         {:error, {:workspace_prepare, "Could not write private Claude MCP config: #{reason}"}}
+    end
+  end
+
+  defp provider_args(args, nil), do: {args, []}
+  defp provider_args(args, _account), do: filter_provider_args(args, [], [])
+
+  defp filter_provider_args([], kept, removed), do: {Enum.reverse(kept), Enum.reverse(removed)}
+
+  defp filter_provider_args([arg | rest], kept, removed) do
+    flag = arg |> String.split("=", parts: 2) |> hd()
+
+    if flag in ["--settings", "--setting-sources"] do
+      rest = if String.contains?(arg, "="), do: rest, else: drop_value(rest)
+      filter_provider_args(rest, kept, [flag | removed])
+    else
+      filter_provider_args(rest, [arg | kept], removed)
     end
   end
 
@@ -152,8 +175,10 @@ defmodule HelmsmanDaemon.Adapters.Claude do
 
   defp drop_value([]), do: []
 
-  def init_state(_spec),
+  def init_state(spec),
     do: %{
+      provider_account?: provider_account?(spec),
+      aborted?: false,
       session_id: nil,
       result: nil,
       usage: nil,
@@ -161,6 +186,11 @@ defmodule HelmsmanDaemon.Adapters.Claude do
       diagnostics: MapSet.new(),
       closed?: false
     }
+
+  defp provider_account?(%{agent: %{provider_account: account}}), do: not is_nil(account)
+  defp provider_account?(_spec), do: false
+
+  def handle_output(_stream, _line, %{aborted?: true} = state), do: {[], [], state}
 
   def handle_output(:stderr, line, state) do
     {events, state} = diagnostic(line, state)
@@ -187,6 +217,23 @@ defmodule HelmsmanDaemon.Adapters.Claude do
       _ ->
         {[], state}
     end
+  end
+
+  defp output(
+         %{"type" => "system", "subtype" => "init"} = value,
+         %{provider_account?: true} = state
+       )
+       when not is_map_key(value, "apiKeySource") or
+              :erlang.map_get("apiKeySource", value) != "apiKeyHelper" do
+    source =
+      if is_binary(value["apiKeySource"]), do: safe(value["apiKeySource"], 128), else: "unknown"
+
+    message =
+      "Claude Code used credentials from " <>
+        source <>
+        " instead of the provider account; stopped so that usage is not billed to another account (check managed settings, or Claude Code changed its settings format)"
+
+    {[], [{:abort, :cli_error, message}], %{state | aborted?: true}}
   end
 
   defp output(%{"type" => "system", "subtype" => "init", "session_id" => id} = value, state)

@@ -20,10 +20,14 @@ defmodule HelmsmanDaemon.Adapters.Codex.Config do
     case Toml.decode(text) do
       {:ok, config} ->
         cond do
+          reserved_provider?(config) ->
+            {:error,
+             "#{path} defines model_providers.helmsman_account, which is reserved for Helmsman provider accounts; remove it"}
+
           Map.has_key?(config, "project_root_markers") ->
             {:error, "#{path} sets project_root_markers, which Helmsman does not support"}
 
-          is_map(config["mcp_servers"]) and map_size(config["mcp_servers"]) > 0 ->
+          configured_mcp?(config["mcp_servers"]) ->
             names = config["mcp_servers"] |> Map.keys() |> Enum.sort() |> Enum.join(", ")
 
             {:error,
@@ -38,6 +42,24 @@ defmodule HelmsmanDaemon.Adapters.Codex.Config do
 
       _ ->
         {:error, "#{path} is not valid TOML"}
+    end
+  end
+
+  defp configured_mcp?(servers) when is_map(servers), do: map_size(servers) > 0
+  defp configured_mcp?(_servers), do: false
+
+  defp reserved_provider?(%{"model_providers" => providers}) when is_map(providers),
+    do: Map.has_key?(providers, "helmsman_account")
+
+  defp reserved_provider?(_config), do: false
+
+  def cleanup_snapshots(home) do
+    case File.rm_rf(Path.join(home, "shell_snapshots")) do
+      {:ok, _} ->
+        []
+
+      {:error, _reason, _path} ->
+        [{:status, %{level: :warning, message: "Could not remove old Codex shell snapshots"}}]
     end
   end
 
@@ -63,30 +85,35 @@ defmodule HelmsmanDaemon.Adapters.Codex.Config do
     if parent == path, do: Enum.reverse([path | acc]), else: ancestors(parent, [path | acc])
   end
 
-  def filter(args), do: filter(args, [], [])
-  defp filter([], kept, removed), do: {Enum.reverse(kept), Enum.reverse(removed)}
+  def filter(args, account? \\ false), do: filter(args, [], [], account?)
+  defp filter([], kept, removed, _account?), do: {Enum.reverse(kept), Enum.reverse(removed)}
 
-  defp filter([arg | rest], kept, removed) do
+  defp filter([arg | rest], kept, removed, account?) do
     [flag | inline] = String.split(arg, "=", parts: 2)
 
     if flag in ["-c", "--config", "--enable", "--disable"] do
       {value, rest} = value(inline, rest)
       key = if flag in ["-c", "--config"], do: config_key(value), else: nil
 
-      keep_config(flag, arg, inline, value, key, rest, kept, removed)
+      keep_config({flag, arg, inline, value, key}, rest, kept, removed, account?)
     else
-      filter(drop_value(rest), kept, [
-        if(String.starts_with?(flag, "-"), do: flag, else: "positional argument") | removed
-      ])
+      filter(
+        drop_value(rest),
+        kept,
+        [
+          if(String.starts_with?(flag, "-"), do: flag, else: "positional argument") | removed
+        ],
+        account?
+      )
     end
   end
 
-  defp keep_config(flag, arg, inline, value, key, rest, kept, removed) do
-    if is_binary(value) and (is_nil(key) or allowed_key?(key)) do
+  defp keep_config({flag, arg, inline, value, key}, rest, kept, removed, account?) do
+    if is_binary(value) and (is_nil(key) or allowed_key?(key, account?)) do
       values = if inline == [], do: [value, flag], else: [arg]
-      filter(rest, values ++ kept, removed)
+      filter(rest, values ++ kept, removed, account?)
     else
-      filter(rest, kept, [key || flag | removed])
+      filter(rest, kept, [key || flag | removed], account?)
     end
   end
 
@@ -109,8 +136,14 @@ defmodule HelmsmanDaemon.Adapters.Codex.Config do
     value |> String.split("=", parts: 2) |> hd() |> String.replace(~r/[\s"']/, "")
   end
 
-  defp allowed_key?(key) do
-    key != "" and not Enum.any?(@blocked, &(key == &1 or String.starts_with?(key, &1 <> ".")))
+  defp allowed_key?(key, account?) do
+    blocked =
+      if account?,
+        do: @blocked ++ ~w(model_provider model_providers),
+        else: @blocked
+
+    key != "" and
+      not Enum.any?(blocked, &(key == &1 or String.starts_with?(key, &1 <> ".")))
   end
 
   def mcp(spec) do

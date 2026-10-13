@@ -11,6 +11,7 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
 
     %{
       spec: spec,
+      aborted?: false,
       session_id: nil,
       turn_id: nil,
       closed?: false,
@@ -34,6 +35,8 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
       pending_steers: MapSet.new()
     }
   end
+
+  def handle(_stream, _line, %{aborted?: true} = state), do: {[], [], state}
 
   def handle(:stderr, line, state),
     do: {[], [], %{state | stderr: Enum.take(state.stderr ++ [safe(line, 4_096)], -50)}}
@@ -61,16 +64,30 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
      }}
   end
 
-  defp output(%{"id" => 2, "result" => %{"thread" => %{"id" => id}}}, %{closed?: false} = state)
-       when is_binary(id) do
-    params =
-      %{"threadId" => id, "input" => [%{"type" => "text", "text" => state.spec.prompt}]}
-      |> Codex.optional("effort", state.spec.agent.effort)
+  defp output(
+         %{"id" => 2, "result" => result},
+         %{spec: %{agent: %{provider_account: account}}} = state
+       )
+       when not is_nil(account) and
+              (not is_map_key(result, "modelProvider") or
+                 :erlang.map_get("modelProvider", result) != "helmsman_account") do
+    if not is_nil(state.spec.resume_session_id) and not Map.has_key?(result, "modelProvider") do
+      thread_started(result, state)
+    else
+      selected =
+        if is_binary(result["modelProvider"]),
+          do: safe_error(result["modelProvider"], 128),
+          else: "unknown"
 
-    {[{:session, %{session_id: id}}],
-     [{:write, Codex.frame(%{"id" => 3, "method" => "turn/start", "params" => params})}],
-     %{state | session_id: id}}
+      message =
+        "Codex selected model provider " <>
+          selected <> " instead of the provider account; stopped"
+
+      {[], [{:abort, :cli_error, message}], %{state | aborted?: true, fatal: message}}
+    end
   end
+
+  defp output(%{"id" => 2, "result" => result}, state), do: thread_started(result, state)
 
   defp output(%{"id" => 3, "result" => %{"turn" => %{"id" => id}}}, state),
     do: {[], [], %{state | turn_id: id}}
@@ -142,7 +159,8 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
   end
 
   defp output(%{"method" => method, "params" => %{"item" => item}}, state)
-       when method in ["item/started", "item/completed"], do: item(method, item, state)
+       when method in ["item/started", "item/completed"],
+       do: item(method, item, state)
 
   defp output(%{"method" => method, "params" => params}, state)
        when method in [
@@ -164,6 +182,19 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
   end
 
   defp output(_, state), do: {[], [], state}
+
+  defp thread_started(%{"thread" => %{"id" => id}}, %{closed?: false} = state)
+       when is_binary(id) do
+    params =
+      %{"threadId" => id, "input" => [%{"type" => "text", "text" => state.spec.prompt}]}
+      |> Codex.optional("effort", state.spec.agent.effort)
+
+    {[{:session, %{session_id: id}}],
+     [{:write, Codex.frame(%{"id" => 3, "method" => "turn/start", "params" => params})}],
+     %{state | session_id: id}}
+  end
+
+  defp thread_started(_result, state), do: {[], [], state}
 
   defp progress(
          %{"method" => method, "params" => %{"threadId" => thread}},
@@ -274,7 +305,8 @@ defmodule HelmsmanDaemon.Adapters.Codex.Output do
   defp token_usage(_, state), do: {[], [], state}
 
   defp item("item/completed", %{"type" => "agentMessage", "text" => text}, state)
-       when is_binary(text), do: {text_event(:text, text), [], %{state | text: text}}
+       when is_binary(text),
+       do: {text_event(:text, text), [], %{state | text: text}}
 
   defp item("item/completed", %{"type" => "reasoning"} = item, state) do
     text = Enum.join(item["summary"] || [], "\n\n")

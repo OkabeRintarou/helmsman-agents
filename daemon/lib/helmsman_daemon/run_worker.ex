@@ -39,6 +39,7 @@ defmodule HelmsmanDaemon.RunWorker do
           Application.get_env(:helmsman_daemon, :reporter, HelmsmanDaemon.Connection)
         ),
       adapter_state: nil,
+      adapter_aborted?: false,
       launch: nil,
       pgid: nil,
       exec_pid: nil,
@@ -394,6 +395,8 @@ defmodule HelmsmanDaemon.RunWorker do
         URI.to_string(%{URI.parse(state.spec.mcp.url) | path: nil, query: nil, fragment: nil})
       )
 
+  defp consume(%{adapter_aborted?: true} = state, _stream, _data), do: state
+
   defp consume(%{max_line_bytes: limit} = state, :stdout, data) when is_integer(limit) do
     {lines, buffer} = LineBuffer.push(state.stdout_buffer, data, limit)
     state = %{state | stdout_buffer: buffer}
@@ -438,14 +441,11 @@ defmodule HelmsmanDaemon.RunWorker do
 
   defp deliver(state, :stdout, _line) when state.stop_reason == :output_overflow, do: state
 
+  defp deliver(%{adapter_aborted?: true} = state, _stream, _line), do: state
+
   defp deliver(state, stream, line) do
     {events, actions, adapter_state} =
       state.adapter.handle_output(stream, line, state.adapter_state)
-
-    Enum.each(actions, fn
-      :close_stdin -> :exec.send(state.pgid, :eof)
-      {:write, bytes} -> :exec.send(state.pgid, IO.iodata_to_binary(bytes))
-    end)
 
     state = %{
       state
@@ -453,7 +453,39 @@ defmodule HelmsmanDaemon.RunWorker do
         last_error: if(stream == :stderr, do: line, else: state.last_error)
     }
 
-    enqueue(state, events)
+    state = enqueue(state, events)
+
+    case Enum.find(actions, &match?({:abort, _, _}, &1)) do
+      {:abort, reason, message} -> abort_adapter(state, reason, message)
+      nil -> perform_actions(state, actions)
+    end
+  end
+
+  defp perform_actions(%{stop_reason: reason} = state, _actions) when not is_nil(reason),
+    do: state
+
+  defp perform_actions(state, actions) do
+    Enum.each(actions, fn
+      :close_stdin -> :exec.send(state.pgid, :eof)
+      {:write, bytes} -> :exec.send(state.pgid, IO.iodata_to_binary(bytes))
+    end)
+
+    state
+  end
+
+  defp abort_adapter(state, reason, message) do
+    state = %{state | adapter_aborted?: true}
+
+    if state.stop_reason do
+      state
+    else
+      {reason, message} =
+        if reason in HelmsmanProtocol.FailureReason.daemon_reportable() and is_binary(message),
+          do: {reason, message},
+          else: {:cli_error, "Adapter returned an invalid abort reason or message"}
+
+      state |> stop_cli(:adapter_abort) |> Map.put(:result, failed(reason, message))
+    end
   end
 
   defp split_lines(data), do: split_lines(data, [])
@@ -499,6 +531,10 @@ defmodule HelmsmanDaemon.RunWorker do
 
   defp cancel_timer(nil), do: :ok
   defp cancel_timer(timer), do: Process.cancel_timer(timer)
+
+  defp stop_cli(%{stop_reason: previous} = state, reason)
+       when not is_nil(previous) and reason in [:cancel, :timeout, :stalled],
+       do: state
 
   defp stop_cli(%{phase: phase} = state, reason)
        when phase in [:draining, :finished, :collecting] do

@@ -1,7 +1,7 @@
 defmodule HelmsmanDaemon.Adapters.Codex do
   @moduledoc "Unattended Codex app-server with a persistent daemon home and per-thread MCP."
   @behaviour HelmsmanDaemon.Adapter
-  alias HelmsmanDaemon.Adapters.Codex.{Config, Output}
+  alias HelmsmanDaemon.Adapters.Codex.{Config, Output, Provider}
   alias HelmsmanDaemon.{Exec, Launch, Paths}
   @minimum Version.parse!("0.162.0")
   @efforts ~w(low medium high xhigh)
@@ -34,8 +34,11 @@ defmodule HelmsmanDaemon.Adapters.Codex do
   def prepare(spec, _run_dir, work_dir) do
     with :ok <- Config.validate(), :ok <- Config.project_config(work_dir) do
       home = Paths.private_dir!(Config.home())
+      snapshot_warnings = Config.cleanup_snapshots(home)
       {servers, removed_servers} = Config.mcp(spec)
-      {args, removed_args} = Config.filter(spec.agent.custom_args)
+
+      {args, removed_args} =
+        Config.filter(spec.agent.custom_args, not is_nil(spec.agent.provider_account))
 
       params =
         %{
@@ -44,7 +47,7 @@ defmodule HelmsmanDaemon.Adapters.Codex do
           "sandbox" => "danger-full-access",
           "config" => %{"mcp_servers" => servers}
         }
-        |> optional("model", spec.agent.model)
+        |> optional("model", Provider.model(spec.agent))
 
       {method, params} =
         if spec.resume_session_id,
@@ -73,15 +76,20 @@ defmodule HelmsmanDaemon.Adapters.Codex do
            [
              System.find_executable(executable()) || executable(),
              "app-server",
+             "--disable",
+             "shell_snapshot",
+             "--disable",
+             "shell_snapshot_v2",
              "-c",
              "check_for_update_on_startup=false"
-           ] ++ args,
-         env: [{"CODEX_HOME", home}],
+           ] ++ Provider.argv(spec.agent.provider_account) ++ args,
+         env: [{"CODEX_HOME", home}] ++ Provider.env(spec.agent.provider_account),
          stdin: stdin,
          close_stdin?: false,
          events:
-           warnings("Ignored extra MCP servers", removed_servers) ++
-             warnings("Ignored Codex arguments", removed_args)
+           snapshot_warnings ++
+             warnings("Ignored extra MCP servers", removed_servers) ++
+             warnings("Ignored Codex arguments", removed_args) ++ Provider.warnings(spec.agent)
        }}
     else
       {:error, message} -> {:error, {:workspace_prepare, message}}

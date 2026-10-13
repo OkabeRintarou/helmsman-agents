@@ -2,7 +2,23 @@ defmodule HelmsmanDaemon.Adapter do
   @moduledoc "Extension point for agent CLI detection, launching and stream normalization."
   alias HelmsmanDaemon.Launch
   alias HelmsmanProtocol.RunSpec
-  @type action :: :close_stdin | {:write, iodata()}
+
+  @type daemon_failure ::
+          :timeout
+          | :stalled
+          | :provider_network
+          | :provider_rate_limit
+          | :provider_auth
+          | :provider_quota
+          | :cli_missing
+          | :cli_version
+          | :workspace_prepare
+          | :push_conflict
+          | :push_failed
+          | :context_overflow
+          | :cli_error
+          | :unknown
+  @type action :: :close_stdin | {:write, iodata()} | {:abort, daemon_failure(), String.t()}
   @callback provider() :: :claude | :codex | :copilot | :cursor
   @callback executable() :: String.t()
   @callback min_version() :: Version.t()
