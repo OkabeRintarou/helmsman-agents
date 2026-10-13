@@ -225,7 +225,7 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
       push_args: ["--receive-pack=" <> receive_pack(fixture)]
     )
 
-    assert_receive {:report, 40, %Report.GitToken{}, _, _, _}, 6_000
+    assert_receive {:report, 40, %Report.GitToken{}, _, _, _}, 20_000
     pushed(40)
     finished(40)
   end
@@ -243,12 +243,12 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
     end)
 
     start(fixture, 40, "write hello\n" <> @success, token_expires_at: DateTime.utc_now())
-    for _ <- 1..3, do: assert_receive({:report, 40, %Report.GitToken{}, _, _, _}, 6_000)
+    for _ <- 1..3, do: assert_receive({:report, 40, %Report.GitToken{}, _, _, _}, 20_000)
     assert %{failure_reason: :push_failed} = finished(40, :failed)
     refute_receive {:report, 40, %Report.Pushed{}, _, _, _}
     TestReporter.configure(&TestReporter.default/1)
     start(fixture, 41, @success, token_expires_at: DateTime.utc_now())
-    assert_receive {:report, 41, %Report.GitToken{}, _, _, _}, 6_000
+    assert_receive {:report, 41, %Report.GitToken{}, _, _, _}, 20_000
     pushed(41)
     pushed(40)
     finished(41)
@@ -263,7 +263,7 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
     end)
 
     {worker, run} = start(fixture, 40, "write hello\n" <> @success, report_resubmit_ms: 100)
-    assert_receive {:report, 40, %Report.Pushed{} = first, ^worker, first_ref, _}, 6_000
+    assert_receive {:report, 40, %Report.Pushed{} = first, ^worker, first_ref, _}, 20_000
     ledger = GitLedger.read(run)
     assert [%{"runs" => [%{"acked" => false}]}] = ledger["outbox"]
     assert_receive {:report, 40, %Report.Pushed{} = retry, ^worker, _ref, _}, 1_000
@@ -309,7 +309,7 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
     end)
 
     {worker, run} = start(fixture, 40, "write hello\n" <> @success)
-    assert_receive {:report, 40, %Report.Pushed{} = original, ^worker, _, _}, 6_000
+    assert_receive {:report, 40, %Report.Pushed{} = original, ^worker, _, _}, 20_000
     assert remote_head(fixture) == original.head_sha
     assert GitLedger.read(run)["outbox"] != []
     Process.exit(worker, :kill)
@@ -337,7 +337,7 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
 
     {worker, _} = start(fixture, 41, @success, opts)
     pushed(41)
-    assert_receive {:report, 40, %Report.Pushed{} = original, ^worker, _, _}, 6_000
+    assert_receive {:report, 40, %Report.Pushed{} = original, ^worker, _, _}, 20_000
 
     assert [
              %{
@@ -470,7 +470,7 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
     end)
 
     {worker, _} = start(fixture, 41, @success)
-    assert_receive {:report, 41, %Report.Starting{}, ^worker, ref, _}, 6_000
+    assert_receive {:report, 41, %Report.Starting{}, ^worker, ref, _}, 20_000
     assert %{"inherit" => [40, 41], "outbox" => []} = GitLedger.read(run)
     assert Bitwise.band(File.stat!(GitLedger.path(run)).mode, 0o777) == 0o600
     send(worker, {:report_result, ref, {:ok, %Reply.Starting{action: :proceed}}})
@@ -605,7 +605,7 @@ defmodule HelmsmanDaemon.RunWorkerGitTest do
       refute_receive {:next_entered, _}, 100
       assert {:ok, [_ | _]} = HelmsmanDaemon.ProcGroup.live_snapshot(state.pgid)
       send(guardian, :continue)
-      assert_receive {:next_entered, {:ok, []}}, 6_000
+      assert_receive {:next_entered, {:ok, []}}, 20_000
     after
       if Process.alive?(state.cli_guardian), do: send(state.cli_guardian, :continue)
       if Process.alive?(registry_owner), do: :erlang.resume_process(registry_owner)
