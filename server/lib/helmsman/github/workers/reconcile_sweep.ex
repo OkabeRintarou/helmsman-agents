@@ -4,8 +4,9 @@ defmodule Helmsman.GitHub.Workers.ReconcileSweep do
   reconciliation of tasks that may have missed a wake-up, at most
   200 per round, those reconciled longest ago (never first):
 
-    * the current pull request is a draft or open and the task is
-      `verified` or its merge status is `waiting`;
+    * the current pull request is a draft or open, whatever the task's
+      status — without webhooks (an unreachable server), a pull request
+      merged or closed on GitHub is only noticed here;
     * a run pushed to the task branch in the project's current repository
       in the last 7 days and that repository has no draft or open pull
       request row of the task.
@@ -20,7 +21,7 @@ defmodule Helmsman.GitHub.Workers.ReconcileSweep do
 
   @sql """
   WITH cur AS (
-    SELECT DISTINCT ON (p.task_id) p.task_id, p.state, p.merge_status, p.reconciled_at
+    SELECT DISTINCT ON (p.task_id) p.task_id, p.state, p.reconciled_at
     FROM task_pull_requests p
     JOIN tasks t ON t.id = p.task_id
     JOIN projects pj ON pj.id = t.project_id
@@ -30,9 +31,7 @@ defmodule Helmsman.GitHub.Workers.ReconcileSweep do
   candidates AS (
     SELECT cur.task_id, cur.reconciled_at
     FROM cur
-    JOIN tasks t ON t.id = cur.task_id
     WHERE cur.state IN ('draft', 'open')
-      AND (t.status = 'verified' OR cur.merge_status = 'waiting')
     UNION
     SELECT DISTINCT r.task_id, cur.reconciled_at
     FROM runs r

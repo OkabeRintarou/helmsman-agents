@@ -12,7 +12,7 @@ defmodule Helmsman.GitHub.Workers.ReconcilePRTest do
   alias Helmsman.Feedback.Entry
   alias Helmsman.GitHub.{PullRequest, PullRequests}
   alias Helmsman.GitHub.PullRequests.Reconcile
-  alias Helmsman.GitHub.Workers.ReconcilePR
+  alias Helmsman.GitHub.Workers.{ReconcilePR, ReconcileSweep}
   alias Helmsman.Tasks.Task
 
   setup do
@@ -159,6 +159,33 @@ defmodule Helmsman.GitHub.Workers.ReconcilePRTest do
 
       assert status(ctx) == :verified
       refute FakeGitHub.requested?(ctx.fake, "PATCH", "/pulls/1")
+    end
+
+    test "merged on GitHub without a webhook: the sweep records it (PR 在 GitHub 上被外部合并)",
+         ctx do
+      push!(ctx, sha("c"), sha("0"))
+      to(ctx, [:in_progress, :done])
+      open_pr(ctx, 1, sha("c"), %{}, %{reconciled_at: DateTime.add(DateTime.utc_now(), -600)})
+
+      FakeGitHub.change_pull(ctx.fake, 1,
+        merged: true,
+        state: "closed",
+        merge_commit_sha: sha("e")
+      )
+
+      clear_jobs()
+
+      assert ctx.task.id in ReconcileSweep.due()
+      assert :ok = perform_job(ReconcileSweep, %{})
+      assert [%Oban.Job{args: args}] = all_enqueued(worker: ReconcilePR)
+      assert :ok = perform_job(ReconcilePR, args)
+
+      assert %PullRequest{state: :merged, merged_at: %DateTime{}, included_sha: included} =
+               current(ctx)
+
+      assert included == sha("c")
+      assert status(ctx) == :done
+      refute FakeGitHub.requested?(ctx.fake, "PUT", "/pulls/1/merge")
     end
 
     test "merged, reopened and pushed again: a new current pull request (合并后重开再推送)", ctx do

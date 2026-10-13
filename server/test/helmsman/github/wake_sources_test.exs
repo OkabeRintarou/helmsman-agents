@@ -156,8 +156,18 @@ defmodule Helmsman.GitHub.WakeSourcesTest do
       waiting = ctx.new_task.()
       pr_row(ctx, waiting, %{merge_status: :waiting, merge_reason: :run_active})
 
+      # Any status: a pull request merged or closed on GitHub without a
+      # webhook is only noticed by the sweep (M6 acceptance).
       in_progress = ctx.new_task.()
       pr_row(ctx, in_progress, %{})
+
+      done = ctx.new_task.()
+      ctx.set_status.(done, :done)
+      pr_row(ctx, done, %{state: :draft, reconciled_at: DateTime.add(DateTime.utc_now(), -30)})
+
+      closed = ctx.new_task.()
+      ctx.set_status.(closed, :done)
+      pr_row(ctx, closed, %{state: :closed})
 
       merged = ctx.new_task.()
       ctx.set_status.(merged, :verified)
@@ -195,14 +205,18 @@ defmodule Helmsman.GitHub.WakeSourcesTest do
       })
 
       due = ReconcileSweep.due()
-      assert Enum.sort(due) == Enum.sort([verified.id, waiting.id, ctx.task.id])
-      # Never reconciled first.
-      assert List.last(due) == verified.id
+
+      assert Enum.sort(due) ==
+               Enum.sort([verified.id, waiting.id, in_progress.id, done.id, ctx.task.id])
+
+      # Never reconciled first, then the longest ago.
+      assert Enum.take(due, -2) == [verified.id, done.id]
       assert ReconcileSweep.due(1) |> length() == 1
 
       assert :ok = perform_job(ReconcileSweep, %{})
-      for t <- [verified, waiting, ctx.task], do: assert(woken?(t))
+      for t <- [verified, waiting, in_progress, done, ctx.task], do: assert(woken?(t))
       refute woken?(merged)
+      refute woken?(closed)
     end
   end
 end
