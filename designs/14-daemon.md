@@ -40,6 +40,7 @@
 - 能列出模型的 CLI 顺便取模型列表（例如 `cursor-agent --list-models`），连同支持的推理强度（如 Claude 的 `--effort`），随注册上报，供界面下拉。
 - 每 10 分钟重新检测一次；`helmsman daemon restart` 立即重测。
 - 一个 CLI 都没有时拒绝启动，并提示去安装。
+- 检测到 Codex、而守护进程专用的 `~/.helmsman/codex` 里既没有登录（`codex login status`）也没有选非 `openai` 的 provider、守护进程环境里也没有 API key 时，启动时打印一行提示；运行时照常上报为可用（同一运行时上绑定了供应商账号的 Agent 不受影响，`update-codex-provider-check`）。
 
 ## 3. 与服务端的协议
 
@@ -123,6 +124,7 @@
 - **供应商账号**（12 §2.2，`add-provider-accounts`）：RunSpec 带 `agent.provider_account` 时才生效，否则启动方式与上表逐字节相同。
   - Claude Code：用户 `settings.json` 的 `env` 高于进程环境，仓库的 `.claude/settings*.json` 更高，命令行 `--settings` 最高（托管策略除外）。所以加 `--settings <run_dir>/claude-settings.json`（0600，不含密钥、不含 `null`——含 `null` 的设置文件会被整个静默忽略）：把决定地址、凭据、模型的全部变量先置空串再写入账号的地址与模型映射，顶层 `model` 同样覆盖，`apiKeyHelper` 改为 `printenv HELMSMAN_PROVIDER_API_KEY`（设置文件的 `env` 不展开变量，helper 让密钥只留在进程环境里）。不换 `CLAUDE_CONFIG_DIR`：那样用户的登录、hooks、会话都不加载，仓库设置仍能改地址。守卫：初始化行的 `apiKeySource` 不是 `apiKeyHelper` 就中止运行。
   - Codex：守护进程不读用户的 `~/.codex`；专用目录 `config.toml` 的 `model_provider` 高于 `OPENAI_*` 环境变量，`-c` 高于 `config.toml`，`-c` 对已有 id 逐键合并。所以用保留 id：`-c model_provider="helmsman_account" -c model_providers.helmsman_account={base_url=…, wire_api="responses", env_key="HELMSMAN_PROVIDER_API_KEY"}`；专用 `config.toml` 定义了这个 id 时 CLI 不可用；`thread/start` 回复的 `modelProvider` 不是它就中止。
+  - Codex 启动前检查模型来源（`update-codex-provider-check`）：绑定了账号、Agent 参数或专用目录选了非 `openai` 的 provider、环境里有缺省 provider 使用的 API key、或在专用目录下 `codex login status` 已登录，任一成立才启动；全部明确不成立时不启动，运行以 `provider_auth` 失败（不自动重试），错误说明怎样配置——否则缺省的 OpenAI provider 在连不上时会一直重试，把任务占住半小时以上。判断不了时照常启动。
   - 绑定账号时 `custom_args` 里改供应商的参数（Claude 的 `--settings` / `--setting-sources`，Codex 的 `-c model_provider*`）被剔除；未绑定账号而 Agent `env` 里有供应商变量时，运行事件里警告（只列变量名）。
 
 **输出归一化**：各适配器把 CLI 的输出解析成同一组事件——`text`（助手文本，增量合并）、`thinking`、`tool_call`（名称、参数摘要）、`tool_result`（截断到 16 KB）、`usage`、`session`（会话 ID）、`result`（最终输出、是否成功）、`error`（附原因码，13 §5）。原始输出另存在 `runs/<run_id>/raw.log`，7 天后清理，排查时用。
@@ -130,7 +132,10 @@
 ## 5. 运行环境
 
 - 工作目录：有仓库时是任务的 worktree（§7）；没有仓库时，有任务的用 `scratch/<workspace>/<ident>/`（同一任务复用，会话才能恢复），无任务的（自动化「仅运行」）用 `runs/<run_id>/scratch/`。
-- 环境变量：继承守护进程的环境 + Agent 的 `env`，再加上：
+- 环境变量：**清理后的**继承环境 + `GIT_TERMINAL_PROMPT=0` + Agent 的 `env`，再加上下表；一律以「清空后整体传入」的方式启动子进程（erlexec 的子进程继承的是 erlexec 启动时的环境快照，事后删 BEAM 的环境变量清不掉，`update-daemon-env-scrub`）：
+  - 清理（守护进程启动时、每个子进程——CLI、守护进程自己的 git、版本探测、`ps` / `kill` 等命令——每次启动时都按同一规则 `HelmsmanDaemon.Env` 清理）：去掉继承来的全部 `GIT_*`（被注入的配置 `GIT_CONFIG_*`、凭据弹窗 `GIT_ASKPASS`、改写仓库位置的 `GIT_DIR` / `GIT_WORK_TREE` 等、改写执行程序的 `GIT_EXEC_PATH` / `GIT_SSH_COMMAND` 等、跟踪输出）、`SSH_ASKPASS` / `SSH_ASKPASS_REQUIRE`、全部 `VSCODE_*`（`VSCODE_GIT_IPC_HANDLE` 与 askpass 会让 Agent 经 VS Code 借用用户的 GitHub 登录，`VSCODE_IPC_HOOK_CLI` 能操纵用户的编辑器）；子进程另去掉继承来的 `HELMSMAN_*`。启动时打印被忽略的变量名（不含值）。
+  - 保留其余全部（`PATH`、`HOME`、语言、代理、`SSH_AUTH_SOCK`、机器主人自己放进环境的令牌）：CLI 要靠它们联网与认证；Agent 能用守护进程用户的凭据见 §9。用户长期的 git 设置在 `~/.gitconfig` 里，Agent 的 git 照常读取；Agent 的 `env` 可以明确设置 `GIT_*`。
+  - `GIT_TERMINAL_PROMPT=0`：守护进程在终端前台运行时，Agent 的 git 缺凭据也不会在终端上提示、卡住。
 
 | 变量 | 值 |
 |---|---|
@@ -193,12 +198,15 @@ HelmsmanDaemon.Supervisor
 
 与 multica 相同的出发点：**CLI 本身不提供沙箱**。Agent CLI 能读写运行它的那个操作系统用户能读写的所有文件、用这个用户的所有凭据、访问网络；CLI 的审批也被设为无人值守（Claude `bypassPermissions`、Codex 关闭沙箱与审批、Copilot `--allow-all`、Cursor `--force`）。
 
+Codex 因此以 `sandbox: danger-full-access` 运行，不用它自带的 bubblewrap 沙箱（需要 user namespace，很多主机与容器不可用，也给不了这里需要的边界）；app-server 启动时打印的 bubblewrap 错误日志与此无关、无害，检测也不探测沙箱（`update-codex-provider-check` 决策 5）。
+
 这意味着**Agent 和守护进程之间没有边界**：Agent 能读到 `~/.helmsman/credentials` 里的 `hmd_` 令牌，冒充守护进程去领这台机器能领的所有运行；也能读到别的任务的 worktree。本期守护进程只实现这一种模式（`isolation = none`）：CLI 和守护进程是同一个系统用户。所以：
 
 - 运行时**只能绑定机器主人自己的 Agent**（12 §3.3）：机器主人只跑自己的 Agent，风险只落在自己身上。多人共用一台服务器时，用一个专用的 Helmsman 账号登录守护进程、以它创建 `access = workspace` 的 Agent（12 §3.3），并用一个专用的系统用户运行守护进程。
 - `helmsman daemon start` 首次运行时打印这段安全说明（Agent 能做守护进程用户能做的一切），建议用专用系统用户运行。
 - 守护进程用户与执行用户分开（`isolation = user`）、容器 / 虚拟机隔离，以及在此之上的「公开运行时」，都是扩展点（00 §10）。本期 `join` 不上报隔离模式；扩展时 `join` 新增隔离模式字段、协议升版本（按 §1 的版本协商，旧守护进程视为 `none`），服务端据此决定能否开放公开运行时。领取、事件、结束等其余消息不受影响。
 - 建议运行守护进程的系统用户**不配置任何 GitHub 凭据**（§5），这样推送和合并只能经过 Helmsman。
+- 守护进程不会把**启动它的那个会话**的凭据通道（编辑器终端的 git askpass 与 IPC、被注入的 git 配置）交给 Agent（§5 的清理），但会把守护进程用户自己的凭据交给它；从服务管理器或干净的登录 shell 启动最稳妥。
 - 登录时只为**勾选的工作区**注册运行时（12 §3.1），`hmd_` 令牌泄露的影响限于这些工作区。
 
 Helmsman 自己能保证的：
@@ -213,5 +221,6 @@ Helmsman 自己能保证的：
 
 - 适配器：把各 CLI 的真实输出录下来作为 fixture，测试解析结果；启动参数做快照测试。
 - 默认测试**不**调用本机真实的 CLI：用测试里生成的假 CLI 脚本（按 fixture 回放输出、模拟挂起、模拟崩溃）。
+- 敌意环境：CI 的守护进程质量门禁与服务端带守护进程的 E2E 都在 `scripts/hostile-git-env.sh` 下运行——它注入 §5 要清理的各类变量，能被调用的程序都是留下记录的金丝雀，任何一个被调用过就失败（`update-daemon-env-scrub`）。
 - 真实 CLI 冒烟测试单独打 tag（`@tag :real_cli`），需要显式设置 `HELMSMAN_REAL_CLI=1` 才跑。
 - 协议：服务端 Channel 测试 + 守护进程连本地服务端的端到端测试（假 CLI），覆盖领取、断线重连对账、租约过期、停止、重复上报。
