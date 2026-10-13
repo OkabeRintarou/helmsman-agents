@@ -134,6 +134,49 @@ defmodule Helmsman.Dispatch.AvailabilityTest do
     assert more <= 3
   end
 
+  describe "daemon_outdated (add-provider-accounts 3.5)" do
+    setup ctx do
+      zai = Helmsman.ProviderAccountsFixtures.provider_account_fixture(ctx.alice, %{name: "zai"})
+      {:ok, _} = Agents.update(ctx.alice_scope, "keel/dev", %{provider_account_id: zai.id})
+      daemon = Repo.get!(Helmsman.Daemons.Daemon, ctx.runtime.daemon_id)
+      old = HelmsmanProtocol.provider_account_version() - 1
+      daemon = Repo.update!(Ecto.Changeset.change(daemon, protocol_version: old))
+      Map.put(ctx, :daemon, daemon)
+    end
+
+    test "a bound agent on an older daemon is skipped; unbound it is not (scenario)", ctx do
+      assert {:ok, %{"keel/dev" => %{result: {:skipped, :daemon_outdated}}}} =
+               Dispatch.availability(ctx.alice_scope)
+
+      {:ok, _} = Agents.update(ctx.alice_scope, "keel/dev", %{provider_account_id: nil})
+      assert {:ok, %{"keel/dev" => %{result: :ok}}} = Dispatch.availability(ctx.alice_scope)
+    end
+
+    test "a current daemon is fine", ctx do
+      version = HelmsmanProtocol.provider_account_version()
+      Repo.update!(Ecto.Changeset.change(ctx.daemon, protocol_version: version))
+      assert {:ok, %{"keel/dev" => %{result: :ok}}} = Dispatch.availability(ctx.alice_scope)
+    end
+
+    test "after runtime_disabled", ctx do
+      Repo.update!(Ecto.Changeset.change(ctx.runtime, disabled_at: DateTime.utc_now(:second)))
+
+      assert {:ok, %{"keel/dev" => %{result: {:skipped, :runtime_disabled}}}} =
+               Dispatch.availability(ctx.alice_scope)
+    end
+
+    test "the number of queries does not change", ctx do
+      {{:ok, _}, few} = QueryCount.count(fn -> Dispatch.availability(ctx.alice_scope) end)
+
+      for n <- 1..5 do
+        managed_agent_fixture(ctx.alice_scope, %{name: "bulk/#{n}", runtime_id: ctx.runtime.id})
+      end
+
+      {{:ok, _}, more} = QueryCount.count(fn -> Dispatch.availability(ctx.alice_scope) end)
+      assert few == more
+    end
+  end
+
   test "needs :read_tasks", ctx do
     assert {:error, :forbidden} = Dispatch.availability(%{ctx.alice_scope | role: nil})
   end

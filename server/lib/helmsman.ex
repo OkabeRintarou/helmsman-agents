@@ -13,6 +13,8 @@ defmodule Helmsman do
       Daemons.Runtime,
       Daemons.DaemonWorkspace,
       Runtimes,
+      ProviderAccounts,
+      ProviderAccounts.ProviderAccount,
       Runs,
       Runs.Run,
       Runs.Outcome,

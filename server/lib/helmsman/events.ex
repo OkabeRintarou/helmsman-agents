@@ -14,7 +14,14 @@ defmodule Helmsman.Events do
 
   @doc "Returns the PubSub topic of a resource, e.g. `\"workspace:1\"`."
   @spec topic(
-          :workspace | :user | :project | :task | :daemon | :run | :workspace_runs,
+          :workspace
+          | :user
+          | :project
+          | :task
+          | :daemon
+          | :run
+          | :workspace_runs
+          | :provider_accounts,
           pos_integer()
         ) :: String.t()
   def topic(:workspace, id) when is_integer(id), do: "workspace:#{id}"
@@ -24,6 +31,9 @@ defmodule Helmsman.Events do
   def topic(:task, id) when is_integer(id), do: "task:#{id}"
   def topic(:run, id) when is_integer(id), do: "run:#{id}"
   def topic(:workspace_runs, id) when is_integer(id), do: "workspace:#{id}:runs"
+  # A user's provider accounts (`add-provider-accounts` decision 3).
+  def topic(:provider_accounts, user_id) when is_integer(user_id),
+    do: "user:#{user_id}:provider_accounts"
 
   @doc """
   Like `after_commit/2`, but `message` is broadcast on `topic` once per

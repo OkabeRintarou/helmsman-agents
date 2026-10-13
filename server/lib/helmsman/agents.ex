@@ -5,10 +5,11 @@ defmodule Helmsman.Agents do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.{Daemon, Runtime}
-  alias Helmsman.{Events, Policy, Repo, Runs, Workspaces}
+  alias Helmsman.{Events, Policy, ProviderAccounts, Repo, Runs, Workspaces}
+  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Runs.Run
 
-  @execution_fields ~w(provider runtime_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids wake_on_requested)
+  @execution_fields ~w(provider runtime_id provider_account_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids wake_on_requested)
   @view_fields ~w(provider model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args wake_on_requested inserted_at updated_at)a
 
   @doc false
@@ -73,10 +74,11 @@ defmodule Helmsman.Agents do
                actor
                |> Actor.create_changeset(Map.take(string_keys(attrs), ["name"]))
                |> Repo.insert(),
-             {:ok, _profile} <-
+             {:ok, profile} <-
                %AgentProfile{workspace_id: actor.workspace_id, actor_id: actor.id}
                |> AgentProfile.changeset(attrs, actor)
                |> Repo.insert() do
+          notify_accounts(actor, nil, profile.provider_account_id)
           notify(actor)
           {:ok, hd(views([actor]))}
         end
@@ -96,6 +98,8 @@ defmodule Helmsman.Agents do
            :ok <- active(profile),
            {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update() do
         move_pending_runs(actor, profile.runtime_id, updated.runtime_id)
+        notify_accounts(actor, profile.provider_account_id, updated.provider_account_id)
+
         {:ok, actor}
       end
     end)
@@ -144,6 +148,7 @@ defmodule Helmsman.Agents do
              |> Ecto.Changeset.change(disabled_at: actor.disabled_at || DateTime.utc_now(:second))
              |> Repo.update() do
         cancel_pending_runs(actor)
+        notify_accounts(actor, profile.provider_account_id, nil)
         {:ok, actor}
       end
     end)
@@ -200,8 +205,8 @@ defmodule Helmsman.Agents do
     Repo.one(if row_lock, do: lock(query, "FOR UPDATE"), else: query)
   end
 
-  # Four queries whatever the number of actors: profiles, owners, runtimes
-  # and run counts.
+  # Five queries whatever the number of actors: profiles, owners, runtimes,
+  # provider accounts and run counts.
   defp views(actors) do
     ids = Enum.map(actors, & &1.id)
 
@@ -220,14 +225,21 @@ defmodule Helmsman.Agents do
       |> Enum.reject(&is_nil/1)
       |> runtime_summaries()
 
+    accounts =
+      profiles
+      |> Map.values()
+      |> Enum.map(& &1.provider_account_id)
+      |> Enum.reject(&is_nil/1)
+      |> account_summaries()
+
     counts = Runs.counts(ids)
 
     Enum.map(actors, fn actor ->
-      view(actor, profiles[actor.id], owners, runtimes, counts[actor.id] || %{})
+      view(actor, profiles[actor.id], owners, {runtimes, accounts}, counts[actor.id] || %{})
     end)
   end
 
-  defp view(actor, profile, owners, runtimes, counts) do
+  defp view(actor, profile, owners, {runtimes, accounts}, counts) do
     base = %{
       name: actor.name,
       kind: if(profile, do: "managed", else: "external"),
@@ -247,6 +259,8 @@ defmodule Helmsman.Agents do
     Map.merge(base, config)
     |> Map.merge(%{
       runtime: profile && profile.runtime_id && runtimes[profile.runtime_id],
+      provider_account:
+        profile && profile.provider_account_id && accounts[profile.provider_account_id],
       env_names: names(profile, :env),
       extra_mcp_server_names: names(profile, :extra_mcp_servers)
     })
@@ -273,6 +287,28 @@ defmodule Helmsman.Agents do
     )
     |> Map.new()
   end
+
+  # The account summary any reader of the agent sees (decision 14): never
+  # the key or the full address.
+  defp account_summaries([]), do: %{}
+
+  defp account_summaries(ids) do
+    Repo.all(
+      from a in ProviderAccount,
+        where: a.id in ^ids,
+        select: {a.id, %{id: a.id, name: a.name, cli: a.cli, base_url: a.base_url}}
+    )
+    |> Map.new(fn {id, account} ->
+      {id, account |> Map.delete(:base_url) |> Map.put(:host, URI.parse(account.base_url).host)}
+    end)
+  end
+
+  # The owner's accounts page shows which agents use an account: notified
+  # when the agent's binding changes from `old` to `new`.
+  defp notify_accounts(_actor, same, same), do: :ok
+
+  defp notify_accounts(actor, _old, _new),
+    do: Events.after_commit(ProviderAccounts.topic(actor.owner_id), {:provider_accounts_changed})
 
   defp notify(actor),
     do: Events.after_commit(Events.topic(:workspace, actor.workspace_id), {:agents_changed})

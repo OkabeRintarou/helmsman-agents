@@ -202,7 +202,13 @@ defmodule Helmsman.Dispatch do
   @typedoc "A managed agent's dispatchability (`availability/1`)."
   @type availability :: %{
           result:
-            :ok | {:skipped, :agent_disabled | :unauthorized | :no_runtime | :runtime_disabled},
+            :ok
+            | {:skipped,
+               :agent_disabled
+               | :unauthorized
+               | :no_runtime
+               | :runtime_disabled
+               | :daemon_outdated},
           runtime:
             %{
               daemon_name: String.t(),
@@ -219,7 +225,11 @@ defmodule Helmsman.Dispatch do
   The checks are steps 1–2 of `Helmsman.Runs.enqueue/3`, in order: the
   agent is disabled or the user may not trigger it
   (`Helmsman.Agents.TriggerRule`), it has no runtime, its runtime is
-  disabled. An offline runtime is `:ok`. Neither the trigger chain nor the
+  disabled, then it is bound to a provider account and its runtime's
+  daemon last connected with an older protocol than
+  `HelmsmanProtocol.provider_account_version/0` (`:daemon_outdated`, which
+  claiming would leave queued; `add-provider-accounts` decision 4). An
+  offline runtime is `:ok`. Neither the trigger chain nor the
   rate is checked: this is a hint, `enqueue/3` checks again. Two queries,
   whatever the number of agents.
   """
@@ -238,17 +248,17 @@ defmodule Helmsman.Dispatch do
             left_join: d in Daemon,
             on: d.id == r.daemon_id,
             where: a.workspace_id == ^workspace_id and a.kind == :agent and is_nil(p.archived_at),
-            select: {a, p, r, d.name}
+            select: {a, p, r, {d.name, d.protocol_version}}
           )
         )
 
       role = user_id && member_role(workspace_id, user_id)
 
       {:ok,
-       Map.new(agents, fn {actor, profile, runtime, daemon_name} ->
+       Map.new(agents, fn {actor, profile, runtime, {daemon_name, protocol}} ->
          {actor.name,
           %{
-            result: dispatchable(profile, actor, {user_id, role}, runtime),
+            result: dispatchable(profile, actor, {user_id, role}, {runtime, protocol}),
             runtime: runtime && runtime_view(runtime, daemon_name)
           }}
        end)}
@@ -264,14 +274,20 @@ defmodule Helmsman.Dispatch do
         )
       )
 
-  defp dispatchable(profile, actor, user, runtime) do
+  defp dispatchable(profile, actor, user, {runtime, protocol}) do
     case TriggerRule.check(profile, actor, user) do
       :ok when is_nil(runtime) -> {:skipped, :no_runtime}
       :ok when not is_nil(runtime.disabled_at) -> {:skipped, :runtime_disabled}
-      :ok -> :ok
+      :ok -> if outdated?(profile, protocol), do: {:skipped, :daemon_outdated}, else: :ok
       {:error, reason} -> {:skipped, reason}
     end
   end
+
+  # A daemon that never reported its version counts as outdated.
+  defp outdated?(%AgentProfile{provider_account_id: nil}, _protocol), do: false
+
+  defp outdated?(_profile, protocol),
+    do: (protocol || 0) < HelmsmanProtocol.provider_account_version()
 
   defp runtime_view(runtime, daemon_name) do
     %{

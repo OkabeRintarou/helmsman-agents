@@ -6,12 +6,13 @@ defmodule Helmsman.Agents.AgentProfile do
   alias Helmsman.Workspaces.Membership
 
   @type t :: %__MODULE__{}
-  @fields ~w(provider runtime_id model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args env extra_mcp_servers wake_on_requested)a
+  @fields ~w(provider runtime_id provider_account_id model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args env extra_mcp_servers wake_on_requested)a
   @derive {Inspect, except: [:env, :extra_mcp_servers]}
   schema "agent_profiles" do
     belongs_to :workspace, Helmsman.Workspaces.Workspace
     belongs_to :actor, Helmsman.Actors.Actor
     belongs_to :runtime, Helmsman.Daemons.Runtime
+    belongs_to :provider_account, Helmsman.ProviderAccounts.ProviderAccount
     field :provider, :string
     field :model, :string
     field :effort, :string
@@ -58,10 +59,15 @@ defmodule Helmsman.Agents.AgentProfile do
     )
     |> validate_limits()
     |> validate_members(actor.workspace_id)
+    |> validate_provider_account(actor)
     |> validate_binding(actor)
     |> unique_constraint(:actor_id)
     |> foreign_key_constraint(:runtime_id, name: :agent_profiles_runtime_workspace_fkey)
     |> foreign_key_constraint(:actor_id, name: :agent_profiles_actor_workspace_fkey)
+    |> foreign_key_constraint(:provider_account_id,
+      name: :agent_profiles_provider_account_id_fkey,
+      message: "does not exist"
+    )
   end
 
   defp validate_non_null(cs) do
@@ -217,6 +223,39 @@ defmodule Helmsman.Agents.AgentProfile do
     end
   end
 
+  # `add-provider-accounts` decision 14: the account must be the agent
+  # owner's own, for the agent's CLI. Locked FOR SHARE, so a concurrent
+  # deletion (FOR UPDATE) either sees this binding or makes this fail.
+  # Another user's account reads as one that does not exist.
+  defp validate_provider_account(cs, actor) do
+    import Ecto.Query
+
+    case get_field(cs, :provider_account_id) do
+      nil ->
+        cs
+
+      id ->
+        account =
+          Repo.one(
+            from a in Helmsman.ProviderAccounts.ProviderAccount,
+              where: a.id == ^id and a.user_id == ^actor.owner_id,
+              lock: "FOR SHARE",
+              select: %{cli: a.cli}
+          )
+
+        cond do
+          is_nil(account) ->
+            add_error(cs, :provider_account_id, "does not exist")
+
+          account.cli != get_field(cs, :provider) ->
+            add_error(cs, :provider_account_id, "is for %{cli}", cli: account.cli)
+
+          true ->
+            cs
+        end
+    end
+  end
+
   defp validate_binding(cs, actor) do
     import Ecto.Query
 
@@ -246,7 +285,9 @@ defmodule Helmsman.Agents.AgentProfile do
 
   defp validate_runtime(cs, runtime) do
     if runtime.provider == get_field(cs, :provider) do
-      cs |> validate_option(:model, runtime.models) |> validate_option(:effort, runtime.efforts)
+      # With a provider account the provider names the models (decision 14).
+      models = if get_field(cs, :provider_account_id), do: [], else: runtime.models
+      cs |> validate_option(:model, models) |> validate_option(:effort, runtime.efforts)
     else
       invalid_runtime(cs)
     end

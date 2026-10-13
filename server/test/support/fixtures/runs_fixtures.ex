@@ -109,7 +109,12 @@ defmodule Helmsman.RunsFixtures do
 
   @doc "The context the daemon channel passes to `Helmsman.Runs` for `daemon`."
   def daemon_ctx(%Daemon{} = daemon),
-    do: %{daemon_id: daemon.id, user_id: daemon.user_id, auth_epoch: daemon.auth_epoch}
+    do: %{
+      daemon_id: daemon.id,
+      user_id: daemon.user_id,
+      auth_epoch: daemon.auth_epoch,
+      protocol: daemon.protocol_version || HelmsmanProtocol.version()
+    }
 
   @doc """
   A trigger entry (`kind`: "assign", "manual", ...) by the human `user` of

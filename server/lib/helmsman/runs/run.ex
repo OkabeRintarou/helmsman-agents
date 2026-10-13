@@ -107,6 +107,10 @@ defmodule Helmsman.Runs.Run do
     field :push_commits, {:array, :map}
     field :pushed_at, :utc_datetime_usec
 
+    # The provider account the claim used (`add-provider-accounts`
+    # decision 12); nil once the account is deleted.
+    belongs_to :provider_account, Helmsman.ProviderAccounts.ProviderAccount
+
     timestamps(type: :utc_datetime_usec)
   end
 

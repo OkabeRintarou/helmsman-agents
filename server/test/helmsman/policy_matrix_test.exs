@@ -322,6 +322,12 @@ defmodule Helmsman.PolicyMatrixTest do
             # write_task outside runs: the coarse action checked the role
             for role <- @roles, kind <- [:human, :agent] do
               {:write_task, role, kind, @task, :ok}
+            end,
+            # manage_provider_accounts: the user's own web session, whatever
+            # the role; never an agent (test/helmsman/policy_test.exs)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:manage_provider_accounts, role, kind, @none,
+               if(kind == :human, do: :ok, else: :forbidden)}
             end
           ]
           |> List.flatten()

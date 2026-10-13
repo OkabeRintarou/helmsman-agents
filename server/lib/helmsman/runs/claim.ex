@@ -25,8 +25,13 @@ defmodule Helmsman.Runs.Claim do
        decision 2): unavailable → `failed` (`workspace_prepare`); no
        prefetched push token → left queued;
     8. `claimed`, the daemon, `claimed_at`, the capabilities recomputed,
-       the repository and task branch, a run token and the run description
-       (`Helmsman.Runs.Spec`).
+       the repository and task branch, the agent's provider account, a run
+       token and the run description (`Helmsman.Runs.Spec`).
+
+  A connection older than `HelmsmanProtocol.provider_account_version/0`
+  leaves the runs of agents bound to a provider account queued
+  (`add-provider-accounts` decision 4): it would ignore the account and
+  bill the user's own CLI configuration.
 
   Claiming is the only path that locks a run row before other rows; every
   other lock is a `try`, so it never waits in a cycle with task writes or
@@ -64,7 +69,12 @@ defmodule Helmsman.Runs.Claim do
       with true <- Locks.try_daemon(ctx.daemon_id),
            {:ok, daemon} <- Lifecycle.lock_daemon(ctx) do
         slots = daemon.max_concurrency - active_count(:daemon_id, daemon.id)
-        claim_from(daemon, runtime_ids(daemon), slots, {base_url, tokens})
+
+        accounts? =
+          Map.get(ctx, :protocol, HelmsmanProtocol.min_version()) >=
+            HelmsmanProtocol.provider_account_version()
+
+        claim_from(daemon, runtime_ids(daemon), slots, {base_url, tokens, accounts?})
       else
         false -> {:ok, []}
         error -> error
@@ -74,9 +84,10 @@ defmodule Helmsman.Runs.Claim do
 
   defp claim_from(_daemon, ids, slots, _args) when slots <= 0 or ids == [], do: {:ok, []}
 
-  defp claim_from(daemon, ids, slots, {base_url, tokens}) do
+  defp claim_from(daemon, ids, slots, {base_url, tokens, accounts?}) do
     state = %{
       daemon: daemon,
+      accounts?: accounts?,
       base_url: base_url,
       tokens: tokens,
       slots: slots,
@@ -151,7 +162,8 @@ defmodule Helmsman.Runs.Claim do
     with true <- Locks.try_maint_shared(run.workspace_id),
          true <- task_free?(run),
          {:ok, locked} <- lock_rows(run, state.daemon.user_id),
-         true <- agent_free?(locked.profile) do
+         true <- agent_free?(locked.profile),
+         true <- state.accounts? or not bound_to_account?(locked.profile) do
       decide(run, locked, state)
     else
       _skip -> state
@@ -172,6 +184,9 @@ defmodule Helmsman.Runs.Claim do
 
   defp agent_free?(%AgentProfile{} = profile),
     do: active_count(:agent_id, profile.actor_id) < profile.max_concurrency
+
+  defp bound_to_account?(%AgentProfile{provider_account_id: id}), do: not is_nil(id)
+  defp bound_to_account?(nil), do: false
 
   # Decision 24, in the global order. `:skip`: a writer holds one of them.
   defp lock_rows(run, daemon_user_id) do
@@ -278,7 +293,8 @@ defmodule Helmsman.Runs.Claim do
           status: :claimed,
           daemon_id: state.daemon.id,
           claimed_at: DateTime.utc_now(),
-          capabilities: Runs.capabilities(locked.profile, locked.task)
+          capabilities: Runs.capabilities(locked.profile, locked.task),
+          provider_account_id: locked.profile.provider_account_id
         ] ++ changes
       )
 

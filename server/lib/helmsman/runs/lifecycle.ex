@@ -32,10 +32,13 @@ defmodule Helmsman.Runs.Lifecycle do
   @heartbeat_grace_seconds 60
   @member_roles [:owner, :admin, :member]
 
+  # `protocol`: the version the connection negotiated; claiming without it
+  # is as an old daemon (`add-provider-accounts` decision 4).
   @type daemon_ctx :: %{
           required(:daemon_id) => pos_integer(),
           required(:user_id) => pos_integer(),
-          required(:auth_epoch) => pos_integer()
+          required(:auth_epoch) => pos_integer(),
+          optional(:protocol) => pos_integer()
         }
   @type error :: :not_found | :wrong_state | :reauthorized | {:invalid_payload, term()}
 

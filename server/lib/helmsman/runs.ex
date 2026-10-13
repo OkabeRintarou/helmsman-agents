@@ -21,6 +21,7 @@ defmodule Helmsman.Runs do
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.Policy
+  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
   alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent}
   alias Helmsman.Tasks
@@ -59,6 +60,7 @@ defmodule Helmsman.Runs do
           required(:priority) => 1..3,
           required(:attempt) => pos_integer(),
           required(:daemon) => String.t() | nil,
+          required(:provider_account_name) => String.t() | nil,
           required(:initiator) => %{id: pos_integer(), name: String.t() | nil},
           required(:retry_of_id) => pos_integer() | nil,
           required(:retry_run_id) => pos_integer() | nil,
@@ -742,7 +744,8 @@ defmodule Helmsman.Runs do
   The summary of a run (decision 14, `add-run-lifecycle` decision 19):
   `%{id, task, agent, agent_owner_id, lane, status, triggers: [%{kind,
   by, at, instructions}] (a retry marker also has `auto` and `retry_of`),
-  failure_reason, priority, attempt, daemon, initiator: %{id, name},
+  failure_reason, priority, attempt, daemon, provider_account_name (the
+  account the claim used; nil: none or deleted), initiator: %{id, name},
   retry_of_id, retry_run_id, events_seq, summary, usage,
   cancel_requested_by, claimed_at, started_at, finished_at, last_event_at,
   inserted_at, updated_at}`. Never the error text (`get/2`).
@@ -772,6 +775,9 @@ defmodule Helmsman.Runs do
     daemons = names(Daemon, runs |> Enum.map(& &1.daemon_id) |> Enum.reject(&is_nil/1))
     users = names(User, Enum.map(runs, & &1.root_initiator_user_id))
 
+    accounts =
+      names(ProviderAccount, runs |> Enum.map(& &1.provider_account_id) |> Enum.reject(&is_nil/1))
+
     retries = Retry.targets(runs)
 
     Enum.map(runs, fn run ->
@@ -787,6 +793,7 @@ defmodule Helmsman.Runs do
         priority: run.priority,
         attempt: run.attempt,
         daemon: run.daemon_id && daemons[run.daemon_id],
+        provider_account_name: run.provider_account_id && accounts[run.provider_account_id],
         initiator: %{
           id: run.root_initiator_user_id,
           name: users[run.root_initiator_user_id]
@@ -809,6 +816,11 @@ defmodule Helmsman.Runs do
 
   defp names(Daemon, ids),
     do: Map.new(Repo.all(from(d in Daemon, where: d.id in ^ids, select: {d.id, d.name})))
+
+  defp names(ProviderAccount, []), do: %{}
+
+  defp names(ProviderAccount, ids),
+    do: Map.new(Repo.all(from(a in ProviderAccount, where: a.id in ^ids, select: {a.id, a.name})))
 
   defp names(User, ids),
     do: Map.new(Repo.all(from(u in User, where: u.id in ^ids, select: {u.id, u.display_name})))

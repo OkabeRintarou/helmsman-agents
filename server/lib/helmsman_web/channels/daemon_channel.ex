@@ -223,7 +223,8 @@ defmodule HelmsmanWeb.DaemonChannel do
     %{
       daemon_id: socket.assigns.daemon_id,
       user_id: socket.assigns.user_id,
-      auth_epoch: socket.assigns.auth_epoch
+      auth_epoch: socket.assigns.auth_epoch,
+      protocol: socket.assigns.protocol
     }
   end
 

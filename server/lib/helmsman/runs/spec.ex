@@ -8,8 +8,11 @@ defmodule Helmsman.Runs.Spec do
   (decrypted `env` and `extra_mcp_servers`). `repo` comes from
   `Helmsman.Runs.GitRepo` (`add-daemon-git-workspace` decision 2); nil
   when the project has no repository, and the daemon then works in a
-  scratch directory. The description holds the run token, the push token
-  and secrets: it only
+  scratch directory. The provider account is the one the claim recorded
+  on the run (`add-provider-accounts` decision 12), read as it is now:
+  this is the only place its API key is read. The description holds the
+  run token, the push token, the provider account's key and secrets: it
+  only
   goes into the claim reply and is never logged (the protocol's `Inspect`
   hides those fields).
   """
@@ -20,6 +23,7 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Agents
   alias Helmsman.Feedback.Entry
   alias Helmsman.Feedback.Id, as: FeedbackId
+  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
   alias Helmsman.Runs.{GitRepo, Prompt, Run}
   alias Helmsman.Tasks.Task
@@ -64,7 +68,8 @@ defmodule Helmsman.Runs.Spec do
           effort: profile.effort,
           custom_args: profile.custom_args || [],
           env: profile.env || %{},
-          extra_mcp_servers: profile.extra_mcp_servers || %{}
+          extra_mcp_servers: profile.extra_mcp_servers || %{},
+          provider_account: provider_account(run.provider_account_id)
         },
         prompt: Prompt.build(run, ctx),
         resume_session_id: resume_session_id,
@@ -77,6 +82,13 @@ defmodule Helmsman.Runs.Spec do
         trigger: main_trigger(run.triggers)
       })
     end
+  end
+
+  defp provider_account(nil), do: nil
+
+  defp provider_account(id) do
+    account = Repo.get!(ProviderAccount, id)
+    %{base_url: account.base_url, api_key: account.api_key, models: account.models || %{}}
   end
 
   defp repo_spec(repo) do

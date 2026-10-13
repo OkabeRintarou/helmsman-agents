@@ -54,7 +54,9 @@ defmodule Helmsman.Policy do
     :export_workspace,
     # workspace settings
     :change_workspace_slug,
-    :update_workspace
+    :update_workspace,
+    # the user's own provider accounts (no workspace)
+    :manage_provider_accounts
   ]
 
   # Actions with an authorization clause below.
@@ -95,6 +97,7 @@ defmodule Helmsman.Policy do
     :revise_feedback,
     :manage_github,
     :manage_github_app,
+    :manage_provider_accounts,
     :run_agent,
     :view_runs,
     :view_run_events,
@@ -294,6 +297,19 @@ defmodule Helmsman.Policy do
   # Instance-wide: the GitHub App itself. Needs no workspace.
   defp check(%Scope{user: %User{instance_admin: true}}, :manage_github_app, _resource),
     do: :ok
+
+  ## Provider accounts (`add-provider-accounts` decision 3)
+
+  # Only the user's own web session: never an API token (even a person's),
+  # a run or an agent. Needs no workspace; the operation then touches only
+  # `scope.user`'s accounts.
+  defp check(
+         %Scope{user: %User{}, via: via, token: nil, run: nil, actor: actor},
+         :manage_provider_accounts,
+         _resource
+       )
+       when via in [nil, :web],
+       do: allow_if(is_nil(actor) or actor.kind == :human)
 
   ## Runs (not management actions)
 
