@@ -3,6 +3,8 @@ defmodule HelmsmanDaemon.FakeCLITest do
   @moduletag :tmp_dir
   alias HelmsmanDaemon.{Adapters.Fake, Exec}
 
+  @repo_root Path.expand("../../../", __DIR__)
+
   test "script version and output, JSON, delay, environment, argv and exit", %{tmp_dir: dir} do
     assert {:ok, %{version: "1.0.0"}} = Fake.detect()
 
@@ -16,6 +18,7 @@ defmodule HelmsmanDaemon.FakeCLITest do
 
     {out, 7} =
       System.cmd(Fake.executable(), ["--scenario", path, "literal $(false)"],
+        cd: dir,
         env: [{"FAKE_CHECK", "value"}]
       )
 
@@ -27,7 +30,20 @@ defmodule HelmsmanDaemon.FakeCLITest do
     error = scenario!(Path.join(dir, "error"), "err stderr message\nexit 3\n")
 
     assert {"stderr message\n", 3} =
-             System.cmd(Fake.executable(), ["--scenario", error], stderr_to_stdout: true)
+             System.cmd(Fake.executable(), ["--scenario", error],
+               cd: dir,
+               stderr_to_stdout: true
+             )
+  end
+
+  test "write instructions stay in the isolated CLI working directory", %{tmp_dir: dir} do
+    roots_before = root_entries()
+    path = scenario!(Path.join(dir, "write.scenario"), "write agent-change\nexit 0\n")
+
+    # The fake CLI writes relative to its process cwd; keep direct calls isolated.
+    assert {"", 0} = System.cmd(Fake.executable(), ["--scenario", path], cd: dir)
+    assert File.read!(Path.join(dir, "hello.txt")) == "agent-change\n"
+    assert_root_entries_unchanged(roots_before)
   end
 
   test "echo stdin uses CLI input rather than consuming scenario", %{tmp_dir: dir} do
@@ -35,6 +51,7 @@ defmodule HelmsmanDaemon.FakeCLITest do
 
     {:ok, _, pid} =
       :exec.run([Fake.executable(), "--scenario", path], [
+        {:cd, String.to_charlist(dir)},
         :stdin,
         :stdout,
         :monitor,
@@ -46,6 +63,19 @@ defmodule HelmsmanDaemon.FakeCLITest do
     :exec.send(pid, :eof)
     assert_receive {:stdout, ^pid, data}, 1_000
     assert data =~ "input"
+  end
+
+  defp root_entries do
+    [@repo_root, File.cwd!()]
+    |> Enum.uniq()
+    |> Map.new(fn root -> {root, MapSet.new(File.ls!(root))} end)
+  end
+
+  defp assert_root_entries_unchanged(before) do
+    Enum.each(before, fn {root, entries_before} ->
+      added = MapSet.difference(MapSet.new(File.ls!(root)), entries_before)
+      assert MapSet.size(added) == 0, "new entries in #{root}: #{inspect(MapSet.to_list(added))}"
+    end)
   end
 
   test "spawn_child and ignore_term commands keep group alive until KILL", %{tmp_dir: dir} do
@@ -60,7 +90,13 @@ defmodule HelmsmanDaemon.FakeCLITest do
     {:ok, _, pid} =
       :exec.run(
         [Fake.executable(), "--scenario", path],
-        [:stdout, {:group, 0}, :kill_group, {:env, [{"FAKE_CLI_CHILD_PID_FILE", pid_file}]}]
+        [
+          :stdout,
+          {:group, 0},
+          :kill_group,
+          {:cd, String.to_charlist(dir)},
+          {:env, [{"FAKE_CLI_CHILD_PID_FILE", pid_file}]}
+        ]
       )
 
     on_exit(fn -> Exec.signal_group(pid, 9) end)

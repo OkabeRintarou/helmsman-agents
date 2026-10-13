@@ -1,0 +1,51 @@
+#!/bin/sh
+set -eu
+
+if [ "${1:-}" = "--version" ]; then
+  printf '2.1.99\n'
+  exit 0
+fi
+
+settings=missing
+expect_settings_value=false
+for arg do
+  if [ "$expect_settings_value" = true ]; then
+    settings=$arg
+    expect_settings_value=false
+    continue
+  fi
+
+  case "$arg" in
+    --settings)
+      expect_settings_value=true
+      ;;
+    --settings=*)
+      settings=${arg#--settings=}
+      ;;
+  esac
+done
+
+key_present=false
+key_hash=none
+if [ "${HELMSMAN_PROVIDER_API_KEY+x}" = x ] && [ -n "$HELMSMAN_PROVIDER_API_KEY" ]; then
+  key_present=true
+  key_hash=$(printf '%s' "$HELMSMAN_PROVIDER_API_KEY" | sha256sum | cut -c 1-8)
+fi
+
+settings_exists=false
+settings_base_url=missing
+api_key_helper=missing
+if [ "$settings" != missing ] && [ -f "$settings" ]; then
+  settings_exists=true
+  settings_base_url=$(sed -n 's/.*"ANTHROPIC_BASE_URL":"\([^"]*\)".*/\1/p' "$settings")
+  api_key_helper=$(sed -n 's/.*"apiKeyHelper":"\([^"]*\)".*/\1/p' "$settings")
+  [ -n "$settings_base_url" ] || settings_base_url=missing
+  [ -n "$api_key_helper" ] || api_key_helper=missing
+fi
+
+# Keep the assertion data in a valid Claude stream event. The key itself is
+# never written to stdout, stderr, or a file.
+printf '{"type":"system","subtype":"init","session_id":"provider-e2e","apiKeySource":"apiKeyHelper","mcp_servers":[{"name":"helmsman","status":"connected"}]}\n'
+printf '{"type":"assistant","message":{"content":[{"type":"text","text":"key_present=%s key_sha256=%s settings=%s settings_exists=%s settings_base_url=%s api_key_helper=%s"}]}}\n' \
+  "$key_present" "$key_hash" "$settings" "$settings_exists" "$settings_base_url" "$api_key_helper"
+printf '{"type":"result","subtype":"success","session_id":"provider-e2e","result":"OK","is_error":false,"usage":{"input_tokens":1,"output_tokens":1}}\n'

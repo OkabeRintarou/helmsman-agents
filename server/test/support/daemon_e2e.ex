@@ -113,7 +113,16 @@ defmodule Helmsman.DaemonE2E do
     start_daemon_process(home, env ++ e2e_env, ["run", "test/support/e2e_bootstrap.exs"])
   end
 
-  defp start_daemon_process(home, env, mix_args) do
+  @doc """
+  Starts the real Claude adapter against a test-owned `claude` executable.
+  The test-owned executable is selected through `PATH`; the daemon runs in
+  dev mode so the provider-account preparation path is exercised end to end.
+  """
+  def start_provider_daemon(home, env \\ []) do
+    start_daemon_process(home, env, ["helmsman", "daemon", "start", "--foreground"], "dev")
+  end
+
+  defp start_daemon_process(home, env, mix_args, mix_env \\ "test") do
     executable = System.find_executable("mix") || flunk("mix is required for daemon e2e tests")
 
     port =
@@ -126,7 +135,7 @@ defmodule Helmsman.DaemonE2E do
         {:cd, String.to_charlist(@daemon_dir)},
         {:env,
          [
-           {~c"MIX_ENV", ~c"test"},
+           {~c"MIX_ENV", String.to_charlist(mix_env)},
            {~c"HELMSMAN_HOME", String.to_charlist(home)},
            {~c"HELMSMAN_FAKE_CLI", String.to_charlist(fake_cli())}
          ] ++ env}
