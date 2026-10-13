@@ -224,7 +224,8 @@ defmodule HelmsmanWeb.AgentDesignDraftTest do
 
       assert panel =~ "添加 Agent"
 
-      for id <- ~w(agent-form-secrets agent-custom-args agent-access-members),
+      for id <-
+            ~w(agent-form-secrets agent-custom-args agent-access-members agent-wake-on-requested),
           do: refute(panel =~ ~s(id="#{id}"))
 
       refute panel =~ "type=\"password\""

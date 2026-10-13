@@ -36,7 +36,7 @@ defmodule HelmsmanWeb.AgentForm do
 
   @basic ~w(description)
   @execution ~w(provider runtime_id provider_account_id model effort instructions custom_args)
-  @access ~w(access access_member_ids capabilities)
+  @access ~w(access access_member_ids capabilities wake_on_requested)
   @draft_fields ~w(description provider runtime_id provider_account_id model effort instructions
                    access capabilities max_concurrency timeout_minutes idle_timeout_minutes)
   @draft_modes [:draft_new, :draft_edit]
@@ -55,6 +55,7 @@ defmodule HelmsmanWeb.AgentForm do
     "access" => "owner_only",
     "access_member_ids" => [],
     "capabilities" => [],
+    "wake_on_requested" => "true",
     "max_concurrency" => "2",
     "timeout_minutes" => "120",
     "idle_timeout_minutes" => "20",
@@ -116,6 +117,7 @@ defmodule HelmsmanWeb.AgentForm do
       "custom_args" => Enum.join(List.wrap(view.custom_args), "\n"),
       "access_member_ids" => Enum.map(List.wrap(view.access_member_ids), &to_string/1),
       "capabilities" => List.wrap(view.capabilities),
+      "wake_on_requested" => to_string(Map.get(view, :wake_on_requested, true) != false),
       "max_concurrency" => to_string(view.max_concurrency),
       "timeout_minutes" => to_string(view.timeout_minutes),
       "idle_timeout_minutes" => to_string(view.idle_timeout_minutes)
@@ -538,6 +540,7 @@ defmodule HelmsmanWeb.AgentForm do
     do: ids |> List.wrap() |> Enum.map(&integer/1) |> Enum.sort()
 
   defp value("capabilities", caps), do: caps |> List.wrap() |> Enum.sort()
+  defp value("wake_on_requested", v), do: v in [true, "true"]
   defp value(field, v) when field in @integers, do: integer(v)
   defp value(_field, v), do: v
 
@@ -992,6 +995,24 @@ defmodule HelmsmanWeb.AgentForm do
           />
           {dgettext("ui", "允许创建任务")}
         </label>
+        <div :if={not draft?(@form)} class="flex flex-col gap-0.5">
+          <label class="flex items-center gap-2 text-body text-fg">
+            <input type="hidden" name="agent[wake_on_requested]" value="false" />
+            <input
+              id="agent-wake-on-requested"
+              type="checkbox"
+              name="agent[wake_on_requested]"
+              value="true"
+              checked={@p["wake_on_requested"] == "true"}
+              aria-describedby="agent-wake-on-requested-help"
+              class="size-4 accent-brand"
+            />
+            {dgettext("ui", "它提出的任务有进展时唤醒它")}
+          </label>
+          <p id="agent-wake-on-requested-help" class="pl-6 text-caption text-fg-muted">
+            {dgettext("ui", "任务被完成或拒绝、执行方提问时，给它排一次运行（回调提出方）")}
+          </p>
+        </div>
       </fieldset>
 
       <fieldset id="agent-form-limits" class="grid gap-4 sm:grid-cols-3">

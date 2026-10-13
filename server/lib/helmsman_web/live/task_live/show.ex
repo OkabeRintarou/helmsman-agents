@@ -17,11 +17,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   require Logger
 
-  alias Helmsman.{Events, Feedback, Policy, Tasks}
+  alias Helmsman.{Events, Feedback, Policy, Runs, Tasks}
   alias Helmsman.GitHub.PullRequests
   alias Helmsman.Tasks.StateMachine
 
   alias HelmsmanWeb.{
+    CollabComponents,
     FeedbackComponents,
     FeedbackTimeline,
     FormErrors,
@@ -33,6 +34,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     RunComponents,
     RunData,
     RunLog,
+    TaskCollab,
     TaskComponents,
     TaskData,
     TaskEvidence,
@@ -92,6 +94,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
        transition_session: 0
      )
      |> assign(:uri, "/w/#{scope.workspace.slug}/t/#{detail.id}")
+     |> TaskCollab.init()
+     |> TaskCollab.sync()
      |> cache_rendered()
      |> TaskRuns.init()
      |> TaskRuns.load()
@@ -238,6 +242,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   def handle_event("run_log_" <> _ = event, params, socket),
     do: {:noreply, RunLog.handle_event(event, params, socket)}
+
+  def handle_event("collab_" <> _ = event, params, socket),
+    do: {:noreply, TaskCollab.handle_event(event, params, socket, &refresh/1)}
 
   def handle_event("local_branch_" <> event, params, socket),
     do: {:noreply, TaskLocalBranch.handle_event(event, params, socket)}
@@ -388,12 +395,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
     case socket.assigns.can_feedback? && build_feedback_panel(socket, mode, params["target"]) do
       panel when is_map(panel) ->
         session = socket.assigns.feedback_session + 1
-
-        {:noreply,
-         assign(socket,
-           feedback_session: session,
-           feedback_panel: Map.put(panel, :session, session)
-         )}
+        panel = %{panel | session: session} |> with_steer(socket)
+        {:noreply, assign(socket, feedback_session: session, feedback_panel: panel)}
 
       _ ->
         {:noreply, socket}
@@ -407,7 +410,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
     if feedback_session?(socket, form) do
       {:noreply,
        update_feedback_panel(socket, fn panel ->
-         %{panel | kind: kind_param(panel, params), content: params["content"] || panel.content}
+         %{
+           panel
+           | kind: kind_param(panel, params),
+             content: params["content"] || panel.content,
+             steer_on: steer_param(panel, params)
+         }
        end)}
     else
       {:noreply, socket}
@@ -422,8 +430,19 @@ defmodule HelmsmanWeb.TaskLive.Show do
     else
       content = params["content"] || ""
       kind = kind_param(panel, params)
-      socket = update_feedback_panel(socket, &%{&1 | kind: kind, content: content})
-      {:noreply, submit_feedback(socket, panel, %{kind: kind, content: content})}
+      steer_on = steer_param(panel, params)
+
+      socket =
+        update_feedback_panel(socket, &%{&1 | kind: kind, content: content, steer_on: steer_on})
+
+      attrs =
+        case panel.steer do
+          %{allowed: true, run_id: run_id} when steer_on -> %{steer_run_id: run_id}
+          _ -> %{}
+        end
+
+      {:noreply,
+       submit_feedback(socket, panel, Map.merge(attrs, %{kind: kind, content: content}))}
     end
   end
 
@@ -480,7 +499,18 @@ defmodule HelmsmanWeb.TaskLive.Show do
   ## Notifications
 
   @impl true
+  # The project topic of the task's epic (add-collaboration-ui D10): only its summary.
+  def handle_info({:task_updated, %{id: _} = summary}, socket),
+    do: {:noreply, TaskCollab.handle_summary(socket, summary)}
+
   def handle_info({:task_updated, _ident}, socket), do: {:noreply, refresh(socket)}
+
+  def handle_info({:links_changed, _ident}, socket), do: {:noreply, refresh(socket)}
+
+  def handle_info({:steer_acked, _receipt}, socket), do: {:noreply, refresh(socket)}
+
+  def handle_info({:task_picked, picker, summary}, socket),
+    do: {:noreply, TaskCollab.handle_picked(socket, picker, summary)}
 
   def handle_info({:task_transitioned, _payload}, socket),
     do: {:noreply, socket |> refresh() |> TaskPullRequest.reload()}
@@ -512,7 +542,11 @@ defmodule HelmsmanWeb.TaskLive.Show do
   def handle_info(:reload_runs, socket),
     do:
       {:noreply,
-       socket |> Throttle.done(:reload_runs) |> TaskRuns.load() |> TaskPullRequest.reload()}
+       socket
+       |> Throttle.done(:reload_runs)
+       |> TaskRuns.load()
+       |> TaskPullRequest.reload()
+       |> refresh_steer()}
 
   def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
     do: {:noreply, assign(socket, :availability, availability(socket.assigns.current_scope))}
@@ -658,6 +692,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       label_options: label_options,
       revisable: revisable(socket.assigns.current_scope, detail.id)
     )
+    |> TaskCollab.sync()
     |> cache_rendered()
     |> check_panel()
     |> check_feedback_panel()
@@ -753,6 +788,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   defp new_feedback_panel(mode, target, kind, content) do
     %{
+      session: nil,
+      steer: nil,
+      steer_on: false,
       mode: mode,
       target: target,
       kind: kind,
@@ -764,6 +802,33 @@ defmodule HelmsmanWeb.TaskLive.Show do
       blocked: nil
     }
   end
+
+  # Steering (add-collaboration-ui D8): only records that are added, never revisions.
+  defp with_steer(%{mode: mode} = panel, socket) when mode in [:add, :answer] do
+    steer =
+      case Runs.steerable(socket.assigns.current_scope, socket.assigns.task.id) do
+        {:ok, steer} -> steer
+        {:error, _} -> nil
+      end
+
+    same_run? = panel.steer != nil and steer != nil and panel.steer.run_id == steer.run_id
+    steer_on = if same_run?, do: panel.steer_on, else: steer != nil and steer.allowed
+    %{panel | steer: steer, steer_on: steer_on}
+  end
+
+  defp with_steer(panel, _socket), do: panel
+
+  defp refresh_steer(socket), do: update_feedback_panel(socket, &with_steer(&1, socket))
+
+  # The checkbox always comes with its hidden `false`; without either the choice stays.
+  defp steer_param(%{steer: %{allowed: true}} = panel, params) do
+    case params["steer"] do
+      nil -> panel.steer_on
+      value -> value == "true"
+    end
+  end
+
+  defp steer_param(_panel, _params), do: false
 
   defp find_feedback(socket, id), do: Enum.find(socket.assigns.task.feedback, &(&1.id == id))
 
@@ -806,7 +871,13 @@ defmodule HelmsmanWeb.TaskLive.Show do
           }
           |> Map.reject(fn {_field, text} -> is_nil(text) end)
 
-        update_feedback_panel(socket, &%{&1 | errors: errors, top: nil})
+        top =
+          if Map.has_key?(messages, :steer_run_id),
+            do: dgettext("ui", "插话对象已失效，请取消勾选后重试")
+
+        socket
+        |> update_feedback_panel(&%{&1 | errors: errors, top: top})
+        |> refresh_steer()
 
       {:error, {:superseded, latest}} ->
         socket
@@ -892,7 +963,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
     Markdown.to_html(view.content,
       scope: scope,
       anchor_ns: "fb-#{view.seq}",
-      mentions: view.mentions
+      mentions: view.mentions,
+      muted_mentions: CollabComponents.mention_notes(view[:dispatch])
     )
   end
 
@@ -910,9 +982,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
         primary: primary,
         secondary: secondary,
         working: TaskRuns.working_agents(assigns.task_runs),
-        verify_lock: verify_lock(assigns.task_runs),
         assignees: assignee_options(assigns.assignable, assigns.task.assignee),
         availability: assigns.availability,
+        mention_candidates:
+          CollabComponents.mention_candidates(assigns.assignable, assigns.availability),
+        locks: %{
+          {"new", "in_progress"} => CollabComponents.start_lock(assigns.task),
+          {"cancelled", "new"} =>
+            assigns.task.status == "cancelled" && CollabComponents.restore_lock(assigns.task),
+          {"done", "verified"} => verify_lock(assigns.task_runs)
+        },
         open_question:
           assigns.task.open_question && FeedbackTimeline.last_open_question(assigns.task.feedback)
       )
@@ -923,6 +1002,10 @@ defmodule HelmsmanWeb.TaskLive.Show do
         <.page_header title={@task.id}>
           <:crumb navigate={"/w/#{@slug}/p/#{@task.project_key}"}>{@task.project_key}</:crumb>
           <:actions>
+            <span :if={@task.kind == "epic"} id="task-kind" class="inline-flex">
+              <CollabComponents.epic_badge kind={@task.kind} />
+            </span>
+            <CollabComponents.blocked_badge task={@task} />
             <a
               :if={@task.open_question}
               id="task-open-question"
@@ -940,7 +1023,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
             />
             <span id="task-status"><.status_badge status={@task.status} /></span>
             <div :if={@secondary != []} class="flex items-center gap-2 max-sm:hidden">
-              <.transition_button :for={button <- @secondary} button={button} from={@task.status} />
+              <.transition_button
+                :for={button <- @secondary}
+                button={button}
+                from={@task.status}
+                lock={@locks[{@task.status, button.to}]}
+              />
             </div>
             <.dropdown
               :if={@secondary != []}
@@ -949,7 +1037,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
               align={:end}
               class="sm:hidden"
               trigger_class="h-8 w-8 justify-center"
-              items={Enum.map(@secondary, &more_item(&1, @task.status))}
+              items={Enum.map(@secondary, &more_item(&1, @task.status, @locks))}
             >
               <:trigger><.icon name="lucide-ellipsis" class="size-4" /></:trigger>
             </.dropdown>
@@ -957,7 +1045,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
               :for={button <- @primary}
               button={button}
               from={@task.status}
-              lock={@verify_lock}
+              lock={@locks[{@task.status, button.to}]}
             />
           </:actions>
         </.page_header>
@@ -988,6 +1076,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
             can_feedback?={@can_feedback?}
             fresh_after={@fresh_after}
             agents={@agents}
+            uri={@uri}
           />
         </section>
         <aside class="flex min-w-0 flex-col gap-6" aria-label={dgettext("ui", "属性")}>
@@ -1053,6 +1142,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
               <.property_row label={dgettext("ui", "提出方")} id="task-creator">
                 <TaskComponents.actor_ref actor={@task.created_by} agents={@agents} />
               </.property_row>
+              <TaskCollab.epic_row collab={@collab} task={@task} slug={@slug} can_edit?={@can_edit?} />
               <.property_row label={dgettext("ui", "提交")} id="task-commits">
                 <span :if={Map.get(@task, :commits, []) != []} class="flex flex-wrap gap-1">
                   <code
@@ -1087,6 +1177,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
           />
           <TaskLocalBranch.card state={@local_branch} />
           <TaskPullRequest.card state={@task_pr} task={@task} runs={@task_runs} />
+          <TaskCollab.steps_section
+            collab={@collab}
+            task={@task}
+            slug={@slug}
+            uri={@uri}
+            can_edit?={@can_edit?}
+            can_create?={@shell[:can_create_task?] == true}
+            agents={@agents}
+          />
+          <TaskCollab.links_section collab={@collab} task={@task} slug={@slug} />
           <section aria-labelledby="task-history-title">
             <h2 id="task-history-title" class="mb-1 text-label font-medium text-fg-muted">
               {dgettext("ui", "历史")}
@@ -1108,14 +1208,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
         task={@task}
         scope={@current_scope}
         session={@transition_session}
-        candidates={@assignable}
+        candidates={@mention_candidates}
       />
       <.feedback_panel
         panel={@feedback_panel}
         task={@task}
         scope={@current_scope}
-        candidates={@assignable}
+        candidates={@mention_candidates}
       />
+      <TaskCollab.overlays collab={@collab} task={@task} scope={@current_scope} />
       <.assign_confirm
         confirm={@assign_confirm}
         task={@task}
@@ -1218,10 +1319,13 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   attr :button, :map, required: true
   attr :from, :string, required: true
-  attr :lock, :string, default: nil, doc: "why 验收 is unavailable (a run is active)"
+
+  attr :lock, :any,
+    default: nil,
+    doc: "why the transition is unavailable (a run is active, blocked, replaced)"
 
   defp transition_button(assigns) do
-    assigns = assign(assigns, :reason, if(assigns.button.to == "verified", do: assigns.lock))
+    assigns = assign(assigns, :reason, if(is_binary(assigns.lock), do: assigns.lock))
 
     ~H"""
     <.button
@@ -1252,12 +1356,17 @@ defmodule HelmsmanWeb.TaskLive.Show do
   defp transition_click(%{to: to}, from),
     do: JS.push("open_transition", value: %{to: to, from: from})
 
-  defp more_item(button, from) do
-    %{
+  defp more_item(button, from, locks) do
+    item = %{
       id: "transition-more-#{button.to}",
       label: button.label,
       on_select: transition_click(button, from)
     }
+
+    case locks[{from, button.to}] do
+      reason when is_binary(reason) -> Map.put(item, :disabled_reason, reason)
+      _ -> item
+    end
   end
 
   attr :error, :string, default: nil
@@ -1592,6 +1701,65 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   defp availability_item(_name, _available), do: %{}
 
+  attr :steer, :map, required: true
+  attr :on, :boolean, required: true
+
+  # add-collaboration-ui D8
+  defp steer_option(assigns) do
+    steer = assigns.steer
+
+    help =
+      cond do
+        !steer.allowed -> steer_refusal(steer)
+        steer.live -> dgettext("ui", "会立即送进这次运行；没送达或运行失败时，结束后再处理一次")
+        true -> dgettext("ui", "%{agent} 的 CLI 不能在运行中接收消息；勾选后会在这次运行结束后接着处理", agent: steer.agent)
+      end
+
+    assigns = assign(assigns, help: help)
+
+    ~H"""
+    <div id="feedback-steer-option" data-run-id={@steer.run_id} class="flex flex-col gap-1">
+      <label class={[
+        "flex items-center gap-2 text-body",
+        if(@steer.allowed, do: "text-fg", else: "text-fg-subtle")
+      ]}>
+        <input type="hidden" name="feedback[steer]" value="false" />
+        <input
+          id="feedback-steer"
+          type="checkbox"
+          name="feedback[steer]"
+          value="true"
+          checked={@steer.allowed and @on}
+          disabled={!@steer.allowed}
+          aria-describedby="feedback-steer-help"
+          class="size-4 accent-brand"
+        />
+        {dgettext("ui", "同时发给正在运行的 %{agent}（运行 #%{run}）", agent: @steer.agent, run: @steer.run_id)}
+      </label>
+      <p id="feedback-steer-help" class="pl-6 text-caption text-fg-muted">{@help}</p>
+    </div>
+    """
+  end
+
+  defp steer_refusal(%{agent: agent, reason: reason}) do
+    case reason do
+      r when r in [:unauthorized, "unauthorized"] ->
+        dgettext("ui", "你无权触发 %{agent}，不能插话", agent: agent)
+
+      r when r in [:not_a_person, "not_a_person"] ->
+        dgettext("ui", "只有人能插话")
+
+      r when r in [:forbidden, "forbidden"] ->
+        dgettext("ui", "没有权限")
+
+      r when is_atom(r) ->
+        RunComponents.unavailable_reason(agent, {:skipped, r})
+
+      _ ->
+        RunComponents.unavailable_reason(agent, {:skipped, :unknown})
+    end
+  end
+
   defp passed_tests(%{last_done_tests: %{passed: true} = tests}), do: tests
   defp passed_tests(_hint), do: nil
 
@@ -1834,6 +2002,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
           placeholder={dgettext("ui", "支持 Markdown，输入 @ 提及")}
           candidates={@candidates}
         />
+        <.steer_option :if={@panel.steer} steer={@panel.steer} on={@panel.steer_on} />
       </.form>
       <:footer :let={cancel}>
         <span class="text-caption text-fg-subtle"><.kbd mod>Enter</.kbd>

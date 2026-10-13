@@ -9,7 +9,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
   """
   use HelmsmanWeb, :html
 
-  alias HelmsmanWeb.{FeedbackTimeline, TaskComponents}
+  alias HelmsmanWeb.{CollabComponents, FeedbackTimeline, TaskComponents}
 
   @doc "Display name and badge tone of a feedback kind."
   def kind(kind) do
@@ -34,6 +34,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
   attr :can_feedback?, :boolean, required: true
   attr :fresh_after, :integer, default: 0, doc: "records above this number flash when added"
   attr :agents, :map, default: %{}, doc: "see `HelmsmanWeb.TaskComponents.actor_ref/1`"
+  attr :uri, :string, default: nil, doc: "page URI for the run links of the triggers"
 
   def timeline(assigns) do
     assigns = assign(assigns, :threads, FeedbackTimeline.threads(assigns.feedback))
@@ -57,6 +58,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
             can_feedback?={@can_feedback?}
             fresh?={thread.current.seq > @fresh_after}
             agents={@agents}
+            uri={@uri}
           />
           <details
             :if={thread.history != []}
@@ -77,6 +79,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
                 can_feedback?={false}
                 fresh?={false}
                 agents={@agents}
+                uri={@uri}
               />
             </div>
           </details>
@@ -103,6 +106,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
   attr :can_feedback?, :boolean, default: false
   attr :fresh?, :boolean, default: false
   attr :agents, :map, default: %{}, doc: "see `HelmsmanWeb.TaskComponents.actor_ref/1`"
+  attr :uri, :string, default: nil, doc: "page URI for the run links of the triggers"
 
   def card(assigns) do
     entry = assigns.entry
@@ -187,8 +191,11 @@ defmodule HelmsmanWeb.FeedbackComponents do
         scope={@scope}
         anchor_ns={"fb-#{@entry.seq}"}
         mentions={@entry.mentions}
+        muted_mentions={CollabComponents.mention_notes(@entry[:dispatch])}
         class="mt-1.5"
       />
+      <CollabComponents.steer_line entry={@entry} dom_id={@dom_id} />
+      <CollabComponents.dispatch_line entry={@entry} dom_id={@dom_id} uri={@uri} />
       <div :if={@active? and @can_feedback? and @entry.kind == "question"} class="mt-2">
         <.button
           id={"#{@dom_id}-answer"}

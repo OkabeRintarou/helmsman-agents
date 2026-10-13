@@ -20,6 +20,7 @@ defmodule HelmsmanWeb.NewTaskPanel do
   alias Helmsman.Tasks
 
   alias HelmsmanWeb.{
+    CollabComponents,
     FormErrors,
     LocalRepositoryComponents,
     RunComponents,
@@ -40,7 +41,9 @@ defmodule HelmsmanWeb.NewTaskPanel do
        created: nil,
        continuous: false,
        assignable: [],
-       availability: %{}
+       availability: %{},
+       epic_options: [],
+       epic_preset: nil
      )}
   end
 
@@ -60,11 +63,29 @@ defmodule HelmsmanWeb.NewTaskPanel do
   defp panel(nil), do: nil
   defp panel(query), do: query |> URI.decode_query() |> Map.get("panel")
 
+  # 添加步骤 opens the panel with `epic=<ID>` (add-collaboration-ui D7).
+  defp preset_epic(%{uri: uri}) when is_binary(uri) do
+    case URI.parse(uri).query do
+      nil -> nil
+      query -> query |> URI.decode_query() |> Map.get("epic") |> blank_to_nil()
+    end
+  end
+
+  defp preset_epic(_shell), do: nil
+
+  defp blank_to_nil(nil), do: nil
+  defp blank_to_nil(text), do: if(String.trim(text) == "", do: nil, else: String.trim(text))
+
   defp reset(socket) do
     %{scope: scope, shell: shell} = socket.assigns
 
-    assign(socket,
+    preset = preset_epic(shell) |> preset_summary(scope)
+
+    socket
+    |> assign(
       params: %{
+        "kind" => "task",
+        "epic" => (preset && preset.id) || "",
         "project" => default_project(shell),
         "title" => "",
         "description" => "",
@@ -78,8 +99,37 @@ defmodule HelmsmanWeb.NewTaskPanel do
       created: nil,
       continuous: false,
       assignable: TaskData.assignable(scope),
-      availability: availability(scope)
+      availability: availability(scope),
+      epic_preset: preset
     )
+    |> load_epics()
+  end
+
+  defp preset_summary(nil, _scope), do: nil
+
+  defp preset_summary(ident, scope) do
+    case Tasks.get(scope, ident) do
+      {:ok, %{kind: :epic} = task} -> Tasks.summary(task)
+      _ -> nil
+    end
+  end
+
+  # The epics of the chosen project, plus the preset one from another project.
+  defp load_epics(socket) do
+    %{scope: scope, params: params, epic_preset: preset} = socket.assigns
+
+    epics =
+      case Tasks.list(scope, params["project"] || "", kind: :epic, limit: 200) do
+        {:ok, tasks} -> Enum.map(tasks, &Tasks.summary/1)
+        {:error, _} -> []
+      end
+
+    epics =
+      if preset && not Enum.any?(epics, &(&1.id == preset.id)),
+        do: [preset | epics],
+        else: epics
+
+    assign(socket, :epic_options, Enum.map(epics, &{"#{&1.id} #{&1.title}", &1.id}))
   end
 
   defp availability(scope) do
@@ -105,12 +155,19 @@ defmodule HelmsmanWeb.NewTaskPanel do
 
   @impl true
   def handle_event("change", %{"task" => params}, socket) do
-    {:noreply,
-     assign(socket,
-       params: Map.merge(socket.assigns.params, Map.take(params, fields())),
-       continuous: params["continuous"] == "true",
-       created: nil
-     )}
+    old_project = socket.assigns.params["project"]
+
+    socket =
+      assign(socket,
+        params: Map.merge(socket.assigns.params, Map.take(params, fields())),
+        continuous: params["continuous"] == "true",
+        created: nil
+      )
+
+    socket =
+      if socket.assigns.params["project"] != old_project, do: load_epics(socket), else: socket
+
+    {:noreply, socket}
   end
 
   def handle_event("submit", %{"task" => raw}, socket) do
@@ -124,8 +181,11 @@ defmodule HelmsmanWeb.NewTaskPanel do
       description: params["description"],
       priority: params["priority"],
       labels: split_labels(params["labels"]),
-      assignee: params["assignee"]
+      assignee: params["assignee"],
+      kind: if(params["kind"] == "epic", do: "epic", else: "task")
     }
+
+    attrs = if attrs.kind == "task", do: Map.put(attrs, :epic, params["epic"] || ""), else: attrs
 
     # `start` only means something for a managed agent (design D11).
     attrs =
@@ -139,7 +199,7 @@ defmodule HelmsmanWeb.NewTaskPanel do
     end
   end
 
-  defp fields, do: ~w(project title description priority labels assignee start)
+  defp fields, do: ~w(project title description priority labels assignee start kind epic)
 
   @doc false
   def split_labels(nil), do: []
@@ -172,8 +232,14 @@ defmodule HelmsmanWeb.NewTaskPanel do
     end
   end
 
-  defp failed(socket, %Changeset{} = changeset),
-    do: assign(socket, errors: FormErrors.messages(changeset), top_error: nil, created: nil)
+  defp failed(socket, %Changeset{} = changeset) do
+    errors =
+      changeset
+      |> FormErrors.messages()
+      |> Map.merge(epic_errors(changeset))
+
+    assign(socket, errors: errors, top_error: nil, created: nil)
+  end
 
   defp failed(socket, :project_archived),
     do: field_error(socket, :project, dgettext("ui", "项目已归档，不能新建任务"))
@@ -187,6 +253,15 @@ defmodule HelmsmanWeb.NewTaskPanel do
     require Logger
     Logger.error("NewTaskPanel: Tasks.create failed: #{inspect(reason)}")
     assign(socket, top_error: dgettext("ui", "操作失败，请稍后重试"), errors: %{}, created: nil)
+  end
+
+  # The domain's epic and kind messages are English (add-collaboration-ui D7).
+  defp epic_errors(changeset) do
+    for {field, {message, _}} <- changeset.errors,
+        field in [:epic, :kind],
+        text = CollabComponents.epic_error(message),
+        into: %{},
+        do: {field, [text]}
   end
 
   defp field_error(socket, field, message),
@@ -267,6 +342,30 @@ defmodule HelmsmanWeb.NewTaskPanel do
             value={@params["project"]}
             options={Enum.map(@shell.projects, &{"#{&1.name}（#{&1.key}）", &1.key})}
             errors={Map.get(@errors, :project, [])}
+          />
+          <.input
+            type="radio"
+            id="new-task-kind"
+            name="task[kind]"
+            label={dgettext("ui", "种类")}
+            value={@params["kind"]}
+            options={[{dgettext("ui", "任务"), "task"}, {"Epic", "epic"}]}
+            help={
+              if(@params["kind"] == "epic",
+                do: dgettext("ui", "Epic 是一组步骤的容器，进度按步骤计算，全部步骤完成时自动完成")
+              )
+            }
+            errors={Map.get(@errors, :kind, [])}
+          />
+          <.input
+            :if={@params["kind"] != "epic"}
+            type="select"
+            id="new-task-epic"
+            name="task[epic]"
+            label={dgettext("ui", "所属 Epic")}
+            value={@params["epic"]}
+            options={[{dgettext("ui", "无"), ""} | @epic_options]}
+            errors={Map.get(@errors, :epic, [])}
           />
           <.input
             id="new-task-title"

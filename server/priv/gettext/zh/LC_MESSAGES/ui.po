@@ -205,6 +205,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "删除"
 msgstr ""
@@ -234,6 +235,7 @@ msgstr ""
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/task_collab.ex
 #: lib/helmsman_web/task_local_branch.ex
 #: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
@@ -958,6 +960,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "保存"
 msgstr ""
@@ -1570,6 +1573,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/transition_errors.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/run_actions.ex
+#: lib/helmsman_web/task_collab.ex
 #: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "操作失败，请稍后重试"
@@ -1613,6 +1617,7 @@ msgstr ""
 msgid "有更新"
 msgstr ""
 
+#: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/task_live/filter.ex
 #, elixir-autogen, elixir-format
 msgid "未完成"
@@ -1631,6 +1636,7 @@ msgid "未通过"
 msgstr ""
 
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "此任务已被其他人修改，已加载最新内容"
 msgstr ""
@@ -1656,6 +1662,7 @@ msgid "没有描述"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/errors.ex
@@ -1665,6 +1672,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/transition_errors.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/run_actions.ex
+#: lib/helmsman_web/task_collab.ex
 #: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "没有权限执行此操作"
@@ -2157,6 +2165,7 @@ msgstr "撤销邀请？"
 msgid "新建 Token"
 msgstr "新建 Token"
 
+#: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #, elixir-autogen, elixir-format
 msgid "无"
@@ -2530,6 +2539,7 @@ msgstr ""
 msgid "不能超过 %{n} KB"
 msgstr ""
 
+#: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
@@ -2637,6 +2647,7 @@ msgstr ""
 msgid "演示编辑器"
 msgstr ""
 
+#: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "种类"
@@ -3133,7 +3144,9 @@ msgid "仍然指派（不会启动运行）"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/run_live/show.ex
+#: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "任务"
 msgstr ""
@@ -3672,6 +3685,7 @@ msgstr ""
 msgid "被限流"
 msgstr ""
 
+#: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #, elixir-autogen, elixir-format
@@ -6110,6 +6124,7 @@ msgid "没有你能触发的托管 Agent。先新建一个 Agent 作为起草 Ag
 msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "没有权限"
 msgstr ""
@@ -6318,4 +6333,428 @@ msgstr ""
 #: lib/helmsman_web/form_errors.ex
 #, elixir-autogen, elixir-format
 msgid "草稿里已有同名 Agent"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{agent} 会在当前运行结束后处理"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{agent} 会在运行 #%{run} 结束后处理"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{agent} 的 CLI 不能在运行中接收消息；勾选后会在这次运行结束后接着处理"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{a} 不再替代 %{b}。%{b} 保持当前状态（已撤销的不会自动恢复）。"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{a} 不再等 %{b}。%{a} 上等待中的运行若只等它，会开始排队。"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{a} 要等 %{b} 满足（完成、没有进行中的运行、代码已合并）才能开始；指派给托管 Agent 的运行会等待。"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{b} 是%{status}，只记录关联，不改变状态。"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{b} 现在是%{status}，建立后会被自动撤销；它上面进行中的运行不会停止，需要时请手动停止。"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "%{id} 已被修改，请重试"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "%{id} 的操作"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "@ 不会启动它：%{reason}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "Epic"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "Epic 不存在"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "Epic 不能属于另一个 Epic"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "Epic 是一组步骤的容器，进度按步骤计算，全部步骤完成时自动完成"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "不是 Epic"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "代码还没合并"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "任务 %{id} 不存在"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务不能关联自己"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "任务被完成或拒绝、执行方提问时，给它排一次运行（回调提出方）"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "会形成循环：%{path}"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "会立即送进这次运行；没送达或运行失败时，结束后再处理一次"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "你无权触发 %{agent}，不能插话"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "依赖于"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "依赖于（本任务等它）"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "修改所属 Epic"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "关系"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "关联"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "删除关联"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "只有人能插话"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "同时发给正在运行的 %{agent}（运行 #%{run}）"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "在等：%{items}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "在等：%{what}"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "外接 Agent，@ 不会唤醒它"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "它会从 %{old} 移到这里"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "它提出的任务有进展时唤醒它"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "已删除关联"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "已发给运行 #%{run}，等 %{agent} 接收"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "已完成 %{done} / %{total}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "已挂上 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "已添加关联"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "已满足"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "已移出 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "已被 %{tasks} 替代；先在关联中删除替代关联，才能恢复"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "已送达运行 #%{run}（%{agent}）"
+msgstr ""
+
+#: lib/helmsman_web/live/new_task_panel.ex
+#, elixir-autogen, elixir-format
+msgid "所属 Epic"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "所属 Epic · %{id}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "挂上"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "挂上已有任务"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "挂上已有任务 · %{id}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "插话"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "插话对象已失效，请取消勾选后重试"
+msgstr ""
+
+#: lib/helmsman_web/task_picker.ex
+#, elixir-autogen, elixir-format
+msgid "搜索结果"
+msgstr ""
+
+#: lib/helmsman_web/task_picker.ex
+#, elixir-autogen, elixir-format
+msgid "搜索词无效"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "替代了"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "替代（本任务接手它）"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "有未满足的前置任务"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "有未满足的前置任务，前置任务满足后才能开始"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "有步骤还没落地"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "未满足"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "步骤"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "没有关联"
+msgstr ""
+
+#: lib/helmsman_web/task_picker.ex
+#, elixir-autogen, elixir-format
+msgid "没有匹配的任务"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有启动"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有插话 %{agent}：%{reason}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "添加"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "添加关联 · %{id}"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "添加步骤"
+msgstr ""
+
+#: lib/helmsman_web/task_picker.ex
+#, elixir-autogen, elixir-format
+msgid "清除选择"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "移出 Epic"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "等前置任务满足后开始"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "被 %{id} 替代，删除这条关联之前不能恢复"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/transition_errors.ex
+#, elixir-autogen, elixir-format
+msgid "被 %{tasks} 阻塞（前置任务还没满足），不能开始"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "被 %{tasks} 阻塞，前置任务满足后才能开始"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "被依赖"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "被依赖（它等本任务）"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "被替代"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "被替代（它接手本任务）"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "被阻塞"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "触发者无权触发它"
+msgstr ""
+
+#: lib/helmsman_web/task_picker.ex
+#, elixir-autogen, elixir-format
+msgid "输入任务 ID 或标题中的词"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "还有运行在进行"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "还没有步骤"
+msgstr ""
+
+#: lib/helmsman_web/task_collab.ex
+#, elixir-autogen, elixir-format
+msgid "选择这个任务所属的 Epic。不输入时列出本项目的 Epic；其他项目的 Epic 输入 ID 或标题查找。"
 msgstr ""

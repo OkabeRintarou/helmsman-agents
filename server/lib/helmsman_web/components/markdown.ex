@@ -22,6 +22,7 @@ defmodule HelmsmanWeb.Components.Markdown do
   attr :scope, :map, required: true
   attr :anchor_ns, :string, required: true
   attr :mentions, :list, default: []
+  attr :muted_mentions, :map, default: %{}, doc: "see `HelmsmanWeb.Markdown.to_html/2`"
   attr :html, :any, default: nil, doc: "pre-rendered `to_html/2` output for `content`"
   attr :class, :any, default: nil
 
@@ -31,7 +32,8 @@ defmodule HelmsmanWeb.Components.Markdown do
         Markdown.to_html(assigns.content,
           scope: assigns.scope,
           anchor_ns: assigns.anchor_ns,
-          mentions: assigns.mentions
+          mentions: assigns.mentions,
+          muted_mentions: assigns.muted_mentions
         )
 
     assigns =

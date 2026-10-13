@@ -198,4 +198,10 @@ defmodule HelmsmanWeb.RunComponentsTest do
                "创建对话的运行不能重试，请在对话里重新发送"
     end
   end
+
+  # add-collaboration-ui D11
+  test "the steering and requester trigger names" do
+    assert RunComponents.trigger_kind(%{kind: "steer"}) == "插话"
+    assert RunComponents.trigger_kind(%{kind: "requested"}) == "回调提出方"
+  end
 end

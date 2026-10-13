@@ -19,7 +19,8 @@ defmodule HelmsmanWeb.MarkdownEditor do
   `scope`, `name` (form field name), `value` (initial text of the session), `label`,
   `errors`, `submit` (`:form` or `:event`), `field` (for `:event`), `rows`,
   `placeholder` and `candidates` (`%{name, kind, owner_name}` of assignable
-  identities, humans first).
+  identities, humans first; an optional `note` says why mentioning it starts nothing
+  and `muted` dims it, add-collaboration-ui D9).
   """
   use HelmsmanWeb, :live_component
 
@@ -203,7 +204,7 @@ defmodule HelmsmanWeb.MarkdownEditor do
           role="listbox"
           data-q={@mention_q}
           aria-label={dgettext("ui", "提及")}
-          class="absolute left-0 top-full z-40 mt-1 flex w-64 flex-col rounded-box border border-border bg-raised p-1 shadow-popover"
+          class="absolute left-0 top-full z-40 mt-1 flex w-72 flex-col rounded-box border border-border bg-raised p-1 shadow-popover"
         >
           <li
             :for={{actor, i} <- Enum.with_index(@mentions)}
@@ -211,9 +212,13 @@ defmodule HelmsmanWeb.MarkdownEditor do
             role="option"
             aria-selected={to_string(i == 0)}
             data-name={actor.name}
-            class="flex min-h-7 cursor-pointer items-center rounded-field px-1.5 aria-selected:bg-selected hover:bg-hover"
+            data-muted={actor[:muted] && "true"}
+            class="flex min-h-7 cursor-pointer flex-col justify-center rounded-field px-1.5 py-0.5 aria-selected:bg-selected hover:bg-hover"
           >
-            <.actor_chip actor={actor} />
+            <.actor_chip actor={actor} class={actor[:muted] && "opacity-60"} />
+            <span :if={actor[:note]} class="pl-6 text-caption leading-4 text-fg-subtle">
+              {actor.note}
+            </span>
           </li>
         </ul>
       </div>

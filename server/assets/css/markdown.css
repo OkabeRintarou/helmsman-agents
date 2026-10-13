@@ -115,6 +115,14 @@
   padding: 0 0.1875rem;
   font-weight: 500;
 }
+/* A mention that triggered nothing (add-collaboration-ui D9): the title says why. */
+.hm-prose .hm-mention[data-skipped] {
+  color: var(--hm-fg-subtle);
+  background-color: var(--hm-hover);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
 .hm-prose a.hm-ref {
   @apply font-mono text-label;
   color: var(--hm-fg-muted);

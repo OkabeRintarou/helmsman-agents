@@ -61,7 +61,7 @@ defmodule HelmsmanWeb.Markdown do
       "pre" => ~w(class data-mermaid),
       "q" => ~w(cite),
       "section" => ~w(id),
-      "span" => ~w(class data-line data-actor),
+      "span" => ~w(class data-line data-actor data-skipped title),
       "sup" => ~w(id),
       "table" => ~w(align char charoff summary),
       "tbody" => ~w(align char charoff),
@@ -92,6 +92,9 @@ defmodule HelmsmanWeb.Markdown do
       `preview-<component id>` for an editor preview
     * `:mentions` - the identity names mentioned by the content (default
       `[]`); others are left as text
+    * `:muted_mentions` - `%{name => reason}` of mentions that triggered
+      nothing (default `%{}`): their span also gets `data-skipped` and the
+      reason as its `title` (add-collaboration-ui D9)
 
   The same input, namespace, existing tasks and mentions always give the
   same output. Raises `ArgumentError` for a missing or malformed `:scope`
@@ -102,7 +105,8 @@ defmodule HelmsmanWeb.Markdown do
     context = %{
       scope: scope!(opts),
       anchor_ns: anchor_ns!(opts),
-      mentions: Keyword.get(opts, :mentions, [])
+      mentions: Keyword.get(opts, :mentions, []),
+      muted_mentions: Keyword.get(opts, :muted_mentions, %{})
     }
 
     html =

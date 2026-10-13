@@ -27,6 +27,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
   alias Helmsman.{Events, GitHub, Policy, Projects, Tasks}
 
   alias HelmsmanWeb.{
+    CollabComponents,
     Filters,
     FormErrors,
     GitHubComponents,
@@ -730,7 +731,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
         rows={@streams.tasks}
         label={dgettext("ui", "%{project} 的任务", project: @project.name)}
         row_click={&JS.navigate("/w/#{@slug}/t/#{&1.id}")}
-        row_version={&{&1.updated_at, &1[:working]}}
+        row_version={&{&1.updated_at, &1[:working], &1[:blocked], &1[:progress]}}
         has_more={@has_more}
         load_more="load_more"
       >
@@ -742,7 +743,21 @@ defmodule HelmsmanWeb.TaskLive.Index do
         </:col>
         <:col :let={task} label={dgettext("ui", "标题")}>
           <span class="inline-flex min-w-0 items-center gap-1.5">
+            <CollabComponents.epic_badge :if={task[:kind] == "epic"} kind="epic" />
             <span class="truncate text-fg">{task.title}</span>
+            <CollabComponents.epic_progress
+              :if={task[:kind] == "epic"}
+              progress={task[:progress]}
+              data-epic-progress
+            />
+            <.tooltip :if={task[:blocked]} text={dgettext("ui", "被阻塞")} class="flex-none">
+              <.icon
+                name="lucide-octagon-pause"
+                class="size-3.5 text-warning"
+                label={dgettext("ui", "被阻塞")}
+                data-blocked
+              />
+            </.tooltip>
             <.icon
               :if={(task[:working] || []) != []}
               name="lucide-loader"

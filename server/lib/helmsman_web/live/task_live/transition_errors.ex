@@ -61,6 +61,13 @@ defmodule HelmsmanWeb.TaskLive.TransitionErrors do
     {{:field, :comment}, text}
   end
 
+  # add-collaboration-ui D3: refused because of links.
+  def message({:blocked, ids}, _label) when is_list(ids),
+    do: {:top, dgettext("ui", "被 %{tasks} 阻塞（前置任务还没满足），不能开始", tasks: Enum.join(ids, "、"))}
+
+  def message({:replaced, ids}, _label) when is_list(ids),
+    do: {:top, HelmsmanWeb.CollabComponents.replaced_text(ids)}
+
   # A run is still working on the task (web-runs 运行进行中时的验收).
   def message({:run_active, %{agent: agent}}, _label),
     do: {:top, run_active_text(agent)}

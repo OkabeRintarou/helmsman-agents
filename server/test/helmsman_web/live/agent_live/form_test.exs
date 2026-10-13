@@ -106,6 +106,32 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
     end
   end
 
+  # add-collaboration-ui D12: web-collaboration「提出方唤醒开关」.
+  describe "wake_on_requested" do
+    test "关闭唤醒", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.edit)
+      assert in_panel?(view, "#agent-wake-on-requested[checked]")
+      assert in_panel?(view, "#agent-wake-on-requested-help", "回调提出方")
+
+      render_submit(view, "agent_form_submit", %{
+        "agent" => new_params(ctx, %{"description" => "原描述", "wake_on_requested" => "false"})
+      })
+
+      assert agent(ctx).wake_on_requested == false
+
+      {:ok, view, _html} = open(ctx, :alice, ctx.edit)
+      assert in_panel?(view, "#agent-wake-on-requested")
+      refute in_panel?(view, "#agent-wake-on-requested[checked]")
+    end
+
+    test "a new agent wakes by default", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.agents <> "?panel=new-agent")
+      assert in_panel?(view, "#agent-wake-on-requested[checked]")
+      render_submit(view, "agent_form_submit", %{"agent" => new_params(ctx)})
+      assert {:ok, %{wake_on_requested: true}} = Agents.get(ctx.alice_scope, "keel/new")
+    end
+  end
+
   describe "new" do
     test "新建 Agent opens only the agent form, not the shell's 新建任务", ctx do
       {:ok, view, _html} = open(ctx, :alice, ctx.agents)

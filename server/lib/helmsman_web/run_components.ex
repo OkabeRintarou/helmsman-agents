@@ -77,6 +77,12 @@ defmodule HelmsmanWeb.RunComponents do
     end
   end
 
+  @doc """
+  Why a trigger of `agent` started nothing, from the `reason` of a dispatch outcome
+  (atom or string); `nil` for a reason the page does not know.
+  """
+  def skip_reason(agent, reason), do: reason_text(agent, to_atom(reason))
+
   defp reason_text(_agent, :task_closed), do: dgettext("ui", "任务不在新建或进行中")
   defp reason_text(_agent, :unauthorized), do: dgettext("ui", "你无权触发它")
   defp reason_text(_agent, :agent_disabled), do: dgettext("ui", "它已停用")
@@ -143,7 +149,8 @@ defmodule HelmsmanWeb.RunComponents do
   defp kind_name("resubmit"), do: dgettext("ui", "重新提交")
   defp kind_name("answer"), do: dgettext("ui", "回答")
   defp kind_name("mention"), do: dgettext("ui", "提及")
-  defp kind_name("requester"), do: dgettext("ui", "回调提出方")
+  defp kind_name("requested"), do: dgettext("ui", "回调提出方")
+  defp kind_name("steer"), do: dgettext("ui", "插话")
   defp kind_name("unblocked"), do: dgettext("ui", "依赖满足")
   defp kind_name("delegate"), do: dgettext("ui", "委派")
   defp kind_name("design"), do: dgettext("ui", "创建对话")

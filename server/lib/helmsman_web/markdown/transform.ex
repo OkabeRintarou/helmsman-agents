@@ -24,7 +24,7 @@ defmodule HelmsmanWeb.Markdown.Transform do
   ]
 
   @spec run(MDEx.Document.t(), map()) :: MDEx.Document.t()
-  def run(%MDEx.Document{} = document, %{scope: scope, anchor_ns: ns, mentions: mentions}) do
+  def run(%MDEx.Document{} = document, %{scope: scope, anchor_ns: ns, mentions: mentions} = opts) do
     document = namespace_footnotes(document, ns)
 
     candidates =
@@ -36,7 +36,9 @@ defmodule HelmsmanWeb.Markdown.Transform do
     context = %{
       slug: scope.workspace.slug,
       existing: Tasks.existing_idents(scope, candidates),
-      mentions: Map.new(mentions, &{String.downcase(&1), &1})
+      mentions: Map.new(mentions, &{String.downcase(&1), &1}),
+      muted:
+        Map.new(Map.get(opts, :muted_mentions, %{}), fn {k, v} -> {String.downcase(k), v} end)
     }
 
     transform(document, context)
@@ -241,16 +243,21 @@ defmodule HelmsmanWeb.Markdown.Transform do
 
   # The names are ASCII, so the matched name is as long as the text it
   # replaces after the `@`.
-  defp mention_marks(text, %{mentions: mentions}) do
+  defp mention_marks(text, %{mentions: mentions} = context) do
     for {at, candidate} <- Mentions.scan(text),
         matched = Enum.find(Mentions.names(candidate), &Map.has_key?(mentions, &1)),
         matched != nil do
       name = escape(Map.fetch!(mentions, matched))
-
-      {at, 1 + byte_size(matched),
-       ~s(<span class="hm-mention" data-actor="#{name}">@#{name}</span>)}
+      {at, 1 + byte_size(matched), mention_span(name, Map.get(context.muted, matched))}
     end
   end
+
+  defp mention_span(name, nil),
+    do: ~s(<span class="hm-mention" data-actor="#{name}">@#{name}</span>)
+
+  defp mention_span(name, reason),
+    do:
+      ~s(<span class="hm-mention" data-actor="#{name}" data-skipped="true" title="#{escape(reason)}">@#{name}</span>)
 
   defp escape(text), do: text |> Phoenix.HTML.html_escape() |> Phoenix.HTML.safe_to_string()
 end
