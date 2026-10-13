@@ -238,7 +238,8 @@ helmsman-agents/
 | 45 | M5 | `add-run-read-models` | 架构 | #22 界面所需的只读领域函数：Agent 可派发性、任务的运行中 Agent、Agent 用量、Agent 视图的最近运行与权限、守护进程在线（`add-agents-runs-ui` 领域请求 R1、R5–R8） | 17、18、19 |
 | 46 | M5 | `add-provider-accounts` | 架构 | 用户所属的供应商账号（地址、只写的加密密钥、模型映射），托管 Agent 选择其一；RunSpec 带账号、协议升版本、旧守护进程不领取；Claude 用 `--settings` 覆盖 + `apiKeyHelper` 读进程环境、Codex 用保留的 `model_providers.helmsman_account`，密钥不落盘，凭据来源不符即中止。先实测再实现 | 17、19、45；Claude 部分需 21 的 `add-claude-adapter`，Codex 部分需 `add-codex-adapter` |
 | 47 | M5 | `add-provider-accounts-ui` | 前端 | 个人设置页 `/users/settings/provider-accounts`（列表、新建 / 编辑面板、删除确认与使用中的 Agent）；Agent 新建 / 编辑面板的「供应商账号」下拉（空 = CLI 默认登录）、详情页摘要（账号名 + 主机）与 `env` 提示 | 22、46 |
-| 27 | M6 | GitHub 与本地仓库界面 | 前端 | GitHub 设置页、项目绑定仓库（GitHub 或本地）、PR 卡片、重新验收 / 立即合并；本地分支卡片（审查命令、合并状态、标记已合并）、指派到别的机器时的提示 | 22、26、44 |
+| 27 | M6 | `add-github-ui` | 前端 | GitHub 设置页、项目绑定 GitHub 仓库与合并设置、PR 卡片、重新验收 / 立即合并 / 重试、验收面板的合并预告；本地仓库部分拆到 #48（`add-github-ui` 决策记录） | 22、26 |
+| 48 | M6 | `add-local-repositories-ui` | 前端 | 本地仓库模式的界面：项目绑定本地仓库（与 GitHub 切换）、本地分支卡片（审查命令、合并状态、标记已合并）、指派到别的机器时的提示、切换模式的提示（#44 决策 5、6、10、12）；在 #27 预留的位置上实现 | 27、44 |
 | 28 | M7 | `add-run-steering` | 架构 | 插话、回执、兜底触发 | 19、21、25 |
 | 29 | M7 | `add-copilot-adapter`、`add-cursor-adapter` | 架构 | 两个独立变更，先实测再实现，做不到隔离就不启用（`add-codex-adapter` 已提前到 21） | 20 |
 | 30 | M8 | `add-epics` | 架构 | Epic 校验、进度、自动级联 | 9 |

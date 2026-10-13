@@ -40,7 +40,7 @@
 - 能列出模型的 CLI 顺便取模型列表（例如 `cursor-agent --list-models`），连同支持的推理强度（如 Claude 的 `--effort`），随注册上报，供界面下拉。
 - 每 10 分钟重新检测一次；`helmsman daemon restart` 立即重测。
 - 一个 CLI 都没有时拒绝启动，并提示去安装。
-- 检测到 Codex、而守护进程专用的 `~/.helmsman/codex` 里既没有登录（`codex login status`）也没有选非 `openai` 的 provider、守护进程环境里也没有 API key 时，启动时打印一行提示；运行时照常上报为可用（同一运行时上绑定了供应商账号的 Agent 不受影响，`update-codex-provider-check`）。
+- 检测到 Codex、而守护进程专用的 `~/.helmsman/codex` 里既没有登录（`codex login status`）也没有选非 `openai` 的 provider 时，启动时打印一行提示；运行时照常上报为可用（同一运行时上绑定了供应商账号的 Agent 不受影响，`update-codex-provider-check`）。
 
 ## 3. 与服务端的协议
 
@@ -62,7 +62,7 @@
 | `heartbeat` | 每 30 秒；所有在跑的运行的 `run_id, last_seq`。回复：服务端认为已结束、应立即终止的运行 |
 | `steer_ack` | `run_id, feedback_id`：CLI 已把插话纳入当前会话（以适配器的确认为准）；与事件同一套重发，`finished` 在它得到回复之后才上报（13 §8） |
 | `git_token` | `run_id`：请求新的推送令牌（安装令牌 1 小时过期，长任务结束时可能已失效） |
-| `cleanup_check` | 协议 Vc（`add-pr-reconcile-merge`）：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
+| `cleanup_check` | 协议 4（`add-pr-reconcile-merge`；版本累积：2 供应商账号、3 本地仓库、4 清理）：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
 | `repo_status` | 协议 3：本地仓库模式下，`join` / `sync` 回复给出要检查的分支，守护进程 fetch 用户仓库后上报每个分支的提交是否已进入基础分支（15 §8） |
 | `pushed` | `run_id, branch, base_sha, head_sha, commits, rescue_branch?` |
 | `finished` | `run_id, status, failure_reason?, error?, session_id, summary, usage` |
@@ -124,7 +124,7 @@
 - **供应商账号**（12 §2.2，`add-provider-accounts`）：RunSpec 带 `agent.provider_account` 时才生效，否则启动方式与上表逐字节相同。
   - Claude Code：用户 `settings.json` 的 `env` 高于进程环境，仓库的 `.claude/settings*.json` 更高，命令行 `--settings` 最高（托管策略除外）。所以加 `--settings <run_dir>/claude-settings.json`（0600，不含密钥、不含 `null`——含 `null` 的设置文件会被整个静默忽略）：把决定地址、凭据、模型的全部变量先置空串再写入账号的地址与模型映射，顶层 `model` 同样覆盖，`apiKeyHelper` 改为 `printenv HELMSMAN_PROVIDER_API_KEY`（设置文件的 `env` 不展开变量，helper 让密钥只留在进程环境里）。不换 `CLAUDE_CONFIG_DIR`：那样用户的登录、hooks、会话都不加载，仓库设置仍能改地址。守卫：初始化行的 `apiKeySource` 不是 `apiKeyHelper` 就中止运行。
   - Codex：守护进程不读用户的 `~/.codex`；专用目录 `config.toml` 的 `model_provider` 高于 `OPENAI_*` 环境变量，`-c` 高于 `config.toml`，`-c` 对已有 id 逐键合并。所以用保留 id：`-c model_provider="helmsman_account" -c model_providers.helmsman_account={base_url=…, wire_api="responses", env_key="HELMSMAN_PROVIDER_API_KEY"}`；专用 `config.toml` 定义了这个 id 时 CLI 不可用；`thread/start` 回复的 `modelProvider` 不是它就中止。
-  - Codex 启动前检查模型来源（`update-codex-provider-check`）：绑定了账号、Agent 参数或专用目录选了非 `openai` 的 provider、环境里有缺省 provider 使用的 API key、或在专用目录下 `codex login status` 已登录，任一成立才启动；全部明确不成立时不启动，运行以 `provider_auth` 失败（不自动重试），错误说明怎样配置——否则缺省的 OpenAI provider 在连不上时会一直重试，把任务占住半小时以上。判断不了时照常启动。
+  - Codex 启动前检查模型来源（`update-codex-provider-check`）：绑定了账号、按 CLI 优先级算出的有效 provider 不是 `openai`（Agent 参数里最后一个 `model_provider` 高于专用目录的配置）、或在专用目录下 `codex login status` 已登录，任一成立才启动（0.162.1 的缺省 provider 不读 `OPENAI_API_KEY` 等环境变量，API key 要用 `codex login --with-api-key` 存进专用目录）；全部明确不成立时不启动，运行以 `provider_auth` 失败（不自动重试），错误说明怎样配置——否则缺省的 OpenAI provider 在连不上时会一直重试，把任务占住半小时以上。判断不了时照常启动。
   - 绑定账号时 `custom_args` 里改供应商的参数（Claude 的 `--settings` / `--setting-sources`，Codex 的 `-c model_provider*`）被剔除；未绑定账号而 Agent `env` 里有供应商变量时，运行事件里警告（只列变量名）。
 
 **输出归一化**：各适配器把 CLI 的输出解析成同一组事件——`text`（助手文本，增量合并）、`thinking`、`tool_call`（名称、参数摘要）、`tool_result`（截断到 16 KB）、`usage`、`session`（会话 ID）、`result`（最终输出、是否成功）、`error`（附原因码，13 §5）。原始输出另存在 `runs/<run_id>/raw.log`，7 天后清理，排查时用。
@@ -176,7 +176,7 @@
    - 推送被拒（远端分支被别人动过）→ 不强推，改推到**救援分支** `<任务分支>-run-<run_id>`（新分支，一定能推上去），运行 `failed(push_conflict)`；服务端记下救援分支，下一次运行准备时合并它。改动不会只留在某台机器上；
    - 网络、权限导致推送失败 → 重试 3 次，仍失败则 `failed(push_failed)`，改动留在本机 worktree，重试优先派回同一运行时；
    - 上报 `pushed`（分支、`base_sha`、`head_sha`、提交列表、救援分支），服务端记在运行上（运行已被判结束的迟到推送同样记录），据此开 / 更新 PR（15 §3）。**推送成功之后**才上报 `finished(succeeded)`；CLI 本身失败的运行保持原失败原因，推送问题附在 `error` 里。
-4. **清理**（`add-pr-reconcile-merge` 决策 16）：每次启动后第一次连接成功时与之后每 24 小时，守护进程列出 `work/` 下的 worktree，用 `cleanup_check`（协议 Vc）询问服务端；服务端只对「任务 VERIFIED / CANCELLED / REJECTED、没有排队或活跃的运行、推送过 GitHub 的任务当前 PR 已合并或关闭」的回答可删，并附上该任务推送过的提交与基础分支。守护进程只处理经路径与 git 元数据证实属于自己缓存布局的 worktree（目录不是符号链接，`.git` 指向 `repos/` 下的 bare 缓存且反向登记一致，检出的正是任务分支；用户仓库的 worktree 即使放在 `work/` 下也不碰），再在本机确认：不等待即可拿到 worktree 与仓库缓存的锁、待推送账本为空、worktree 干净且没有进行中的合并、`HEAD` 已包含在某个推送过的提交或远端基础分支里——全部满足才删除 worktree 与缓存里的任务分支（本地模式不碰用户仓库）；否则保留并记日志。bare 仓库保留。
+4. **清理**（`add-pr-reconcile-merge` 决策 16）：每次启动后第一次连接成功时与之后每 24 小时，守护进程列出 `work/` 下的 worktree，用 `cleanup_check`（协议 4）询问服务端；服务端只对「任务 VERIFIED / CANCELLED / REJECTED、没有排队或活跃的运行、推送过 GitHub 的任务当前 PR 已合并或关闭」的回答可删，并附上该任务推送过的提交与基础分支。守护进程只处理经路径与 git 元数据证实属于自己缓存布局的 worktree（目录不是符号链接，`.git` 指向 `repos/` 下的 bare 缓存且反向登记一致，检出的正是任务分支；用户仓库的 worktree 即使放在 `work/` 下也不碰），再在本机确认：不等待即可拿到 worktree 与仓库缓存的锁、待推送账本为空、worktree 干净且没有进行中的合并、`HEAD` 已包含在某个推送过的提交或远端基础分支里——全部满足才删除 worktree 与缓存里的任务分支（本地模式不碰用户仓库）；否则保留并记日志。bare 仓库保留。
 
 **本地仓库模式**（`add-local-repositories`，15 §8）：准备与收尾与上面相同，只是「远端」换成机器上的用户仓库——先 fetch 到 `repos/local/<name>.git`，在缓存的任务 worktree 里执行；收尾不强推地把 `hm/<工作区 ID>/<ident>` 推进用户仓库（`--receive-pack` 里强制 `receive.denyCurrentBranch=refuse` 与不运行 hook，被拒推救援分支；准备与交付前都复核该仓库仍对本运行的工作区开放），只写 `refs/heads/hm/<工作区 ID>/…`，不动用户的工作区、暂存区、`HEAD` 与其他分支；没有令牌，不开 PR。
 
