@@ -1,12 +1,12 @@
 {
-  "message": "Validation Failed",
+  "documentation_url": "https://docs.github.com/rest/pulls/pulls#create-a-pull-request",
   "errors": [
     {
-      "resource": "PullRequest",
+      "code": "invalid",
       "field": "head",
-      "code": "invalid"
+      "resource": "PullRequest"
     }
   ],
-  "documentation_url": "https://docs.github.com/rest/pulls/pulls#create-a-pull-request",
+  "message": "Validation Failed",
   "status": "422"
 }

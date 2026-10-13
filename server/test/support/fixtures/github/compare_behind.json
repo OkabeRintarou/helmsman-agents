@@ -1,0 +1,97 @@
+{
+  "ahead_by": 0,
+  "base_commit": {
+    "author": null,
+    "comments_url": "https://api.github.com/repos/acme/app/commits/0000000000000000000000000000000000000001/comments",
+    "commit": {
+      "author": {
+        "date": "2026-10-13T05:23:30Z",
+        "email": "user@example.com",
+        "name": "Helmsman Recorder"
+      },
+      "comment_count": 0,
+      "committer": {
+        "date": "2026-10-13T05:23:30Z",
+        "email": "user@example.com",
+        "name": "Helmsman Recorder"
+      },
+      "message": "a",
+      "tree": {
+        "sha": "000000000000000000000000000000000000000c",
+        "url": "https://api.github.com/repos/acme/app/git/trees/000000000000000000000000000000000000000c"
+      },
+      "url": "https://api.github.com/repos/acme/app/git/commits/0000000000000000000000000000000000000001",
+      "verification": {
+        "payload": null,
+        "reason": "unsigned",
+        "signature": null,
+        "verified": false,
+        "verified_at": null
+      }
+    },
+    "committer": null,
+    "html_url": "https://github.com/acme/app/commit/0000000000000000000000000000000000000001",
+    "node_id": "C_kwDOAAAAA8",
+    "parents": [
+      {
+        "html_url": "https://github.com/acme/app/commit/0000000000000000000000000000000000000003",
+        "sha": "0000000000000000000000000000000000000003",
+        "url": "https://api.github.com/repos/acme/app/commits/0000000000000000000000000000000000000003"
+      }
+    ],
+    "sha": "0000000000000000000000000000000000000001",
+    "url": "https://api.github.com/repos/acme/app/commits/0000000000000000000000000000000000000001"
+  },
+  "behind_by": 1,
+  "commits": [],
+  "diff_url": "https://github.com/acme/app/compare/hm/1/bos-1...main.diff",
+  "files": [],
+  "html_url": "https://github.com/acme/app/compare/hm/1/bos-1...main",
+  "merge_base_commit": {
+    "author": null,
+    "comments_url": "https://api.github.com/repos/acme/app/commits/0000000000000000000000000000000000000003/comments",
+    "commit": {
+      "author": {
+        "date": "2026-10-13T05:23:27Z",
+        "email": "user@example.com",
+        "name": "Helmsman Recorder"
+      },
+      "comment_count": 0,
+      "committer": {
+        "date": "2026-10-13T05:23:27Z",
+        "email": "user@example.com",
+        "name": "Helmsman Recorder"
+      },
+      "message": "base",
+      "tree": {
+        "sha": "000000000000000000000000000000000000000a",
+        "url": "https://api.github.com/repos/acme/app/git/trees/000000000000000000000000000000000000000a"
+      },
+      "url": "https://api.github.com/repos/acme/app/git/commits/0000000000000000000000000000000000000003",
+      "verification": {
+        "payload": null,
+        "reason": "unsigned",
+        "signature": null,
+        "verified": false,
+        "verified_at": null
+      }
+    },
+    "committer": null,
+    "html_url": "https://github.com/acme/app/commit/0000000000000000000000000000000000000003",
+    "node_id": "C_kwDOAAAAA7",
+    "parents": [
+      {
+        "html_url": "https://github.com/acme/app/commit/000000000000000000000000000000000000000b",
+        "sha": "000000000000000000000000000000000000000b",
+        "url": "https://api.github.com/repos/acme/app/commits/000000000000000000000000000000000000000b"
+      }
+    ],
+    "sha": "0000000000000000000000000000000000000003",
+    "url": "https://api.github.com/repos/acme/app/commits/0000000000000000000000000000000000000003"
+  },
+  "patch_url": "https://github.com/acme/app/compare/hm/1/bos-1...main.patch",
+  "permalink_url": "https://github.com/acme/app/compare/acme:d4d3fc3...acme:a7f795a",
+  "status": "behind",
+  "total_commits": 0,
+  "url": "https://api.github.com/repos/acme/app/compare/hm/1/bos-1...main"
+}

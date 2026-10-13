@@ -1,0 +1,20 @@
+{
+  "data": {
+    "markPullRequestReadyForReview": null
+  },
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 22,
+          "line": 1
+        }
+      ],
+      "message": "Could not resolve to a node with the global id of 'PR_kwDOAAAAAA'",
+      "path": [
+        "markPullRequestReadyForReview"
+      ],
+      "type": "NOT_FOUND"
+    }
+  ]
+}

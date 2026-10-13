@@ -11,6 +11,12 @@ defmodule Helmsman.FakeGitHub do
   `PUT /merge` (`create_errors`, `merge_answers`) and the log of every
   request (`requests/1`). A request made inside a database transaction
   fails the test.
+
+  With `bare: path` in the state (end-to-end tests), a local bare
+  repository is the remote: every request first reads its branches into
+  `refs` and moves the heads of open pull requests with them (as GitHub
+  does on a push); ref writes, merges and compares act on the bare
+  repository.
   """
 
   use Boundary, top_level?: true, check: [in: false, out: false]
@@ -37,6 +43,7 @@ defmodule Helmsman.FakeGitHub do
             merge_answers: [],
             fail: nil,
             fail_create_ref: false,
+            bare: nil,
             log: []
           },
           state
@@ -131,6 +138,8 @@ defmodule Helmsman.FakeGitHub do
           ]
       }
     end)
+
+    if get(fake).bare, do: sync_bare(fake)
 
     case get(fake).fail do
       fun when is_function(fun, 2) ->
@@ -237,9 +246,11 @@ defmodule Helmsman.FakeGitHub do
 
   defp repo(fake, conn, "GET", "/compare/" <> spec, _body) do
     [base, head] = String.split(URI.decode(spec), "...")
+    s = get(fake)
+    default = if s.bare, do: bare_compare(s.bare, base, head), else: "behind"
 
-    case Map.get(get(fake).compare, {base, head}, "behind") do
-      :not_found -> reply(conn, 404, %{"message" => "Not Found"})
+    case Map.get(s.compare, {base, head}, default) do
+      :not_found -> reply(conn, 404, fixture("compare_404"))
       status -> reply(conn, 200, Map.put(fixture("compare"), "status", status))
     end
   end
@@ -248,7 +259,7 @@ defmodule Helmsman.FakeGitHub do
     branch = URI.decode(branch)
 
     case get(fake).refs[branch] do
-      nil -> reply(conn, 404, %{"message" => "Not Found"})
+      nil -> reply(conn, 404, fixture("ref_404"))
       sha -> reply(conn, 200, ref_body(branch, sha))
     end
   end
@@ -257,6 +268,7 @@ defmodule Helmsman.FakeGitHub do
     branch = URI.decode(branch)
 
     if Map.has_key?(get(fake).refs, branch) do
+      if bare = get(fake).bare, do: bare!(bare, ["update-ref", "-d", "refs/heads/" <> branch])
       update(fake, &%{&1 | refs: Map.delete(&1.refs, branch)})
       Plug.Conn.send_resp(conn, 204, "")
     else
@@ -265,11 +277,14 @@ defmodule Helmsman.FakeGitHub do
   end
 
   defp repo(fake, conn, "POST", "/git/refs", %{"ref" => "refs/heads/" <> branch, "sha" => sha}) do
-    if get(fake).fail_create_ref do
-      reply(conn, 422, %{"message" => "Object does not exist"})
+    bare = get(fake).bare
+
+    if get(fake).fail_create_ref or
+         (bare && elem(bare_git(bare, ["update-ref", "refs/heads/" <> branch, sha, ""]), 1) != 0) do
+      reply(conn, 422, fixture("ref_create_422_missing"))
     else
       update(fake, &%{&1 | refs: Map.put(&1.refs, branch, sha)})
-      reply(conn, 201, ref_body(branch, sha))
+      reply(conn, 201, ref_body(branch, sha, "ref_created"))
     end
   end
 
@@ -277,7 +292,7 @@ defmodule Helmsman.FakeGitHub do
 
   defp with_pull(fake, conn, n, fun) do
     case pull(fake, String.to_integer(n)) do
-      nil -> reply(conn, 404, %{"message" => "Not Found"})
+      nil -> reply(conn, 404, fixture("pull_404"))
       p -> fun.(p)
     end
   end
@@ -295,7 +310,7 @@ defmodule Helmsman.FakeGitHub do
 
       [] ->
         if sha == p.head_sha do
-          merged = String.duplicate("e", 40)
+          merged = bare_merge(get(fake), p, body) || String.duplicate("e", 40)
           change_pull(fake, p.number, merged: true, state: "closed", merge_commit_sha: merged)
           update(fake, &Map.put(&1, :last_merge, body))
           reply(conn, 200, fixture("merge_200") |> Map.put("sha", merged))
@@ -322,7 +337,7 @@ defmodule Helmsman.FakeGitHub do
 
     cond do
       pull(fake, n) == nil ->
-        reply(conn, 200, %{"errors" => [%{"message" => "Could not resolve to a node"}]})
+        reply(conn, 200, fixture("graphql_not_found"))
 
       query =~ "convertPullRequestToDraft" ->
         change_pull(fake, n, draft: true)
@@ -360,13 +375,84 @@ defmodule Helmsman.FakeGitHub do
     })
   end
 
-  defp ref_body(branch, sha) do
-    fixture("ref")
+  defp ref_body(branch, sha, name \\ "ref") do
+    fixture(name)
     |> Map.merge(%{
       "ref" => "refs/heads/" <> branch,
       "object" => %{"sha" => sha, "type" => "commit"}
     })
   end
+
+  ## The bare repository (`bare:`)
+
+  defp sync_bare(fake) do
+    %{bare: bare} = get(fake)
+
+    refs =
+      bare
+      |> bare!(["for-each-ref", "--format=%(refname:lstrip=2) %(objectname)", "refs/heads"])
+      |> String.split("\n", trim: true)
+      |> Map.new(&List.to_tuple(String.split(&1, " ", parts: 2)))
+
+    update(fake, fn s ->
+      pulls =
+        Map.new(s.pulls, fn
+          {n, %{state: "open", head_ref: ref} = p} when is_map_key(refs, ref) ->
+            {n, %{p | head_sha: refs[ref]}}
+
+          other ->
+            other
+        end)
+
+      %{s | refs: refs, pulls: pulls}
+    end)
+  end
+
+  defp bare_compare(bare, base, head) do
+    with {:ok, b} <- bare_resolve(bare, base),
+         {:ok, h} <- bare_resolve(bare, head) do
+      cond do
+        b == h -> "identical"
+        bare_ancestor?(bare, b, h) -> "ahead"
+        bare_ancestor?(bare, h, b) -> "behind"
+        true -> "diverged"
+      end
+    else
+      :error -> :not_found
+    end
+  end
+
+  defp bare_resolve(bare, name) do
+    case bare_git(bare, ["rev-parse", "--verify", "-q", name <> "^{commit}"]) do
+      {sha, 0} -> {:ok, String.trim(sha)}
+      _ -> :error
+    end
+  end
+
+  defp bare_ancestor?(bare, a, b),
+    do: elem(bare_git(bare, ["merge-base", "--is-ancestor", a, b]), 1) == 0
+
+  # The merge on the base branch: `merge` keeps both parents, `squash` and
+  # `rebase` leave one commit with the merged tree on the base.
+  defp bare_merge(%{bare: nil}, _p, _body), do: nil
+
+  defp bare_merge(%{bare: bare}, p, body) do
+    {:ok, base} = bare_resolve(bare, "refs/heads/" <> p.base)
+    tree = bare |> bare!(["merge-tree", "--write-tree", base, p.head_sha]) |> String.trim()
+    parents = if body["merge_method"] == "merge", do: [base, p.head_sha], else: [base]
+    message = "#{p.title} (##{p.number})"
+
+    args =
+      ["-c", "user.name=GitHub", "-c", "user.email=noreply@example.com", "commit-tree", tree] ++
+        Enum.flat_map(parents, &["-p", &1]) ++ ["-m", message]
+
+    sha = bare |> bare!(args) |> String.trim()
+    bare!(bare, ["update-ref", "refs/heads/" <> p.base, sha, base])
+    sha
+  end
+
+  defp bare_git(bare, args), do: Helmsman.GitWorkspaceE2E.git(bare, args)
+  defp bare!(bare, args), do: Helmsman.GitWorkspaceE2E.git!(bare, args)
 
   defp reply(conn, status, json), do: conn |> Plug.Conn.put_status(status) |> Req.Test.json(json)
 end

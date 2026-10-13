@@ -1,5 +1,5 @@
 {
-  "message": "Head branch was modified. Review and try the merge again.",
   "documentation_url": "https://docs.github.com/rest/pulls/pulls#merge-a-pull-request",
+  "message": "Head branch was modified. Review and try the merge again.",
   "status": "409"
 }

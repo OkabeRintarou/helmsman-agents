@@ -1,12 +1,12 @@
 {
-  "message": "Validation Failed",
+  "documentation_url": "https://docs.github.com/rest/pulls/pulls#create-a-pull-request",
   "errors": [
     {
-      "resource": "PullRequest",
       "code": "custom",
-      "message": "A pull request already exists for acme:hm/1/bos-1."
+      "message": "A pull request already exists for acme:hm/1/bos-1.",
+      "resource": "PullRequest"
     }
   ],
-  "documentation_url": "https://docs.github.com/rest/pulls/pulls#create-a-pull-request",
+  "message": "Validation Failed",
   "status": "422"
 }

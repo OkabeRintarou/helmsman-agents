@@ -177,14 +177,14 @@ defmodule Helmsman.GitWorkspaceE2E do
 
   @doc "Runs `git` and returns stdout, failing with stderr and the arguments."
   def git!(directory, args) do
-    args = git_args(args)
-
-    {output, status} =
-      System.cmd("git", args, cd: directory, env: git_env(), stderr_to_stdout: true)
-
+    {output, status} = git(directory, args)
     assert status == 0, "git #{Enum.join(args, " ")} failed in #{directory}:\n#{output}"
     output
   end
+
+  @doc "Runs `git` in the isolated environment; returns `{output, exit_status}`."
+  def git(directory, args),
+    do: System.cmd("git", git_args(args), cd: directory, env: git_env(), stderr_to_stdout: true)
 
   defp git_args(args),
     do:

@@ -1,5 +1,5 @@
 {
-  "message": "Pull Request is not mergeable",
   "documentation_url": "https://docs.github.com/rest/pulls/pulls#merge-a-pull-request",
+  "message": "Pull Request has merge conflicts",
   "status": "405"
 }

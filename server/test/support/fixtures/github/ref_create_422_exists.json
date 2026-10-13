@@ -1,0 +1,5 @@
+{
+  "documentation_url": "https://docs.github.com/rest/git/refs#create-a-reference",
+  "message": "Reference already exists",
+  "status": "422"
+}
