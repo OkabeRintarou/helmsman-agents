@@ -122,14 +122,23 @@ defmodule Helmsman.Runs.LifecycleTest do
   end
 
   describe "started" do
-    test "records the session; only running or cancelling", ctx do
+    test "ignores the resume candidate; only running or cancelling", ctx do
       started = %Report.Started{run_id: ctx.run.id, session_id: "s-9"}
       assert Runs.started(ctx.dctx, started) == {:error, :wrong_state}
 
       {:ok, :proceed} = Runs.starting(ctx.dctx, ctx.run.id)
       assert Runs.started(ctx.dctx, started) == :ok
       assert Runs.started(ctx.dctx, %{started | session_id: nil}) == :ok
-      assert reload(ctx.run).session_id == "s-9"
+      assert reload(ctx.run).session_id == nil
+
+      assert {:ok, 1} =
+               Runs.append_events(ctx.dctx, ctx.run.id, [
+                 event(1, :session, %{session_id: "confirmed"})
+               ])
+
+      set(ctx.run, status: :cancelling)
+      assert Runs.started(ctx.dctx, started) == :ok
+      assert reload(ctx.run).session_id == "confirmed"
     end
   end
 

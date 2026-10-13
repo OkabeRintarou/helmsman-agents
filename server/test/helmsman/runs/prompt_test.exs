@@ -100,6 +100,7 @@ defmodule Helmsman.Runs.PromptTest do
       task_id: ctx.task.id,
       status: :succeeded,
       session_id: "s-1",
+      started_at: DateTime.utc_now(),
       finished_at: DateTime.utc_now()
     })
 
@@ -123,6 +124,7 @@ defmodule Helmsman.Runs.PromptTest do
             task_id: ctx.task.id,
             status: :failed,
             session_id: "s-1",
+            started_at: DateTime.utc_now(),
             finished_at: DateTime.utc_now()
           },
           attrs
@@ -136,7 +138,14 @@ defmodule Helmsman.Runs.PromptTest do
              build(claimed(ctx, %{triggers: [assign(ctx)]}))
 
     other_task = task_fixture(ctx.alice_scope, ctx.project.key)
-    run_fixture(ctx.agent, %{task_id: other_task.id, status: :succeeded, session_id: "s-2"})
+
+    run_fixture(ctx.agent, %{
+      task_id: other_task.id,
+      status: :succeeded,
+      session_id: "s-2",
+      started_at: DateTime.utc_now()
+    })
+
     run = claimed(ctx, %{task_id: other_task.id, triggers: [assign(ctx)]})
 
     Repo.update_all(from(r in Run, where: r.session_id == "s-2"),
@@ -276,6 +285,7 @@ defmodule Helmsman.Runs.PromptTest do
         task_id: ctx.task.id,
         status: :succeeded,
         session_id: "s-1",
+        started_at: DateTime.utc_now(),
         finished_at: DateTime.utc_now()
       })
 

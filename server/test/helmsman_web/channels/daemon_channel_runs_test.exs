@@ -134,6 +134,8 @@ defmodule HelmsmanWeb.DaemonChannelRunsTest do
     assert {:ok, %Reply.Empty{}} =
              request(socket, "started", %Report.Started{run_id: id, session_id: "s-1"})
 
+    assert reload(ctx.run).session_id == nil
+
     events =
       for seq <- 1..2,
           do: new!(Event, %{seq: seq, type: :text, data: %{text: "hi"}, at: DateTime.utc_now()})
@@ -141,7 +143,14 @@ defmodule HelmsmanWeb.DaemonChannelRunsTest do
     assert {:ok, %Reply.Events{acked_seq: 2}} =
              request(socket, "events", new!(Report.Events, %{run_id: id, events: events}))
 
-    finished = new!(Report.Finished, %{run_id: id, status: :succeeded, summary: "Done."})
+    finished =
+      new!(Report.Finished, %{
+        run_id: id,
+        status: :succeeded,
+        summary: "Done.",
+        session_id: "s-1"
+      })
+
     assert {:ok, %Reply.Empty{}} = request(socket, "finished", finished)
 
     assert %Run{status: :succeeded, session_id: "s-1", summary: "Done."} = reload(ctx.run)

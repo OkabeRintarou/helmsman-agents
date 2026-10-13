@@ -135,9 +135,11 @@ defmodule Helmsman.Runs.Spec do
   end
 
   @doc """
-  The session to resume (decision 11): with a task, the one of the latest
-  ended run of the same agent, task and runtime that has a session, unless
-  that run failed with `context_overflow`. Nil without a task.
+  The session to resume (`update-codex-user-home` decision 7): with a task,
+  inspect the latest ended run of the same agent, task and runtime that
+  started the CLI. Return its confirmed session unless it failed with
+  `context_overflow`. A run without a session prevents falling back to an
+  older session; preparation failures do not count. Nil without a task.
   """
   @spec resume_session_id(Run.t()) :: String.t() | nil
   def resume_session_id(%Run{task_id: nil}), do: nil
@@ -148,7 +150,7 @@ defmodule Helmsman.Runs.Spec do
         where:
           r.agent_id == ^run.agent_id and r.task_id == ^run.task_id and
             r.runtime_id == ^run.runtime_id and r.id != ^run.id and
-            r.status in ^Run.ended_statuses() and not is_nil(r.session_id),
+            r.status in ^Run.ended_statuses() and not is_nil(r.started_at),
         order_by: [desc_nulls_last: r.finished_at, desc: r.id],
         limit: 1,
         select: {r.session_id, r.failure_reason}

@@ -261,17 +261,16 @@ defmodule Helmsman.Runs.Lifecycle do
   ## started
 
   @doc """
-  The CLI has started (decision 6): a `running` or `cancelling` run records
-  a non-empty `session_id`. Idempotent.
+  The CLI has started (decision 6): accepted for a `running` or `cancelling`
+  run. Idempotent. The report's session is only a resume candidate and is
+  ignored (`update-codex-user-home` decision 7); events and the finished
+  report record sessions confirmed by the CLI.
   """
   @spec started(daemon_ctx(), Report.Started.t()) :: :ok | {:error, error()}
-  def started(ctx, %Report.Started{run_id: run_id, session_id: session_id}) do
+  def started(ctx, %Report.Started{run_id: run_id}) do
     result =
       locked(ctx, run_id, fn
-        %Run{status: status} = run when status in [:running, :cancelling] ->
-          if session_id not in [nil, ""] and session_id != run.session_id,
-            do: update!(run, session_id: session_id)
-
+        %Run{status: status} when status in [:running, :cancelling] ->
           {:ok, :ok}
 
         _run ->
