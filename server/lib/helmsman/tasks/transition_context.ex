@@ -3,8 +3,12 @@ defmodule Helmsman.Tasks.TransitionContext do
   Collects the context `Helmsman.Tasks.StateMachine.check/3` needs, inside
   the transition's transaction with the task row locked.
 
-  Later changes fill in `blockers` (task links) and `replaced_by` (task
-  links). `active_run` is the earliest other run of the task that is
+  `blockers` (the unsatisfied prerequisites, `Helmsman.Links.blockers/1`)
+  is read for a move from `new` to `in_progress` only, `replaced_by`
+  (`Helmsman.Links.replaced_by/1`) for a move from `cancelled` to `new`
+  only; the transition holds the graph lock, so both are stable until it
+  commits. The automatic claim of a run (`Helmsman.Tasks.auto_claim_for_run/1`)
+  builds no context: it does not check dependencies. `active_run` is the earliest other run of the task that is
   claimed, running or cancelling (`Helmsman.Runs.active_on_task/2`,
   excluding `scope.run`, the run making the transition), read for a move
   to `verified` only. The self-verification fields follow designs/05 §5: only the
@@ -16,6 +20,7 @@ defmodule Helmsman.Tasks.TransitionContext do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
+  alias Helmsman.Links
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Tasks.{Evidence, StateMachine, Task, TaskEvent}
@@ -27,14 +32,20 @@ defmodule Helmsman.Tasks.TransitionContext do
       to == :verified and not is_nil(task.assignee_id) and actor.id == task.assignee_id
 
     %{
-      blockers: [],
-      replaced_by: [],
+      blockers: blockers(task, to),
+      replaced_by: replaced_by(task, to),
       active_run: if(to == :verified, do: Runs.active_on_task(task.id, run_id(scope))),
       self_verify?: self_verify?,
       has_passing_tests?: to == :verified and passing_tests?(task, evidence),
       assignee_name: if(self_verify?, do: actor.name, else: assignee_name(task))
     }
   end
+
+  defp blockers(%Task{status: :new, id: id}, :in_progress), do: Links.blockers(id)
+  defp blockers(_task, _to), do: []
+
+  defp replaced_by(%Task{status: :cancelled, id: id}, :new), do: Links.replaced_by(id)
+  defp replaced_by(_task, _to), do: []
 
   defp run_id(%Scope{run: %{id: id}}), do: id
   defp run_id(_scope), do: nil

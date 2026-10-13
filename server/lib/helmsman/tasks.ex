@@ -27,6 +27,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Dispatch.{Continuation, Targets}
   alias Helmsman.Events
   alias Helmsman.Feedback
+  alias Helmsman.Links
   alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Projects
@@ -67,6 +68,7 @@ defmodule Helmsman.Tasks do
           commits: [String.t()],
           feedback_count: non_neg_integer(),
           open_question: boolean(),
+          blocked: boolean(),
           created_at: DateTime.t(),
           updated_at: DateTime.t()
         }
@@ -312,11 +314,13 @@ defmodule Helmsman.Tasks do
          {:ok, project} <- fetch_project(scope, project_key) do
       tasks =
         from(t in Task,
+          as: :task,
           where: t.workspace_id == ^workspace_id and t.project_id == ^project.id,
           order_by: [desc: t.updated_at, desc: t.id],
           limit: ^limit(opts[:limit]),
           preload: [:created_by, :assignee]
         )
+        |> select_blocked()
         |> page(opts[:before], opts[:offset])
         |> filter_status(opts[:status])
         |> filter_label(opts[:label])
@@ -332,6 +336,10 @@ defmodule Helmsman.Tasks do
 
   defp limit(n) when is_integer(n), do: n |> max(0) |> min(@max_limit)
   defp limit(_), do: @default_limit
+
+  # `blocked` in the list's own query (an `EXISTS`, `Helmsman.Links`).
+  defp select_blocked(query),
+    do: select_merge(query, ^%{blocked: Links.unsatisfied_dependency(:task)})
 
   defp page(query, nil, n) when is_integer(n) and n > 0, do: offset(query, ^n)
   defp page(query, nil, _offset), do: query
@@ -365,6 +373,7 @@ defmodule Helmsman.Tasks do
 
       tasks =
         from(t in Task,
+          as: :task,
           where:
             t.workspace_id == ^workspace_id and t.assignee_id == ^actor_id and
               fragment("? = ANY(?)", t.status, ^statuses),
@@ -372,6 +381,7 @@ defmodule Helmsman.Tasks do
           limit: @max_limit,
           preload: [:created_by, :assignee]
         )
+        |> select_blocked()
         |> Repo.all()
         |> put_derived()
 
@@ -1052,6 +1062,47 @@ defmodule Helmsman.Tasks do
     end
   end
 
+  @doc """
+  Cancels `task`, replaced by the task `replacer` (an ID), inside the
+  caller's transaction, which holds the graph lock and `task`'s row lock
+  (`Helmsman.Links.add/4`, `add-task-links` decision 5). Not authorized by
+  `Helmsman.Policy` nor checked by the state machine, but always a legal
+  transition: `task` is `new` or `in_progress`. The history entry is
+  `auto`, by `scope.actor`, with the comment `replaced by <replacer>` and
+  the run of a run scope; the steps (`Helmsman.Tasks.TransitionSteps`)
+  and the notifications are those of `transition/4`. Runs on the task
+  are left alone.
+  """
+  @spec cancel_replaced(Task.t(), String.t(), Scope.t()) :: :ok | {:error, term()}
+  def cancel_replaced(
+        %Task{status: from} = task,
+        replacer,
+        %Scope{actor: %Actor{} = actor} = scope
+      )
+      when from in [:new, :in_progress] and is_binary(replacer) do
+    true = :cancelled in StateMachine.allowed(from)
+
+    event =
+      Repo.insert!(%TaskEvent{
+        workspace_id: task.workspace_id,
+        task_id: task.id,
+        from_status: from,
+        to_status: :cancelled,
+        actor_id: actor.id,
+        comment: "replaced by #{replacer}",
+        commits: [],
+        auto: true,
+        source_run_id: source_run_id(scope)
+      })
+
+    task = task |> Changeset.change(status: :cancelled) |> Repo.update!()
+
+    with :ok <- TransitionSteps.run(task, event, scope) do
+      task = preload_detail(task)
+      notify_transition(task, Enum.find(task.events, &(&1.id == event.id)))
+    end
+  end
+
   ## Assignee
 
   # `assignee` is an identity name of the workspace; nil or "" clears it,
@@ -1164,6 +1215,7 @@ defmodule Helmsman.Tasks do
       commits: task.commits,
       feedback_count: task.feedback_count,
       open_question: task.open_question,
+      blocked: task.blocked,
       created_at: task.inserted_at,
       updated_at: task.updated_at
     }
@@ -1173,9 +1225,10 @@ defmodule Helmsman.Tasks do
   The detail map of a task: the summary plus `description`, `history`
   (oldest first), `feedback` (every record, superseded ones included,
   by number; `Helmsman.Feedback.view/1`), `children` (an epic's steps'
-  summaries in creation order, in every project; `nil` for a task) and
+  summaries in creation order, in every project; `nil` for a task),
   `epic_title` (the title of a task's epic; `nil` without one and for an
-  epic). Needs the preloads of `get/2`.
+  epic) and `links` (`Helmsman.Links.for_task/1`). Needs the preloads of
+  `get/2`.
   """
   @spec detail(Task.t()) :: map()
   def detail(%Task{} = task) do
@@ -1186,7 +1239,8 @@ defmodule Helmsman.Tasks do
       history: Enum.map(task.events, &event_view/1),
       feedback: Enum.map(task.feedback, &Feedback.view/1),
       children: task.children && Enum.map(task.children, &summary/1),
-      epic_title: task.epic_title
+      epic_title: task.epic_title,
+      links: task.links
     })
   end
 
@@ -1224,13 +1278,26 @@ defmodule Helmsman.Tasks do
 
   @doc """
   Loads what `summary/1` needs into `task` (creator, assignee, commits,
-  epic, progress).
+  epic, progress, blocked).
   """
   @spec load_summary(Task.t()) :: Task.t()
-  def load_summary(%Task{} = task) do
-    task = Repo.preload(task, [:created_by, :assignee], force: true)
-    hd(put_derived([task]))
+  def load_summary(%Task{} = task), do: hd(load_summaries([task]))
+
+  @doc "`load_summary/1` for every task in `tasks`, in a fixed number of queries."
+  @spec load_summaries([Task.t()]) :: [Task.t()]
+  def load_summaries(tasks) when is_list(tasks) do
+    tasks
+    |> Repo.preload([:created_by, :assignee], force: true)
+    |> put_derived()
+    |> Links.put_blocked()
   end
+
+  @doc """
+  Loads what `detail/1` needs into `task` (as `get/2` returns it), inside
+  or outside a transaction, without authorization.
+  """
+  @spec load_detail(Task.t()) :: Task.t()
+  def load_detail(%Task{} = task), do: preload_detail(task)
 
   defp preload_detail(task) do
     events = from(e in TaskEvent, order_by: [asc: e.inserted_at, asc: e.id], preload: :actor)
@@ -1243,10 +1310,11 @@ defmodule Helmsman.Tasks do
       task
       | events: events,
         feedback: feedback,
+        links: Links.for_task(task),
         commits: events |> Enum.flat_map(& &1.commits) |> Enum.uniq()
     }
 
-    [task] = put_epic_fields([task])
+    [task] = [task] |> put_epic_fields() |> Links.put_blocked()
     put_family(task)
   end
 
@@ -1259,6 +1327,7 @@ defmodule Helmsman.Tasks do
       )
       |> Repo.all()
       |> put_commits()
+      |> Links.put_blocked()
       |> Enum.map(&%{&1 | epic_ident: epic.ident})
 
     %{epic | children: children, epic_title: nil}

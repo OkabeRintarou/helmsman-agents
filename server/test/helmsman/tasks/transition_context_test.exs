@@ -44,7 +44,7 @@ defmodule Helmsman.Tasks.TransitionContextTest do
   defp build(task, scope, to \\ :verified, evidence \\ @no_evidence),
     do: TransitionContext.build(task, scope, to, evidence)
 
-  test "nothing from later changes yet", %{task: task, agent: agent} do
+  test "no links, no other run: nothing to report", %{task: task, agent: agent} do
     assert %{blockers: [], replaced_by: [], active_run: nil} = build(task, agent)
   end
 
@@ -119,7 +119,7 @@ defmodule Helmsman.Tasks.TransitionContextTest do
   end
 
   describe "TransitionSteps.run/3,4" do
-    test "no steps yet", %{task: task, agent: agent} do
+    test "the default steps", %{task: task, agent: agent} do
       event = event!(task, agent.actor, :new, :in_progress)
       assert TransitionSteps.run(task, event, agent) == :ok
     end

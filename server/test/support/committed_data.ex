@@ -89,6 +89,7 @@ defmodule Helmsman.CommittedData do
       Repo.query!("UPDATE tasks SET epic_id = NULL WHERE workspace_id = ANY($1)", [workspace_ids])
 
       for table <- [
+            "task_links",
             "task_events",
             "feedback",
             "tasks",

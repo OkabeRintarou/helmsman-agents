@@ -252,6 +252,10 @@ defmodule Helmsman.PolicyMatrixTest do
               {:transition_task, role, kind, @none,
                if(role == :viewer, do: :forbidden, else: :ok)}
             end,
+            # link_tasks: member and above, agents too (not management)
+            for role <- @roles, kind <- [:human, :agent] do
+              {:link_tasks, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
+            end,
             # add_feedback: member and above, agents too
             for role <- @roles, kind <- [:human, :agent] do
               {:add_feedback, role, kind, @none, if(role == :viewer, do: :forbidden, else: :ok)}
@@ -420,7 +424,8 @@ defmodule Helmsman.PolicyMatrixTest do
           :update_task,
           :transition_task,
           :add_feedback,
-          :revise_feedback
+          :revise_feedback,
+          :link_tasks
         ] do
       refute action in management
     end
@@ -525,6 +530,17 @@ defmodule Helmsman.PolicyMatrixTest do
         own = "write_task" in caps and task_id == 500
         assert Policy.authorize(scope, :write_task, @task) == expect.(own)
         assert Policy.authorize(scope, :write_task, @other_task) == {:error, :forbidden}
+
+        assert Policy.authorize(scope, :link_tasks) == expect.(member? and "write_task" in caps)
+
+        # A link needs the run's own task at one end, either end.
+        for pair <- [{@task, @other_task}, {@other_task, @task}] do
+          assert Policy.authorize(scope, :link_tasks, pair) ==
+                   expect.(member? and "write_task" in caps and task_id == 500)
+        end
+
+        assert Policy.authorize(scope, :link_tasks, {@other_task, @other_task}) ==
+                 {:error, :forbidden}
 
         for action <- @refused do
           assert Policy.authorize(scope, action) == {:error, :forbidden}, "#{action}"

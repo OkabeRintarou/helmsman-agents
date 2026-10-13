@@ -5,7 +5,8 @@ defmodule Helmsman.Tasks.TransitionSteps do
   reconciliation. Each later change appends its step to `@steps`; a step
   returning `{:error, reason}` rolls the whole transition back.
 
-  Steps: the Epic cascade (`Helmsman.Tasks.Epics.after_transition/3`).
+  Steps, in order: the Epic cascade (`Helmsman.Tasks.Epics.after_transition/3`),
+  then `Helmsman.Links.after_transition/3` (dependents' notifications).
   The triggers of `add-continuation-triggers` run right after the steps
   (`Helmsman.Tasks.transition/4`), not as a step: they are planned before
   the task row is locked.
@@ -16,7 +17,7 @@ defmodule Helmsman.Tasks.TransitionSteps do
 
   @type step :: (Task.t(), TaskEvent.t(), Scope.t() -> :ok | {:error, term()})
 
-  @steps [&Helmsman.Tasks.Epics.after_transition/3]
+  @steps [&Helmsman.Tasks.Epics.after_transition/3, &Helmsman.Links.after_transition/3]
 
   @doc "Runs every step in order; stops at the first error."
   @spec run(Task.t(), TaskEvent.t(), Scope.t()) :: :ok | {:error, term()}
@@ -34,5 +35,10 @@ defmodule Helmsman.Tasks.TransitionSteps do
     end)
   end
 
-  defp steps, do: @steps
+  # Tests may append steps of their own for the calling process.
+  if Mix.env() == :test do
+    defp steps, do: @steps ++ Process.get(:helmsman_extra_transition_steps, [])
+  else
+    defp steps, do: @steps
+  end
 end

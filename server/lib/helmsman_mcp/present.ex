@@ -41,6 +41,7 @@ defmodule HelmsmanMCP.Present do
       commits: summary.commits,
       feedback_count: summary.feedback_count,
       open_question: summary.open_question,
+      blocked: summary.blocked,
       lock_version: summary.lock_version,
       kind: summary.kind,
       epic: summary.epic,
@@ -53,7 +54,8 @@ defmodule HelmsmanMCP.Present do
   @doc """
   A task detail (`Helmsman.Tasks.detail/1`): the summary, the
   description, the history (oldest first), every feedback record, an
-  epic's steps (`children`, summaries) and a step's `epic_title`.
+  epic's steps (`children`, summaries), a step's `epic_title` and every
+  link.
   """
   @spec detail(map()) :: map()
   def detail(%{} = detail) do
@@ -64,8 +66,24 @@ defmodule HelmsmanMCP.Present do
       history: Enum.map(detail.history, &event/1),
       feedback: Enum.map(detail.feedback, &feedback/1),
       children: detail.children && Enum.map(detail.children, &summary/1),
-      epic_title: detail.epic_title
+      epic_title: detail.epic_title,
+      links: Enum.map(detail.links, &link/1)
     })
+  end
+
+  @doc "A task link (`Helmsman.Links.for_task/1`)."
+  @spec link(map()) :: map()
+  def link(%{} = link) do
+    %{
+      type: link.type,
+      direction: link.direction,
+      task: link.task,
+      title: link.title,
+      status: status(link.status),
+      kind: link.kind,
+      actor: actor(link.actor),
+      created_at: time(link.created_at)
+    }
   end
 
   @doc "A history entry (`Helmsman.Tasks.event_view/1`)."

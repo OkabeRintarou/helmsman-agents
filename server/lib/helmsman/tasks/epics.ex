@@ -11,13 +11,15 @@ defmodule Helmsman.Tasks.Epics do
   detaching steps all take it, so the set of steps it reads is stable.
   The automatic transitions it makes are bookkeeping only: they do not run
   `Helmsman.Tasks.TransitionSteps`, start runs or reconcile pull requests
-  (decision 6).
+  (decision 6); they only notify the epic's dependents through
+  `Helmsman.Links.status_changed/3` (decision 11).
   """
 
   import Ecto.Query, warn: false
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Events
+  alias Helmsman.Links
   alias Helmsman.Repo
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Task, TaskEvent}
@@ -95,7 +97,9 @@ defmodule Helmsman.Tasks.Epics do
   epic's `lock_version` is unchanged. After the commit the epic's summary
   is broadcast on its project topic and `{:task_updated, ident}` on its
   task topic, plus `{:task_transitioned, %{ident, event}}` for an
-  automatic transition, once per transaction for each epic.
+  automatic transition, once per transaction for each epic; an automatic
+  transition also notifies the tasks depending on the epic
+  (`Helmsman.Links.status_changed/3`).
   """
   @spec recompute(pos_integer(), cause(), event_attrs()) :: :ok
   def recompute(epic_id, cause, event_attrs)
@@ -129,7 +133,9 @@ defmodule Helmsman.Tasks.Epics do
             source_run_id: event_attrs[:source_run_id]
           })
 
+        from = epic.status
         epic = epic |> Ecto.Changeset.change(status: to) |> Repo.update!()
+        :ok = Links.status_changed(epic, from, to)
         notify(epic, event)
     end
   end

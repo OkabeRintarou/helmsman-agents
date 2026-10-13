@@ -35,6 +35,7 @@ defmodule Helmsman do
       ApiTokens.ApiToken,
       Projects,
       Projects.Project,
+      Links,
       Tasks,
       Tasks.Task,
       Tasks.Ident,

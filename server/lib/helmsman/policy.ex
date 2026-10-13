@@ -103,7 +103,8 @@ defmodule Helmsman.Policy do
     :view_run_events,
     :cancel_run,
     :retry_run,
-    :write_task
+    :write_task,
+    :link_tasks
   ]
 
   # The capability a run token needs for each action it may attempt; any
@@ -121,7 +122,8 @@ defmodule Helmsman.Policy do
     transition_task: "write_task",
     add_feedback: "write_task",
     revise_feedback: "write_task",
-    write_task: "write_task"
+    write_task: "write_task",
+    link_tasks: "write_task"
   }
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -275,6 +277,18 @@ defmodule Helmsman.Policy do
   defp check(%Scope{} = scope, action, _resource)
        when action in [:create_task, :update_task, :transition_task],
        do: allow_if(role_at_least?(scope, :member))
+
+  # Task links: `{from, to}` once both task rows are locked. A run may
+  # only link its own task to another (designs/13 §2.3).
+  defp check(
+         %Scope{via: :run, run: %Run{} = run} = scope,
+         :link_tasks,
+         {%Task{} = a, %Task{} = b}
+       ),
+       do: allow_if(role_at_least?(scope, :member) and run.task_id in [a.id, b.id])
+
+  defp check(%Scope{} = scope, :link_tasks, _resource),
+    do: allow_if(role_at_least?(scope, :member))
 
   ## Feedback (not management actions)
 

@@ -69,6 +69,12 @@ defmodule Helmsman.Tasks.Task do
     # title.
     field :children, {:array, :any}, virtual: true
     field :epic_title, :string, virtual: true
+    # Whether an outgoing `depends_on` is unsatisfied (`Helmsman.Links`),
+    # filled in by `Helmsman.Tasks` with the summary fields.
+    field :blocked, :boolean, virtual: true, default: false
+    # Every link of the task (`Helmsman.Links.for_task/1`), filled in for
+    # the task detail.
+    field :links, {:array, :any}, virtual: true, default: []
 
     has_many :events, TaskEvent
 

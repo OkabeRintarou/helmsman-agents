@@ -12,6 +12,12 @@ defmodule HelmsmanMCP.ErrorText do
   clause (the pipeline then answers with `internal/1`).
   """
   @spec format(term(), Context.t()) :: {:ok, String.t()} | :error
+  def format({:forbidden, {:cancels_other_task, replaced, own}}, _ctx) do
+    {:ok,
+     "This run cannot replace #{replaced}: it would cancel a task other than #{own}. " <>
+       "Ask a person to do it."}
+  end
+
   def format(:forbidden, %Context{scope: %{via: :run, run: run}}) do
     caps = Enum.join(run.capabilities, ", ")
 
@@ -56,6 +62,42 @@ defmodule HelmsmanMCP.ErrorText do
       end
 
     {:ok, text}
+  end
+
+  def format({:not_found, ident}, %Context{scope: scope}) when is_binary(ident),
+    do: {:ok, "Task #{ident} not found in workspace #{scope.workspace.slug}."}
+
+  def format({:cycle, [from, to | _] = path}, _ctx) do
+    {:ok,
+     "Cannot make #{from} depend on #{to}: it would create the cycle " <>
+       "#{Enum.join(path, " → ")}."}
+  end
+
+  def format(:self_link, _ctx), do: {:ok, "A task cannot be linked to itself."}
+
+  def format({:invalid_type, input}, _ctx),
+    do: {:ok, "Unknown link type \"#{value(input)}\". Use depends_on or replaces."}
+
+  def format({:blocked, blockers}, %Context{args: args}) do
+    {:ok,
+     "#{arg(args, "task_id") || "The task"} is blocked by #{Enum.join(blockers, ", ")} " <>
+       "(not finished yet). Finish them first, or unlink_tasks if the dependency is wrong."}
+  end
+
+  def format({:replaced, [replacer]}, %Context{args: args}) do
+    ident = arg(args, "task_id") || "The task"
+
+    {:ok,
+     "#{ident} was replaced by #{replacer}. unlink_tasks(#{replacer}, #{ident}, replaces) " <>
+       "first if it really needs to come back."}
+  end
+
+  def format({:replaced, replacers}, %Context{args: args}) do
+    ident = arg(args, "task_id") || "The task"
+
+    {:ok,
+     "#{ident} was replaced by #{Enum.join(replacers, ", ")}. Remove each link with " <>
+       "unlink_tasks(<replacer>, #{ident}, replaces) first if it really needs to come back."}
   end
 
   def format({:invalid_transition, from, to, allowed}, %Context{args: args}) do
