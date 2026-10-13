@@ -258,8 +258,12 @@ defmodule Helmsman.GitHub.PullRequests do
 
   `opts[:expected_head_sha]`: the head the person confirmed; when GitHub's
   head differs, `{:error, {:head_changed, head}}` and nothing is written.
+  `opts[:expected_pull_request]`: the pull request the person confirmed,
+  checked as in `merge_now/3` (before calling GitHub, then again under
+  the row lock).
 
-  Errors: `{:invalid_status, status}` (not verified), `:not_reverifiable`
+  Errors: `{:pull_request_changed, identity | nil}`,
+  `:invalid_expected_pull_request`, `{:invalid_status, status}` (not verified), `:not_reverifiable`
   (no open current pull request, or one neither `stale` nor blocked for a
   missing or foreign verified commit), `:not_pushed_by_run` (the head is
   not the latest push of a run), `{:run_active, %{id, agent}}`,
@@ -269,12 +273,14 @@ defmodule Helmsman.GitHub.PullRequests do
   @spec reverify(Scope.t(), String.t(), keyword()) :: {:ok, view()} | {:error, term()}
   def reverify(%Scope{} = scope, ident, opts \\ []) do
     with :ok <- Policy.authorize(scope, :merge_pull_request),
+         {:ok, expected} <- expected_pull_request(opts),
          {:ok, task} <- fetch_task(scope, ident),
+         :ok <- check_expected(expected, current_row(task.id)),
          {:ok, row, repo} <- open_row(task),
          {:ok, facts} <- Api.get(repo, row.number),
          :ok <- expected_head(opts[:expected_head_sha], facts.head_sha) do
       Workspaces.write_transaction(scope, :merge_pull_request, fn scope ->
-        reverify_locked(scope, task, row, facts.head_sha)
+        reverify_locked(scope, task, {row, expected}, facts.head_sha)
       end)
     end
   end
@@ -283,25 +289,16 @@ defmodule Helmsman.GitHub.PullRequests do
   defp expected_head(head, head), do: :ok
   defp expected_head(_expected, head), do: {:error, {:head_changed, head}}
 
-  defp reverify_locked(scope, task, row_seen, head) do
+  defp reverify_locked(scope, task, {row_seen, expected}, head) do
+    test_hook(:reverify_locking)
     task = lock_task(task.id)
     row = lock_current_row(task)
 
-    cond do
-      task.status != :verified ->
-        {:error, {:invalid_status, task.status}}
+    case reverify_check(task, row, {row_seen, expected}, head) do
+      {:error, _reason} = error ->
+        error
 
-      row == nil or row.id != row_seen.id or not PullRequest.open?(row) or
-          not reverifiable?(row) ->
-        {:error, :not_reverifiable}
-
-      head != latest_push_head(task, row) ->
-        {:error, :not_pushed_by_run}
-
-      run = Helmsman.Runs.active_on_task(task.id, nil) ->
-        {:error, {:run_active, run}}
-
-      true ->
+      :ok ->
         {:ok, {entry, task}} =
           Feedback.insert_locked(task, scope, %{
             kind: :review,
@@ -343,6 +340,33 @@ defmodule Helmsman.GitHub.PullRequests do
     end
   end
 
+  defp reverify_check(task, row, {row_seen, expected}, head) do
+    cond do
+      changed = changed_pull_request(expected, row) ->
+        changed
+
+      task.status != :verified ->
+        {:error, {:invalid_status, task.status}}
+
+      not reverifiable_row?(row, row_seen) ->
+        {:error, :not_reverifiable}
+
+      head != latest_push_head(task, row) ->
+        {:error, :not_pushed_by_run}
+
+      run = Helmsman.Runs.active_on_task(task.id, nil) ->
+        {:error, {:run_active, run}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp reverifiable_row?(nil, _row_seen), do: false
+
+  defp reverifiable_row?(row, row_seen),
+    do: row.id == row_seen.id and PullRequest.open?(row) and reverifiable?(row)
+
   defp reverifiable?(%PullRequest{merge_status: :stale}), do: true
 
   defp reverifiable?(%PullRequest{merge_reason: reason}),
@@ -367,19 +391,69 @@ defmodule Helmsman.GitHub.PullRequests do
   the system writes a comment with the reason. The other preconditions
   hold as for automatic merges; the reconciliation decides.
 
-  Errors: `{:invalid_status, status}`, `:no_pull_request`,
-  `:invalid_reason`, `:forbidden`, `:not_found`.
+  `opts[:expected_pull_request]` (`%{repository: full_name, number: n}`,
+  the `repository.full_name` and `number` of the view the person
+  confirmed): compared, in the transaction and after the current pull
+  request row is locked `FOR UPDATE`, with the current pull request (the
+  project's repository now). Another one, or none, is
+  `{:error, {:pull_request_changed, %{repository, number} | nil}}` and
+  nothing is written. Without it, the current pull request is used.
+
+  Errors: `{:pull_request_changed, identity | nil}`,
+  `:invalid_expected_pull_request`, `{:invalid_status, status}`,
+  `:no_pull_request`, `:invalid_reason`, `:forbidden`, `:not_found`.
   """
   @spec merge_now(Scope.t(), String.t(), keyword()) :: {:ok, view()} | {:error, term()}
   def merge_now(%Scope{} = scope, ident, opts \\ []) do
     with :ok <- Policy.authorize(scope, :merge_pull_request),
          {:ok, reason} <- skip_reason(opts[:skip_independence]),
+         {:ok, expected} <- expected_pull_request(opts),
          {:ok, task} <- fetch_task(scope, ident) do
       Workspaces.write_transaction(scope, :merge_pull_request, fn scope ->
-        merge_now_locked(scope, task, reason)
+        merge_now_locked(scope, task, reason, expected)
       end)
     end
   end
+
+  # The pull request a person confirmed (add-github-ui code review 3).
+  defp expected_pull_request(opts) do
+    case opts[:expected_pull_request] do
+      nil ->
+        {:ok, nil}
+
+      %{repository: repository, number: number} = expected
+      when is_binary(repository) and is_integer(number) ->
+        {:ok, Map.take(expected, [:repository, :number])}
+
+      _other ->
+        {:error, :invalid_expected_pull_request}
+    end
+  end
+
+  defp check_expected(expected, row) do
+    case changed_pull_request(expected, row) do
+      nil -> :ok
+      changed -> changed
+    end
+  end
+
+  # nil when nothing was expected or `row` is the expected pull request.
+  defp changed_pull_request(nil, _row), do: nil
+
+  defp changed_pull_request(expected, row) do
+    case identity(row) do
+      ^expected -> nil
+      current -> {:error, {:pull_request_changed, current}}
+    end
+  end
+
+  defp identity(nil), do: nil
+
+  defp identity(%PullRequest{} = row),
+    do: %{
+      repository: Repository.full_name(Repo.get!(Repository, row.repository_id)),
+      number: row.number
+    }
 
   defp skip_reason(nil), do: {:ok, nil}
 
@@ -393,7 +467,7 @@ defmodule Helmsman.GitHub.PullRequests do
 
   defp skip_reason(_reason), do: {:error, :invalid_reason}
 
-  defp merge_now_locked(scope, task, reason) do
+  defp merge_now_locked(scope, task, reason, expected) do
     task = lock_task(task.id)
     row = lock_current_row(task)
     v = Snapshot.verification(task.id)
@@ -401,6 +475,9 @@ defmodule Helmsman.GitHub.PullRequests do
     cond do
       reason != nil and scope.role != :owner ->
         {:error, :forbidden}
+
+      changed = changed_pull_request(expected, row) ->
+        changed
 
       task.status != :verified or v == nil ->
         {:error, {:invalid_status, task.status}}
