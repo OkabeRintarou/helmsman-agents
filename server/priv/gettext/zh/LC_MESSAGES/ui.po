@@ -202,6 +202,7 @@ msgstr ""
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "删除"
 msgstr ""
@@ -1541,6 +1542,7 @@ msgid "摘要（可选）"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/task_transitions.ex
 #, elixir-autogen, elixir-format
 msgid "撤销"
@@ -2212,6 +2214,7 @@ msgstr "确认修改"
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "移除"
 msgstr "移除"
@@ -2711,6 +2714,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "名字"
 msgstr ""
@@ -2990,6 +2994,7 @@ msgid "%{name} 已被修改，提交仍以面板中的值为准"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "%{name} 的新值"
 msgstr ""
@@ -3145,6 +3150,7 @@ msgid "依赖满足"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "值"
 msgstr ""
@@ -5642,4 +5648,91 @@ msgstr ""
 #: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "留空表示创建在你的个人账号下"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 不能同时设置和删除"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 是保留的请求头，不能设置"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 的值须为 1–4096 个可见 ASCII 字符或空格，首尾不能是空格"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "Claude Code 账号暂不支持自定义请求头"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "保存后删除"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "值与密钥同样只写不读；只有需要额外请求头的网关才填"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "新值，留空则不修改"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "最多 %{n} 个请求头"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有名为 %{name} 的请求头"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "添加请求头"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "自定义请求头"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/provider_accounts.ex
+#, elixir-autogen, elixir-format
+msgid "请求头"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "请求头名字"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "请求头名字不区分大小写，不能重复"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "请求头名字重复：%{name}"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "请求头名字须为 1–64 字节的 HTTP 字段名（字母、数字与 !#$%&'*+.^_`|~-）"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "请求头的值"
 msgstr ""

@@ -109,6 +109,35 @@ defmodule HelmsmanWeb.FormErrors do
         cli: HelmsmanWeb.AgentComponents.provider_label(to_string(opts[:cli]))
       )
 
+  # The domain's header errors (`Helmsman.ProviderAccounts.Headers`) name the header,
+  # never its value.
+  defp text(:headers, {"reserved header " <> name, _}),
+    do: dgettext("ui", "%{name} 是保留的请求头，不能设置", name: name)
+
+  defp text(:headers, {"invalid value for header " <> name, _}),
+    do: dgettext("ui", "%{name} 的值须为 1–4096 个可见 ASCII 字符或空格，首尾不能是空格", name: name)
+
+  defp text(:headers, {"unknown header " <> name, _}),
+    do: dgettext("ui", "没有名为 %{name} 的请求头", name: name)
+
+  defp text(:headers, {"cannot set and delete header " <> name, _}),
+    do: dgettext("ui", "%{name} 不能同时设置和删除", name: name)
+
+  defp text(:headers, {"duplicate header " <> name, _}),
+    do: dgettext("ui", "请求头名字重复：%{name}", name: name)
+
+  defp text(:headers, {"names must be 1-64 byte HTTP tokens", _}),
+    do: dgettext("ui", "请求头名字须为 1–64 字节的 HTTP 字段名（字母、数字与 !#$%&'*+.^_`|~-）")
+
+  defp text(:headers, {"must have at most 8 headers", _}),
+    do: dgettext("ui", "最多 %{n} 个请求头", n: 8)
+
+  defp text(:headers, {"header names must be unique ignoring case", _}),
+    do: dgettext("ui", "请求头名字不区分大小写，不能重复")
+
+  defp text(:headers, {"Claude Code accounts do not support custom headers yet", _}),
+    do: dgettext("ui", "Claude Code 账号暂不支持自定义请求头")
+
   defp text(_field, {"does not exist", _}), do: dgettext("ui", "不存在")
   defp text(_field, {"is disabled", _}), do: dgettext("ui", "已停用，不能指派")
   defp text(_field, {"cannot be the system identity", _}), do: dgettext("ui", "不能指派给系统身份")

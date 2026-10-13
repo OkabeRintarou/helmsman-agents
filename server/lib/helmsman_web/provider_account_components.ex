@@ -26,6 +26,12 @@ defmodule HelmsmanWeb.ProviderAccountComponents do
   def aliases("codex"), do: HelmsmanProtocol.ProviderAccount.model_aliases(:codex)
   def aliases(_cli), do: HelmsmanProtocol.ProviderAccount.model_aliases(:claude)
 
+  @doc "The most custom headers of an account (spec provider-accounts)."
+  def max_headers, do: 8
+
+  @doc "Whether accounts of the CLI `cli` take custom headers (only Codex so far)."
+  def headers?(cli), do: cli == "codex"
+
   @doc "The host of an address; the address itself when it has none."
   def host(nil), do: ""
 

@@ -10,18 +10,32 @@ defmodule HelmsmanWeb.ProviderAccountForm do
   sees it) and `submit/3` hands the raw value to `create/2` / `update/3` without
   keeping it. The state holds only the non-secret params, errors and the view the
   panel opened with.
+
+  Custom headers of a Codex account (add-provider-account-headers 决策 11; spec
+  web-provider-accounts Codex 账号的自定义请求头) follow the key: their values are
+  password inputs in ignored containers (per stored header and per new row), dropped
+  from the `phx-change` params, never passed to `change/3` of the domain and handed to
+  `create/2` / `update/3` only by `submit/3`. The state keeps the stored names
+  (`headers`), the names marked for deletion (`deleted`) and the new rows' ids and
+  names (`rows`).
   """
   use HelmsmanWeb, :html
 
   import HelmsmanWeb.AgentComponents, only: [provider_label: 1]
 
   import HelmsmanWeb.ProviderAccountComponents,
-    only: [aliases: 1, clis: 0, model_alias_label: 1]
+    only: [
+      aliases: 1,
+      clis: 0,
+      headers?: 1,
+      max_headers: 0,
+      model_alias_label: 1
+    ]
 
   alias Helmsman.ProviderAccounts
   alias HelmsmanWeb.{FormErrors, Url}
 
-  @config_keys ~w(name cli base_url models updated_at)a
+  @config_keys ~w(name cli base_url models headers updated_at)a
 
   ## State
 
@@ -38,6 +52,7 @@ defmodule HelmsmanWeb.ProviderAccountForm do
       error: nil,
       notice: nil
     }
+    |> Map.merge(blank_headers([]))
   end
 
   @doc "An edit panel of generation `gen` for the account `view` (`ProviderAccounts.get/2`)."
@@ -58,6 +73,7 @@ defmodule HelmsmanWeb.ProviderAccountForm do
       error: nil,
       notice: nil
     }
+    |> Map.merge(blank_headers(view.headers))
   end
 
   ## Events
@@ -80,6 +96,15 @@ defmodule HelmsmanWeb.ProviderAccountForm do
           {:error, form} -> {:noreply, put(socket, form)}
         end
 
+      "account_form_header_add" ->
+        {:noreply, put(socket, add_row(form))}
+
+      "account_form_header_remove" ->
+        {:noreply, put(socket, remove_row(form, params["row"]))}
+
+      "account_form_header_delete" ->
+        {:noreply, put(socket, toggle_delete(form, params["name"]))}
+
       _ ->
         {:noreply, socket}
     end
@@ -89,23 +114,99 @@ defmodule HelmsmanWeb.ProviderAccountForm do
 
   defp put(socket, form), do: Phoenix.Component.assign(socket, :account_form, form)
 
+  ## Custom headers
+
+  defp blank_headers(names), do: %{headers: names, deleted: [], rows: [], next_row: 1}
+
+  @doc "How many headers the account will have: stored ones not marked plus new rows."
+  def header_count(form),
+    do: length(form.headers) - length(form.deleted) + length(form.rows)
+
+  @doc "Whether another header row may be added."
+  def can_add_header?(form),
+    do: headers?(form.params["cli"]) and header_count(form) < max_headers()
+
+  @doc "Adds an empty new-header row, up to the limit."
+  def add_row(form) do
+    if can_add_header?(form) do
+      row = %{id: form.next_row, name: ""}
+
+      %{form | rows: form.rows ++ [row], next_row: form.next_row + 1}
+      |> drop_header_errors()
+    else
+      form
+    end
+  end
+
+  @doc "Removes the unsaved row `id`."
+  def remove_row(form, id) do
+    id = to_string(id)
+
+    %{form | rows: Enum.reject(form.rows, &(to_string(&1.id) == id))}
+    |> drop_header_errors()
+  end
+
+  @doc "Marks the stored header `name` for deletion, or takes the mark back."
+  def toggle_delete(form, name) do
+    cond do
+      name not in form.headers ->
+        form
+
+      name in form.deleted ->
+        drop_header_errors(%{form | deleted: List.delete(form.deleted, name)})
+
+      true ->
+        drop_header_errors(%{form | deleted: form.deleted ++ [name]})
+    end
+  end
+
+  # A header error refers to the rows as submitted; it goes once they change.
+  defp drop_header_errors(form), do: %{form | errors: Map.delete(form.errors, :headers)}
+
+  # The names typed in the new rows (`raw["new"]`, keyed by row id); the values (in
+  # `raw["headers_password"]`) are never read here.
+  defp merge_rows(form, raw) do
+    case raw["new"] do
+      %{} = new ->
+        rows = Enum.map(form.rows, &typed_name(&1, new[to_string(&1.id)]))
+        if rows != form.rows, do: drop_header_errors(%{form | rows: rows}), else: form
+
+      _ ->
+        form
+    end
+  end
+
+  defp typed_name(row, %{"name" => name}) when is_binary(name), do: %{row | name: name}
+  defp typed_name(row, _params), do: row
+
+  # A new account switched away from Codex drops its rows (their inputs are gone).
+  defp fit_rows(form) do
+    if headers?(form.params["cli"]), do: form, else: %{form | rows: [], deleted: []}
+  end
+
   @doc """
   `phx-change`: keeps the non-secret input and shows the domain's field errors of the
-  inputs already used. The key is dropped first and never validated here; a new
-  account's missing key is not reported until submit.
+  inputs already used. The key and the header values are dropped first and never
+  validated here; a new account's missing key and header errors are not reported
+  until submit (a header error stays until the header rows change).
   """
   def change(form, scope, raw_params) do
     raw = Map.get(raw_params, "account", raw_params)
-    params = merge(form, raw)
-    form = %{form | params: params}
+    form = %{form | params: merge(form, raw)} |> merge_rows(raw) |> fit_rows()
 
-    case ProviderAccounts.change(scope, form.base, attrs(form, %{})) do
+    case ProviderAccounts.change(scope, form.base, base_attrs(form)) do
       {:ok, cs} ->
         errors =
           cs
           |> FormErrors.messages()
-          |> Map.delete(:api_key)
+          |> Map.drop([:api_key, :headers])
           |> Map.filter(fn {field, _} -> used?(raw, field) end)
+
+        errors =
+          case form.errors[:headers] do
+            nil -> errors
+            messages -> Map.put(errors, :headers, messages)
+          end
 
         %{form | errors: errors}
 
@@ -164,16 +265,23 @@ defmodule HelmsmanWeb.ProviderAccountForm do
 
   def submit(form, scope, raw_params) do
     raw = Map.get(raw_params, "account", raw_params)
-    form = %{form | params: merge(form, raw)}
-    attrs = attrs(form, raw)
+    form = %{form | params: merge(form, raw)} |> merge_rows(raw) |> fit_rows()
 
     result =
-      case form.mode do
-        :new -> ProviderAccounts.create(scope, attrs)
-        :edit -> ProviderAccounts.update(scope, form.id, attrs)
+      case duplicate_row(form) do
+        nil -> save(form, scope, attrs(form, raw))
+        name -> {:duplicate, name}
       end
 
     case result do
+      {:duplicate, name} ->
+        {:error,
+         %{
+           form
+           | errors: %{headers: [dgettext("ui", "请求头名字重复：%{name}", name: name)]},
+             error: dgettext("ui", "请修正下列错误")
+         }}
+
       {:ok, view} ->
         {:ok, view}
 
@@ -188,12 +296,102 @@ defmodule HelmsmanWeb.ProviderAccountForm do
     end
   end
 
+  defp save(%{mode: :new}, scope, attrs), do: ProviderAccounts.create(scope, attrs)
+  defp save(%{mode: :edit, id: id}, scope, attrs), do: ProviderAccounts.update(scope, id, attrs)
+
+  # Two new rows naming the same header (ignoring case) would lose a value in the map
+  # of the attrs.
+  defp duplicate_row(form) do
+    form.rows
+    |> Enum.map(&String.trim(&1.name))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.group_by(&String.downcase/1)
+    |> Enum.find_value(fn
+      {_key, [name, _ | _]} -> name
+      _ -> nil
+    end)
+  end
+
   @doc """
   The attrs to submit: name, address and the non-empty model mappings of the CLI's
   aliases; the CLI only for a new account; the key only when one was typed (an empty
-  key keeps the stored one). `raw` are the submitted params.
+  key keeps the stored one); for a Codex account the header changes (`header_attrs/2`).
+  `raw` are the submitted params.
   """
   def attrs(form, raw) do
+    attrs =
+      case raw["api_key"] do
+        key when is_binary(key) and key != "" -> Map.put(base_attrs(form), "api_key", key)
+        _ -> base_attrs(form)
+      end
+
+    case header_attrs(form, raw) do
+      nil -> attrs
+      headers -> Map.put(attrs, "headers", headers)
+    end
+  end
+
+  @doc """
+  The header changes of the submitted params, or nil when there are none (and always
+  for a Claude Code account). A new account: `%{name => value}` of its rows. An edit:
+  `%{"set" => %{name => value}, "delete" => [name]}` with the stored headers given a
+  new value and not marked, the new rows and the marked names. Blank rows are skipped;
+  a row with only a name or only a value is submitted for the domain to refuse.
+  """
+  def header_attrs(form, raw) do
+    if headers?(form.params["cli"]), do: header_changes(form, raw), else: nil
+  end
+
+  # The values come in `headers_password` (`new` by row id, `existing` by index): the key
+  # matches the parameter filters (`password`, `headers`) of the LiveView event log.
+  defp header_changes(%{mode: :new} = form, raw) do
+    case new_rows(form, raw) do
+      [] -> nil
+      rows -> Map.new(rows)
+    end
+  end
+
+  defp header_changes(%{mode: :edit} = form, raw) do
+    set = Map.new(replaced(form, raw) ++ new_rows(form, raw))
+
+    if set == %{} and form.deleted == [],
+      do: nil,
+      else: %{"set" => set, "delete" => form.deleted}
+  end
+
+  defp new_rows(form, raw) do
+    new = raw |> map_param("headers_password") |> map_param("new")
+
+    for row <- form.rows,
+        name = String.trim(row.name),
+        value = value_param(new[to_string(row.id)]),
+        name != "" or value != "",
+        do: {name, value}
+  end
+
+  # The stored headers given a new value and not marked for deletion.
+  defp replaced(form, raw) do
+    existing = raw |> map_param("headers_password") |> map_param("existing")
+
+    for {name, i} <- Enum.with_index(form.headers),
+        name not in form.deleted,
+        value = existing[to_string(i)],
+        is_binary(value) and value != "",
+        do: {name, value}
+  end
+
+  defp map_param(raw, key) do
+    case raw[key] do
+      %{} = map -> map
+      _ -> %{}
+    end
+  end
+
+  defp value_param(value) when is_binary(value), do: value
+  defp value_param(_value), do: ""
+
+  # Everything but the secrets: what `change/3` of the domain may see.
+  defp base_attrs(form) do
     models =
       form.params["models"]
       |> Map.take(aliases(form.params["cli"]))
@@ -207,12 +405,7 @@ defmodule HelmsmanWeb.ProviderAccountForm do
       "models" => models
     }
 
-    attrs = if form.mode == :new, do: Map.put(attrs, "cli", form.params["cli"]), else: attrs
-
-    case raw["api_key"] do
-      key when is_binary(key) and key != "" -> Map.put(attrs, "api_key", key)
-      _ -> attrs
-    end
+    if form.mode == :new, do: Map.put(attrs, "cli", form.params["cli"]), else: attrs
   end
 
   @doc "Text of a domain error of the account functions."
@@ -428,6 +621,8 @@ defmodule HelmsmanWeb.ProviderAccountForm do
         </div>
       </fieldset>
 
+      <.headers_group :if={headers?(@p["cli"])} form={@form} errors={Map.get(@e, :headers, [])} />
+
       <section :if={@form.mode == :edit} id="provider-account-agents" class="flex flex-col gap-2">
         <h3 class="text-label font-semibold text-fg">{dgettext("ui", "使用中的 Agent")}</h3>
         <p :if={@form.agents == []} class="text-caption text-fg-muted">{dgettext("ui", "未使用")}</p>
@@ -447,6 +642,154 @@ defmodule HelmsmanWeb.ProviderAccountForm do
         </p>
       </section>
     </.form>
+    """
+  end
+
+  attr :form, :map, required: true
+  attr :errors, :list, required: true
+
+  # The custom headers of a Codex account: stored ones by name with a new-value input
+  # and a deletion mark, then the new rows. Every value input is a password input in a
+  # container ignored by patches, so the server never renders a value.
+  defp headers_group(assigns) do
+    form = assigns.form
+
+    assigns =
+      assign(assigns,
+        gen: form.gen,
+        stored: Enum.with_index(form.headers),
+        can_add: can_add_header?(form),
+        max: max_headers()
+      )
+
+    ~H"""
+    <fieldset id="provider-account-headers" class="flex flex-col gap-3">
+      <legend class="mb-1 text-label font-semibold text-fg">{dgettext("ui", "自定义请求头")}</legend>
+      <p class="text-caption text-fg-muted">
+        {dgettext("ui", "值与密钥同样只写不读；只有需要额外请求头的网关才填")}
+      </p>
+      <div
+        :if={@errors != []}
+        id="provider-account-headers-error"
+        role="alert"
+        class="text-caption text-danger-fg"
+      >
+        <p :for={msg <- @errors}>{msg}</p>
+      </div>
+
+      <ul :if={@stored != []} id="provider-account-headers-stored" class="flex flex-col gap-2">
+        <li
+          :for={{name, i} <- @stored}
+          id={"provider-account-header-#{i}"}
+          data-header={name}
+          data-deleted={name in @form.deleted && "true"}
+          class="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-x-2"
+        >
+          <span class="flex min-w-0 items-center gap-1.5">
+            <span
+              class={[
+                "truncate font-mono text-label",
+                if(name in @form.deleted, do: "text-fg-subtle line-through", else: "text-fg")
+              ]}
+              title={name}
+            >
+              {name}
+            </span>
+          </span>
+          <span class="min-w-0">
+            <span :if={name in @form.deleted} class="text-caption text-danger-fg" data-delete-mark>
+              {dgettext("ui", "保存后删除")}
+            </span>
+            <span class={["flex items-center gap-2", name in @form.deleted && "hidden"]}>
+              <.badge tone={:success} data-header-set>{dgettext("ui", "已设置")}</.badge>
+              <span
+                id={"provider-account-form-#{@gen}-header-#{i}"}
+                phx-update="ignore"
+                class="min-w-0 flex-1"
+              >
+                <input
+                  id={"provider-account-header-#{i}-value"}
+                  type="password"
+                  name={"account[headers_password][existing][#{i}]"}
+                  value=""
+                  autocomplete="new-password"
+                  spellcheck="false"
+                  aria-label={dgettext("ui", "%{name} 的新值", name: name)}
+                  placeholder={dgettext("ui", "新值，留空则不修改")}
+                  class="h-8 w-full rounded-field border border-border-strong bg-surface px-2 text-body text-fg"
+                />
+              </span>
+            </span>
+          </span>
+          <.button
+            id={"provider-account-header-#{i}-delete"}
+            size="xs"
+            variant="ghost"
+            phx-click="account_form_header_delete"
+            phx-value-name={name}
+          >
+            {if(name in @form.deleted, do: dgettext("ui", "撤销"), else: dgettext("ui", "删除"))}
+          </.button>
+        </li>
+      </ul>
+
+      <div
+        :for={row <- @form.rows}
+        id={"provider-account-header-new-#{row.id}"}
+        data-new-header
+        class="grid grid-cols-[minmax(0,10rem)_auto_1fr_auto] items-center gap-x-2"
+      >
+        <input
+          id={"provider-account-header-new-#{row.id}-name"}
+          type="text"
+          name={"account[new][#{row.id}][name]"}
+          value={row.name}
+          maxlength="64"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label={dgettext("ui", "请求头名字")}
+          placeholder={dgettext("ui", "名字")}
+          class="h-8 w-full rounded-field border border-border-strong bg-surface px-2 font-mono text-label text-fg"
+        />
+        <span class="text-fg-muted">=</span>
+        <span id={"provider-account-form-#{@gen}-header-new-#{row.id}"} phx-update="ignore">
+          <input
+            id={"provider-account-header-new-#{row.id}-value"}
+            type="password"
+            name={"account[headers_password][new][#{row.id}]"}
+            value=""
+            autocomplete="new-password"
+            spellcheck="false"
+            aria-label={dgettext("ui", "请求头的值")}
+            placeholder={dgettext("ui", "值")}
+            class="h-8 w-full rounded-field border border-border-strong bg-surface px-2 text-body text-fg"
+          />
+        </span>
+        <.icon_button
+          id={"provider-account-header-new-#{row.id}-remove"}
+          icon="lucide-x"
+          size="sm"
+          label={dgettext("ui", "移除")}
+          phx-click="account_form_header_remove"
+          phx-value-row={row.id}
+        />
+      </div>
+
+      <div class="flex items-center gap-2">
+        <.button
+          id="provider-account-header-add"
+          size="sm"
+          icon="lucide-plus"
+          phx-click="account_form_header_add"
+          disabled_reason={if(!@can_add, do: dgettext("ui", "最多 %{n} 个请求头", n: @max))}
+        >
+          {dgettext("ui", "添加请求头")}
+        </.button>
+        <span :if={!@can_add} id="provider-account-headers-limit" class="text-caption text-fg-muted">
+          {dgettext("ui", "最多 %{n} 个请求头", n: @max)}
+        </span>
+      </div>
+    </fieldset>
     """
   end
 

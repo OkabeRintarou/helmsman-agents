@@ -324,6 +324,15 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
           </:col>
           <:col :let={a} label={dgettext("ui", "地址")} class="w-[20%]">
             <.address url={a.base_url} />
+            <span
+              :if={a.headers != []}
+              class="block truncate font-mono text-caption text-fg-muted"
+              title={Enum.join(a.headers, "\n")}
+              data-headers
+            >
+              <span class="font-sans">{dgettext("ui", "请求头")}</span>
+              <span :for={h <- a.headers} class="ml-1" data-header>{h}</span>
+            </span>
           </:col>
           <:col :let={a} label={dgettext("ui", "缺省模型")} class="w-[13%]" secondary>
             <span
