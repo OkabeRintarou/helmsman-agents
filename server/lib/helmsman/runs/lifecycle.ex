@@ -99,11 +99,15 @@ defmodule Helmsman.Runs.Lifecycle do
 
   @doc false
   # Ends the locked run: `status` with `changes`, `finished_at`, then its
-  # token revoked (run row, then token row: decision 27).
+  # token revoked (run row, then token row: decision 27). A run that was
+  # claimed, running or cancelling wakes its task's pull request
+  # reconciliation (`Helmsman.Runs.after_terminal/1`).
   @spec end!(Run.t(), Run.status(), keyword()) :: Run.t()
   def end!(%Run{} = run, status, changes \\ []) do
+    active? = run.status in Run.active_statuses()
     run = update!(run, [status: status, finished_at: DateTime.utc_now()] ++ changes)
     RunTokens.revoke(run.id)
+    if active?, do: Runs.after_terminal(run)
     run
   end
 

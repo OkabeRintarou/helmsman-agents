@@ -1,0 +1,17 @@
+{
+  "total_count": 1,
+  "check_runs": [
+    {
+      "id": 1,
+      "name": "test",
+      "head_sha": "0000000000000000000000000000000000000000",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/acme/app/actions/runs/1",
+      "output": {
+        "title": null,
+        "summary": null
+      }
+    }
+  ]
+}

@@ -225,6 +225,22 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
+  # `add-pr-reconcile-merge` decision 16; the message exists from protocol 4.
+  defp handle_report("cleanup_check", report, socket) do
+    if socket.assigns.protocol >= HelmsmanProtocol.cleanup_version() do
+      case Runs.cleanup_check(daemon_ctx(socket), report.items) do
+        {:ok, results} ->
+          results = Enum.map(results, &struct!(HelmsmanProtocol.CleanupResult, &1))
+          respond("cleanup_check", %Reply.CleanupCheck{results: results}, socket)
+
+        {:error, reason} ->
+          run_error(reason, socket)
+      end
+    else
+      {:reply, {:error, unsupported()}, socket}
+    end
+  end
+
   # `steer_ack` comes with `add-run-steering`.
   defp handle_report(_name, _report, socket), do: {:reply, {:error, error(:not_found)}, socket}
 

@@ -1,0 +1,9 @@
+{
+  "data": {
+    "convertPullRequestToDraft": {
+      "pullRequest": {
+        "isDraft": true
+      }
+    }
+  }
+}

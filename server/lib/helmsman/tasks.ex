@@ -83,6 +83,7 @@ defmodule Helmsman.Tasks do
           tests: %{command: String.t(), passed: boolean(), summary: String.t()} | nil,
           auto: boolean(),
           feedback: String.t() | nil,
+          verified_sha: String.t() | nil,
           at: DateTime.t()
         }
 
@@ -1319,6 +1320,7 @@ defmodule Helmsman.Tasks do
       tests: tests_view(event.tests),
       auto: event.auto,
       feedback: event.feedback_ident,
+      verified_sha: event.verified_sha,
       at: event.inserted_at
     }
   end

@@ -12,6 +12,7 @@ defmodule Helmsman.Projects do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Events
   alias Helmsman.GitHub.Installation
+  alias Helmsman.GitHub.PullRequests
   alias Helmsman.GitHub.Repositories
   alias Helmsman.GitHub.Repository
   alias Helmsman.LocalRepositories
@@ -143,6 +144,10 @@ defmodule Helmsman.Projects do
 
   @github_keys ~w(repository_id base_branch merge_policy merge_method require_ci
                   delete_branch_after_merge)a
+
+  # Changing these wakes the reconciliation of the project's verified
+  # tasks with open pull requests (`add-pr-reconcile-merge` decision 4).
+  @reconcile_keys [:merge_policy, :require_ci, :repository_id]
 
   @doc """
   Changes a project's repository binding and merge settings
@@ -299,12 +304,13 @@ defmodule Helmsman.Projects do
          :ok <- lock_available_repository(scope.workspace.id, pair) do
       {repository_id, branch} = pair
 
-      project
-      |> Project.github_settings_changeset(attrs, %{
-        repository_id: repository_id,
-        base_branch: branch
-      })
-      |> save()
+      changeset =
+        Project.github_settings_changeset(project, attrs, %{
+          repository_id: repository_id,
+          base_branch: branch
+        })
+
+      with {:ok, saved} <- save(changeset), do: wake_reconciliations(changeset, saved)
     end
   end
 
@@ -313,6 +319,13 @@ defmodule Helmsman.Projects do
        do: {:error, :repository_already_bound}
 
   defp not_bound_locally(_project, _pair), do: :ok
+
+  defp wake_reconciliations(changeset, saved) do
+    if Enum.any?(@reconcile_keys, &Map.has_key?(changeset.changes, &1)),
+      do: PullRequests.wake_project(saved.id)
+
+    {:ok, saved}
+  end
 
   defp same_pair(pair, pair), do: :ok
   defp same_pair(_pair, _checked), do: {:error, :pair_changed}

@@ -284,6 +284,11 @@ defmodule Helmsman.PolicyMatrixTest do
               expected = if kind == :human and role in [:owner, :admin], do: :ok, else: :forbidden
               {:manage_github, role, kind, @none, expected}
             end,
+            # merge_pull_request: member and above, people only
+            for role <- @roles, kind <- [:human, :agent] do
+              expected = if kind == :human and role != :viewer, do: :ok, else: :forbidden
+              {:merge_pull_request, role, kind, @none, expected}
+            end,
             # manage_github_app: instance administrators only, whatever the
             # workspace role (see the test below); the matrix user is not one
             for role <- @roles, kind <- [:human, :agent] do
@@ -483,7 +488,8 @@ defmodule Helmsman.PolicyMatrixTest do
       :leave_workspace,
       :create_token,
       :manage_agents,
-      :manage_github
+      :manage_github,
+      :merge_pull_request
     ]
 
     defp run_scope(role, caps, task_id) do

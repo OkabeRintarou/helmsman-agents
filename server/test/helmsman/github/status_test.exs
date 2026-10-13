@@ -1,5 +1,6 @@
 defmodule Helmsman.GitHub.StatusTest do
   use Helmsman.DataCase, async: true
+  use Oban.Testing, repo: Helmsman.Repo
 
   import Helmsman.AccountsFixtures
   import Helmsman.GitHubFixtures
@@ -23,6 +24,7 @@ defmodule Helmsman.GitHub.StatusTest do
 
     %{
       workspace: workspace,
+      installation: installation,
       scope: workspace_scope_fixture(owner, workspace),
       web: web
     }
@@ -34,7 +36,8 @@ defmodule Helmsman.GitHub.StatusTest do
     workspace_scope_fixture(user, workspace)
   end
 
-  test "a viewer reads the installation account and the repositories", %{workspace: ws} do
+  test "a viewer reads the installation account and the repositories",
+       %{workspace: ws, installation: installation} do
     assert {:ok, status} = GitHub.status(scope_with_role(ws, :viewer))
 
     assert status.configured?
@@ -43,13 +46,52 @@ defmodule Helmsman.GitHub.StatusTest do
              account_login: "acme",
              account_type: "Organization",
              suspended?: false,
-             disconnected?: false
+             disconnected?: false,
+             settings_url:
+               "https://github.com/organizations/acme/settings/installations/" <>
+                 "#{installation.installation_id}"
            }
 
     assert [
-             %{full_name: "acme/old", available: false},
-             %{full_name: "acme/web", available: true, private: true, default_branch: "main"}
+             %{full_name: "acme/old", available: false, archived: true},
+             %{
+               full_name: "acme/web",
+               available: true,
+               private: true,
+               archived: false,
+               default_branch: "main"
+             }
            ] = status.repositories
+  end
+
+  test "a personal account's settings URL (add-github-ui R4)", %{installation: installation} do
+    owner = user_fixture()
+    ws = workspace_fixture(owner)
+    personal = installation_fixture(ws, %{account_login: "alice", account_type: "User"})
+
+    assert {:ok, %{installation: %{settings_url: url}}} =
+             GitHub.status(workspace_scope_fixture(owner, ws))
+
+    assert url == "https://github.com/settings/installations/#{personal.installation_id}"
+    refute url =~ Integer.to_string(installation.installation_id)
+  end
+
+  test "request_sync/1 queues one sync of the connected installation (add-github-ui R6)",
+       %{workspace: ws, scope: scope, installation: installation} do
+    assert GitHub.request_sync(scope_with_role(ws, :member)) == {:error, :forbidden}
+
+    assert GitHub.request_sync(scope) == :ok
+    assert GitHub.request_sync(scope) == :ok
+
+    assert [_job] =
+             all_enqueued(
+               worker: Helmsman.GitHub.Workers.SyncRepositories,
+               args: %{installation_id: installation.installation_id}
+             )
+
+    owner = user_fixture()
+    other = workspace_fixture(owner)
+    assert GitHub.request_sync(workspace_scope_fixture(owner, other)) == {:error, :not_found}
   end
 
   test "a workspace without installation", %{} do

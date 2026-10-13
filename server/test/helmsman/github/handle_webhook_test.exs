@@ -2,7 +2,6 @@ defmodule Helmsman.GitHub.HandleWebhookTest do
   use Helmsman.DataCase, async: true
   use Oban.Testing, repo: Helmsman.Repo
 
-  import ExUnit.CaptureLog
   import Helmsman.AccountsFixtures
   import Helmsman.GitHubFixtures
   import Helmsman.ProjectsFixtures
@@ -11,8 +10,8 @@ defmodule Helmsman.GitHub.HandleWebhookTest do
   alias Helmsman.GitHub.Installation
   alias Helmsman.GitHub.Installations
   alias Helmsman.GitHub.Repository
-  alias Helmsman.GitHub.Webhooks.PullRequests
   alias Helmsman.GitHub.Workers.HandleWebhook
+  alias Helmsman.GitHub.Workers.ReconcilePR
   alias Helmsman.GitHub.Workers.RefreshInstallation
   alias Helmsman.GitHub.Workers.SyncRepositories
   alias Helmsman.Projects
@@ -239,17 +238,24 @@ defmodule Helmsman.GitHub.HandleWebhookTest do
              {second.suspended_at, second.disconnected_at}
   end
 
-  test "pull_request events go to PullRequests.handle/2", %{id: id} do
+  test "pull_request events go to PullRequests.handle/2", %{id: id, scope: scope, web: web} do
     stub_github(fn _conn -> flunk("GitHub must not be called") end)
-    Logger.put_module_level(PullRequests, :debug)
-    on_exit(fn -> Logger.delete_module_level(PullRequests) end)
+    task = task_fixture(scope, "BOS")
 
-    log =
-      capture_log([level: :debug], fn ->
-        assert :ok = handle("pull_request", "pull_request_opened", id)
-      end)
+    Repo.insert!(%Helmsman.GitHub.PullRequest{
+      workspace_id: task.workspace_id,
+      task_id: task.id,
+      repository_id: web.id,
+      number: 2,
+      node_id: "PR_2",
+      url: "https://github.com/acme/web/pull/2",
+      branch: "hm/bos-12",
+      base_branch: "main",
+      state: :open
+    })
 
-    assert log =~ "pull_request event (opened)"
+    assert :ok = handle("pull_request", "pull_request_opened", id)
+    assert_enqueued(worker: ReconcilePR, args: %{task_id: task.id})
     refute_enqueued(worker: SyncRepositories)
   end
 end

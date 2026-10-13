@@ -17,7 +17,11 @@ defmodule Helmsman.Tasks.TransitionSteps do
 
   @type step :: (Task.t(), TaskEvent.t(), Scope.t() -> :ok | {:error, term()})
 
-  @steps [&Helmsman.Tasks.Epics.after_transition/3, &Helmsman.Links.after_transition/3]
+  @steps [
+    &Helmsman.Tasks.Epics.after_transition/3,
+    &Helmsman.Links.after_transition/3,
+    &Helmsman.GitHub.PullRequests.after_transition/3
+  ]
 
   @doc "Runs every step in order; stops at the first error."
   @spec run(Task.t(), TaskEvent.t(), Scope.t()) :: :ok | {:error, term()}

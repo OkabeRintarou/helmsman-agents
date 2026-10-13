@@ -40,7 +40,7 @@ config :helmsman, :api_token_rate_limit, 600
 config :helmsman, Oban,
   engine: Oban.Engines.Basic,
   repo: Helmsman.Repo,
-  queues: [github: 5, github_sync: 1, default: 10, daemons: 2, runs: 10],
+  queues: [github: 5, github_sync: 1, github_pr: 3, default: 10, daemons: 2, runs: 10],
   plugins: [
     {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
     {Oban.Plugins.Cron,
@@ -50,14 +50,22 @@ config :helmsman, Oban,
        {"* * * * *", Helmsman.Daemons.Workers.MarkOffline},
        {"15 3 * * *", Helmsman.Daemons.Workers.PruneDeviceCodes},
        {"* * * * *", Helmsman.Runs.Workers.Sweep},
-       {"45 4 * * *", Helmsman.Runs.Workers.PruneEvents}
+       {"45 4 * * *", Helmsman.Runs.Workers.PruneEvents},
+       {"*/15 * * * *", Helmsman.GitHub.Workers.ReconcileSweep}
      ]}
   ]
 
 # GitHub endpoints; GitHub Enterprise is not supported (designs/00 §10).
 config :helmsman, Helmsman.GitHub,
   api_url: "https://api.github.com",
-  web_url: "https://github.com"
+  web_url: "https://github.com",
+  # Automatic reopens of a pull request after CI failures or merge
+  # conflicts before a person is asked (`add-pr-reconcile-merge` decision 9).
+  max_auto_reopens: 3
+
+# The instance's public base URL for links written outside the web layer
+# (pull request bodies); `runtime.exs` sets it from PHX_HOST and PORT.
+config :helmsman, :public_url, "http://localhost:4000"
 
 # Configure the endpoint
 config :helmsman, HelmsmanWeb.Endpoint,

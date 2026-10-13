@@ -29,6 +29,7 @@ defmodule Helmsman.GitHub.Client do
           | {:rate_limited, DateTime.t()}
           | {:github_unavailable, term()}
           | {:github_error, pos_integer()}
+          | {:github_error, pos_integer(), term()}
 
   @default_rate_limit_wait 60
 
@@ -52,6 +53,8 @@ defmodule Helmsman.GitHub.Client do
     * `:json` - a request body encoded as JSON
     * `:params` - query parameters
     * `:base` - `:api` (default) or `:web`
+    * `:error_body` - when true, other client errors are
+      `{:github_error, status, body}` (GitHub's `message` explains them)
   """
   @spec request(:get | :post | :put | :patch | :delete, String.t(), keyword()) ::
           {:ok, term()} | {:error, error()}
@@ -133,8 +136,17 @@ defmodule Helmsman.GitHub.Client do
       |> Req.merge(req_options())
       |> Req.request()
       |> normalize()
+      |> with_error_body(Keyword.get(opts, :error_body, false))
     end
   end
+
+  defp with_error_body({:error, {:github_error, status, _response}}, false),
+    do: {:error, {:github_error, status}}
+
+  defp with_error_body({:error, {:github_error, status, response}}, true),
+    do: {:error, {:github_error, status, response.body}}
+
+  defp with_error_body(result, _error_body?), do: result
 
   # The OAuth endpoints on github.com answer JSON only when asked for it.
   defp accept(opts) do
@@ -169,7 +181,7 @@ defmodule Helmsman.GitHub.Client do
         {:error, {:rate_limited, DateTime.add(now(), @default_rate_limit_wait)}}
 
       nil ->
-        {:error, {:github_error, status}}
+        {:error, {:github_error, status, response}}
 
       retry_at ->
         {:error, {:rate_limited, retry_at}}
@@ -179,7 +191,8 @@ defmodule Helmsman.GitHub.Client do
   defp normalize({:ok, %Req.Response{status: status}}) when status >= 500,
     do: {:error, {:github_unavailable, {:http_status, status}}}
 
-  defp normalize({:ok, %Req.Response{status: status}}), do: {:error, {:github_error, status}}
+  defp normalize({:ok, %Req.Response{status: status} = response}),
+    do: {:error, {:github_error, status, response}}
 
   defp normalize({:error, %{__exception__: true} = exception}),
     do: {:error, {:github_unavailable, exception_reason(exception)}}

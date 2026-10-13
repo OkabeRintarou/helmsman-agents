@@ -1,0 +1,12 @@
+{
+  "message": "Validation Failed",
+  "errors": [
+    {
+      "resource": "PullRequest",
+      "code": "custom",
+      "message": "Draft pull requests are not supported in this repository."
+    }
+  ],
+  "documentation_url": "https://docs.github.com/rest/pulls/pulls#create-a-pull-request",
+  "status": "422"
+}

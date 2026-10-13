@@ -16,7 +16,7 @@ defmodule Helmsman.CommittedData do
   @doc """
   Deletes, children first, the committed rows of the given users: the
   workspaces they own (including a first user's `default` workspace) with
-  their runs, projects, tasks and GitHub installations and repositories, their invitations, API tokens, memberships and identities elsewhere, their
+  their runs, projects, tasks (with their pull requests and reconciliation jobs) and GitHub installations and repositories, their invitations, API tokens, memberships and identities elsewhere, their
   session tokens and the users. `extra_workspace_ids` are deleted too,
   whoever owns them (for tests whose outcome may leave a workspace without
   an owner). Every other row is left alone.
@@ -85,11 +85,19 @@ defmodule Helmsman.CommittedData do
 
       Repo.query!("DELETE FROM daemons WHERE user_id = ANY($1)", [user_ids])
 
+      # Pull request reconciliation jobs of the workspaces' tasks.
+      Repo.query!(
+        "DELETE FROM oban_jobs WHERE worker = 'Helmsman.GitHub.Workers.ReconcilePR' " <>
+          "AND (args->>'task_id')::bigint IN (SELECT id FROM tasks WHERE workspace_id = ANY($1))",
+        [workspace_ids]
+      )
+
       # Steps refer to their epics in the same table.
       Repo.query!("UPDATE tasks SET epic_id = NULL WHERE workspace_id = ANY($1)", [workspace_ids])
 
       for table <- [
             "task_links",
+            "task_pull_requests",
             "task_events",
             "feedback",
             "tasks",

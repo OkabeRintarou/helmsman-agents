@@ -23,6 +23,12 @@ end
 config :helmsman, HelmsmanWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+if config_env() == :dev do
+  config :helmsman,
+         :public_url,
+         "http://#{System.get_env("PHX_HOST", "localhost")}:#{System.get_env("PORT", "4000")}"
+end
+
 # The test suite selects the signup mode itself (config/test.exs).
 if config_env() != :test do
   signup_mode =
@@ -73,7 +79,7 @@ if config_env() == :prod do
   config :helmsman, Helmsman.Repo,
     # ssl: true,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "15"),
     # For machines with several cores, consider starting multiple pools of `pool_size`
     # pool_count: 4,
     socket_options: maybe_ipv6
@@ -114,6 +120,8 @@ if config_env() == :prod do
     ciphers: [default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: vault_key}]
 
   host = System.get_env("PHX_HOST") || "example.com"
+
+  config :helmsman, :public_url, "https://#{host}"
 
   config :helmsman, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 

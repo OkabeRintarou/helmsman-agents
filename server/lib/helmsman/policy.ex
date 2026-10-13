@@ -98,6 +98,7 @@ defmodule Helmsman.Policy do
     :manage_github,
     :manage_github_app,
     :manage_provider_accounts,
+    :merge_pull_request,
     :run_agent,
     :view_runs,
     :view_run_events,
@@ -144,6 +145,12 @@ defmodule Helmsman.Policy do
 
   def authorize(%Scope{actor: %Actor{kind: :agent}}, action, _resource)
       when action in @management_actions,
+      do: {:error, :forbidden}
+
+  # People only (designs/15 §6): no agent identity, whatever the
+  # credential, though not a management action.
+  def authorize(%Scope{actor: %Actor{kind: kind}}, :merge_pull_request, _resource)
+      when kind != :human,
       do: {:error, :forbidden}
 
   # A run token can only do what its run's capabilities allow (designs/13
@@ -307,6 +314,12 @@ defmodule Helmsman.Policy do
   # repositories and their merge settings (designs/15 §6).
   defp check(%Scope{} = scope, :manage_github, _resource),
     do: allow_if(role_at_least?(scope, :admin))
+
+  # Re-verify, merge now, retry a task's pull request (designs/15 §6;
+  # skipping the independence check also needs the owner role, checked by
+  # `Helmsman.GitHub.PullRequests`).
+  defp check(%Scope{} = scope, :merge_pull_request, _resource),
+    do: allow_if(role_at_least?(scope, :member))
 
   # Instance-wide: the GitHub App itself. Needs no workspace.
   defp check(%Scope{user: %User{instance_admin: true}}, :manage_github_app, _resource),

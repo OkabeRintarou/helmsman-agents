@@ -1,0 +1,27 @@
+{
+  "url": "https://api.github.com/repos/acme/app/pulls/1",
+  "id": 1,
+  "node_id": "PR_kwDOAAAAAA",
+  "html_url": "https://github.com/acme/app/pull/1",
+  "number": 1,
+  "state": "open",
+  "locked": false,
+  "title": "BOS-1: Title",
+  "body": "",
+  "draft": false,
+  "merged": false,
+  "merged_at": null,
+  "merge_commit_sha": null,
+  "mergeable": true,
+  "mergeable_state": "clean",
+  "head": {
+    "label": "acme:hm/1/bos-1",
+    "ref": "hm/1/bos-1",
+    "sha": "0000000000000000000000000000000000000000"
+  },
+  "base": {
+    "label": "acme:main",
+    "ref": "main",
+    "sha": "0000000000000000000000000000000000000000"
+  }
+}

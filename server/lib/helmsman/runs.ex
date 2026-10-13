@@ -20,6 +20,7 @@ defmodule Helmsman.Runs do
   alias Helmsman.Daemons.{Daemon, Runtime}
   alias Helmsman.Events
   alias Helmsman.Feedback
+  alias Helmsman.GitHub.PullRequests
   alias Helmsman.Policy
   alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
@@ -870,16 +871,38 @@ defmodule Helmsman.Runs do
   defdelegate git_token(daemon_ctx, run_id), to: Helmsman.Runs.Pushes
   defdelegate pushed(daemon_ctx, report), to: Helmsman.Runs.Pushes
 
+  ## Worktree cleanup (add-pr-reconcile-merge)
+
+  defdelegate cleanup_check(daemon_ctx, items), to: Helmsman.Runs.Cleanup, as: :check
+
   @doc """
   Called once after a push record of `run` was committed
-  (`add-daemon-git-workspace` decision 5). Does nothing yet but emit the
-  `[:helmsman, :runs, :after_push]` telemetry event (`%{run_id: id}`);
-  `add-pr-reconcile-merge` enqueues the pull request reconciliation here.
+  (`add-daemon-git-workspace` decision 5): emits the
+  `[:helmsman, :runs, :after_push]` telemetry event (`%{run_id: id}`) and
+  wakes the pull request reconciliation of its task when it has a
+  repository (`add-pr-reconcile-merge` decision 4).
   """
   @spec after_push(Run.t()) :: :ok
-  def after_push(%Run{id: id}) do
+  def after_push(%Run{id: id} = run) do
     :telemetry.execute([:helmsman, :runs, :after_push], %{}, %{run_id: id})
+
+    if run.repository_id && run.task_id,
+      do: PullRequests.wake(run.task_id),
+      else: :ok
   end
+
+  @doc """
+  Called in the transaction of every write that ends a `claimed`,
+  `running` or `cancelling` run (`Helmsman.Runs.Lifecycle.end!/3`, the
+  only such path: finishing, stopping, the sweep's lease and offline
+  judgements, the restart reaping and the start-time checks): wakes the
+  pull request reconciliation of its task when the task's project is
+  bound to a GitHub repository (`add-pr-reconcile-merge` decision 4,
+  designs/13 §4.4).
+  """
+  @spec after_terminal(Run.t()) :: :ok
+  def after_terminal(%Run{task_id: task_id}),
+    do: PullRequests.wake_if_bound(task_id)
 
   ## Read models (add-run-read-models)
 

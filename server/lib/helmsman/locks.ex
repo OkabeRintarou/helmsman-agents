@@ -12,9 +12,14 @@ defmodule Helmsman.Locks do
   | 2    | workspace graph lock                      |
   | 3    | task lock                                 |
   | 4    | daemon lock                               |
+  | 5    | pull request reconciliation (session lock) |
 
-  All functions take `pg_*_xact_lock`s and must run inside a transaction;
-  the locks are released when it ends.
+  All functions but the session ones take `pg_*_xact_lock`s and must run
+  inside a transaction; the locks are released when it ends. The
+  reconciliation lock is a session lock (`try_session/2`,
+  `unlock_session/2`) held across the HTTP calls of one reconciliation on
+  a checked-out connection (`add-pr-reconcile-merge` decision 3); it is
+  released explicitly or when the connection closes.
   """
 
   import Bitwise
@@ -24,9 +29,9 @@ defmodule Helmsman.Locks do
   @id_bits 48
   @max_id 1 <<< @id_bits
 
-  @types %{global: 0, maint: 1, graph: 2, task: 3, daemon: 4}
+  @types %{global: 0, maint: 1, graph: 2, task: 3, daemon: 4, reconcile: 5}
 
-  @type lock_type :: :global | :maint | :graph | :task | :daemon
+  @type lock_type :: :global | :maint | :graph | :task | :daemon | :reconcile
 
   @doc """
   Returns the advisory lock key for `type` and `id`.
@@ -72,6 +77,24 @@ defmodule Helmsman.Locks do
   @doc "Tries the daemon lock without waiting."
   @spec try_daemon(pos_integer()) :: boolean()
   def try_daemon(daemon_id), do: try_lock("pg_try_advisory_xact_lock", key(:daemon, daemon_id))
+
+  @doc """
+  Tries the session-level lock `type`/`id` without waiting, outside any
+  transaction. The caller must hold the connection (`Repo.checkout/2`)
+  until `unlock_session/2`.
+  """
+  @spec try_session(lock_type(), non_neg_integer()) :: boolean()
+  def try_session(type, id) do
+    %{rows: [[acquired?]]} = Repo.query!("SELECT pg_try_advisory_lock($1)", [key(type, id)])
+    acquired?
+  end
+
+  @doc "Releases a session-level lock taken with `try_session/2`."
+  @spec unlock_session(lock_type(), non_neg_integer()) :: boolean()
+  def unlock_session(type, id) do
+    %{rows: [[released?]]} = Repo.query!("SELECT pg_advisory_unlock($1)", [key(type, id)])
+    released?
+  end
 
   defp lock!(function, key) do
     ensure_transaction!()

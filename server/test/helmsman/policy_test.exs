@@ -8,6 +8,7 @@ defmodule Helmsman.PolicyTest do
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Policy
+  alias Helmsman.Runs.Run
 
   setup do
     dispatch_fixture()
@@ -52,5 +53,40 @@ defmodule Helmsman.PolicyTest do
 
   test "it is a management action" do
     assert :manage_provider_accounts in Policy.management_actions()
+  end
+
+  describe ":merge_pull_request (add-pr-reconcile-merge decision 14)" do
+    defp merge(scope), do: Policy.authorize(scope, :merge_pull_request)
+
+    test "people from member up", ctx do
+      assert merge(ctx.alice_scope) == :ok
+
+      for {role, expected} <- [
+            owner: :ok,
+            admin: :ok,
+            member: :ok,
+            viewer: {:error, :forbidden}
+          ] do
+        {_user, scope} = member_scope_fixture(ctx.workspace, role)
+        assert merge(scope) == expected, "#{role}"
+      end
+    end
+
+    test "an external agent's hm_ session and a run scope are refused", ctx do
+      %{api_token: token} = api_token_fixture(ctx.alice_scope)
+      scope = token_scope_fixture(ctx.alice, ctx.workspace, :mcp, token)
+      assert merge(%{scope | actor: ctx.alice_scope.actor}) == :ok
+      assert merge(%{scope | actor: ctx.agent}) == {:error, :forbidden}
+
+      run =
+        run_fixture(ctx.agent, %{status: :running, capabilities: Run.capabilities()})
+
+      {scope, _token} = run_scope_fixture(run)
+      assert merge(scope) == {:error, :forbidden}
+    end
+
+    test "it is not a management action" do
+      refute :merge_pull_request in Policy.management_actions()
+    end
   end
 end

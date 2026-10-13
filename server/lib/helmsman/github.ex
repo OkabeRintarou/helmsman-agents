@@ -14,10 +14,12 @@ defmodule Helmsman.GitHub do
   alias Helmsman.GitHub.App
   alias Helmsman.GitHub.AppConfig
   alias Helmsman.GitHub.Client
+  alias Helmsman.GitHub.Installation
   alias Helmsman.GitHub.Installations
   alias Helmsman.GitHub.Repositories
   alias Helmsman.GitHub.Repository
   alias Helmsman.GitHub.Webhooks
+  alias Helmsman.GitHub.Workers.SyncRepositories
   alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Workspaces.Workspace
@@ -276,9 +278,20 @@ defmodule Helmsman.GitHub do
       account_login: installation.account_login,
       account_type: installation.account_type,
       suspended?: installation.suspended_at != nil,
-      disconnected?: installation.disconnected_at != nil
+      disconnected?: installation.disconnected_at != nil,
+      settings_url: settings_url(installation)
     }
   end
+
+  # Where the account manages the installation's repository access on
+  # GitHub (`add-github-ui` R4).
+  defp settings_url(%{account_type: "Organization"} = installation),
+    do:
+      "#{Client.web_url()}/organizations/#{installation.account_login}/settings/installations/" <>
+        "#{installation.installation_id}"
+
+  defp settings_url(installation),
+    do: "#{Client.web_url()}/settings/installations/#{installation.installation_id}"
 
   defp repositories_status(workspace_id) do
     from(r in Repository,
@@ -294,9 +307,30 @@ defmodule Helmsman.GitHub do
         full_name: Repository.full_name(repository),
         default_branch: repository.default_branch,
         private: repository.private,
+        archived: repository.archived,
         available: Repositories.available?(repository, installation)
       }
     end)
+  end
+
+  @doc """
+  Queues a repository sync of the workspace's connected installation
+  (`:manage_github`; `add-github-ui` R6), the job of the daily sync (one
+  queued per installation at a time). `{:error, :not_found}` without a
+  connected installation.
+  """
+  @spec request_sync(Scope.t()) :: :ok | {:error, :forbidden | :not_found}
+  def request_sync(%Scope{workspace: %Workspace{id: workspace_id}} = scope) do
+    with :ok <- Policy.authorize(scope, :manage_github) do
+      case Installations.for_workspace(workspace_id) do
+        %Installation{disconnected_at: nil, installation_id: id} ->
+          {:ok, _job} = Oban.insert(SyncRepositories.new(%{installation_id: id}))
+          :ok
+
+        _ ->
+          {:error, :not_found}
+      end
+    end
   end
 
   @doc "Lists the first 1000 branch names of an available repository (`:manage_github`)."
