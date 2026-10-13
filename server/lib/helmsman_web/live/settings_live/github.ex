@@ -34,17 +34,11 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
        page_title: "GitHub",
        can_manage?: Policy.authorize(scope, :manage_github) == :ok,
        instance_admin?: Policy.authorize(scope, :manage_github_app) == :ok,
-       sync?: sync_available?(),
        confirm: false,
        query: ""
      )
      |> stream_configure(:repositories, dom_id: &"repository-#{&1.id}")
      |> load()}
-  end
-
-  # PLACEHOLDER(add-github-ui R6): `GitHub.request_sync/1` comes with #26.
-  defp sync_available? do
-    Code.ensure_loaded?(GitHub) and function_exported?(GitHub, :request_sync, 1)
   end
 
   defp load(socket) do
@@ -124,7 +118,7 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
   end
 
   def handle_event("resync", _params, socket) do
-    if socket.assigns.can_manage? and socket.assigns.sync? do
+    if socket.assigns.can_manage? do
       {:noreply, resync(socket)}
     else
       {:noreply, forbidden(socket)}
@@ -140,9 +134,7 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
   end
 
   defp resync(socket) do
-    # PLACEHOLDER(add-github-ui R6): a direct call once `request_sync/1` exists.
-    # credo:disable-for-next-line Credo.Check.Refactor.Apply
-    case apply(GitHub, :request_sync, [socket.assigns.current_scope]) do
+    case GitHub.request_sync(socket.assigns.current_scope) do
       :ok ->
         put_flash(socket, :info, dgettext("ui", "已开始同步仓库"))
 
@@ -178,8 +170,7 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
   defp account_type("Organization"), do: dgettext("ui", "组织")
   defp account_type(_type), do: dgettext("ui", "个人账号")
 
-  # PLACEHOLDER(add-github-ui R4): `settings_url` comes with #26.
-  defp settings_url(%{installation: %{} = installation}), do: Map.get(installation, :settings_url)
+  defp settings_url(%{installation: %{settings_url: url}}), do: url
   defp settings_url(_status), do: nil
 
   @impl true
@@ -250,7 +241,7 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
       >
         <:actions>
           <.button
-            :if={@can_manage? and @sync? and @state in [:connected, :suspended]}
+            :if={@can_manage? and @state in [:connected, :suspended]}
             id="github-resync"
             size="sm"
             icon="lucide-refresh-cw"
@@ -305,7 +296,7 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
               {r.default_branch || "—"}
             </span>
           </:col>
-          <:col :let={r} label={dgettext("ui", "状态")} class="w-24">
+          <:col :let={r} label={dgettext("ui", "状态")} class="w-20 md:w-24">
             <.badge :if={r.available} tone={:success} data-available>{dgettext("ui", "可用")}</.badge>
             <.tooltip
               :if={!r.available}
@@ -315,7 +306,7 @@ defmodule HelmsmanWeb.SettingsLive.GitHub do
               <.badge data-unavailable>{dgettext("ui", "不可用")}</.badge>
             </.tooltip>
           </:col>
-          <:col :let={r} label={dgettext("ui", "项目")} class="w-48">
+          <:col :let={r} label={dgettext("ui", "项目")} class="w-28 md:w-48">
             <span class="flex flex-wrap items-center gap-1" data-projects>
               <.link
                 :for={p <- Map.get(@bound, r.id, [])}

@@ -62,6 +62,23 @@ defmodule HelmsmanWeb.SettingsLive.GitHubTest do
       for secret <- @secrets, do: refute(html =~ secret)
     end
 
+    test "the card links to the installation's repository access on GitHub", ctx do
+      installation =
+        installation_fixture(ctx.ws, account_login: "acme-inc", account_type: "Organization")
+
+      {:ok, view, _html} = open(ctx, :admin)
+
+      assert has_element?(
+               view,
+               ~s(a#github-manage-access[href="https://github.com/organizations/acme-inc/settings/installations/#{installation.installation_id}"][target="_blank"][rel="noopener noreferrer"]),
+               "在 GitHub 上管理仓库访问"
+             )
+
+      {:ok, _} = GitHub.disconnect_installation(scope(ctx, :admin))
+      {:ok, view, _html} = open(ctx, :admin)
+      refute has_element?(view, "#github-manage-access")
+    end
+
     test "an admin of an unconnected workspace gets the connect link", ctx do
       {:ok, view, _html} = open(ctx, :admin)
 
@@ -340,25 +357,29 @@ defmodule HelmsmanWeb.SettingsLive.GitHubTest do
       assert ids == ["repository-#{old.id}", "repository-#{zed.id}"]
     end
 
+    test "archived repositories carry the 已归档 badge", ctx do
+      old = repo(ctx.installation, "old", %{archived: true})
+      web = repo(ctx.installation, "web")
+
+      {:ok, view, _html} = open(ctx, :viewer)
+
+      assert has_element?(view, "#{row(old)} [data-archived]", "已归档")
+      refute has_element?(view, "#{row(web)} [data-archived]")
+    end
+
     test "an installation without repositories shows the empty state", ctx do
       {:ok, view, _html} = open(ctx, :admin)
       assert has_element?(view, "#github-repositories-empty", "安装没有授权任何仓库")
     end
 
-    test "re-sync is for owners and admins once the domain offers it", ctx do
+    test "re-sync is for owners and admins", ctx do
       repo(ctx.installation, "web")
       {:ok, member_view, _html} = open(ctx, :member)
       refute has_element?(member_view, "#github-resync")
 
       {:ok, view, _html} = open(ctx, :admin)
 
-      # PLACEHOLDER(add-github-ui R6): `GitHub.request_sync/1` comes with #26; until then
-      # the button is not shown (design D15).
-      if function_exported?(GitHub, :request_sync, 1) do
-        assert view |> element("#github-resync") |> render_click() =~ "已开始同步仓库"
-      else
-        refute has_element?(view, "#github-resync")
-      end
+      assert view |> element("#github-resync") |> render_click() =~ "已开始同步仓库"
     end
 
     test "more than 10 repositories can be filtered by name", ctx do

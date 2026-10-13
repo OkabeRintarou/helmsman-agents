@@ -958,7 +958,7 @@ msgstr ""
 msgid "只读成员不能保存"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/project_live/index.ex
 #: lib/helmsman_web/live/settings_live/general.ex
@@ -1587,7 +1587,6 @@ msgstr ""
 msgid "更多"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
@@ -2110,6 +2109,7 @@ msgstr ""
 msgid "我的 Token"
 msgstr ""
 
+#: lib/helmsman_web/live/admin/github_live.ex
 #: lib/helmsman_web/roles.ex
 #, elixir-autogen, elixir-format
 msgid "所有者"
@@ -2386,17 +2386,18 @@ msgstr ""
 msgid "须为你名下未停用的 Agent"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "App ID"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "App 名称"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "GitHub App"
 msgstr ""
@@ -2407,6 +2408,7 @@ msgid "GitHub App 已创建。"
 msgstr ""
 
 #: lib/helmsman_web/controllers/github_controller.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "GitHub App 已经配置过了。"
 msgstr ""
@@ -2421,12 +2423,12 @@ msgstr ""
 msgid "GitHub 安装状态刚刚发生变化，请重新点「连接 GitHub」。"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "主页"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "允许安装到其他账号"
 msgstr ""
@@ -2436,12 +2438,7 @@ msgstr ""
 msgid "只有工作区的所有者或管理员可以连接 GitHub。"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
-#, elixir-autogen, elixir-format
-msgid "名称或组织无效。"
-msgstr ""
-
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "在 GitHub 上创建 App"
 msgstr ""
@@ -2461,11 +2458,6 @@ msgstr ""
 msgid "已连接 GitHub，正在同步仓库。"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
-#, elixir-autogen, elixir-format
-msgid "数据库（manifest 创建）"
-msgstr ""
-
 #: lib/helmsman_web/controllers/github_controller.ex
 #, elixir-autogen, elixir-format
 msgid "无法从 GitHub 取得 App 凭据，请重试。"
@@ -2481,21 +2473,16 @@ msgstr ""
 msgid "暂时无法连接 GitHub，请稍后重试。"
 msgstr ""
 
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #, elixir-autogen, elixir-format
 msgid "来源"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
-#: lib/helmsman_web/controllers/github_html.ex
+#: lib/helmsman_web/live/admin/github_live.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "环境变量"
-msgstr ""
-
-#: lib/helmsman_web/controllers/github_html.ex
-#, elixir-autogen, elixir-format
-msgid "组织（留空表示创建在个人账号下）"
 msgstr ""
 
 #: lib/helmsman_web/controllers/github_controller.ex
@@ -4689,6 +4676,7 @@ msgstr ""
 msgid "私有"
 msgstr ""
 
+#: lib/helmsman_web/live/admin/github_live.ex
 #: lib/helmsman_web/live/settings_live/github.ex
 #, elixir-autogen, elixir-format
 msgid "组织"
@@ -5602,4 +5590,59 @@ msgstr ""
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "已指派给 %{agent}，等前置任务完成后开始"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "Agent 的提交以 PR 交付到 GitHub，独立验收后自动合并；本实例的所有工作区共用这个 App。"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub 上创建（manifest）"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "slug"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "为本实例创建一个 GitHub App：Agent 的提交将以 PR 交付，验收后自动合并。创建后，各工作区的管理员在工作区设置里连接 GitHub。"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "只有实例管理员可以管理 GitHub App"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "名称或组织无效"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "实例管理"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "已配置"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "正在前往 GitHub…"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "由环境变量配置；修改请更新环境变量并重启服务"
+msgstr ""
+
+#: lib/helmsman_web/live/admin/github_live.ex
+#, elixir-autogen, elixir-format
+msgid "留空表示创建在你的个人账号下"
 msgstr ""

@@ -306,7 +306,24 @@ defmodule HelmsmanWeb.Layouts do
         label: dgettext("ui", "供应商账号"),
         icon: "lucide-key-round",
         navigate: "/users/settings/provider-accounts"
-      },
+      }
+    ]
+
+    admin_items =
+      if Map.get(user, :instance_admin) == true do
+        [
+          %{
+            id: "hm-instance-admin",
+            label: dgettext("ui", "实例管理"),
+            icon: "lucide-server-cog",
+            navigate: "/admin/github"
+          }
+        ]
+      else
+        []
+      end
+
+    rest = [
       %{type: :divider},
       theme_item("system", dgettext("ui", "跟随系统"), "lucide-monitor", theme_group),
       theme_item("light", dgettext("ui", "亮"), "lucide-sun", theme_group),
@@ -321,7 +338,7 @@ defmodule HelmsmanWeb.Layouts do
       }
     ]
 
-    assigns = assign(assigns, name: name, items: items)
+    assigns = assign(assigns, name: name, items: items ++ admin_items ++ rest)
 
     ~H"""
     <.dropdown
@@ -400,6 +417,64 @@ defmodule HelmsmanWeb.Layouts do
   slot :inner_block, required: true
 
   def personal(assigns) do
+    ~H"""
+    <.settings_frame
+      flash={@flash}
+      current_scope={@current_scope}
+      title={dgettext("ui", "个人设置")}
+      class={@class}
+    >
+      <:tab navigate="/users/settings" active={@active == :account}>
+        {dgettext("ui", "账号")}
+      </:tab>
+      <:tab navigate="/users/settings/provider-accounts" active={@active == :provider_accounts}>
+        {dgettext("ui", "供应商账号")}
+      </:tab>
+      {render_slot(@inner_block)}
+    </.settings_frame>
+    """
+  end
+
+  @doc """
+  The instance administration pages (add-github-ui D14): the same frame as
+  `personal/1`, titled 实例管理, with the single tab GitHub App
+  (`/admin/github`).
+  """
+  attr :flash, :map, required: true
+  attr :current_scope, :map, required: true
+  attr :active, :atom, required: true, values: [:github]
+  attr :class, :any, default: nil, doc: "classes of the content below the tabs"
+  slot :inner_block, required: true
+
+  def instance_admin(assigns) do
+    ~H"""
+    <.settings_frame
+      flash={@flash}
+      current_scope={@current_scope}
+      title={dgettext("ui", "实例管理")}
+      class={@class}
+    >
+      <:tab navigate="/admin/github" active={@active == :github}>
+        {dgettext("ui", "GitHub App")}
+      </:tab>
+      {render_slot(@inner_block)}
+    </.settings_frame>
+    """
+  end
+
+  attr :flash, :map, required: true
+  attr :current_scope, :map, required: true
+  attr :title, :string, required: true
+  attr :class, :any, default: nil
+
+  slot :tab, required: true do
+    attr :navigate, :string, required: true
+    attr :active, :boolean
+  end
+
+  slot :inner_block, required: true
+
+  defp settings_frame(assigns) do
     user = assigns.current_scope.user
 
     assigns =
@@ -429,16 +504,10 @@ defmodule HelmsmanWeb.Layouts do
           id="hm-main"
           class="w-full rounded-box border border-border bg-surface px-6 pt-5 pb-6"
         >
-          <h1 class="text-heading font-semibold text-fg">{dgettext("ui", "个人设置")}</h1>
-          <.tabs label={dgettext("ui", "个人设置")} class="mt-3 mb-6">
-            <:tab navigate="/users/settings" active={@active == :account}>
-              {dgettext("ui", "账号")}
-            </:tab>
-            <:tab
-              navigate="/users/settings/provider-accounts"
-              active={@active == :provider_accounts}
-            >
-              {dgettext("ui", "供应商账号")}
+          <h1 class="text-heading font-semibold text-fg">{@title}</h1>
+          <.tabs label={@title} class="mt-3 mb-6">
+            <:tab :for={tab <- @tab} navigate={tab.navigate} active={tab[:active]}>
+              {render_slot(tab)}
             </:tab>
           </.tabs>
           <div class={@class}>{render_slot(@inner_block)}</div>

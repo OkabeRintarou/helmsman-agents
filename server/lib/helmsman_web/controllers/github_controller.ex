@@ -2,10 +2,8 @@ defmodule HelmsmanWeb.GitHubController do
   @moduledoc """
   The GitHub flows that go through github.com (design decision 9):
 
-    * `GET /admin/github` - instance administrators: a minimal page that
-      starts the App manifest flow, or shows the configured App
-      (`Admin.GitHubLive` replaces it)
-    * `GET /admin/github/callback` - the manifest flow's return
+    * `GET /admin/github/callback` - the return of the App manifest flow
+      started on `/admin/github` (`HelmsmanWeb.Admin.GitHubLive`)
     * `GET /w/:slug/settings/github/connect` - workspace owners / admins:
       redirects to the App's installation page
     * `GET /github/setup` - the installation's return (with OAuth `code`)
@@ -25,50 +23,6 @@ defmodule HelmsmanWeb.GitHubController do
   alias HelmsmanWeb.GitHubState
 
   ## App manifest flow
-
-  def admin(conn, params) do
-    scope = conn.assigns.current_scope
-
-    case GitHub.app_overview(scope) do
-      {:error, :forbidden} ->
-        forbidden(conn)
-
-      {:ok, %{configured?: true} = overview} ->
-        render(conn, :admin, overview: overview, form: nil)
-
-      {:ok, %{configured?: false}} ->
-        render_manifest_form(conn, scope, params)
-    end
-  end
-
-  defp render_manifest_form(conn, scope, params) do
-    input = %{
-      name: params |> Map.get("name", "Helmsman") |> String.trim(),
-      owner_org: Map.get(params, "owner_org", ""),
-      public?: Map.get(params, "public") == "true"
-    }
-
-    state = GitHubState.sign_manifest(scope.user.id)
-
-    case GitHub.manifest(scope, Map.put(input, :base_url, url(~p"/"))) do
-      {:ok, %{action_url: action_url, manifest_json: manifest}} ->
-        form = %{
-          action_url: action_url <> "?" <> URI.encode_query(%{state: state}),
-          manifest: manifest,
-          input: input,
-          error: nil
-        }
-
-        render(conn, :admin, overview: nil, form: form)
-
-      {:error, :invalid_params} ->
-        form = %{action_url: nil, manifest: nil, input: input, error: :invalid_params}
-        render(conn, :admin, overview: nil, form: form)
-
-      {:error, _reason} ->
-        forbidden(conn)
-    end
-  end
 
   def manifest_callback(conn, params) do
     scope = conn.assigns.current_scope

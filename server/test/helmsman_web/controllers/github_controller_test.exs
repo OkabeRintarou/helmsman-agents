@@ -31,47 +31,6 @@ defmodule HelmsmanWeb.GitHubControllerTest do
 
   defp no_github_calls, do: stub_github(fn _conn -> flunk("GitHub must not be called") end)
 
-  describe "GET /admin/github" do
-    test "403 for users who are not instance administrators", %{conn: conn, user: user} do
-      set_instance_admin(user, false)
-      assert conn |> get(~p"/admin/github") |> response(403)
-    end
-
-    test "renders the manifest form for instance administrators", %{conn: conn, user: user} do
-      without_app_env()
-      make_instance_admin(user)
-
-      html = conn |> get(~p"/admin/github", %{"owner_org" => "acme"}) |> html_response(200)
-      doc = LazyHTML.from_document(html)
-
-      [action] = doc |> LazyHTML.query("#github-manifest-form") |> LazyHTML.attribute("action")
-      assert action =~ "https://github.com/organizations/acme/settings/apps/new?state="
-      %{"state" => state} = URI.decode_query(URI.parse(action).query)
-
-      assert {:ok, %{u: user_id}} =
-               Phoenix.Token.verify(Endpoint, "github-manifest", state, max_age: 600)
-
-      assert user_id == user.id
-
-      [manifest] = doc |> LazyHTML.query("#github-manifest") |> LazyHTML.attribute("value")
-
-      assert %{"request_oauth_on_install" => true, "hook_attributes" => %{"url" => hook}} =
-               Jason.decode!(manifest)
-
-      assert hook =~ "/webhooks/github"
-    end
-
-    test "shows the overview when configured, without secrets", %{conn: conn, user: user} do
-      make_instance_admin(user)
-      html = conn |> get(~p"/admin/github") |> html_response(200)
-
-      assert html =~ "github-app-overview"
-      refute html =~ "test-webhook-secret"
-      refute html =~ "test-client-secret"
-      refute html =~ "PRIVATE KEY"
-    end
-  end
-
   describe "GET /admin/github/callback" do
     defp stub_conversion do
       stub_github(fn conn ->

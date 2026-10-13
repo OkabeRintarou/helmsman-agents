@@ -101,13 +101,14 @@ defmodule HelmsmanWeb.Router do
       live "/users/settings/provider-accounts", UserLive.ProviderAccounts, :index
       live "/workspaces/new", WorkspaceLive.New, :new
       live "/device", DeviceLive, :show
+      live "/admin/github", Admin.GitHubLive, :show
     end
 
     post "/users/update-password", UserSessionController, :update_password
   end
 
-  ## GitHub (designs/15 §1): the App's manifest flow for instance
-  ## administrators and the installation flow for workspace admins. Plain
+  ## GitHub (designs/15 §1): the return of the App's manifest flow started on
+  ## `/admin/github` (Admin.GitHubLive) and the installation flow. Plain
   ## controller routes behind login: they only redirect to and from GitHub.
   ## `POST /webhooks/github` is served by HelmsmanWeb.GitHubWebhookPlug in
   ## the endpoint.
@@ -115,7 +116,6 @@ defmodule HelmsmanWeb.Router do
   scope "/", HelmsmanWeb do
     pipe_through [:browser, :require_authenticated_user]
 
-    get "/admin/github", GitHubController, :admin
     get "/admin/github/callback", GitHubController, :manifest_callback
     get "/w/:slug/settings/github/connect", GitHubController, :connect
     get "/github/setup", GitHubController, :setup
