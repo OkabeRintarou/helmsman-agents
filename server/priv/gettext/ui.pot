@@ -141,6 +141,7 @@ msgid "全零数据"
 msgstr ""
 
 #: lib/helmsman_web/components/core_components.ex
+#: lib/helmsman_web/components/layouts.ex
 #: lib/helmsman_web/components/overlay.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #, elixir-autogen, elixir-format
@@ -237,6 +238,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/project_live/index.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
@@ -349,6 +351,7 @@ msgstr ""
 
 #: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
@@ -521,6 +524,7 @@ msgstr ""
 #: lib/helmsman_web/agent_design_turn.ex
 #: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/data_settings_components.ex
 #, elixir-autogen, elixir-format
 msgid "排队中"
 msgstr ""
@@ -565,6 +569,7 @@ msgid "文本"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/data_settings_components.ex
 #, elixir-autogen, elixir-format
 msgid "新建"
 msgstr ""
@@ -696,6 +701,7 @@ msgstr ""
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/run_live/show.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/settings_live/github.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
@@ -771,6 +777,7 @@ msgstr ""
 msgid "筛选…"
 msgstr ""
 
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/nav.ex
 #, elixir-autogen, elixir-format
@@ -864,6 +871,7 @@ msgstr ""
 msgid "跳转到任务"
 msgstr ""
 
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #, elixir-autogen, elixir-format
 msgid "身份"
@@ -875,6 +883,7 @@ msgid "输入任务编号、页面或操作…"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/data_settings_components.ex
 #, elixir-autogen, elixir-format
 msgid "运行中"
 msgstr ""
@@ -935,6 +944,7 @@ msgid "页面"
 msgstr ""
 
 #: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
@@ -1170,6 +1180,7 @@ msgid "正在创建…"
 msgstr ""
 
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/user_live/settings.ex
 #, elixir-autogen, elixir-format
 msgid "正在提交…"
@@ -1562,6 +1573,7 @@ msgid "执行方"
 msgstr ""
 
 #: lib/helmsman_web/live/device_live.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/task_transitions.ex
 #, elixir-autogen, elixir-format
 msgid "拒绝"
@@ -1717,6 +1729,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/autopilot_live/index.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
@@ -2186,6 +2199,7 @@ msgstr ""
 msgid "待接受的邀请"
 msgstr ""
 
+#: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/squad_live/index.ex
 #: lib/helmsman_web/live/squad_live/show.ex
@@ -2572,6 +2586,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/admin/github_live.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #, elixir-autogen, elixir-format
 msgid "来源"
 msgstr ""
@@ -3232,6 +3247,7 @@ msgstr ""
 msgid "仍然指派（不会启动运行）"
 msgstr ""
 
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/command_palette/task_search.ex
 #: lib/helmsman_web/live/new_task_panel.ex
@@ -4132,6 +4148,7 @@ msgid "%{date}：成功 %{ok}，失败 %{failed}，已停止 %{cancelled}"
 msgstr ""
 
 #: lib/helmsman_web/autopilot_components.ex
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "成功"
@@ -4158,6 +4175,7 @@ msgid "近 %{n} 天每天的运行数"
 msgstr ""
 
 #: lib/helmsman_web/components/actor.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #, elixir-autogen, elixir-format
 msgid "所属：%{owner}"
 msgstr ""
@@ -4684,6 +4702,8 @@ msgstr ""
 msgid "可用"
 msgstr ""
 
+#: lib/helmsman_web/data_settings_components.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
@@ -6586,6 +6606,7 @@ msgstr ""
 msgid "关系"
 msgstr ""
 
+#: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "关联"
@@ -7920,6 +7941,7 @@ msgstr ""
 
 #: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/settings_live/data.ex
 #, elixir-autogen, elixir-format
 msgid "模式"
 msgstr ""
@@ -8372,4 +8394,652 @@ msgstr ""
 #: lib/helmsman_web/autopilot_form.ex
 #, elixir-autogen, elixir-format
 msgid "（已离开的成员）"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 分钟后过期"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 小时后过期"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "%{user} 申请认领"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "Helmsman 导出"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "bosun 导出"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "一次只能导入一个文件"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "上传失败"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "下载"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "不变"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "不支持的文件格式"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "事件"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "任务历史与本地分叉"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "你已申请"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "依赖关系成环"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "删除这一行"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "刷新"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "反馈"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "发起人"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "取消上传"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "只支持 .json 或 .gz 文件"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "可下载"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "可在身份改名中把它改为其他名字"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "各类数据的条数"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "合并…"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "合并只新增和快进，不删除本地数据"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "合并：按任务新增和快进，只增不删；本地较新的任务会跳过"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "外接 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "导入失败"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入完成"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "导入已整体回滚"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入数据"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入时建在执行导入者名下的外接 Agent，可以交还给真正的所有者"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入时没有对应成员的人会建为未认领的身份；认领后它的历史会合并到你的身份"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入期间工作区暂停写入，请在空闲时进行"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入的身份"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "导入的身份，尚未被成员认领"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "导入被中断"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入记录"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导入记录不存在"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导出"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导出与导入需要管理员权限"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导出工作区"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "导出文件只有你能下载，保留 24 小时；不含账号、成员、Token 与 Agent 配置"
+msgstr ""
+
+#: lib/helmsman_web/components/layouts.ex
+#, elixir-autogen, elixir-format
+msgid "工作区数据已被导入更新，当前页面可能已过期"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "工作区正忙（有其他导入或维护进行中），请稍后再试"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "工作区正忙，请稍后再试"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已开始导出"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已把 %{actor} 合并到 %{member}"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已把 %{agent} 转给 %{member}"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已拒绝申请"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已提交认领申请"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已撤回申请"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "已有"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已有进行中的导入"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已有进行中的导出"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "已离开的成员"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "快进"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "托管 Agent 不能转移"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "批准"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "批准并合并"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "把 %{actor} 合并到 %{member}？"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "把 %{actor} 的全部历史合并到所选成员的身份。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "把 %{agent} 转给："
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "指定给成员"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "指定给成员…"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "撤回申请"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/settings.ex
+#, elixir-autogen, elixir-format
+msgid "数据"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "数据目录不可用，请联系管理员"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "文件"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "文件未写入任何数据"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "文件校验失败"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "文件校验失败（%{count} 处）"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "文件超过 %{size}"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "文件超过导入上限"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "新名"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "新增"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "新建为未认领"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "新的所属成员"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "无法替换：以下任务有进行中的运行或未关闭的 PR"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "旧名"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "旧名重复"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "替换"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "替换会删除本工作区的全部任务及其事件、反馈、关联、运行与 PR 记录"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "替换并导入"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "替换需要输入工作区地址确认"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "替换（仅所有者）：先删除本工作区的全部任务再写入文件"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "有未关闭的 PR"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "有进行中的运行"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "本地较新"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "本地较新的任务（已跳过）"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "来源 / 模式"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "正在导入…"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "正在试运行…"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "此操作无法撤销。合并期间工作区暂停写入。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "没有外接 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "没有待认领的身份"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "添加一行"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "生成中"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "申请后由管理员批准；批准后它的全部历史（提出、执行、事件、反馈、提及）会合并到你的身份，无法撤销。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "申请认领"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "确认导入"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "移除文件"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "等 %{count} 个"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "等它们结束或关闭后再试"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "警告"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "认领 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "试运行"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "试运行结果"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "该 Agent 已不存在或不是外接 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "该身份或申请已被处理"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "请填写旧名和新名"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "身份改名"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "身份改名（可选）"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "身份映射"
+msgstr ""
+
+#: lib/helmsman_web/data_settings_components.ex
+#, elixir-autogen, elixir-format
+msgid "身份种类冲突"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "转移"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "转移后，原所属用户的 Token 不能再以它的身份写入"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "转移外接 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "转给…"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "输入工作区地址 %{slug} 以确认"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "返回修改"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "还没有导入记录"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "还没有导出"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "这是我"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "选择或拖入 .json / .json.gz 文件（不超过 %{size}）"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "项目、身份与筛选器保留。已有的 hm/<工作区>/<任务> 分支与守护进程上的工作目录不会被清理，需要人工处理。"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/data.ex
+#, elixir-autogen, elixir-format
+msgid "预览已失效，请重新试运行"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "（未认领）"
 msgstr ""

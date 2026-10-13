@@ -164,4 +164,53 @@ defmodule HelmsmanWeb.ShellProjectsTest do
       assert Process.alive?(list.pid)
     end
   end
+
+  describe "workspace imports (add-data-settings-ui D11)" do
+    defp imported(ws),
+      do: Events.broadcast(Events.topic(:workspace, ws.id), {:workspace_imported, 1})
+
+    test "a committed import refreshes projects and shows the notice", ctx do
+      {:ok, view, _html} = live(ctx.conn, "/w/#{ctx.slug}/p/BOS")
+      refute has_element?(view, "#hm-import-notice")
+
+      Helmsman.Repo.insert!(%Helmsman.Projects.Project{
+        workspace_id: ctx.ws.id,
+        key: "OPS",
+        name: "Ops"
+      })
+
+      imported(ctx.ws)
+
+      assert has_element?(view, "#hm-import-notice", "工作区数据已被导入更新")
+      assert has_element?(view, nav(view, "OPS"), "Ops")
+      assert has_element?(view, ~s(#hm-import-notice-reload[href="/w/#{ctx.slug}/p/BOS"]))
+
+      render_patch(view, "/w/#{ctx.slug}/p/BOS?status=new")
+      assert has_element?(view, "#hm-import-notice")
+
+      {:ok, _view, _html} =
+        view |> element("#hm-import-notice-reload") |> render_click() |> follow_redirect(ctx.conn)
+    end
+
+    test "the notice can be dismissed", ctx do
+      {:ok, view, _html} = live(ctx.conn, "/w/#{ctx.slug}/projects")
+      imported(ctx.ws)
+      assert has_element?(view, "#hm-import-notice")
+      view |> element("#hm-import-notice-dismiss") |> render_click()
+      refute has_element?(view, "#hm-import-notice")
+    end
+
+    test "only a committed import shows it (a dry run broadcasts nothing)", ctx do
+      {:ok, view, _html} = live(ctx.conn, "/w/#{ctx.slug}/projects")
+      Events.broadcast(Events.topic(:workspace, ctx.ws.id), {:projects_changed})
+      refute has_element?(view, "#hm-import-notice")
+    end
+
+    test "the data settings page reloads itself instead", ctx do
+      {:ok, view, _html} = live(ctx.conn, "/w/#{ctx.slug}/settings/data")
+      imported(ctx.ws)
+      _ = render(view)
+      refute has_element?(view, "#hm-import-notice")
+    end
+  end
 end

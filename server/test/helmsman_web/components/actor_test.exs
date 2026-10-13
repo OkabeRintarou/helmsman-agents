@@ -34,6 +34,42 @@ defmodule HelmsmanWeb.Components.ActorTest do
     refute owned =~ ~r/托管|外接/
   end
 
+  test "unclaimed humans are marked (add-data-settings-ui D11)" do
+    html =
+      render_component(&actor_chip/1, actor: %{name: "robert", kind: :human, unclaimed: true})
+
+    assert html =~ "robert（未认领）"
+    assert html =~ "导入的身份，尚未被成员认领"
+    assert html =~ ~r/<span class="sr-only">\s*导入的身份，尚未被成员认领\s*<\/span>/
+    assert html =~ ~s(tabindex="0")
+
+    by_state =
+      render_component(&actor_chip/1, actor: %{name: "robert", kind: "human", state: "unclaimed"})
+
+    assert by_state =~ "robert（未认领）"
+
+    refute render_component(&actor_chip/1,
+             actor: %{name: "alice", kind: :human, unclaimed: false}
+           ) =~
+             "未认领"
+
+    refute render_component(&actor_chip/1, actor: %{name: "x/dev", kind: :agent, unclaimed: true}) =~
+             "未认领"
+  end
+
+  test "task summaries keep the unclaimed flag (TaskComponents.actor_ref)" do
+    html =
+      render_component(&HelmsmanWeb.TaskComponents.actor_ref/1,
+        actor: %{name: "robert", kind: "human", unclaimed: true}
+      )
+
+    assert html =~ "robert（未认领）"
+
+    refute render_component(&HelmsmanWeb.TaskComponents.actor_ref/1,
+             actor: %{name: "alice", kind: "human"}
+           ) =~ "未认领"
+  end
+
   test "compact mode keeps the name for the tooltip and assistive technology" do
     html = render_component(&actor_chip/1, actor: @agent, compact: true)
     assert html =~ ~r/<span class="truncate sr-only">\s*keel\/dev\s*<\/span>/

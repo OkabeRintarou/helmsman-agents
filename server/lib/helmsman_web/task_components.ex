@@ -92,7 +92,12 @@ defmodule HelmsmanWeb.TaskComponents do
        when kind in ["agent", :agent, "squad", :squad],
        do: Map.merge(Map.take(actor, [:name, :kind, :state]), Map.get(agents, name, %{}))
 
-  defp chip_actor(actor, _agents), do: Map.take(actor, [:name, :kind, :state])
+  # Unclaimed humans (imported identities) keep the flag for the chip's 未认领 mark.
+  defp chip_actor(actor, _agents),
+    do:
+      actor
+      |> Map.take([:name, :kind, :state])
+      |> Map.put(:unclaimed, Map.get(actor, :unclaimed, false))
 
   @doc """
   One history entry (oldest first in the timeline): actor, action (创建了任务, 重新验收

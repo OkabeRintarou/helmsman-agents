@@ -13,7 +13,9 @@ defmodule HelmsmanWeb.Shell do
     to that topic for workspace pages): `{:workspace_updated, %{id, name, slug}}` renames
     the workspace in place (the title suffix lives in the root layout, so it is updated
     by the `hm:title-suffix` event in `app.js`) or follows a slug change; `{:projects_changed}` reloads
-    `shell.projects` and the navigation. Messages the shell does not consume go on to the
+    `shell.projects` and the navigation; `{:workspace_imported, id}` (a committed import,
+    add-data-settings-ui D11) reloads the projects too and sets `shell.import_notice`
+    (except on the data settings page), dismissed by `hm:dismiss-import-notice`. Messages the shell does not consume go on to the
     page when it exports `handle_info/2` (`HelmsmanWeb.LiveFallback` ignores the rest),
     otherwise they stop here.
   * Assigns `shell.projects` (the sidebar's 项目 group) and `shell.can_create_task?`.
@@ -64,7 +66,8 @@ defmodule HelmsmanWeb.Shell do
         can_create_task?: can_create_task?(scope),
         recent_tasks: recent_tasks(socket),
         path: nil,
-        uri: nil
+        uri: nil,
+        import_notice: false
       })
       |> attach_hook(:hm_shell_params, :handle_params, &handle_params/3)
       |> attach_hook(:hm_shell_info, :handle_info, &handle_info/2)
@@ -145,6 +148,21 @@ defmodule HelmsmanWeb.Shell do
     forward(message, assign(socket, :shell, shell))
   end
 
+  # A committed import broadcasts once instead of per row (add-data-settings-ui D11):
+  # refresh the sidebar's projects and offer a reload instead of remounting the page.
+  defp handle_info({:workspace_imported, _id} = message, socket) do
+    scope = socket.assigns[:current_scope]
+    shell = %{socket.assigns.shell | projects: projects(scope)}
+
+    shell = %{
+      shell
+      | nav: nav(scope, shell.path, shell),
+        import_notice: socket.view != HelmsmanWeb.SettingsLive.Data
+    }
+
+    forward(message, assign(socket, :shell, shell))
+  end
+
   defp handle_info(message, socket), do: forward(message, socket)
 
   # Pages without handle_info/2 would log "undefined handle_info" for every broadcast.
@@ -176,6 +194,9 @@ defmodule HelmsmanWeb.Shell do
       {:halt, socket}
     end
   end
+
+  defp handle_event("hm:dismiss-import-notice", _params, socket),
+    do: {:halt, assign(socket, :shell, %{socket.assigns.shell | import_notice: false})}
 
   defp handle_event(_event, _params, socket), do: {:cont, socket}
 

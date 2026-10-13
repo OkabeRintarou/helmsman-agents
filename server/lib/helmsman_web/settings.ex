@@ -1,7 +1,7 @@
 defmodule HelmsmanWeb.Settings do
   @moduledoc """
-  Registry of the workspace settings tabs (add-workspace-settings-ui D5). Later changes
-  (数据 …) append theirs to `tabs/1`.
+  Registry of the workspace settings tabs (add-workspace-settings-ui D5). Later changes append
+  theirs to `tabs/1` (数据: add-data-settings-ui).
 
   Each tab is `%{id, label, palette_label, path}`; `palette_label` is what the command
   palette's 页面 group lists.
@@ -36,6 +36,12 @@ defmodule HelmsmanWeb.Settings do
         label: "GitHub",
         palette_label: "GitHub",
         path: base <> "/github"
+      },
+      %{
+        id: :data,
+        label: dgettext("ui", "数据"),
+        palette_label: dgettext("ui", "数据"),
+        path: base <> "/data"
       }
     ]
   end

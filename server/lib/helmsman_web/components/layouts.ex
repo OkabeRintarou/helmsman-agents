@@ -135,6 +135,7 @@ defmodule HelmsmanWeb.Layouts do
       <div class="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
         <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-box lg:border lg:border-border">
           {render_slot(@header)}
+          <.import_notice :if={@shell[:import_notice]} uri={@shell[:uri]} />
           <main id="hm-main" tabindex="-1" class="min-h-0 flex-1 overflow-y-auto focus:outline-none">
             {render_slot(@inner_block)}
           </main>
@@ -516,6 +517,37 @@ defmodule HelmsmanWeb.Layouts do
     </div>
     <div class="fixed right-4 bottom-4 z-[60]">
       <.flash_group flash={@flash} />
+    </div>
+    """
+  end
+
+  # Shown after a committed import of the workspace (add-data-settings-ui D11).
+  attr :uri, :string, default: nil
+
+  defp import_notice(assigns) do
+    ~H"""
+    <div
+      id="hm-import-notice"
+      role="status"
+      class="flex flex-none items-center gap-3 border-b border-border tint-info px-4 py-2 text-body text-info-fg"
+    >
+      <.icon name="lucide-database-backup" class="size-4 shrink-0" />
+      <span class="min-w-0 flex-1">{dgettext("ui", "工作区数据已被导入更新，当前页面可能已过期")}</span>
+      <.link
+        :if={@uri}
+        id="hm-import-notice-reload"
+        navigate={@uri}
+        class="rounded-field font-medium underline-offset-2 hover:underline"
+      >
+        {dgettext("ui", "刷新")}
+      </.link>
+      <.icon_button
+        id="hm-import-notice-dismiss"
+        icon="lucide-x"
+        size="sm"
+        label={dgettext("ui", "关闭")}
+        phx-click="hm:dismiss-import-notice"
+      />
     </div>
     """
   end

@@ -49,6 +49,8 @@ defmodule HelmsmanWeb.Components.Actor do
   * `disabled_reason` renders the chip at 60% opacity and exposes the reason
     (tooltip, and as visually hidden text for assistive technology).
   * Disabled / archived actors get a "（已停用）" / "（已归档）" suffix.
+  * Unclaimed humans (`unclaimed: true`, created by an import) get a "（未认领）"
+    suffix and a tooltip saying so (add-data-settings-ui D11).
   """
   attr :id, :string, default: nil
   attr :actor, :map, required: true
@@ -60,8 +62,17 @@ defmodule HelmsmanWeb.Components.Actor do
   def actor_chip(assigns) do
     actor = assigns.actor
     kind = actor |> Map.get(:kind, :human) |> to_kind()
-    name = Map.get(actor, :name, "") <> state_suffix(Map.get(actor, :state))
-    info = agent_info(kind, actor)
+    unclaimed? = kind == :human and unclaimed?(actor)
+
+    name =
+      Map.get(actor, :name, "") <>
+        if(unclaimed?, do: dgettext("ui", "（未认领）"), else: state_suffix(Map.get(actor, :state)))
+
+    info =
+      if unclaimed?,
+        do: dgettext("ui", "导入的身份，尚未被成员认领"),
+        else: agent_info(kind, actor)
+
     parts = [assigns.compact && name, info, assigns.disabled_reason]
     tip = parts |> Enum.filter(&is_binary/1) |> Enum.join(" · ")
 
@@ -115,6 +126,9 @@ defmodule HelmsmanWeb.Components.Actor do
   defp state_suffix(state) when state in [:disabled, "disabled"], do: dgettext("ui", "（已停用）")
   defp state_suffix(state) when state in [:archived, "archived"], do: dgettext("ui", "（已归档）")
   defp state_suffix(_), do: ""
+
+  defp unclaimed?(actor),
+    do: Map.get(actor, :unclaimed) == true or Map.get(actor, :state) in [:unclaimed, "unclaimed"]
 
   defp agent_info(:agent, actor) do
     mode =

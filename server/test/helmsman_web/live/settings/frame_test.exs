@@ -37,7 +37,8 @@ defmodule HelmsmanWeb.SettingsLive.FrameTest do
           {"常规", ""},
           {"成员", "/members"},
           {"API Token", "/tokens"},
-          {"GitHub", "/github"}
+          {"GitHub", "/github"},
+          {"数据", "/data"}
         ] do
       assert has_element?(
                view,
