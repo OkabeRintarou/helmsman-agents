@@ -9,6 +9,7 @@ defmodule HelmsmanDaemon do
     Janitor,
     LocalMergeCheck,
     Paths,
+    RepoRequests,
     Runs,
     StateStore,
     StatusFile
@@ -31,6 +32,8 @@ defmodule HelmsmanDaemon do
       {Runs, opts},
       {Cleanup, opts},
       {LocalMergeCheck, opts},
+      {Task.Supervisor, name: HelmsmanDaemon.RepoTaskSupervisor},
+      {RepoRequests, opts},
       {Connection, opts},
       {Janitor, opts}
     ]

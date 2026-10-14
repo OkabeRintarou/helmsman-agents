@@ -15,9 +15,9 @@ defmodule HelmsmanProtocol.RunSpecSnapshotTest do
     claim
   end
 
-  test "the snapshot version is the current version" do
+  test "the snapshot version is supported by the current version" do
     assert @v == 6
-    assert HelmsmanProtocol.version() == @v
+    assert HelmsmanProtocol.version() >= @v
   end
 
   describe "read-only checkout roundtrip" do

@@ -90,7 +90,7 @@ defmodule Helmsman.E2E.AutopilotSnapshotTest do
         end
       end)
 
-    assert Repo.get!(Helmsman.Daemons.Daemon, ctx.daemon.id).protocol_version ==
+    assert Repo.get!(Helmsman.Daemons.Daemon, ctx.daemon.id).protocol_version >=
              HelmsmanProtocol.snapshot_version()
 
     local = register_app(ctx, machine, port)

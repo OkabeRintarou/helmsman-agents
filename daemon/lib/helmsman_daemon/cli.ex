@@ -31,7 +31,10 @@ defmodule HelmsmanDaemon.CLI do
     "helmsman daemon logs [-f] [-n N]",
     "helmsman repos add PATH --name NAME --workspace SLUG...",
     "helmsman repos remove NAME",
-    "helmsman repos list"
+    "helmsman repos list",
+    "helmsman repos roots",
+    "helmsman repos roots add DIR",
+    "helmsman repos roots remove DIR"
   ]
 
   def main(args), do: System.stop(run(args))
@@ -180,6 +183,43 @@ defmodule HelmsmanDaemon.CLI do
   defp dispatch(["repos", "list"], [], opts) do
     Paths.ensure!()
     print_repos(opts)
+  end
+
+  defp dispatch(["repos", "roots"], [], _opts) do
+    Paths.ensure!()
+    Enum.each(LocalRepos.Roots.lines(), &IO.puts/1)
+    0
+  end
+
+  defp dispatch(["repos", "roots", "add", dir], [], opts) do
+    Paths.ensure!()
+
+    case LocalRepos.Roots.add(dir, opts) do
+      :ok ->
+        IO.puts(
+          "You (the machine's owner) can now register git repositories under #{dir} from the Helmsman web UI. Remove it with: helmsman repos roots remove #{dir}"
+        )
+
+        0
+
+      {:error, message} ->
+        IO.puts(message)
+        1
+    end
+  end
+
+  defp dispatch(["repos", "roots", "remove", dir], [], opts) do
+    Paths.ensure!()
+
+    case LocalRepos.Roots.remove(dir, opts) do
+      :ok ->
+        IO.puts("Removed #{dir} from the allowed roots")
+        0
+
+      {:error, message} ->
+        IO.puts(message)
+        1
+    end
   end
 
   defp dispatch(_, _, _), do: usage()

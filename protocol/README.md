@@ -6,12 +6,12 @@
 
 连接 `wss://<server>/daemon/socket/websocket`，令牌通过 `x-helmsman-token` 请求头传递，不能放在 URL 中。
 每个守护进程只加入 `daemon:<daemon_id>`，路径、请求头及 topic 由 `HelmsmanProtocol` 提供。
-`join.protocol` 声明守护进程版本；当前版本为 6，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。只读检出（`RunSpec.repo.mode`）从 `HelmsmanProtocol.snapshot_version/0`（6）起支持。Phoenix 的 `vsn` 是序列化版本。
+`join.protocol` 声明守护进程版本；当前版本为 7，最低兼容版本为 1；供应商账号从 `HelmsmanProtocol.provider_account_version/0`（2）起支持，本地仓库（`join` / `sync` 的 `local_repositories`、`RunSpec.repo.kind`、`repo_status`）从 `HelmsmanProtocol.local_repositories_version/0`（3）起支持。清理检查从 `HelmsmanProtocol.cleanup_version/0`（4）起支持。只读检出（`RunSpec.repo.mode`）从 `HelmsmanProtocol.snapshot_version/0`（6）起支持。本地仓库网页登记（`repo_browse`、`repo_register`、`repo_remove` 及其结果，`join` / `sync` 的 `repo_registration`）从 `HelmsmanProtocol.repo_registration_version/0`（7）起支持。Phoenix 的 `vsn` 是序列化版本。
 
 所有枚举严格校验：未知消息、事件、provider、状态、失败原因或错误码均被拒绝。
 新增枚举值或消息、删除或改变字段的类型和语义必须升版本；新增可选字段可不升版本，接收方忽略未知字段。
 服务端记录 join 的守护进程版本，只向它发送该版本支持的消息、字段与枚举值。
-`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–6；目标版本中不存在的消息（如低于 3 的 `repo_status`、低于 4 的 `cleanup_check`）同样返回该错误。
+`Messages.encode(message, target_version)` 对不兼容目标返回 `{:error, {:not_in_version, target_version}}`；当前支持目标 1–7；目标版本中不存在的消息（如低于 3 的 `repo_status`、低于 4 的 `cleanup_check`、低于 7 的五条网页登记消息）同样返回该错误。
 新守护进程连接旧服务端被 join 拒绝后停止重连。
 
 ## 使用
@@ -40,8 +40,8 @@ Report 模块在 `HelmsmanProtocol.Report`，Reply 在 `HelmsmanProtocol.Reply`�
 
 | 名称 | 方向 | 负载模块与字段 | 成功回复模块与字段 |
 |---|---|---|---|
-| join | daemon → server | Join: protocol, machine, clis, max_concurrency, active_runs, local_repositories（v3，可空） | Join: daemon_id, runtimes, terminate_run_ids, local_repositories（v3，可空） |
-| sync | daemon → server | Sync: machine, clis, max_concurrency, local_repositories（v3，可空） | Join: 同 join |
+| join | daemon → server | Join: protocol, machine, clis, max_concurrency, active_runs, local_repositories（v3，可空）, repo_registration（v7，可空布尔） | Join: daemon_id, runtimes, terminate_run_ids, local_repositories（v3，可空） |
+| sync | daemon → server | Sync: machine, clis, max_concurrency, local_repositories（v3，可空）, repo_registration（v7，可空布尔） | Join: 同 join |
 | claim | daemon → server | Claim: 空 | Claim: runs（RunSpec 列表） |
 | starting | daemon → server | Starting: run_id | Starting: action（proceed / abort）, reason（abort 必须有） |
 | started | daemon → server | Started: run_id, session_id（保留兼容，已不使用，恒为空） | Empty: 空 |
@@ -54,11 +54,16 @@ Report 模块在 `HelmsmanProtocol.Report`，Reply 在 `HelmsmanProtocol.Reply`�
 | cleanup_check | daemon → server | CleanupCheck（v4）: items（1–500 项 workspace_id, ident） | CleanupCheck: results（对应每项 workspace_id, ident, deletable, base_branch（可空）, pushed_heads） |
 | finished | daemon → server | Finished: run_id, status, failure_reason, error, session_id, summary, usage | Empty: 空 |
 | rotate_token | daemon → server | RotateToken: 空 | RotateToken: token |
+| repo_browse_result | daemon → server | RepoBrowseResult（v7）: request_id, error（可空）, message（可空）, roots, repositories（RepoCandidate: root, path, name, registered_as（可空））, truncated | Empty: 空 |
+| repo_change_result | daemon → server | RepoChangeResult（v7）: request_id, action（register / remove）, name, error（可空）, message（可空） | Empty: 空 |
 | runs_available | server → daemon | RunsAvailable: 空 | 无 |
 | cancel | server → daemon | Cancel: run_id | 无 |
 | steer | server → daemon | Steer: run_id, feedback_id, text | 无 |
 | config_changed | server → daemon | ConfigChanged: 空 | 无 |
 | revoked | server → daemon | Revoked: 空 | 无 |
+| repo_browse | server → daemon | RepoBrowse（v7）: request_id | 无 |
+| repo_register | server → daemon | RepoRegister（v7）: request_id, root, path, name, workspaces | 无 |
+| repo_remove | server → daemon | RepoRemove（v7）: request_id, name | 无 |
 
 machine = machine_id, name, os, arch, daemon_version。
 clis 每项 = provider（claude / codex / copilot / cursor）, version, models, efforts, available, unavailable_reason。
@@ -71,6 +76,12 @@ Finished 中只有 failed 可且必须带 failure_reason；summary ≤ 4096 字�
 事件连续落库与重复终态接受由服务端处理；协议只校验单批序号。
 
 `cleanup_check` 的请求与成功 / 错误回复按低于 4 的目标版本编码均拒绝；pushed_heads 为 0–200 个 40 位小写十六进制 SHA。
+
+网页登记（v7）的字段规则在 `HelmsmanProtocol.RepoField`：request_id 为 22–64 个 `[A-Za-z0-9_-]`；root 1–1024 字节、不含 NUL；
+path 为 `.` 或 1–16 段（以 `/` 分隔，段非空且不是 `.` / `..`，不含 NUL 与控制字符，总长 ≤ 1024 字节）；name、registered_as 符合 `^[a-z0-9][a-z0-9_-]{0,63}$`；
+workspaces 为 1–50 个不重复正整数；roots 最多 16 项；repositories 最多 200 项且每项 root 必须在 roots 中；message 可空、≤ 1024 字节；
+error 可空，取值为 `RepoRequestError.all/0`（disabled、busy、root_not_allowed、invalid_path、outside_root、missing、not_a_repository、inside_daemon_home、invalid_name、name_taken、already_registered、invalid_workspaces、not_configured、config_error），非空时 repositories 必须为空。
+按低于 7 的目标版本编码这五条消息（及两条结果的回复）返回 `{:error, {:not_in_version, v}}`；join / sync 的 repo_registration 为空时省略，非空时同样返回该错误。服务端对低于 7 的连接发来的结果回复 invalid_payload。
 
 ## RunSpec
 

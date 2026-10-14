@@ -16,14 +16,19 @@ defmodule HelmsmanProtocol.Messages do
     {"repo_status", Report.RepoStatus},
     {"cleanup_check", Report.CleanupCheck},
     {"finished", Report.Finished},
-    {"rotate_token", Report.RotateToken}
+    {"rotate_token", Report.RotateToken},
+    {"repo_browse_result", Report.RepoBrowseResult},
+    {"repo_change_result", Report.RepoChangeResult}
   ]
   @pushes [
     {"runs_available", Push.RunsAvailable},
     {"cancel", Push.Cancel},
     {"steer", Push.Steer},
     {"config_changed", Push.ConfigChanged},
-    {"revoked", Push.Revoked}
+    {"revoked", Push.Revoked},
+    {"repo_browse", Push.RepoBrowse},
+    {"repo_register", Push.RepoRegister},
+    {"repo_remove", Push.RepoRemove}
   ]
   @replies %{
     "join" => Reply.Join,
@@ -39,11 +44,18 @@ defmodule HelmsmanProtocol.Messages do
     "repo_status" => Reply.Empty,
     "cleanup_check" => Reply.CleanupCheck,
     "finished" => Reply.Empty,
-    "rotate_token" => Reply.RotateToken
+    "rotate_token" => Reply.RotateToken,
+    "repo_browse_result" => Reply.Empty,
+    "repo_change_result" => Reply.Empty
   }
   @since %{
     "repo_status" => HelmsmanProtocol.local_repositories_version(),
-    "cleanup_check" => HelmsmanProtocol.cleanup_version()
+    "cleanup_check" => HelmsmanProtocol.cleanup_version(),
+    "repo_browse" => HelmsmanProtocol.repo_registration_version(),
+    "repo_register" => HelmsmanProtocol.repo_registration_version(),
+    "repo_remove" => HelmsmanProtocol.repo_registration_version(),
+    "repo_browse_result" => HelmsmanProtocol.repo_registration_version(),
+    "repo_change_result" => HelmsmanProtocol.repo_registration_version()
   }
   @messages Map.new(@reports ++ @pushes)
   @names Map.new(@reports ++ @pushes, fn {name, module} -> {module, name} end)
@@ -135,15 +147,31 @@ defmodule HelmsmanProtocol.Messages do
        when module in [Report.Join, Report.Sync] do
     wire = module.to_wire(report)
 
-    cond do
-      local_repositories?(target_version) -> {:ok, wire}
-      is_nil(report.local_repositories) -> {:ok, Map.delete(wire, "local_repositories")}
-      true -> {:error, {:not_in_version, target_version}}
+    with {:ok, wire} <-
+           optional(
+             wire,
+             "local_repositories",
+             report.local_repositories,
+             local_repositories?(target_version),
+             target_version
+           ) do
+      optional(
+        wire,
+        "repo_registration",
+        report.repo_registration,
+        target_version >= HelmsmanProtocol.repo_registration_version(),
+        target_version
+      )
     end
   end
 
   defp encode_versioned(%{__struct__: module} = value, _target_version),
     do: {:ok, module.to_wire(value)}
+
+  # A field newer than the target version is omitted when nil and refused otherwise.
+  defp optional(wire, _key, _value, true, _version), do: {:ok, wire}
+  defp optional(wire, key, nil, false, _version), do: {:ok, Map.delete(wire, key)}
+  defp optional(_wire, _key, _value, false, version), do: {:error, {:not_in_version, version}}
 
   defp local_repositories?(version), do: version >= HelmsmanProtocol.local_repositories_version()
 

@@ -31,7 +31,8 @@ mise exec -- mix helmsman daemon start --foreground
 | `helmsman daemon status [--json]` | 服务状态、连接、在跑的运行与磁盘占用；退出码 0 已连接、1 未连接、3 未运行 |
 | `helmsman daemon logs [-f] [-n N]` | 最近 N 行（缺省 100）服务日志：Linux journald、macOS `logs/daemon.log` |
 | `helmsman repos add PATH --name NAME --workspace SLUG...` | 登记本地仓库 |
-| `helmsman repos remove NAME` / `helmsman repos list` | 移除 / 列出本地仓库 |
+| `helmsman repos remove NAME` / `helmsman repos list` | 移除 / 列出本地仓库；网页登记的项在 `list` 中带 `(added from the web)` |
+| `helmsman repos roots` / `helmsman repos roots add DIR` / `helmsman repos roots remove DIR` | 列出 / 增加 / 删除允许网页登记的根目录（`[repos] allowed_roots`，最多 16 项，缺省为空即关闭） |
 
 服务定义运行 `daemon start --foreground --service`：`--service` 读取 `daemon.env`，
 macOS 上把日志写到轮转的 `logs/daemon.log`。服务相关的系统命令（`systemctl`、
@@ -46,7 +47,8 @@ macOS 上把日志写到轮转的 `logs/daemon.log`。服务相关的系统命�
 `HELMSMAN_HOME` 覆盖默认的 `~/.helmsman/`：
 
 ```text
-config.toml                 # server_url、max_concurrency (1–32，默认 4)、log_level、[credentials] store
+config.toml                 # server_url、max_concurrency (1–32，默认 4)、log_level、[credentials] store、[repos] allowed_roots、[[local_repositories]]
+config.lock                 # 0600，config.toml 读改写的锁（CLI 与网页请求）；保持文件，内容为空
 credentials                 # JSON，0600，原子替换，禁止放进代码仓库
 credentials.lock            # 0600，跨 CLI 进程的凭据操作锁；保持文件，不含令牌
 status.json                 # 运行状态（0600，不含令牌）；daemon status 读它，正常退出时删除
@@ -62,6 +64,13 @@ scratch/<workspace>/<task>/  # 无仓库任务复用的工作目录
 ```
 
 目录为 0700，凭据权限过宽时修正为 0600。配置缺失时采用默认值。
+
+网页登记本地仓库（协议 7）：`[repos] allowed_roots` 列出允许的根目录（`~`、`~/…` 或绝对路径；
+不能是 `/`，也不能在守护进程主目录内；格式错误时视为没有根目录）。只有根目录有效时，守护进程才
+接受网页的列出、登记与移除请求，并在 `join` / `sync` 里只上报 `repo_registration: true`，从不上报
+根目录本身。列出时不跟随符号链接、不进入隐藏目录与仓库，最多 4 层、200 个、10 000 个目录、5 秒。
+登记时在 `config.lock` 内重新读取配置与根目录，逐级 `lstat` 校验路径，要求 git 目录也在根内，
+写入真实路径与 `added_from = "web"`、`added_at`、`request_id`。建议只把专门放代码的目录设为根。
 `[credentials] store` 为 `"file"`（Linux 唯一允许、缺省）或 `"keychain"`（macOS 缺省）。
 文件存放时凭据格式是 `{"server_url":"https://…","daemon_id":1,"token":"hmd_…","issued_at":"2026-10-12T00:00:00Z","workspaces":[{"id":1,"slug":"bos","name":"Bosun"}]}`。
 钥匙串存放时文件不含 `token`，改为 `"token_store":"keychain"`、`token_ref`（已提交的代次）、

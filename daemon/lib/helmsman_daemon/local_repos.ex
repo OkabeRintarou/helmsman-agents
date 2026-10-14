@@ -6,15 +6,29 @@ defmodule HelmsmanDaemon.LocalRepos do
   Every entry is validated independently: an invalid entry is still reported,
   marked unavailable with a reason, and never blocks the other entries.
   """
-  alias HelmsmanDaemon.{AtomicFile, Git, Paths}
+  alias HelmsmanDaemon.{AtomicFile, ConfigLock, Git, Paths}
+  alias HelmsmanDaemon.LocalRepos.{Browse, ConfigFile, Roots, Web}
   alias HelmsmanProtocol.LocalRepository
 
   @name ~r/\A[a-z0-9][a-z0-9_-]{0,63}\z/
-  @header ~r/\A\s*\[\[\s*local_repositories\s*\]\]\s*(#.*)?\z/
-  @table ~r/\A\s*\[/
   @max_reported 256
 
-  def config_path, do: Path.join(Paths.home(), "config.toml")
+  def config_path, do: ConfigFile.path()
+
+  @doc "Valid roots that allow web registration (`[%{label, real}]`), read again on every call."
+  defdelegate roots, to: Roots, as: :valid
+
+  @doc "Real path of an absolute path (symbolic links resolved, at most 40)."
+  defdelegate real_path(path), to: Roots
+
+  @doc "Repositories below the allowed roots, for `repo_browse`."
+  defdelegate browse(opts \\ []), to: Browse, as: :run
+
+  @doc "Executes a `repo_register` push; see `HelmsmanDaemon.LocalRepos.Web`."
+  defdelegate register_from_web(push, opts \\ []), to: Web, as: :register
+
+  @doc "Executes a `repo_remove` push; see `HelmsmanDaemon.LocalRepos.Web`."
+  defdelegate remove_from_web(push, opts \\ []), to: Web, as: :remove
   def served_path, do: Path.join(Paths.state(), "workspaces.json")
 
   def cache_path(name),
@@ -33,25 +47,16 @@ defmodule HelmsmanDaemon.LocalRepos do
   end
 
   defp entry(%{} = raw),
-    do: %{name: raw["name"], path: raw["path"], workspaces: raw["workspaces"]}
+    do: %{
+      name: raw["name"],
+      path: raw["path"],
+      workspaces: raw["workspaces"],
+      added_from: raw["added_from"]
+    }
 
-  defp entry(_), do: %{name: nil, path: nil, workspaces: nil}
+  defp entry(_), do: %{name: nil, path: nil, workspaces: nil, added_from: nil}
 
-  defp read_config do
-    case File.read(config_path()) do
-      {:ok, text} ->
-        case Toml.decode(text) do
-          {:ok, decoded} -> {:ok, text, decoded}
-          _ -> {:error, "config.toml is not valid TOML"}
-        end
-
-      {:error, :enoent} ->
-        {:ok, "", %{}}
-
-      {:error, reason} ->
-        {:error, "could not read config.toml: #{:file.format_error(reason)}"}
-    end
-  end
+  defp read_config, do: ConfigFile.read()
 
   @doc "Workspaces this machine currently serves (`[%{id, slug}]`), or nil before the first join."
   def served do
@@ -153,6 +158,7 @@ defmodule HelmsmanDaemon.LocalRepos do
 
     base = %{
       name: entry.name,
+      added_from: entry[:added_from],
       path: if(is_binary(entry.path), do: Path.expand(entry.path), else: entry.path),
       configured: configured,
       workspaces: workspaces,
@@ -190,26 +196,30 @@ defmodule HelmsmanDaemon.LocalRepos do
   end
 
   defp layout_problem(entry, opts) do
-    cond do
-      not is_list(entry.workspaces) or
-          not Enum.all?(entry.workspaces, &(is_integer(&1) and &1 > 0)) ->
-        "workspaces must be a list of workspace IDs"
+    if is_list(entry.workspaces) and Enum.all?(entry.workspaces, &(is_integer(&1) and &1 > 0)),
+      do: path_problem(entry.path, opts),
+      else: "workspaces must be a list of workspace IDs"
+  end
 
-      not is_binary(entry.path) or Path.type(entry.path) != :absolute ->
+  @doc "The path checks of one entry: nil when `path` is a usable repository root."
+  def path_problem(path, opts \\ []) do
+    cond do
+      not is_binary(path) or Path.type(path) != :absolute ->
         "path must be absolute"
 
-      inside_home?(entry.path) ->
+      inside_home?(path) ->
         "path is inside the daemon home directory"
 
-      not File.dir?(entry.path) ->
+      not File.dir?(path) ->
         "path does not exist or is not a directory"
 
       true ->
-        repository_problem(entry.path, opts)
+        repository_problem(path, opts)
     end
   end
 
-  defp inside_home?(path) do
+  @doc false
+  def inside_home?(path) do
     home = Paths.home()
     expanded = Path.expand(path)
     expanded == home or String.starts_with?(expanded, home <> "/")
@@ -246,7 +256,8 @@ defmodule HelmsmanDaemon.LocalRepos do
     end
   end
 
-  defp git(args, cwd, opts) do
+  @doc false
+  def git(args, cwd, opts) do
     context = Git.context(Paths.home(), nil, Keyword.take(opts, [:base_env, :executable]))
 
     case Git.run(args, cwd, context) do
@@ -259,24 +270,39 @@ defmodule HelmsmanDaemon.LocalRepos do
 
   @doc "Adds an entry; slugs are mapped to IDs through `state/workspaces.json`."
   def add(path, name, slugs, opts \\ []) do
-    with :ok <- check_name(name),
-         {:ok, ids} <- slugs_to_ids(slugs),
-         {:ok, text, decoded} <- read_config(),
-         {:ok, current} <- raw_list(decoded),
-         :ok <- unique(current, name) do
-      entry = %{"name" => name, "path" => Path.expand(path), "workspaces" => ids}
-      rewrite(text, decoded, current ++ [entry], opts)
-    end
+    locked(opts, fn ->
+      with :ok <- check_name(name),
+           {:ok, ids} <- slugs_to_ids(slugs),
+           {:ok, text, decoded} <- read_config(),
+           {:ok, current} <- raw_list(decoded),
+           :ok <- unique(current, name) do
+        entry = %{"name" => name, "path" => Path.expand(path), "workspaces" => ids}
+        ConfigFile.write_local_repositories(text, decoded, current ++ [entry], opts)
+      end
+    end)
   end
 
   @doc "Removes the entry with this name."
   def remove(name, opts \\ []) do
-    with {:ok, text, decoded} <- read_config(),
-         {:ok, current} <- raw_list(decoded) do
-      case Enum.split_with(current, &(&1["name"] == name)) do
+    locked(opts, fn ->
+      with {:ok, text, decoded} <- read_config(),
+           {:ok, current} <- raw_list(decoded),
+           {[_ | _], rest} <- Enum.split_with(current, &(&1["name"] == name)) do
+        ConfigFile.write_local_repositories(text, decoded, rest, opts)
+      else
         {[], _} -> {:error, "no local repository named #{name}"}
-        {_, rest} -> rewrite(text, decoded, rest, opts)
+        error -> error
       end
+    end)
+  end
+
+  defp locked(opts, fun) do
+    timeout = Keyword.get(opts, :config_lock_timeout_ms, ConfigLock.timeout_ms())
+
+    case ConfigLock.with_lock(fun, timeout_ms: timeout) do
+      {:ok, result} -> result
+      {:error, :timeout} -> {:error, ConfigLock.locked_message()}
+      {:error, :unavailable} -> {:error, "could not lock config.toml"}
     end
   end
 
@@ -308,94 +334,12 @@ defmodule HelmsmanDaemon.LocalRepos do
     end
   end
 
-  defp raw_list(decoded) do
-    case Map.get(decoded, "local_repositories", []) do
-      list when is_list(list) -> {:ok, list}
-      _ -> {:error, "local_repositories in config.toml must be an array of tables"}
-    end
-  end
+  defp raw_list(decoded), do: ConfigFile.local_repositories(decoded)
 
   defp unique(current, name) do
     if Enum.any?(current, &(&1["name"] == name)),
       do: {:error, "a local repository named #{name} already exists"},
       else: :ok
-  end
-
-  defp rewrite(text, decoded, list, opts) do
-    write(text, decoded, list, opts)
-  catch
-    :unsupported_value ->
-      {:error, "config.toml has a layout this command cannot edit safely; edit it manually"}
-  end
-
-  defp write(text, decoded, list, opts) do
-    kept =
-      text
-      |> String.split("\n")
-      |> strip_blocks([], false)
-      |> Enum.join("\n")
-      |> String.trim_trailing()
-
-    blocks = Enum.map_join(list, "\n", &block/1)
-    new = Enum.join(Enum.reject([kept, blocks], &(&1 == "")), "\n\n") <> "\n"
-
-    expected =
-      if list == [],
-        do: Map.delete(decoded, "local_repositories"),
-        else: Map.put(decoded, "local_repositories", list)
-
-    case Toml.decode(new) do
-      {:ok, ^expected} ->
-        case AtomicFile.write(config_path(), new, Keyword.take(opts, [:before_rename])) do
-          :ok -> :ok
-          _ -> {:error, "could not write #{config_path()}"}
-        end
-
-      _ ->
-        {:error, "config.toml has a layout this command cannot edit safely; edit it manually"}
-    end
-  end
-
-  defp strip_blocks([], acc, _in_block), do: Enum.reverse(acc)
-
-  defp strip_blocks([line | rest], acc, in_block) do
-    cond do
-      Regex.match?(@header, line) -> strip_blocks(rest, acc, true)
-      in_block and Regex.match?(@table, line) -> strip_blocks(rest, [line | acc], false)
-      in_block -> strip_blocks(rest, acc, true)
-      true -> strip_blocks(rest, [line | acc], false)
-    end
-  end
-
-  defp block(entry) do
-    keys = Enum.map(Enum.sort(Map.keys(entry)), fn key -> "#{key} = #{value(entry[key])}" end)
-
-    Enum.join(["[[local_repositories]]" | keys], "\n") <> "\n"
-  end
-
-  defp value(list) when is_list(list), do: "[" <> Enum.map_join(list, ", ", &value/1) <> "]"
-  defp value(int) when is_integer(int), do: Integer.to_string(int)
-  defp value(true), do: "true"
-  defp value(false), do: "false"
-  defp value(text) when is_binary(text), do: "\"" <> escape(text) <> "\""
-  defp value(_), do: throw(:unsupported_value)
-
-  defp escape(text) do
-    for <<char::utf8 <- text>>, into: "" do
-      case char do
-        ?\\ ->
-          "\\\\"
-
-        ?" ->
-          "\\\""
-
-        c when c < 0x20 or c == 0x7F ->
-          "\\u" <> String.pad_leading(Integer.to_string(c, 16), 4, "0")
-
-        c ->
-          <<c::utf8>>
-      end
-    end
   end
 
   @doc "Lines for `helmsman repos list`."
@@ -420,7 +364,9 @@ defmodule HelmsmanDaemon.LocalRepos do
            state =
              if item.available, do: "available", else: "unavailable: #{item.unavailable_reason}"
 
-           "#{item.name}\t#{item.path}\tworkspaces: #{Enum.join(shared ++ ignored, ", ")}\t#{state}"
+           web = if item.added_from == "web", do: " (added from the web)", else: ""
+
+           "#{item.name}\t#{item.path}\tworkspaces: #{Enum.join(shared ++ ignored, ", ")}\t#{state}#{web}"
          end)}
     end
   end

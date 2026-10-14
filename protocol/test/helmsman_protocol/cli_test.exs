@@ -19,7 +19,7 @@ defmodule HelmsmanProtocol.CLITest do
              )
 
     assert [%{vendor: nil}] = sync.clis
-    assert HelmsmanProtocol.version() == 6
+    assert HelmsmanProtocol.version() >= 6
   end
 
   test "vendor is nullable and validates format rather than known keys" do

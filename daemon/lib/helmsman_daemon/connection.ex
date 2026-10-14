@@ -11,6 +11,7 @@ defmodule HelmsmanDaemon.Connection do
     LocalMergeCheck,
     LocalRepos,
     Login,
+    RepoRequests,
     Runs,
     StatusFile
   }
@@ -42,6 +43,15 @@ defmodule HelmsmanDaemon.Connection do
   @doc "Sends a `repo_status` report when joined; dropped otherwise (the next check resends)."
   def repo_status(%Report.RepoStatus{} = payload),
     do: GenServer.cast(__MODULE__, {:repo_status, payload})
+
+  @doc """
+  Sends the result of a web repository request once, after a `sync` when
+  `sync?` (a successful registration or removal). Dropped when disconnected:
+  the configuration is already written and the next join reports it.
+  """
+  def repo_result(%module{} = report, sync?)
+      when module in [Report.RepoBrowseResult, Report.RepoChangeResult],
+      do: GenServer.cast(__MODULE__, {:repo_result, report, sync?})
 
   def active_runs, do: Runs.active()
 
@@ -135,7 +145,8 @@ defmodule HelmsmanDaemon.Connection do
       clis: Detector.inventory(),
       max_concurrency: Config.get().max_concurrency,
       active_runs: Runs.active(),
-      local_repositories: local
+      local_repositories: local,
+      repo_registration: repo_registration(socket)
     }
 
     {:ok, {"join", wire}} = Messages.encode(payload, socket.assigns.protocol_version)
@@ -156,6 +167,13 @@ defmodule HelmsmanDaemon.Connection do
       {nil, socket}
     end
   end
+
+  defp repo_registration(socket) do
+    if registration?(socket), do: LocalRepos.roots() != [], else: nil
+  end
+
+  defp registration?(socket),
+    do: socket.assigns.protocol_version >= HelmsmanProtocol.repo_registration_version()
 
   # Workspaces from the latest reply (state/workspaces.json), else those chosen at login.
   defp served_ids(socket) do
@@ -323,6 +341,25 @@ defmodule HelmsmanDaemon.Connection do
 
   def handle_cast(:claim, socket), do: {:noreply, maybe_claim(socket)}
   def handle_cast(:sync, socket), do: {:noreply, sync(socket)}
+
+  def handle_cast({:repo_result, report, sync?}, socket) do
+    cond do
+      not socket.assigns.joined? ->
+        Logger.info("Dropped the result of web request #{report.request_id}: not connected")
+        {:noreply, socket}
+
+      not registration?(socket) ->
+        {:noreply, socket}
+
+      match?({:error, _}, Messages.encode(report, socket.assigns.protocol_version)) ->
+        Logger.error("Could not encode the result of web request #{report.request_id}")
+        {:noreply, if(sync?, do: sync(socket), else: socket)}
+
+      true ->
+        socket = if sync?, do: sync(socket), else: socket
+        {:noreply, control(socket, event_name(report), report)}
+    end
+  end
 
   def handle_cast({:repo_status, payload}, socket) do
     if socket.assigns.joined? and
@@ -539,7 +576,8 @@ defmodule HelmsmanDaemon.Connection do
         machine: Login.machine(),
         clis: Detector.inventory(),
         max_concurrency: Config.get().max_concurrency,
-        local_repositories: local
+        local_repositories: local,
+        repo_registration: repo_registration(socket)
       }
 
       control(socket, "sync", payload)
@@ -606,7 +644,16 @@ defmodule HelmsmanDaemon.Connection do
     socket |> assign(:credentials, credentials) |> persist_credentials()
   end
 
+  defp apply_control(event, {:error, reason}, socket)
+       when event in ["repo_browse_result", "repo_change_result"] do
+    Logger.debug("#{event} was not accepted: #{inspect(reason)}")
+    socket
+  end
+
   defp apply_control(_event, _reply, socket), do: socket
+
+  defp event_name(%Report.RepoBrowseResult{}), do: "repo_browse_result"
+  defp event_name(%Report.RepoChangeResult{}), do: "repo_change_result"
 
   defp rotate(socket) do
     cond do
@@ -663,6 +710,15 @@ defmodule HelmsmanDaemon.Connection do
 
       {:ok, %HelmsmanProtocol.Push.Steer{run_id: id, feedback_id: feedback_id, text: text}} ->
         Runs.steer(id, feedback_id, text)
+        {:ok, socket}
+
+      {:ok, %module{} = push}
+      when module in [
+             HelmsmanProtocol.Push.RepoBrowse,
+             HelmsmanProtocol.Push.RepoRegister,
+             HelmsmanProtocol.Push.RepoRemove
+           ] ->
+        RepoRequests.submit(push)
         {:ok, socket}
 
       _ ->

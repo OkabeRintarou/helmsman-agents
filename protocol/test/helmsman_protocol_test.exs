@@ -8,7 +8,8 @@ defmodule HelmsmanProtocolTest do
     assert HelmsmanProtocol.cleanup_version() == 4
     assert HelmsmanProtocol.provider_account_headers_version() == 5
     assert HelmsmanProtocol.snapshot_version() == 6
-    assert HelmsmanProtocol.snapshot_version() == HelmsmanProtocol.version()
+    assert HelmsmanProtocol.snapshot_version() < HelmsmanProtocol.repo_registration_version()
+    assert HelmsmanProtocol.repo_registration_version() == HelmsmanProtocol.version()
 
     assert HelmsmanProtocol.provider_account_version() <
              HelmsmanProtocol.local_repositories_version()

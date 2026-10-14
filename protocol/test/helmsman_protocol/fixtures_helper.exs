@@ -30,7 +30,8 @@ defmodule HelmsmanProtocol.Fixtures do
       "clis" => [cli()],
       "max_concurrency" => 2,
       "active_runs" => [%{"run_id" => 7, "last_seq" => 0}],
-      "local_repositories" => [local_repository()]
+      "local_repositories" => [local_repository()],
+      "repo_registration" => nil
     }
   end
 
@@ -74,8 +75,29 @@ defmodule HelmsmanProtocol.Fixtures do
     }
   end
 
+  @repo_registration ~w(repo_browse repo_register repo_remove repo_browse_result repo_change_result)
+
   @doc "Wire payload as encoded for an older target version, or :error when not representable."
   def at_version(name, payload, version) do
+    cond do
+      version >= HelmsmanProtocol.repo_registration_version() ->
+        payload
+
+      name in @repo_registration ->
+        :error
+
+      name in ["join", "sync"] and payload["repo_registration"] != nil ->
+        :error
+
+      name in ["join", "sync"] ->
+        at_local_version(name, Map.delete(payload, "repo_registration"), version)
+
+      true ->
+        at_local_version(name, payload, version)
+    end
+  end
+
+  defp at_local_version(name, payload, version) do
     local? = version >= HelmsmanProtocol.local_repositories_version()
 
     cond do
@@ -85,6 +107,42 @@ defmodule HelmsmanProtocol.Fixtures do
       name in ["join", "sync"] -> Map.delete(payload, "local_repositories")
       true -> payload
     end
+  end
+
+  def request_id, do: "AbCdEfGhIjKlMnOpQrStUv"
+
+  def repo_register do
+    %{
+      "request_id" => request_id(),
+      "root" => "~/code",
+      "path" => "group/lib",
+      "name" => "lib",
+      "workspaces" => [7, 9]
+    }
+  end
+
+  def repo_browse_result do
+    %{
+      "request_id" => request_id(),
+      "error" => nil,
+      "message" => nil,
+      "roots" => ["~/code", "/srv/git"],
+      "repositories" => [
+        %{"root" => "~/code", "path" => "app", "name" => "app", "registered_as" => "app"},
+        %{"root" => "/srv/git", "path" => ".", "name" => "git", "registered_as" => nil}
+      ],
+      "truncated" => false
+    }
+  end
+
+  def repo_change_result do
+    %{
+      "request_id" => request_id(),
+      "action" => "register",
+      "name" => "app",
+      "error" => nil,
+      "message" => nil
+    }
   end
 
   def join_reply do
@@ -195,7 +253,9 @@ defmodule HelmsmanProtocol.Fixtures do
       },
       "repo_status" => repo_status(),
       "finished" => finished(),
-      "rotate_token" => %{}
+      "rotate_token" => %{},
+      "repo_browse_result" => repo_browse_result(),
+      "repo_change_result" => repo_change_result()
     }
   end
 
@@ -205,7 +265,10 @@ defmodule HelmsmanProtocol.Fixtures do
       "cancel" => %{"run_id" => 7},
       "steer" => %{"run_id" => 7, "feedback_id" => 9, "text" => "Change direction"},
       "config_changed" => %{},
-      "revoked" => %{}
+      "revoked" => %{},
+      "repo_browse" => %{"request_id" => request_id()},
+      "repo_register" => repo_register(),
+      "repo_remove" => %{"request_id" => request_id(), "name" => "legacy"}
     }
   end
 
@@ -223,7 +286,9 @@ defmodule HelmsmanProtocol.Fixtures do
       "pushed" => %{},
       "repo_status" => %{},
       "finished" => %{},
-      "rotate_token" => %{"token" => "hmd_secret"}
+      "rotate_token" => %{"token" => "hmd_secret"},
+      "repo_browse_result" => %{},
+      "repo_change_result" => %{}
     }
   end
 
