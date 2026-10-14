@@ -73,14 +73,14 @@ defmodule HelmsmanWeb.AvatarEditorIconsTest do
     runtime = Repo.get!(Runtime, Repo.get_by!(AgentProfile, actor_id: actor.id).runtime_id)
     daemon = Repo.get!(Daemon, runtime.daemon_id)
 
-    # PLACEHOLDER(update-actor-icons): `%CLI{..., vendor: vendor}` once
-    # `HelmsmanProtocol.CLI` has the field (group 1), as in the domain's vendor_test.
-    cli =
-      Map.put(
-        %CLI{provider: :claude, version: "3.2.1", models: [], efforts: [], available: true},
-        :vendor,
-        vendor
-      )
+    cli = %CLI{
+      provider: :claude,
+      version: "3.2.1",
+      models: [],
+      efforts: [],
+      available: true,
+      vendor: vendor
+    }
 
     report = %Report.Sync{
       machine: %Machine{os: "linux", arch: "x86_64", daemon_version: "0.9.0"},
@@ -592,10 +592,6 @@ defmodule HelmsmanWeb.AvatarEditorIconsTest do
   end
 
   describe "CLI 位置不变" do
-    if not Helmsman.Vendor.protocol?() do
-      @tag skip: "PLACEHOLDER(update-actor-icons): needs HelmsmanProtocol.Vendor (group 1)"
-    end
-
     test "an account without an icon: the vendor inferred from its host", ctx do
       account =
         provider_account_fixture(ctx.users.alice, %{

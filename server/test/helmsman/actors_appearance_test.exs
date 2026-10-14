@@ -34,10 +34,6 @@ defmodule Helmsman.ActorsAppearanceTest do
     assert vendor_of(ctx.alice_scope, "keel/dev") == %{vendor: "kimi", vendor_source: :account}
   end
 
-  if not Helmsman.Vendor.protocol?() do
-    @tag skip: "PLACEHOLDER(update-actor-icons): needs HelmsmanProtocol.Vendor (group 1)"
-  end
-
   test "an account without an icon: inferred from its host", ctx do
     bind(ctx, %{base_url: "https://api.z.ai/api/anthropic"})
     assert vendor_of(ctx.alice_scope, "keel/dev") == %{vendor: "zai", vendor_source: :account}

@@ -754,7 +754,7 @@ defmodule Helmsman.Actors do
   # `update-actor-icons` D4, domain side.
   defp vendor(provider, {account_id, icon, base_url}, _runtime_vendor)
        when not is_nil(account_id),
-       do: {icon || Helmsman.Vendor.from_base_url(base_url, provider), :account}
+       do: {icon || HelmsmanProtocol.Vendor.from_base_url(base_url, provider), :account}
 
   defp vendor(_provider, _account, runtime_vendor) when is_binary(runtime_vendor),
     do: {runtime_vendor, :runtime}

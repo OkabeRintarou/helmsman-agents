@@ -21,18 +21,18 @@ defmodule Helmsman.Daemons.VendorTest do
     %{ws7: ws7, ws9: ws9, daemon: daemon}
   end
 
-  # PLACEHOLDER(update-actor-icons): `Map.put/3` until `HelmsmanProtocol.CLI`
-  # has the `vendor` field (group 1); then `%CLI{..., vendor: vendor}`.
   defp cli(vendor, attrs \\ %{}) do
-    %CLI{
-      provider: :claude,
-      version: "3.2.1",
-      models: ["opus-4"],
-      efforts: ["high"],
-      available: true
-    }
-    |> Map.merge(attrs)
-    |> Map.put(:vendor, vendor)
+    Map.merge(
+      %CLI{
+        provider: :claude,
+        version: "3.2.1",
+        models: ["opus-4"],
+        efforts: ["high"],
+        available: true,
+        vendor: vendor
+      },
+      attrs
+    )
   end
 
   defp register(ctx, clis, kind \\ :join) do

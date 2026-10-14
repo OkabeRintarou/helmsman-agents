@@ -417,11 +417,9 @@ defmodule Helmsman.Daemons do
   end
 
   # `update-actor-icons` D10: only a known vendor of an available CLI is
-  # kept. PLACEHOLDER(update-actor-icons): `Map.get/2` and `Helmsman.Vendor`
-  # until `HelmsmanProtocol.CLI` has `vendor` (group 1).
-  defp vendor(%{available: true} = cli) do
-    vendor = Map.get(cli, :vendor)
-    if Helmsman.Vendor.valid?(vendor), do: vendor
+  # kept.
+  defp vendor(%{available: true, vendor: vendor}) do
+    if HelmsmanProtocol.Vendor.valid?(vendor), do: vendor
   end
 
   defp vendor(_cli), do: nil
