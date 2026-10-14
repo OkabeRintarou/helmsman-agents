@@ -36,3 +36,4 @@ node_modules/
 !.env.example
 .DS_Store
 __pycache__/
+.helmsman-e2e-pgid-*
