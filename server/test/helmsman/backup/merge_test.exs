@@ -65,6 +65,18 @@ defmodule Helmsman.Backup.Import.MergeTest do
     end
   end
 
+  test "reply relation changes fork the audit prefix and missing legacy fields are nil" do
+    reply = %{"reply_to" => "BOS-1#1", "reply_root" => "BOS-1#1"}
+
+    assert {:error, {:feedback, 1}} =
+             Merge.classify(@task, @task, [], [], [reply], [Map.put(reply, "reply_to", "BOS-1#2")])
+
+    assert :unchanged =
+             Merge.classify(@task, @task, [], [], [%{}], [
+               %{"reply_to" => nil, "reply_root" => nil}
+             ])
+  end
+
   test "same sequence fork is rejected; newer fields and supersession advance" do
     assert {:error, {:event, 1}} =
              Merge.classify(@task, @task, [%{"to" => "new"}], [%{"to" => "done"}], [], [])

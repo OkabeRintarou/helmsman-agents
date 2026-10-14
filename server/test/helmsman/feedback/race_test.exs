@@ -67,6 +67,33 @@ defmodule Helmsman.Feedback.RaceTest do
              CommittedData.unboxed(fn -> Repo.get!(Task, task.id) end)
   end
 
+  test "reply racing its target revision preserves root and resolves the committed version", %{
+    scope: scope,
+    task: task
+  } do
+    {:ok, root} =
+      CommittedData.unboxed(fn -> Feedback.add(scope, task.ident, %{content: "Root"}) end)
+
+    id = Feedback.view(root).id
+
+    results =
+      simultaneously(2, fn
+        1 -> Feedback.add(scope, task.ident, %{content: "Reply", reply_to: id})
+        2 -> Feedback.revise(scope, id, %{content: "Current"})
+      end)
+
+    assert Enum.all?(results, &match?({:ok, _}, &1))
+    {:ok, reply} = Enum.find(results, fn {:ok, entry} -> entry.reply_to_seq != nil end)
+    {:ok, loaded} = CommittedData.unboxed(fn -> Feedback.get(scope, Feedback.view(reply).id) end)
+    assert loaded.reply_to_seq == root.seq
+    assert loaded.reply_root_seq == root.thread_seq
+    assert loaded.target.summary == "Current"
+    assert loaded.target.status == "superseded"
+
+    assert %Task{feedback_seq: 3, feedback_count: 2} =
+             CommittedData.unboxed(fn -> Repo.get!(Task, task.id) end)
+  end
+
   test "two simultaneous revisions: one wins, the other is superseded",
        %{scope: scope, task: task} do
     {:ok, entry} =

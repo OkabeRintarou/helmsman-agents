@@ -26,7 +26,7 @@ defmodule Helmsman.Feedback do
   alias Helmsman.Actors.Actor
   alias Helmsman.Dispatch.{Continuation, Targets}
   alias Helmsman.Events
-  alias Helmsman.Feedback.{Entry, Id, Mentions}
+  alias Helmsman.Feedback.{Entry, Id, Mentions, Replies}
   alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Runs.{Outcome, Steering}
@@ -35,7 +35,13 @@ defmodule Helmsman.Feedback do
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Workspace
 
-  @type input :: %{kind: Entry.kind() | nil, content: String.t()}
+  @type input :: %{
+          required(:kind) => Entry.kind() | nil,
+          required(:content) => String.t(),
+          optional(:reply_to) => String.t() | nil,
+          optional(:reply_to_seq) => pos_integer() | nil,
+          optional(:reply_root_seq) => pos_integer() | nil
+        }
   @type actor_ref :: %{name: String.t(), kind: String.t()}
   @type dispatch_item :: %{
           agent: String.t() | nil,
@@ -55,6 +61,9 @@ defmodule Helmsman.Feedback do
           id: String.t(),
           seq: pos_integer(),
           thread_seq: pos_integer(),
+          reply_to: String.t() | nil,
+          reply_root: String.t() | nil,
+          target: map() | nil,
           kind: String.t(),
           content: String.t(),
           author: actor_ref() | nil,
@@ -87,6 +96,10 @@ defmodule Helmsman.Feedback do
   `add-run-steering` decision 3); field errors on it when it is not a
   positive integer, the actor is not a person, or the run is not one of
   this task's.
+
+  `reply_to` optionally names an existing feedback ID in this task. The
+  physical target and the root revision thread are preserved on revisions;
+  reads resolve the target's current version for its summary and link.
   """
   @spec add(Scope.t(), String.t(), map()) ::
           {:ok, Entry.t()} | {:error, Changeset.t() | :forbidden | :not_found | :no_actor}
@@ -95,10 +108,15 @@ defmodule Helmsman.Feedback do
   def add(%Scope{workspace: %Workspace{}} = scope, ident, attrs)
       when is_binary(ident) and is_map(attrs) do
     {steer, attrs} = pop_steer(attrs)
+    {reply_to, attrs} = Map.pop(attrs, :reply_to, attrs["reply_to"])
+    attrs = Map.delete(attrs, "reply_to")
 
     with {:ok, input} <- normalize(attrs),
          {:ok, steer_run_id} <- Steering.check_request(scope, steer),
+         :ok <- check_reply_type(reply_to),
          {:ok, ident, _key, _seq} <- Ident.parse(ident) do
+      input = Map.put(input, :reply_to, reply_to)
+
       Workspaces.write_transaction(
         scope,
         :add_feedback,
@@ -106,6 +124,10 @@ defmodule Helmsman.Feedback do
       )
     end
   end
+
+  defp check_reply_type(nil), do: :ok
+  defp check_reply_type(id) when is_binary(id), do: :ok
+  defp check_reply_type(_id), do: {:error, Replies.error("must be a feedback ID")}
 
   defp pop_steer(attrs) do
     {atom, attrs} = Map.pop(attrs, :steer_run_id)
@@ -119,7 +141,7 @@ defmodule Helmsman.Feedback do
   defp add_locked(scope, ident, input, steer_run_id) do
     workspace_id = scope.workspace.id
 
-    with {:ok, task, {plan, steer}} <-
+    with {:ok, task, {plan, steer, resolved}} <-
            Targets.with_locked(
              workspace_id,
              fn ->
@@ -130,6 +152,7 @@ defmodule Helmsman.Feedback do
              &plan_add(scope, &1, input, steer_run_id)
            ),
          :ok <- Policy.authorize(scope, :write_task, task),
+         {:ok, input} <- resolved,
          {:ok, run} <- steer do
       {:ok, {entry, task}} =
         insert_locked(task, scope, input, mentions: plan.feedback.mentions, notify: false)
@@ -142,15 +165,21 @@ defmodule Helmsman.Feedback do
   end
 
   defp plan_add(scope, task, input, steer_run_id) do
-    {targets, plan} = Continuation.plan_feedback(scope, task, input, nil)
-    steer = Steering.target(task, steer_run_id)
-    {targets ++ Steering.target_ids(steer), {plan, steer}}
+    case Replies.resolve(task, input) do
+      {:ok, input} ->
+        {targets, plan} = Continuation.plan_feedback(scope, task, input, nil)
+        steer = Steering.target(task, steer_run_id)
+        {targets ++ Steering.target_ids(steer), {plan, steer, {:ok, input}}}
+
+      {:error, _} = error ->
+        {[], {nil, nil, error}}
+    end
   end
 
   @doc """
   Validates feedback input (`kind`, `content`; atom or string keys)
   without touching the database. `kind` is `nil` when not given. A
-  `steer_run_id` is refused: only `add/3` takes one.
+  `steer_run_id` and `reply_to` are refused: only `add/3` takes them.
   """
   @spec normalize(map()) :: {:ok, input()} | {:error, Changeset.t()}
   def normalize(attrs) when is_map(attrs) do
@@ -160,6 +189,11 @@ defmodule Helmsman.Feedback do
       if is_nil(attrs[:steer_run_id] || attrs["steer_run_id"]),
         do: changeset,
         else: Changeset.add_error(changeset, :steer_run_id, "can only be given with new feedback")
+
+    changeset =
+      if is_nil(Map.get(attrs, :reply_to, attrs["reply_to"])),
+        do: changeset,
+        else: Changeset.add_error(changeset, :reply_to, "can only be given with new feedback")
 
     if changeset.valid? do
       {:ok,
@@ -201,6 +235,8 @@ defmodule Helmsman.Feedback do
           task_id: task.id,
           seq: seq,
           thread_seq: seq,
+          reply_to_seq: input[:reply_to_seq],
+          reply_root_seq: input[:reply_root_seq],
           author_id: actor.id,
           kind: input[:kind] || :comment,
           content: content,
@@ -336,6 +372,8 @@ defmodule Helmsman.Feedback do
           task_id: task.id,
           seq: seq,
           thread_seq: old.thread_seq,
+          reply_to_seq: old.reply_to_seq,
+          reply_root_seq: old.reply_root_seq,
           author_id: scope.actor.id,
           kind: input.kind || old.kind,
           content: input.content,
@@ -508,7 +546,7 @@ defmodule Helmsman.Feedback do
   @doc """
   Loads what `view/1` needs into `entries` of the task `ident`: the
   author, the mentioned names, the numbers of the linked records and the
-  steering state (`Helmsman.Runs.Steering.views/1`). At most four
+  steering state (`Helmsman.Runs.Steering.views/1`) and reply targets. At most five
   queries, whatever the number of entries.
   """
   @spec load([Entry.t()] | Entry.t(), String.t()) :: [Entry.t()]
@@ -524,6 +562,7 @@ defmodule Helmsman.Feedback do
         ids -> Map.new(Repo.all(from(a in Actor, where: a.id in ^ids, select: {a.id, a.name})))
       end
 
+    targets = Replies.targets(entries, ident)
     seqs = linked_seqs(entries)
     steers = entries |> Enum.map(& &1.id) |> Steering.views()
 
@@ -535,7 +574,8 @@ defmodule Helmsman.Feedback do
           dispatch_view: Enum.map(entry.dispatch, &dispatch_view(&1, names)),
           supersedes_seq: seqs[entry.supersedes_id],
           superseded_by_seq: seqs[entry.superseded_by_id],
-          steer: steers[entry.id]
+          steer: steers[entry.id],
+          target: targets[{entry.task_id, entry.reply_to_seq}]
       }
     end)
   end
@@ -591,6 +631,9 @@ defmodule Helmsman.Feedback do
       id: Id.build(ident, entry.seq),
       seq: entry.seq,
       thread_seq: entry.thread_seq,
+      reply_to: entry.reply_to_seq && Id.build(ident, entry.reply_to_seq),
+      reply_root: entry.reply_root_seq && Id.build(ident, entry.reply_root_seq),
+      target: entry.target,
       kind: Atom.to_string(entry.kind),
       content: entry.content,
       author: actor_ref(entry.author),

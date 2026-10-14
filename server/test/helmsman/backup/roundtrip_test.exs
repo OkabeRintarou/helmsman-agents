@@ -51,7 +51,13 @@ defmodule Helmsman.Backup.RoundtripTest do
     other = task_fixture(scope, ctx.project.key)
     {:ok, f} = Feedback.add(scope, task.ident, %{kind: :question, content: "Question"})
     {:ok, _} = Feedback.revise(scope, "#{task.ident}##{f.seq}", %{content: "Question revised"})
-    {:ok, answer} = Feedback.add(scope, task.ident, %{kind: :answer, content: "Answer"})
+
+    {:ok, answer} =
+      Feedback.add(scope, task.ident, %{
+        kind: :answer,
+        content: "Answer",
+        reply_to: "#{task.ident}##{f.seq}"
+      })
 
     Repo.update_all(from(f in Feedback.Entry, where: f.id == ^answer.id),
       set: [mentions: [scope.actor.id, external.id], fallback: true]
@@ -93,6 +99,16 @@ defmodule Helmsman.Backup.RoundtripTest do
     target = workspace_fixture(ctx.alice)
     target_scope = workspace_scope_fixture(ctx.alice, target)
 
+    assert {:ok, _} =
+             Backup.import_file(target_scope, first, mode: :replace, confirm: target.slug)
+
+    {:ok, restored_task} = Tasks.get(target_scope, task.ident)
+    restored_reply = List.last(Tasks.detail(restored_task).feedback)
+    assert restored_reply.reply_to == "#{task.ident}#1"
+    assert restored_reply.target.summary == "Question revised"
+    assert restored_reply.target.status == "superseded"
+
+    # A second replace must release the self-referencing reply foreign keys.
     assert {:ok, _} =
              Backup.import_file(target_scope, first, mode: :replace, confirm: target.slug)
 

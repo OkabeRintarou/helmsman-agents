@@ -23,6 +23,7 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.AgentDesigns.Prompt, as: DesignPrompt
   alias Helmsman.Agents
   alias Helmsman.Autopilots
+  alias Helmsman.Feedback
   alias Helmsman.Feedback.Entry
   alias Helmsman.Feedback.Id, as: FeedbackId
   alias Helmsman.ProviderAccounts.{Headers, ProviderAccount}
@@ -229,8 +230,24 @@ defmodule Helmsman.Runs.Spec do
 
     ids
     |> current_records(task.id)
-    |> Map.new(fn {id, %Entry{seq: seq, content: content}} ->
-      {id, %{id: FeedbackId.build(task.ident, seq), content: content}}
+    |> then(fn records ->
+      loaded =
+        records
+        |> Map.values()
+        |> Enum.uniq_by(& &1.id)
+        |> Feedback.load(task.ident)
+        |> Map.new(&{&1.id, &1})
+
+      Map.new(records, fn {id, entry} ->
+        entry = loaded[entry.id]
+
+        {id,
+         %{
+           id: FeedbackId.build(task.ident, entry.seq),
+           content: entry.content,
+           target: entry.target
+         }}
+      end)
     end)
   end
 

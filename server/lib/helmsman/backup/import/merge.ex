@@ -1,7 +1,7 @@
 defmodule Helmsman.Backup.Import.Merge do
   @moduledoc "Pure audit-prefix classification; supersession only advances."
   @event_fields ~w(from to actor comment commits tests auto auto_reason feedback verified_sha at)
-  @feedback_fields ~w(author kind content thread supersedes at)
+  @feedback_fields ~w(author kind content thread supersedes reply_to reply_root at)
 
   def classify(local, incoming, local_events, events, local_feedback, feedback) do
     e = prefix(local_events, events, @event_fields)
@@ -42,7 +42,7 @@ defmodule Helmsman.Backup.Import.Merge do
     different =
       Enum.zip(local, incoming)
       |> Enum.with_index(1)
-      |> Enum.find(fn {{a, b}, _} -> Map.take(a, fields) != Map.take(b, fields) end)
+      |> Enum.find(fn {{a, b}, _} -> Enum.any?(fields, &(a[&1] != b[&1])) end)
 
     cond do
       different -> {:different, elem(different, 1)}

@@ -322,6 +322,17 @@ defmodule Helmsman.Backup.Import.Write do
 
     Enum.each(feedback, &advance_revision(&1, ids))
 
+    Enum.each(fresh, fn row ->
+      if row["reply_to"] do
+        Repo.update_all(from(f in Entry, where: f.id == ^ids[row["id"]].id),
+          set: [
+            reply_to_seq: elem(Validate.feedback_parts(row["reply_to"]), 1),
+            reply_root_seq: elem(Validate.feedback_parts(row["reply_root"]), 1)
+          ]
+        )
+      end
+    end)
+
     events = append_events(scope, data, selected, tasks, actors, ids)
 
     for ident <- Map.keys(selected) do

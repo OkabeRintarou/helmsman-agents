@@ -44,6 +44,26 @@ defmodule HelmsmanMCP.Tools.FeedbackToolsTest do
              call!(session, "get_task", %{task_id: "BOS-1"})
   end
 
+  test "reply relation survives revision and appears in list/get_task", %{session: session} do
+    add(session, "Question", %{kind: "question"})
+    reply = add(session, "Answer", %{kind: "answer", reply_to: "BOS-1#1"})
+    assert reply["reply_to"] == "BOS-1#1"
+    assert reply["target"]["summary"] == "Question"
+    call!(session, "update_feedback", %{feedback_id: "BOS-1#1", content: "Updated question"})
+
+    revised =
+      call!(session, "update_feedback", %{feedback_id: "BOS-1#2", content: "Updated answer"})
+
+    assert revised["reply_root"] == "BOS-1#1"
+
+    assert %{"id" => "BOS-1#3", "summary" => "Updated question", "status" => "superseded"} =
+             revised["target"]
+
+    detail = call!(session, "get_task", %{task_id: "BOS-1"})
+    assert List.last(detail["feedback"]) == revised
+    assert call!(session, "list_feedback", %{task_id: "BOS-1"})["feedback"] == detail["feedback"]
+  end
+
   test "comment by default", %{session: session} do
     assert %{"kind" => "comment"} = add(session, "Note")
   end

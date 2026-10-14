@@ -35,6 +35,39 @@ defmodule HelmsmanWeb.API.FeedbackControllerTest do
     assert name == human.name
   end
 
+  test "POST/GET accept reply targets and expose their current version", ctx do
+    add!(ctx, "Original")
+
+    data =
+      :post
+      |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-1/feedback"), %{
+        content: "Reply",
+        reply_to: "BOS-1#1"
+      })
+      |> body!(201)
+
+    assert_schema(data["data"], "Feedback", ctx.spec)
+    assert data["data"]["reply_to"] == "BOS-1#1"
+    assert data["data"]["reply_root"] == "BOS-1#1"
+
+    :patch
+    |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-1/feedback/1"), %{content: "Current"})
+    |> body!(200)
+
+    current = ctx.token |> api_get(w(ctx.slug, "/tasks/BOS-1/feedback/2")) |> body!(200)
+    assert_schema(current["data"], "Feedback", ctx.spec)
+
+    assert %{"id" => "BOS-1#3", "summary" => "Current", "status" => "superseded"} =
+             current["data"]["target"]
+
+    :post
+    |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-1/feedback"), %{
+      content: "no",
+      reply_to: "BOS-2#1"
+    })
+    |> error!(422, "validation_failed")
+  end
+
   test "author in the body writes as that agent", ctx do
     data =
       :post

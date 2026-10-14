@@ -223,6 +223,70 @@ defmodule Helmsman.Dispatch.ContinuationTest do
       assert trigger["feedback_id"] == answer.id
     end
 
+    test "explicit reply selects the specified current question instead of the last one", ctx do
+      task = new_task(ctx)
+
+      {scope, original_run} =
+        run_scope(ctx.review, task, %{lane: :reply, root_initiator_user_id: ctx.bob.id})
+
+      {:ok, question} = Feedback.add(scope, task.ident, %{kind: :question, content: "First?"})
+      {:ok, current} = Feedback.revise(scope, Feedback.view(question).id, %{content: "Current?"})
+      {other_scope, _} = run_scope(ctx.agent, task)
+      {:ok, _} = Feedback.add(other_scope, task.ident, %{kind: :question, content: "Last?"})
+
+      {:ok, answer} =
+        Feedback.add(ctx.carol_scope, task.ident, %{
+          kind: :answer,
+          content: "First answer",
+          reply_to: Feedback.view(question).id
+        })
+
+      assert [%{agent: "keel/review", trigger: "answer", result: "queued", run_id: id}] =
+               Feedback.view(answer).dispatch
+
+      run = Repo.get!(Run, id)
+      assert run.root_initiator_user_id == original_run.root_initiator_user_id
+      assert run.lane == :reply
+      assert hd(run.triggers)["question_id"] == current.id
+    end
+
+    test "revising an explicit answer preserves its relation without triggering again", ctx do
+      task = new_task(ctx)
+      {scope, _} = run_scope(ctx.review, task, %{lane: :reply})
+      {:ok, question} = Feedback.add(scope, task.ident, %{kind: :question, content: "Question?"})
+
+      {:ok, answer} =
+        Feedback.add(ctx.carol_scope, task.ident, %{
+          kind: :answer,
+          content: "Answer",
+          reply_to: Feedback.view(question).id
+        })
+
+      assert [%{trigger: "answer"}] = Feedback.view(answer).dispatch
+
+      {:ok, revised} =
+        Feedback.revise(ctx.carol_scope, Feedback.view(answer).id, %{content: "Revised answer"})
+
+      assert revised.reply_to_seq == question.seq
+      assert Feedback.view(revised).dispatch == []
+    end
+
+    test "explicit answer to a comment does not wake an unrelated question author", ctx do
+      task = new_task(ctx)
+      {scope, _} = run_scope(ctx.review, task, %{lane: :reply})
+      {:ok, _} = Feedback.add(scope, task.ident, %{kind: :question, content: "Question?"})
+      {:ok, comment} = Feedback.add(ctx.alice_scope, task.ident, %{content: "Note"})
+
+      {:ok, answer} =
+        Feedback.add(ctx.carol_scope, task.ident, %{
+          kind: :answer,
+          content: "Answer note",
+          reply_to: Feedback.view(comment).id
+        })
+
+      assert Feedback.view(answer).dispatch == []
+    end
+
     test "a question in an assignment run: the answer is assignee-bound", ctx do
       task = assign(ctx, new_task(ctx))
       auto_retry = %{"kind" => "retry", "retry_of" => 1, "auto" => true, "by_actor_id" => nil}

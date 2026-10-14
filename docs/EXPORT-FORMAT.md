@@ -15,7 +15,7 @@ Avatars are not exported either (no image bytes, avatar addresses or keys, for u
 | projects | archived_at, created_at, description, key, name, task_seq, updated_at |
 | tasks | assignee, created_at, created_by, description, epic, id, kind, labels, priority, project, seq, status, title, updated_at |
 | task_events | actor, assignee_side, at, auto, auto_reason, comment, commits, feedback, from, n, task, tests, to, verified_sha |
-| feedback | at, author, content, fallback, id, kind, mentions, status, superseded_by, supersedes, thread |
+| feedback | at, author, content, fallback, id, kind, mentions, reply_root, reply_to, status, superseded_by, supersedes, thread |
 | links | actor, at, from, to, type |
 | saved_filters | bql, name, owner |
 
@@ -28,6 +28,9 @@ Events `n` are consecutive from one in each task, ordered by time then database 
 Event timestamps must not decrease when ordered by `n`; equal timestamps are allowed and keep `n` order.
 Imports reject a decreasing timestamp at `task_events[i].at` before writing any data.
 Feedback kind: comment, review, question, answer. Status: active, superseded. Revision links are reciprocal; thread is the first revision's sequence.
+Feedback `reply_to` is the original target's `KEY-N#M`; `reply_root` is the root comment's first revision ID.
+Both are null for standalone feedback. Replies to replies share one root; revisions preserve both references.
+Reply targets and roots must be earlier records in the same task. Older v1 snapshots may omit both fields (treated as null).
 Links: depends_on or replaces. depends_on is acyclic. Shared filters contain name, BQL and informational owner; imports create them under the importing user.
 
 Rows sort by actor name, project key, task project key/sequence, event task/n, feedback task/sequence,

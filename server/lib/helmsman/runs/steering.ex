@@ -31,7 +31,7 @@ defmodule Helmsman.Runs.Steering do
   alias Helmsman.Dispatch.Continuation
   alias Helmsman.Events
   alias Helmsman.Feedback
-  alias Helmsman.Feedback.{Entry, Id}
+  alias Helmsman.Feedback.{Entry, Id, Replies}
   alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Runs
@@ -279,9 +279,12 @@ defmodule Helmsman.Runs.Steering do
         do: "It is a question for you: answer it with add_feedback (kind \"answer\").",
         else: "Take it into account in this run."
 
+    reply = Replies.label(entry)
+    relation = if reply == "", do: "", else: " (" <> reply <> ")"
+
     Enum.join(
       [
-        "#{author(entry)} added #{Id.build(ident, entry.seq)} (#{entry.kind}) to #{ident} " <>
+        "#{author(entry)} added #{Id.build(ident, entry.seq)} (#{entry.kind})#{relation} to #{ident} " <>
           "while you are working on it:",
         Prompt.blockquote(entry.content),
         last

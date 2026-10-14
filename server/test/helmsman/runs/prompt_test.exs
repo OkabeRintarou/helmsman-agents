@@ -320,7 +320,7 @@ defmodule Helmsman.Runs.ContinuationPromptTest do
 
   alias Helmsman.Actors.Actor
   alias Helmsman.Feedback
-  alias Helmsman.Runs.Spec
+  alias Helmsman.Runs.{Spec, Steering}
 
   setup do
     ctx = dispatch_fixture()
@@ -351,6 +351,25 @@ defmodule Helmsman.Runs.ContinuationPromptTest do
     [_, rest] = String.split(spec.prompt, "Why you were started:\n")
     [why | _] = String.split(rest, "\nWorking directory:")
     why
+  end
+
+  test "trigger quote and steering text describe the current reply target", ctx do
+    root = feedback(ctx, "Root")
+
+    {:ok, reply} =
+      Feedback.add(ctx.alice_scope, ctx.task.ident, %{
+        content: "Reply",
+        reply_to: Feedback.view(root).id
+      })
+
+    {:ok, current} =
+      Feedback.revise(ctx.alice_scope, Feedback.view(root).id, %{content: "Current"})
+
+    assert why(ctx, [t(ctx, "mention", %{"feedback_id" => reply.id})]) =~
+             "回复 #3 @#{ctx.alice_actor.name}"
+
+    {:ok, reply} = Feedback.get(ctx.alice_scope, Feedback.view(reply).id)
+    assert Steering.text(reply) =~ "回复 ##{current.seq} @#{ctx.alice_actor.name}"
   end
 
   test "a send-back with a review (scenario)", ctx do

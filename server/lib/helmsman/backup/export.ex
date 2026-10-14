@@ -238,6 +238,20 @@ defmodule Helmsman.Backup.Export do
       select: %{
         "id" => fragment("? || '#' || ?::text", t.ident, f.seq),
         "thread" => f.thread_seq,
+        "reply_to" =>
+          fragment(
+            "CASE WHEN ? IS NULL THEN NULL ELSE ? || '#' || ?::text END",
+            f.reply_to_seq,
+            t.ident,
+            f.reply_to_seq
+          ),
+        "reply_root" =>
+          fragment(
+            "CASE WHEN ? IS NULL THEN NULL ELSE ? || '#' || ?::text END",
+            f.reply_root_seq,
+            t.ident,
+            f.reply_root_seq
+          ),
         "author" => a.name,
         "kind" => f.kind,
         "content" => f.content,

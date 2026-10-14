@@ -11,6 +11,7 @@ defmodule HelmsmanMCP.Tools.AddFeedback do
       task_id: {:required, :string, description: "Task ID (e.g. BOS-12)."},
       content: {:required, :string, description: "Markdown, at most 64 KB."},
       kind: {:string, description: "comment (default), review, question or answer."},
+      reply_to: {:string, description: "Feedback ID to reply to, in this task (e.g. BOS-12#3)."},
       author: HelmsmanMCP.Tool.author_field()
     },
     mode: :write
@@ -20,7 +21,7 @@ defmodule HelmsmanMCP.Tools.AddFeedback do
 
   @impl HelmsmanMCP.Tool
   def call(%{"task_id" => id} = args, %{scope: scope}) do
-    with {:ok, entry} <- Feedback.add(scope, id, Args.take(args, [:kind, :content])) do
+    with {:ok, entry} <- Feedback.add(scope, id, Args.take(args, [:kind, :content, :reply_to])) do
       {:ok, Present.feedback(Feedback.view(entry))}
     end
   end

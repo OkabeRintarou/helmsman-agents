@@ -89,6 +89,18 @@ defmodule HelmsmanMCP.ResourcesTest do
       assert text =~ "Line 1\n\n**Bold** <b>"
     end
 
+    test "Feedback prompt list names the replied-to current record and author", %{
+      session: session
+    } do
+      call!(session, "add_feedback", %{task_id: "BOS-1", content: "First"})
+      call!(session, "add_feedback", %{task_id: "BOS-1", content: "Reply", reply_to: "BOS-1#1"})
+      call!(session, "update_feedback", %{feedback_id: "BOS-1#1", content: "Current"})
+      assert {:ok, text} = read(session, "helmsman://tasks/BOS-1")
+      assert text =~ "回复 #3 @keel/dev"
+      assert {:ok, prompt} = prompt(session, %{"task_id" => "BOS-1"})
+      assert prompt =~ "回复 #3 @keel/dev"
+    end
+
     test "history and active feedback only", %{session: session} do
       call!(session, "transition_task", %{task_id: "BOS-1", to: "in progress"})
       call!(session, "add_feedback", %{task_id: "BOS-1", content: "old text", kind: "question"})

@@ -60,6 +60,8 @@ defmodule Helmsman.Backup.Import.Validate do
       kind: {:enum, ~w(comment review question answer)},
       content: {:content, 65_536},
       status: {:enum, ~w(active superseded)},
+      reply_to: {:optional, :feedback_id},
+      reply_root: {:optional, :feedback_id},
       supersedes: {:optional, :feedback_id},
       superseded_by: {:optional, :feedback_id},
       mentions: {:array, :name},
@@ -79,6 +81,21 @@ defmodule Helmsman.Backup.Import.Validate do
   def validate(data, rename \\ %{})
 
   def validate(%{"format" => "helmsman-export", "version" => 1} = data, rename) do
+    data =
+      Map.update(data, "feedback", nil, fn
+        rows when is_list(rows) ->
+          Enum.map(rows, fn
+            row when is_map(row) ->
+              row |> Map.put_new("reply_to", nil) |> Map.put_new("reply_root", nil)
+
+            row ->
+              row
+          end)
+
+        other ->
+          other
+      end)
+
     basic = Enum.take(fields(data) ++ records(data), 100)
 
     errors =
@@ -252,7 +269,13 @@ defmodule Helmsman.Backup.Import.Validate do
     do: [{"task", :tasks}, {"actor", :actors}, {"feedback", :feedback}]
 
   defp reference_fields("feedback"),
-    do: [{"author", :actors}, {"supersedes", :feedback}, {"superseded_by", :feedback}]
+    do: [
+      {"author", :actors},
+      {"supersedes", :feedback},
+      {"superseded_by", :feedback},
+      {"reply_to", :feedback},
+      {"reply_root", :feedback}
+    ]
 
   defp reference_fields("links"), do: [{"from", :tasks}, {"to", :tasks}, {"actor", :actors}]
   defp reference_fields("saved_filters"), do: [{"owner", :actors}]
@@ -313,6 +336,7 @@ defmodule Helmsman.Backup.Import.Validate do
         do: [error("#{path}.status", "must agree with superseded_by") | errors],
         else: errors
 
+    errors = reply_errors(r, path, feedback) ++ errors
     thread = r["thread"]
 
     case root(r, feedback, %{}) do
@@ -326,6 +350,49 @@ defmodule Helmsman.Backup.Import.Validate do
   end
 
   defp specific(_, _, _, _, _, _), do: []
+
+  defp reply_errors(r, path, feedback) do
+    {task, seq} = feedback_parts(r["id"])
+    target = feedback[r["reply_to"]]
+    root = feedback[r["reply_root"]]
+    previous = feedback[r["supersedes"]]
+
+    valid = valid_reply?(r, target, root, task, seq)
+
+    preserved =
+      not is_map(previous) or
+        {r["reply_to"], r["reply_root"]} == {previous["reply_to"], previous["reply_root"]}
+
+    if valid and preserved,
+      do: [],
+      else: [
+        error(
+          "#{path}.reply_to",
+          "reply must reference an earlier record and its root in the same task, unchanged by revisions"
+        )
+      ]
+  end
+
+  defp valid_reply?(%{"reply_to" => nil, "reply_root" => root}, _target, _root, _task, _seq),
+    do: is_nil(root)
+
+  defp valid_reply?(r, target, root, task, seq) when is_map(target) and is_map(root) do
+    target_seq = elem(feedback_parts(target["id"]), 1)
+
+    checks = [
+      elem(feedback_parts(target["id"]), 0) == task,
+      elem(feedback_parts(root["id"]), 0) == task,
+      target_seq < seq,
+      elem(feedback_parts(root["id"]), 1) <= target_seq,
+      is_nil(root["supersedes"]),
+      is_nil(root["reply_to"]),
+      r["reply_root"] == (target["reply_root"] || "#{task}##{target["thread"]}")
+    ]
+
+    Enum.all?(checks)
+  end
+
+  defp valid_reply?(_r, _target, _root, _task, _seq), do: false
 
   @spec root(map(), map(), map()) :: {:ok, integer() | nil} | :cycle | :missing
   defp root(r, feedback, seen) do

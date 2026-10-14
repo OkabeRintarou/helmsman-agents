@@ -27,7 +27,7 @@ defmodule Helmsman.Backup.FormatTest do
       {"task_events",
        ~s({"actor":"alice","assignee_side":["alice/dev","alice"],"at":"2026-01-01T00:00:00.123456Z","auto":false,"auto_reason":null,"comment":"Created","commits":["abcdef0"],"feedback":"BOS-2#1","from":null,"n":1,"task":"BOS-2","tests":{"command":"mix test","passed":true,"summary":"ok"},"to":"new","verified_sha":null})},
       {"feedback",
-       ~s({"at":"2026-01-01T00:00:00.123456Z","author":"alice","content":"Synthetic question?","fallback":false,"id":"BOS-2#1","kind":"question","mentions":["alice/dev"],"status":"active","superseded_by":null,"supersedes":null,"thread":1})},
+       ~s({"at":"2026-01-01T00:00:00.123456Z","author":"alice","content":"Synthetic question?","fallback":false,"id":"BOS-2#1","kind":"question","mentions":["alice/dev"],"reply_root":null,"reply_to":null,"status":"active","superseded_by":null,"supersedes":null,"thread":1})},
       {"links",
        ~s({"actor":"alice","at":"2026-01-01T00:00:00.123456Z","from":"BOS-2","to":"BOS-1","type":"depends_on"})},
       {"saved_filters", ~s({"bql":"status = new","name":"New tasks","owner":"alice"})}

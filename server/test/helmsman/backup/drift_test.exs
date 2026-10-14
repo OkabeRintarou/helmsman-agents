@@ -5,7 +5,7 @@ defmodule Helmsman.Backup.DriftTest do
 
   defp foreign_keys do
     Repo.query!(
-      "SELECT source.relname, a.attname, target.relname, c.confdeltype::text FROM pg_constraint c JOIN pg_class source ON source.oid=c.conrelid JOIN pg_class target ON target.oid=c.confrelid JOIN LATERAL unnest(c.conkey,c.confkey) AS cols(src,dst) ON true JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=cols.src JOIN pg_attribute b ON b.attrelid=c.confrelid AND b.attnum=cols.dst WHERE c.contype='f' AND b.attname='id'"
+      "SELECT source.relname, a.attname, target.relname, c.confdeltype::text FROM pg_constraint c JOIN pg_class source ON source.oid=c.conrelid JOIN pg_class target ON target.oid=c.confrelid JOIN LATERAL unnest(c.conkey,c.confkey) AS cols(src,dst) ON true JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=cols.src JOIN pg_attribute b ON b.attrelid=c.confrelid AND b.attnum=cols.dst WHERE c.contype='f' AND b.attname IN ('id','seq')"
     ).rows
   end
 

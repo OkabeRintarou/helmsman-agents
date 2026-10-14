@@ -145,7 +145,7 @@ defmodule Helmsman.Runs.SteerableTest do
     %{"feedback" => [item]} = call!(session, "get_task", %{task_id: ctx.task.ident})
 
     assert item |> Map.keys() |> Enum.sort() ==
-             ~w(at author content dispatch id kind mentions seq status superseded_by supersedes thread_seq)
+             ~w(at author content dispatch id kind mentions reply_root reply_to seq status superseded_by supersedes target thread_seq)
 
     assert [dispatch] = item["dispatch"]
     assert dispatch |> Map.keys() |> Enum.sort() == ~w(agent reason result trigger)

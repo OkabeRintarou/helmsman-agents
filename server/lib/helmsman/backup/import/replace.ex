@@ -22,6 +22,8 @@ defmodule Helmsman.Backup.Import.Replace do
     {"feedback", "supersedes_id"},
     {"feedback", "superseded_by_id"},
     {"feedback", "source_run_id"},
+    {"feedback", "reply_to_seq"},
+    {"feedback", "reply_root_seq"},
     {"task_links", "from_task_id"},
     {"task_links", "to_task_id"},
     {"task_grants", "task_id"},
@@ -61,7 +63,7 @@ defmodule Helmsman.Backup.Import.Replace do
       Repo.query!("UPDATE tasks SET epic_id=NULL WHERE workspace_id=$1", [wid])
 
       Repo.query!(
-        "UPDATE feedback SET supersedes_id=NULL, superseded_by_id=NULL WHERE workspace_id=$1",
+        "UPDATE feedback SET status='active', supersedes_id=NULL, superseded_by_id=NULL, reply_to_seq=NULL, reply_root_seq=NULL WHERE workspace_id=$1",
         [wid]
       )
 

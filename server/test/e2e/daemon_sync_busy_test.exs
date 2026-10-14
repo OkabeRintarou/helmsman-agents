@@ -11,12 +11,10 @@ defmodule HelmsmanWeb.DaemonSyncBusyTest do
   import Helmsman.AgentsFixtures
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias Helmsman.{CommittedData, Daemons, Repo}
+  alias Helmsman.{CommittedData, DaemonE2E, Daemons, Repo}
   alias Helmsman.Daemons.Runtime
   alias HelmsmanWeb.Endpoint
 
-  @daemon_dir Path.expand("../../../daemon", __DIR__)
-  @fake_cli Path.join(@daemon_dir, "test/support/fake_cli/fake-cli")
   @port_output_limit 16_000
 
   setup do
@@ -58,8 +56,7 @@ defmodule HelmsmanWeb.DaemonSyncBusyTest do
     {:ok, {{127, 0, 0, 1}, port}} = Endpoint.server_info(:http)
 
     write_credentials(home, "http://127.0.0.1:#{port}", daemon.id, token)
-    port_ref = start_daemon(home)
-    on_exit(fn -> close_port(port_ref) end)
+    port_ref = DaemonE2E.start_daemon(home)
 
     wait_until(
       fn ->
@@ -184,36 +181,6 @@ defmodule HelmsmanWeb.DaemonSyncBusyTest do
           wait_for_channel_loop(topic, port, deadline)
         end
     end
-  end
-
-  defp start_daemon(home) do
-    {executable, args} =
-      case System.find_executable("mise") do
-        nil ->
-          mix =
-            System.find_executable("mix") ||
-              flunk("mix executable is required for the daemon e2e test")
-
-          {mix, ["helmsman", "daemon", "start", "--foreground"]}
-
-        mise ->
-          {mise, ["exec", "--", "mix", "helmsman", "daemon", "start", "--foreground"]}
-      end
-
-    Port.open({:spawn_executable, executable}, [
-      :binary,
-      :exit_status,
-      :use_stdio,
-      :stderr_to_stdout,
-      {:args, Enum.map(args, &String.to_charlist/1)},
-      {:cd, String.to_charlist(@daemon_dir)},
-      {:env,
-       [
-         {~c"MIX_ENV", ~c"test"},
-         {~c"HELMSMAN_HOME", String.to_charlist(home)},
-         {~c"HELMSMAN_FAKE_CLI", String.to_charlist(@fake_cli)}
-       ]}
-    ])
   end
 
   defp wait_until(fun, port, label, timeout \\ 30_000) do
@@ -356,11 +323,5 @@ defmodule HelmsmanWeb.DaemonSyncBusyTest do
   defp captured_output(port) do
     drain_port(port)
     Process.get({:daemon_port_output, port}, "<no daemon output captured>")
-  end
-
-  defp close_port(port) do
-    if Port.info(port), do: Port.close(port)
-  rescue
-    ArgumentError -> :ok
   end
 end

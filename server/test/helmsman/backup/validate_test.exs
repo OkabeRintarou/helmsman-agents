@@ -123,6 +123,62 @@ defmodule Helmsman.Backup.Import.ValidateTest do
     end
   end
 
+  test "legacy reply fields normalize to nil; replies and roots are constrained" do
+    root = %{
+      "id" => "BOS-1#1",
+      "thread" => 1,
+      "author" => "alice",
+      "kind" => "comment",
+      "content" => "Root",
+      "status" => "active",
+      "supersedes" => nil,
+      "superseded_by" => nil,
+      "mentions" => [],
+      "fallback" => false,
+      "at" => @at
+    }
+
+    reply =
+      Map.merge(root, %{
+        "id" => "BOS-1#2",
+        "thread" => 2,
+        "reply_to" => "BOS-1#1",
+        "reply_root" => "BOS-1#1"
+      })
+
+    nested = Map.merge(reply, %{"id" => "BOS-1#3", "thread" => 3, "reply_to" => "BOS-1#2"})
+    assert {:ok, data} = Validate.validate(Map.put(snapshot(), "feedback", [root, reply, nested]))
+    assert hd(data["feedback"])["reply_to"] == nil
+
+    for invalid <- [
+          Map.put(reply, "reply_to", "BOS-2#1"),
+          Map.put(reply, "reply_to", "BOS-1#2"),
+          Map.put(reply, "reply_to", "BOS-1#3"),
+          Map.put(reply, "reply_root", nil),
+          Map.put(reply, "reply_root", "BOS-1#2"),
+          Map.put(reply, "reply_to", nil)
+        ] do
+      assert {:error, {:invalid_import, _}} =
+               Validate.validate(Map.put(snapshot(), "feedback", [root, invalid, nested]))
+    end
+
+    old = Map.merge(reply, %{"status" => "superseded", "superseded_by" => "BOS-1#4"})
+    revised = Map.merge(reply, %{"id" => "BOS-1#4", "supersedes" => "BOS-1#2"})
+
+    assert {:ok, _} =
+             Validate.validate(Map.put(snapshot(), "feedback", [root, old, nested, revised]))
+
+    assert {:error, {:invalid_import, _}} =
+             Validate.validate(
+               Map.put(snapshot(), "feedback", [
+                 root,
+                 old,
+                 nested,
+                 Map.put(revised, "reply_to", "BOS-1#3")
+               ])
+             )
+  end
+
   test "event continuity, last state and references" do
     row = %{
       "task" => "BOS-1",

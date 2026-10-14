@@ -21,6 +21,23 @@ defmodule Helmsman.Backup.Import.MergeWriteTest do
     Map.put(ctx, :path, path)
   end
 
+  test "legacy snapshot with no reply fields imports and repeated merge stays unchanged", ctx do
+    {:ok, _} = Feedback.add(ctx.alice_scope, ctx.bos1.ident, %{content: "Legacy"})
+    {:ok, _} = Backup.export_to_file(ctx.workspace, ctx.path)
+    {:ok, data} = Read.file(ctx.path)
+
+    legacy =
+      Map.update!(data, "feedback", fn rows ->
+        Enum.map(rows, &Map.drop(&1, ["reply_to", "reply_root"]))
+      end)
+
+    File.write!(ctx.path, Format.encode(legacy))
+    assert {:ok, report} = Backup.import_file(ctx.alice_scope, ctx.path)
+    assert report.counts["feedback"].unchanged == 1
+    {:ok, entries} = Feedback.list(ctx.alice_scope, ctx.bos1.ident)
+    assert List.last(entries).reply_to_seq == nil
+  end
+
   test "state fast-forward schedules dependency recheck without dispatch or notes", ctx do
     put_assignee!(ctx.web2, ctx.agent.id)
     run = run_with!(ctx, ctx.web2, :deferred, ["assign"])

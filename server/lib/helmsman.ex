@@ -55,6 +55,7 @@ defmodule Helmsman do
       Feedback,
       Feedback.Entry,
       Feedback.Mentions,
+      Feedback.Replies,
       Search,
       Search.Reindex,
       Search.Snippet,

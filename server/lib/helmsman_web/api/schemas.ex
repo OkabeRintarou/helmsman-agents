@@ -189,6 +189,20 @@ defmodule HelmsmanWeb.API.Schemas.Feedback do
         id: string("Feedback ID (e.g. BOS-12#3)."),
         seq: %Schema{type: :integer},
         thread_seq: %Schema{type: :integer, nullable: true},
+        reply_to: nullable(string("Original feedback ID being replied to.")),
+        reply_root: nullable(string("Root feedback revision thread ID.")),
+        target: %Schema{
+          type: :object,
+          nullable: true,
+          properties: %{
+            id: string(),
+            seq: %Schema{type: :integer},
+            author: HelmsmanWeb.API.Schemas.ActorRef,
+            summary: string(),
+            status: string("Original target state: active or superseded.")
+          },
+          required: [:id, :seq, :author, :summary, :status]
+        },
         kind: string(),
         content: string(),
         author: HelmsmanWeb.API.Schemas.ActorRef,

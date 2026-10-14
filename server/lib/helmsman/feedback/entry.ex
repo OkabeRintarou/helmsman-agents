@@ -30,6 +30,8 @@ defmodule Helmsman.Feedback.Entry do
     belongs_to :task, Task
     field :seq, :integer
     field :thread_seq, :integer
+    field :reply_to_seq, :integer
+    field :reply_root_seq, :integer
     belongs_to :author, Actor
     field :kind, Ecto.Enum, values: @kinds, default: :comment
     field :content, :string
@@ -58,6 +60,7 @@ defmodule Helmsman.Feedback.Entry do
     field :dispatch_view, {:array, :map}, virtual: true, default: []
     # `add-run-steering` decision 10: the run it was pushed into, if any.
     field :steer, :map, virtual: true
+    field :target, :map, virtual: true
 
     timestamps(type: :utc_datetime_usec, updated_at: false)
   end

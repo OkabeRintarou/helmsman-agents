@@ -123,6 +123,8 @@ defmodule Helmsman.Backup.Bosun do
           "status" => if(f["superseded_by"], do: "superseded", else: "active"),
           "supersedes" => f["supersedes"],
           "superseded_by" => f["superseded_by"],
+          "reply_to" => nil,
+          "reply_root" => nil,
           "mentions" => [],
           "fallback" => false,
           "at" => time(f["created_at"])

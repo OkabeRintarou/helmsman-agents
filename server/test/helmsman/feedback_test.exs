@@ -10,6 +10,7 @@ defmodule Helmsman.FeedbackTest do
   alias Helmsman.Events
   alias Helmsman.Feedback
   alias Helmsman.Feedback.Entry
+  alias Helmsman.QueryCount
   alias Helmsman.Tasks
 
   setup do
@@ -56,6 +57,132 @@ defmodule Helmsman.FeedbackTest do
   defp subscribe(task) do
     Events.subscribe(Events.topic(:project, task.project_id))
     Events.subscribe(Events.topic(:task, task.id))
+  end
+
+  describe "replies" do
+    test "replies to replies keep the actual target and a single root", ctx do
+      root = add!(ctx.alice, ctx.task, :comment, "Root\nsecond line")
+
+      {:ok, reply} =
+        Feedback.add(ctx.bob, ctx.task.ident, %{content: "Reply", reply_to: id(root)})
+
+      {:ok, nested} =
+        Feedback.add(ctx.alice, ctx.task.ident, %{"content" => "Nested", "reply_to" => id(reply)})
+
+      assert %{
+               reply_to: "BOS-1#2",
+               reply_root: "BOS-1#1",
+               target: %{id: "BOS-1#2", summary: "Reply", status: "active"}
+             } = Feedback.view(nested)
+
+      assert Feedback.view(reply).target.author.name == ctx.alice.actor.name
+      assert Feedback.view(reply).target.summary == "Root"
+      {:ok, revised} = Feedback.revise(ctx.alice, id(nested), %{content: "Nested v2"})
+      assert {revised.reply_to_seq, revised.reply_root_seq, revised.thread_seq} == {2, 1, 3}
+      {:ok, task} = Tasks.get(ctx.alice, ctx.task.ident)
+      assert List.last(Tasks.detail(task).feedback).reply_to == id(reply)
+    end
+
+    test "target revision changes summary and jump but not the stored relation", ctx do
+      root = add!(ctx.alice, ctx.task, :comment, "Original")
+
+      {:ok, reply} =
+        Feedback.add(ctx.bob, ctx.task.ident, %{content: "Reply", reply_to: id(root)})
+
+      {:ok, current} = Feedback.revise(ctx.alice_dev, id(root), %{content: "Current\nmore"})
+      {:ok, loaded} = Feedback.get(ctx.alice, id(reply))
+
+      assert %{
+               reply_to: "BOS-1#1",
+               reply_root: "BOS-1#1",
+               target: %{id: "BOS-1#3", seq: 3, summary: "Current", status: "superseded"}
+             } = Feedback.view(loaded)
+
+      assert loaded.target.author.name == ctx.alice_dev.actor.name
+
+      {:ok, late} =
+        Feedback.add(ctx.bob, ctx.task.ident, %{content: "Old ID still works", reply_to: id(root)})
+
+      assert late.target.id == id(current)
+      assert late.reply_root_seq == 1
+
+      {:ok, direct} =
+        Feedback.add(ctx.bob, ctx.task.ident, %{content: "Current ID", reply_to: id(current)})
+
+      assert direct.target.status == "active"
+      assert direct.reply_root_seq == 1
+    end
+
+    test "bad targets reject atomically without consuming a number or notifying", ctx do
+      root = add!(ctx.alice, ctx.task, :comment)
+      other_task = task_fixture(ctx.alice, "BOS")
+      other = add!(ctx.alice, other_task, :comment)
+      other_ws = workspace_fixture(ctx.alice.user)
+      other_scope = workspace_scope_fixture(ctx.alice.user, other_ws)
+      project_fixture(other_scope, key: "OTHER")
+      foreign = add!(other_scope, task_fixture(other_scope, "OTHER"), :comment)
+      subscribe(ctx.task)
+
+      for target <- [
+            "broken",
+            "BOS-1#99",
+            "BOS-1#0",
+            "BOS-1#01",
+            id(other),
+            id(foreign),
+            1,
+            false,
+            %{}
+          ] do
+        assert {:error, changeset} =
+                 Feedback.add(ctx.alice, ctx.task.ident, %{content: "no", reply_to: target})
+
+        assert errors_on(changeset)[:reply_to]
+      end
+
+      assert reload(ctx.alice, ctx.task).feedback_seq == 1
+      refute_receive {:feedback_added, _}
+
+      assert {:error, :forbidden} =
+               Feedback.add(ctx.viewer, ctx.task.ident, %{content: "no", reply_to: id(root)})
+
+      assert {:error, changeset} =
+               Feedback.revise(ctx.alice, id(root), %{content: "no", reply_to: id(root)})
+
+      assert errors_on(changeset)[:reply_to]
+    end
+
+    test "batch target loading takes the same queries for one and fifty replies", ctx do
+      root = add!(ctx.alice, ctx.task, :comment)
+      {:ok, _} = Feedback.add(ctx.bob, ctx.task.ident, %{content: "One", reply_to: id(root)})
+      {_, one} = QueryCount.count(fn -> Feedback.list(ctx.alice, ctx.task.ident) end)
+
+      for n <- 2..50 do
+        {:ok, _} =
+          Feedback.add(ctx.bob, ctx.task.ident, %{content: "Reply #{n}", reply_to: id(root)})
+      end
+
+      {{:ok, entries}, many} =
+        QueryCount.count(fn -> Feedback.list(ctx.alice, ctx.task.ident) end)
+
+      assert many == one
+      assert many == 5
+      assert Enum.count(entries, &(&1.target != nil)) == 50
+    end
+
+    test "reply notifications and batch reads include bounded current summaries", ctx do
+      root = add!(ctx.alice, ctx.task, :comment, String.duplicate("界", 200) <> "\nrest")
+      subscribe(ctx.task)
+
+      {:ok, reply} =
+        Feedback.add(ctx.bob, ctx.task.ident, %{content: "Reply", reply_to: "bos-1#1"})
+
+      assert_receive {:feedback_added, view}
+      assert view.reply_to == id(root)
+      assert view.target.summary == String.duplicate("界", 160)
+      assert {:ok, entries} = Feedback.list(ctx.alice, ctx.task.ident)
+      assert Feedback.view(List.last(entries)) == Feedback.view(reply)
+    end
   end
 
   describe "add/3" do

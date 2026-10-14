@@ -6,6 +6,7 @@ defmodule HelmsmanMCP.TaskMarkdown do
   are included verbatim; nothing is rendered to HTML.
   """
 
+  alias Helmsman.Feedback.Replies
   alias HelmsmanMCP.Present
 
   @doc "Renders a task detail (`Helmsman.Tasks.detail/1`)."
@@ -67,11 +68,16 @@ defmodule HelmsmanMCP.TaskMarkdown do
         "(none)"
 
       active ->
-        Enum.map_join(active, "\n", fn entry ->
-          "### #{entry.id} #{entry.kind} by #{actor(entry.author)}, #{time(entry.at)}\n\n" <>
-            "#{entry.content}\n"
-        end)
+        Enum.map_join(active, "\n", &feedback_entry/1)
     end
+  end
+
+  defp feedback_entry(entry) do
+    reply = Replies.label(entry)
+    relation = if reply == "", do: "", else: " — " <> reply
+
+    "### #{entry.id} #{entry.kind} by #{actor(entry.author)}, #{time(entry.at)}#{relation}\n\n" <>
+      "#{entry.content}\n"
   end
 
   defp actor(nil), do: nil

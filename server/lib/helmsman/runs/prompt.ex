@@ -36,6 +36,7 @@ defmodule Helmsman.Runs.Prompt do
   alias Helmsman.AgentDesigns.Prompt, as: DesignPrompt
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Autopilots.{Content, Record}
+  alias Helmsman.Feedback.Replies
   alias Helmsman.Runs.{GitRepo, LocalRepo, Run, Spec}
   alias Helmsman.Squads
   alias Helmsman.Tasks.Task
@@ -50,7 +51,13 @@ defmodule Helmsman.Runs.Prompt do
           required(:retried) => %{pos_integer() => atom() | nil},
           required(:resume?) => boolean(),
           optional(:repo) => GitRepo.t() | LocalRepo.t() | nil,
-          optional(:feedback) => %{pos_integer() => %{id: String.t(), content: String.t()}},
+          optional(:feedback) => %{
+            pos_integer() => %{
+              required(:id) => String.t(),
+              required(:content) => String.t(),
+              optional(:target) => map() | nil
+            }
+          },
           optional(:squad) => Squads.loaded() | nil,
           optional(:autopilot) => %{record: Record.t(), note_by: String.t() | nil} | nil,
           optional(:delegations) => %{
@@ -70,7 +77,7 @@ defmodule Helmsman.Runs.Prompt do
   task (nil: none), `names` (actor ID → name, for the triggers), `retried`
   (run ID → failure reason, for retry markers), `resume?` and `repo`
   (nil or absent: none) and `feedback` (feedback ID → the current record
-  of its revision chain, `%{id: "KEY-N#S", content}`, for the quotes of
+  of its revision chain, `%{id: "KEY-N#S", content, target}`, for the quotes of
   `add-continuation-triggers` decision 9).
   """
   @spec build(Run.t(), ctx()) :: String.t()
@@ -433,8 +440,11 @@ defmodule Helmsman.Runs.Prompt do
         "finish with it. Act on it now unless you already have:"
 
     case Map.get(ctx[:feedback] || %{}, trigger["feedback_id"]) do
-      %{id: id, content: content} -> join(["#{lead} #{id} #{tail}", blockquote(content)])
-      nil -> "#{lead} a feedback record #{tail}"
+      %{id: id, content: content} = entry ->
+        join(["#{lead} #{id}#{reply_suffix(entry)} #{tail}", blockquote(content)])
+
+      nil ->
+        "#{lead} a feedback record #{tail}"
     end
   end
 
@@ -508,18 +518,31 @@ defmodule Helmsman.Runs.Prompt do
   end
 
   # `<text> <IDENT>#<n>:` and the quote (a record is never deleted).
+  defp reply_suffix(entry) do
+    case Replies.label(entry) do
+      "" -> ""
+      label -> " (" <> label <> ")"
+    end
+  end
+
   defp quoted(text, feedback_id, ctx) do
     case Map.get(ctx[:feedback] || %{}, feedback_id) do
-      %{id: id, content: content} -> join(["#{text} #{id}:", blockquote(content)])
-      nil -> text <> " a feedback record."
+      %{id: id, content: content} = entry ->
+        join(["#{text} #{id}#{reply_suffix(entry)}:", blockquote(content)])
+
+      nil ->
+        text <> " a feedback record."
     end
   end
 
   # `<label> <IDENT>#<n>:` and the quote, or nothing.
   defp quote_lines(label, feedback_id, ctx) do
     case Map.get(ctx[:feedback] || %{}, feedback_id) do
-      %{id: id, content: content} -> ["#{label} #{id}:", blockquote(content)]
-      nil -> []
+      %{id: id, content: content} = entry ->
+        ["#{label} #{id}#{reply_suffix(entry)}:", blockquote(content)]
+
+      nil ->
+        []
     end
   end
 

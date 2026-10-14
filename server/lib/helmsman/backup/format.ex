@@ -12,7 +12,7 @@ defmodule Helmsman.Backup.Format do
     "task_events" =>
       ~w(actor assignee_side at auto auto_reason comment commits feedback from n task tests to verified_sha),
     "feedback" =>
-      ~w(at author content fallback id kind mentions status superseded_by supersedes thread),
+      ~w(at author content fallback id kind mentions reply_root reply_to status superseded_by supersedes thread),
     "links" => ~w(actor at from to type),
     "saved_filters" => ~w(bql name owner)
   }

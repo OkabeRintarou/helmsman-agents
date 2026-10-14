@@ -34,7 +34,7 @@ defmodule Helmsman.Dispatch.Continuation do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.Dispatch.Mentions
-  alias Helmsman.Feedback.Entry
+  alias Helmsman.Feedback.{Entry, Replies}
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.{Origin, Outcome, Run, TaskGrant, Triggers}
@@ -140,7 +140,9 @@ defmodule Helmsman.Dispatch.Continuation do
   """
   @spec plan_feedback(Scope.t(), Task.t(), map(), Entry.t() | nil) :: {[pos_integer()], plan()}
   def plan_feedback(%Scope{} = scope, %Task{} = task, input, old) do
-    question = reason_question(task, %{kind: input[:kind] || (old && old.kind)})
+    reason = Map.put(input, :kind, input[:kind] || (old && old.kind))
+    reason = if old, do: Map.put(reason, :reply_to_seq, old.reply_to_seq), else: reason
+    question = reason_question(task, reason)
     mentions = Mentions.resolve(task.workspace_id, input.content)
     agents = agent_ids([task.created_by_id, question_author(question)] ++ mentions)
 
@@ -178,7 +180,16 @@ defmodule Helmsman.Dispatch.Continuation do
 
   defp requested_items(_task, _to), do: []
 
-  # The question an answer would answer: only when the task waits on one.
+  # Explicit replies select their question; both paths require an open
+  # question so revising an already answered record does not trigger again.
+  defp reason_question(%Task{open_question: true, id: id}, %{kind: :answer, reply_to_seq: seq})
+       when is_integer(seq) do
+    case Replies.current(id, seq) do
+      %Entry{kind: :question} = question -> question
+      _ -> nil
+    end
+  end
+
   defp reason_question(%Task{open_question: true, id: id}, %{kind: :answer}),
     do: last_question(id)
 
