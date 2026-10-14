@@ -728,7 +728,7 @@ defmodule HelmsmanWeb.AutopilotLive.Show do
             has_more={@more?}
             load_more="load_more"
           >
-            <:col :let={r} label={dgettext("ui", "时间")} class="w-36">
+            <:col :let={r} label={dgettext("ui", "时间")} class="w-28 md:w-36">
               <span class="font-mono text-label text-fg-muted" data-time>
                 {local_time(r.inserted_at, @browser_tz, [])}
               </span>
@@ -745,7 +745,9 @@ defmodule HelmsmanWeb.AutopilotLive.Show do
             <:col :let={r} label={dgettext("ui", "结果")} secondary>
               <span class="truncate text-fg-muted" data-result>{first_line(r.result)}</span>
             </:col>
-            <:col :let={r} label={dgettext("ui", "任务 / 运行")} class="w-28">
+            <%!-- Secondary: below md the row opens the record panel with the same link
+                 (the four fixed columns overflowed 390 px, walkthrough 5.1). --%>
+            <:col :let={r} label={dgettext("ui", "任务 / 运行")} class="w-28" secondary>
               <span data-link><.record_result_link record={r} slug={@slug} /></span>
             </:col>
           </.data_table>

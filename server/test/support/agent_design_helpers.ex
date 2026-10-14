@@ -61,6 +61,29 @@ defmodule HelmsmanWeb.AgentDesignHelpers do
     view
   end
 
+  @doc "Starts alice's (or `scope`'s, with its `helper`) squad conversation: the view."
+  def start_squad!(ctx, message \\ "建一个网页小队", scope \\ nil, helper \\ "helper") do
+    {:ok, view} =
+      AgentDesigns.start(scope || ctx.alice_scope, %{
+        helper: helper,
+        message: message,
+        kind: "squad"
+      })
+
+    view
+  end
+
+  @doc "The helper proposes (patches) the squad part during the current turn."
+  def propose_squad!(design_id, attrs) do
+    {scope, _token} = run_scope(running_turn!(design_id))
+    {:ok, _} = AgentDesigns.propose_squad(scope, attrs)
+    :ok
+  end
+
+  @doc "The workspace identity name of `user`."
+  def actor_name(ws, user),
+    do: Repo.get_by!(Actor, workspace_id: ws.id, user_id: user.id).name
+
   @doc "The conversation row."
   def design!(id), do: AgentDesignsFixtures.design!(id)
 

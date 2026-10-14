@@ -363,7 +363,10 @@ msgstr ""
 msgid "对比度"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/run_live/show.ex
@@ -830,6 +833,7 @@ msgstr ""
 msgid "认领后是否立即开始？"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
@@ -1585,6 +1589,7 @@ msgid "拒绝后任务结束；之后可以修改并重新提交。原因会记�
 msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/new_task_panel.ex
@@ -2199,6 +2204,7 @@ msgstr ""
 msgid "待接受的邀请"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/squad_live/index.ex
@@ -2827,6 +2833,7 @@ msgid "吊销后这台机器立即断开，它的运行时全部离线，需要�
 msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/filter_form.ex
@@ -5971,6 +5978,7 @@ msgid "%{n} 个 Agent 未通过校验，没有创建任何 Agent"
 msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_squad.ex
 #, elixir-autogen, elixir-format
 msgid "AI 修改"
 msgstr ""
@@ -6006,6 +6014,7 @@ msgid "从草稿移除了"
 msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_squad.ex
 #, elixir-autogen, elixir-format
 msgid "你修改"
 msgstr ""
@@ -6026,6 +6035,7 @@ msgid "例如：它负责什么、要遵守哪些约定、想用哪个模型"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "保存到草稿"
 msgstr ""
@@ -6351,6 +6361,7 @@ msgid "草稿刚被更新"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "草稿刚被更新（可能是 AI 或另一个标签页），已载入最新内容，你改过的字段保留"
 msgstr ""
@@ -7211,6 +7222,7 @@ msgstr ""
 msgid "%{bytes} / %{max} 字节"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/squad_components.ex
 #, elixir-autogen, elixir-format
 msgid "%{count} 个成员"
@@ -7427,6 +7439,7 @@ msgstr ""
 msgid "两次之间至少 5 分钟"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
@@ -7806,6 +7819,7 @@ msgstr ""
 msgid "手动附加的说明"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "托管 Agent"
@@ -8093,6 +8107,7 @@ msgstr ""
 msgid "缺省推理强度"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/squad_components.ex
 #, elixir-autogen, elixir-format
 msgid "能触发这个小队的成员 %{able} / %{total}"
@@ -8661,6 +8676,7 @@ msgstr ""
 msgid "已撤回申请"
 msgstr ""
 
+#: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/data_settings_components.ex
 #, elixir-autogen, elixir-format
 msgid "已有"
@@ -9042,4 +9058,198 @@ msgstr ""
 #: lib/helmsman_web/components/actor.ex
 #, elixir-autogen, elixir-format
 msgid "（未认领）"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 不存在"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 不是托管 Agent"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 不能作为成员"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 已是 leader，不能同时是成员"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 的职责说明不能超过 %{count} 字节"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 重复了"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name}（当前，不在候选中）"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{name}（新）"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "leader %{name}"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 %{count} 字节"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "与草稿里的 Agent 重名"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "你不能把它设为 leader：只能选你自己的 Agent 或草稿里的新 Agent"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "先在小队里移除 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "创建小队 %{name} 与 %{n} 个 Agent？"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "创建小队 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "可以选草稿里的新 Agent 或工作区已有的托管 Agent；确认创建时检查你能否把它设为 leader"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "小队属于工作区，创建后可以在小队页修改成员与说明。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "小队未通过校验，没有创建任何 Agent 与小队"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "小队还缺%{fields}，补齐后才能确认"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "小队需要的新 Agent 会出现在这里，你也可以直接添加；小队也可以只用工作区已有的成员。"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "小队（%{fields}）"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "已创建小队 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "已创建小队 %{name} 与 %{n} 个 Agent"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "描述你想要的小队"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "新"
+msgstr ""
+
+#: lib/helmsman_web/form_errors.ex
+#, elixir-autogen, elixir-format
+msgid "最多 %{count} 个成员"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "未命名"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "未选"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "用你自己的话说：小队做什么、需要哪些角色、谁来当 leader。AI 会追问并起草小队与它需要的新 Agent，你确认后才会创建。"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "用对话创建小队"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "确认创建小队 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "确认创建小队 %{name} 与 %{count} 个 Agent"
+msgid_plural "确认创建小队 %{name} 与 %{count} 个 Agent"
+msgstr[0] ""
+msgstr[1] ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "编辑小队"
+msgstr ""
+
+#: lib/helmsman_web/live/agent_design_live.ex
+#, elixir-autogen, elixir-format
+msgid "要创建"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "说明（%{size}）"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "还没有成员"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "（受限：%{names}）"
+msgstr ""
+
+#: lib/helmsman_web/agent_design_squad.ex
+#, elixir-autogen, elixir-format
+msgid "（新）"
 msgstr ""

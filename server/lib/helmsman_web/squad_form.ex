@@ -3,6 +3,10 @@ defmodule HelmsmanWeb.SquadForm do
   The squad side panel (add-squads-autopilots-ui D4): name, description, leader, an
   ordered member list with role notes, and instructions.
 
+  Two forms: `:new` / `:edit` of a workspace squad, and `:draft` (D16) — the squad part
+  of a creation conversation's draft, whose submit the conversation page handles
+  (`draft_attrs/1`, `AgentDesigns.put_squad/4`).
+
   The form is a map in the page's `:squad_form` assign; the page routes the
   `squad_form_*` events to `handle_event/3`, which returns `{:saved, view, socket}`,
   `{:forbidden, socket}` or `{:noreply, socket}`.
@@ -11,6 +15,10 @@ defmodule HelmsmanWeb.SquadForm do
   their own (admins any). Member candidates are the workspace's humans and unarchived
   managed agents other than the leader. Member errors of the domain start with the
   member's name (domain-request-1 R3) and are shown on that member's row.
+
+  In `:draft` the draft's new agents come first among the leader and member candidates
+  (marked 新) and the leader's owner is not checked: the domain checks it on
+  confirmation.
   """
   use HelmsmanWeb, :html
 
@@ -46,6 +54,156 @@ defmodule HelmsmanWeb.SquadForm do
     |> Map.merge(from_view(view))
   end
 
+  @doc """
+  A form editing the squad part of the conversation draft of `design` (an
+  `AgentDesigns` view of a `squad` conversation), with the field `errors` of a refused
+  confirmation (`%{field => [message]}`).
+  """
+  def draft(scope, gen, design, errors \\ %{}) do
+    squad = draft_squad(design.draft)
+
+    form = base(scope, gen, :draft, new_names(design.draft))
+
+    form
+    |> Map.merge(canonical(form, from_squad(squad)))
+    |> Map.merge(%{version: design.draft_version, base: squad})
+    |> put_errors(errors || %{})
+  end
+
+  # The domain resolves the squad's names case-insensitively (the draft's agents first,
+  # then the workspace's identities): a reference is shown as the candidate it resolves
+  # to, so the leader select keeps its option selected (code-review-7 P2-2).
+  defp canonical(form, %{params: params, members: members}) do
+    %{
+      params: Map.update!(params, "leader", &candidate(form, &1)),
+      members: Enum.map(members, &Map.update!(&1, "name", fn name -> candidate(form, name) end))
+    }
+  end
+
+  defp candidate(_form, name) when name in [nil, ""], do: name
+
+  defp candidate(form, name) do
+    key = key(name)
+    Enum.find(form.agents ++ form.humans, name, &(key(&1) == key))
+  end
+
+  defp key(name) when is_binary(name), do: String.downcase(name)
+  defp key(_name), do: nil
+
+  @doc "The squad part of a draft (the empty one when absent)."
+  def draft_squad(%{"squad" => %{} = squad}), do: squad
+
+  def draft_squad(_draft),
+    do: %{
+      "name" => nil,
+      "description" => "",
+      "leader" => nil,
+      "instructions" => "",
+      "members" => []
+    }
+
+  defp new_names(draft) do
+    for %{"name" => name} <- List.wrap(draft["agents"]), is_binary(name), do: name
+  end
+
+  defp from_squad(squad) do
+    %{
+      params: %{
+        "name" => squad["name"] || "",
+        "description" => squad["description"] || "",
+        "instructions" => squad["instructions"] || "",
+        "leader" => squad["leader"] || ""
+      },
+      members:
+        for(
+          %{"name" => name} = m <- List.wrap(squad["members"]),
+          do: %{"name" => name, "role_note" => m["role_note"] || ""}
+        )
+    }
+  end
+
+  @doc """
+  The open `:draft` form after the draft changed: new candidates (the draft's agents),
+  the input kept.
+  """
+  def refresh(%{mode: :draft} = form, scope, draft) do
+    fresh = base(scope, form.gen, :draft, new_names(draft))
+    form = Map.merge(form, Map.take(fresh, [:leaders, :humans, :agents, :new]))
+    Map.merge(form, canonical(form, Map.take(form, [:params, :members])))
+  end
+
+  def refresh(form, _scope, _draft), do: form
+
+  @doc """
+  A `stale` save of the `:draft` form (D16, as the agent draft panel): the latest squad
+  part is loaded, the fields the user changed since opening keep the input.
+  """
+  def rebase(%{mode: :draft} = form, scope, design) do
+    squad = draft_squad(design.draft)
+    form = refresh(form, scope, design.draft)
+    old = canonical(form, from_squad(form.base))
+    fresh = canonical(form, from_squad(squad))
+
+    params =
+      Map.new(form.params, fn {k, v} ->
+        if same?(k, v, old.params[k]), do: {k, fresh.params[k]}, else: {k, v}
+      end)
+
+    members =
+      if same?("members", form.members, old.members), do: fresh.members, else: form.members
+
+    form
+    |> Map.merge(%{
+      params: params,
+      members: members,
+      base: squad,
+      version: design.draft_version,
+      gen: form.gen + 1,
+      notice: :draft_stale,
+      error: nil
+    })
+  end
+
+  @doc """
+  The attrs of `AgentDesigns.put_squad/4` (string keys; a blank name or leader is nil):
+  only the fields that differ from the squad part the panel was opened on (`base`), names
+  compared case-insensitively — an untouched `WEB-LEAD` stays as the AI wrote it.
+  """
+  def draft_attrs(form) do
+    attrs = put_squad_attrs(form)
+
+    case form.base do
+      nil ->
+        attrs
+
+      base ->
+        old = put_squad_attrs(from_squad(base))
+        Map.reject(attrs, fn {k, v} -> same?(k, v, old[k]) end)
+    end
+  end
+
+  defp put_squad_attrs(%{params: params, members: members}) do
+    %{
+      "name" => blank_nil(String.trim(params["name"] || "")),
+      "description" => params["description"] || "",
+      "instructions" => params["instructions"] || "",
+      "leader" => blank_nil(params["leader"] || ""),
+      "members" =>
+        Enum.map(members, &%{"name" => &1["name"], "role_note" => &1["role_note"] || ""})
+    }
+  end
+
+  defp same?("leader", a, b), do: key(blank_nil(a || "")) == key(blank_nil(b || ""))
+
+  defp same?("members", a, b) when is_list(a) and is_list(b) do
+    length(a) == length(b) and
+      Enum.all?(Enum.zip(a, b), fn {x, y} ->
+        key(x["name"]) == key(y["name"]) and (x["role_note"] || "") == (y["role_note"] || "")
+      end)
+  end
+
+  defp same?(_field, a, b), do: a == b
+
   defp from_view(view) do
     %{
       name: view.name,
@@ -60,14 +218,16 @@ defmodule HelmsmanWeb.SquadForm do
     }
   end
 
-  defp base(scope, gen, mode) do
-    {leaders, humans, agents} = candidates(scope)
+  defp base(scope, gen, mode, new \\ []) do
+    {leaders, humans, agents} = candidates(scope, mode, new)
 
     %{
       mode: mode,
       gen: gen,
       name: nil,
       version: nil,
+      base: nil,
+      new: new,
       errors: %{},
       member_errors: %{},
       members_error: [],
@@ -80,22 +240,34 @@ defmodule HelmsmanWeb.SquadForm do
     }
   end
 
-  defp candidates(scope) do
+  defp candidates(scope, mode, new) do
     admin? = scope.role in [:owner, :admin]
     user_id = scope.user && scope.user.id
-    agents = managed_agents(scope)
+    new_keys = MapSet.new(new, &String.downcase/1)
+
+    # A draft agent shadows a workspace agent of the same name (the domain resolves
+    # names to the draft first).
+    agents =
+      scope
+      |> managed_agents()
+      |> Enum.reject(&MapSet.member?(new_keys, String.downcase(&1.name)))
+
+    drafted =
+      for name <- new,
+          do: %{name: name, disabled: false, allowed?: true, owner_name: nil, new?: true}
 
     leaders =
       for a <- agents do
         %{
           name: a.name,
           disabled: a.disabled,
-          allowed?: admin? or a.owner.id == user_id,
-          owner_name: a.owner.name
+          allowed?: mode == :draft or admin? or a.owner.id == user_id,
+          owner_name: a.owner.name,
+          new?: false
         }
       end
 
-    {leaders, humans(scope), Enum.map(agents, & &1.name)}
+    {drafted ++ leaders, humans(scope), new ++ Enum.map(agents, & &1.name)}
   end
 
   defp managed_agents(scope) do
@@ -173,15 +345,15 @@ defmodule HelmsmanWeb.SquadForm do
     leader = form_params["leader"]
 
     {members, moved} =
-      if leader not in [nil, ""] and Enum.any?(members, &(&1["name"] == leader)),
-        do: {Enum.reject(members, &(&1["name"] == leader)), leader},
+      if leader not in [nil, ""] and Enum.any?(members, &(key(&1["name"]) == key(leader))),
+        do: {Enum.reject(members, &(key(&1["name"]) == key(leader))), leader},
         else: {members, form.moved_leader}
 
     %{form | params: form_params, members: members, moved_leader: moved}
   end
 
   defp add(members, name) when is_binary(name) and name != "" do
-    if length(members) >= @max_members or Enum.any?(members, &(&1["name"] == name)),
+    if length(members) >= @max_members or Enum.any?(members, &(key(&1["name"]) == key(name))),
       do: members,
       else: members ++ [%{"name" => name, "role_note" => ""}]
   end
@@ -293,6 +465,38 @@ defmodule HelmsmanWeb.SquadForm do
     }
   end
 
+  @doc """
+  `put_errors/2` for a changeset of the conversation domain: a member error goes to the
+  row of its `name` option, else of the name it starts with.
+  """
+  def put_changeset(form, %Ecto.Changeset{errors: errors} = cs) do
+    {members, other} = Enum.split_with(errors, &match?({:members, _}, &1))
+    form = put_errors(form, FormErrors.messages(%{cs | errors: other}))
+
+    Enum.reduce(members, form, fn {:members, {_msg, opts}} = error, form ->
+      [text] = FormErrors.messages(%{cs | errors: [error]}).members
+
+      case member_row(form, opts[:name], text) do
+        nil ->
+          %{form | members_error: form.members_error ++ [text]}
+
+        name ->
+          %{form | member_errors: Map.update(form.member_errors, name, [text], &(&1 ++ [text]))}
+      end
+    end)
+  end
+
+  defp member_row(form, name, text) do
+    names = Enum.map(form.members, & &1["name"])
+
+    if is_binary(name) do
+      key = String.downcase(name)
+      Enum.find(names, &(String.downcase(&1) == key))
+    else
+      Enum.find(names, &member_message?(text, &1))
+    end
+  end
+
   defp member_message?(msg, name),
     do: String.starts_with?(msg, name <> " ") or String.starts_with?(msg, name <> ":")
 
@@ -302,6 +506,7 @@ defmodule HelmsmanWeb.SquadForm do
   attr :scope, :map, required: true
   attr :close_path, :string, default: nil
   attr :on_cancel, JS, default: %JS{}
+  attr :locked, :string, default: nil, doc: "why saving a `:draft` form is unavailable now"
 
   def panel(assigns) do
     ~H"""
@@ -327,6 +532,24 @@ defmodule HelmsmanWeb.SquadForm do
           {dgettext("ui", "载入最新")}
         </.button>
       </div>
+      <div
+        :if={@form && @form.notice == :draft_stale}
+        id="squad-form-notice"
+        role="status"
+        class="mb-4 flex items-start gap-2 rounded-field border border-warning tint-warning px-3 py-2 text-body text-warning-fg"
+      >
+        <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
+        {dgettext("ui", "草稿刚被更新（可能是 AI 或另一个标签页），已载入最新内容，你改过的字段保留")}
+      </div>
+      <div
+        :if={@locked}
+        id="squad-form-locked-notice"
+        role="status"
+        class="mb-4 flex items-start gap-2 rounded-field border border-warning tint-warning px-3 py-2 text-body text-warning-fg"
+      >
+        <.icon name="lucide-hourglass" class="mt-0.5 size-4 shrink-0" />
+        {@locked}
+      </div>
       <.squad_form :if={@form} form={@form} scope={@scope} />
       <:footer :let={cancel}>
         <span />
@@ -337,9 +560,10 @@ defmodule HelmsmanWeb.SquadForm do
             type="submit"
             form="squad-form"
             variant="primary"
+            disabled={@locked != nil}
             phx-disable-with={dgettext("ui", "正在保存…")}
           >
-            {if(@form && @form.mode == :new, do: dgettext("ui", "创建"), else: dgettext("ui", "保存"))}
+            {submit_label(@form)}
           </.button>
         </div>
       </:footer>
@@ -347,7 +571,12 @@ defmodule HelmsmanWeb.SquadForm do
     """
   end
 
+  defp submit_label(%{mode: :new}), do: dgettext("ui", "创建")
+  defp submit_label(%{mode: :draft}), do: dgettext("ui", "保存到草稿")
+  defp submit_label(_form), do: dgettext("ui", "保存")
+
   defp title(%{mode: :new}), do: dgettext("ui", "新建小队")
+  defp title(%{mode: :draft}), do: dgettext("ui", "编辑小队")
   defp title(%{mode: :edit, name: name}), do: dgettext("ui", "编辑 %{name}", name: name)
   defp title(_form), do: ""
 
@@ -357,7 +586,7 @@ defmodule HelmsmanWeb.SquadForm do
   defp squad_form(assigns) do
     form = assigns.form
     leader = form.params["leader"]
-    taken = MapSet.new([leader | Enum.map(form.members, & &1["name"])])
+    taken = MapSet.new([leader | Enum.map(form.members, & &1["name"])], &key/1)
 
     assigns =
       assign(assigns,
@@ -422,6 +651,12 @@ defmodule HelmsmanWeb.SquadForm do
         <p class="text-caption text-fg-muted">
           {dgettext("ui", "Leader 收到交给小队的任务，决定谁来做、怎么拆；它不能创建 Agent")}
         </p>
+        <p :if={@form.mode == :draft} id="squad-form-leader-draft" class="text-caption text-fg-muted">
+          {dgettext(
+            "ui",
+            "可以选草稿里的新 Agent 或工作区已有的托管 Agent；确认创建时检查你能否把它设为 leader"
+          )}
+        </p>
         <p
           :if={@form.moved_leader}
           id="squad-form-leader-moved"
@@ -458,6 +693,13 @@ defmodule HelmsmanWeb.SquadForm do
           >
             <div class="flex items-center gap-2">
               <.actor_chip actor={%{name: m["name"], kind: member_kind(@form, m["name"])}} />
+              <.badge
+                :if={@form.mode == :draft and new?(@form, m["name"])}
+                tone={:brand}
+                data-origin="new"
+              >
+                {dgettext("ui", "新")}
+              </.badge>
               <span class="flex-1" />
               <.icon_button
                 id={"squad-form-member-#{i}-up"}
@@ -545,7 +787,10 @@ defmodule HelmsmanWeb.SquadForm do
     """
   end
 
-  defp member_kind(form, name), do: if(name in form.agents, do: :agent, else: :human)
+  defp member_kind(form, name),
+    do: if(Enum.any?(form.agents, &(key(&1) == key(name))), do: :agent, else: :human)
+
+  defp new?(form, name), do: Enum.any?(form.new, &(key(&1) == key(name)))
 
   defp leader_options(form) do
     current = form.params["leader"]
@@ -553,6 +798,9 @@ defmodule HelmsmanWeb.SquadForm do
     for l <- form.leaders do
       label =
         cond do
+          l.new? ->
+            dgettext("ui", "%{name}（新）", name: l.name)
+
           not l.allowed? and l.name != current ->
             dgettext("ui", "%{name}（只能选你自己的 Agent 作为 leader）", name: l.name)
 
@@ -565,11 +813,28 @@ defmodule HelmsmanWeb.SquadForm do
 
       [key: label, value: l.name, disabled: not l.allowed? and l.name != current]
     end
+    |> keep_current(form, current)
+  end
+
+  # A current leader that is no candidate (archived meanwhile, unknown) keeps an option of
+  # its own: the select must not fall back to the prompt and clear it on submit.
+  defp keep_current(options, _form, current) when current in [nil, ""], do: options
+
+  defp keep_current(options, form, current) do
+    if Enum.any?(form.leaders, &(key(&1.name) == key(current))),
+      do: options,
+      else: [[key: dgettext("ui", "%{name}（当前，不在候选中）", name: current), value: current] | options]
   end
 
   defp add_options(form, taken) do
-    humans = Enum.reject(form.humans, &MapSet.member?(taken, &1))
-    agents = Enum.reject(form.agents, &MapSet.member?(taken, &1))
+    humans = Enum.reject(form.humans, &MapSet.member?(taken, key(&1)))
+
+    agents =
+      for name <- form.agents, not MapSet.member?(taken, key(name)) do
+        if new?(form, name),
+          do: [key: dgettext("ui", "%{name}（新）", name: name), value: name],
+          else: name
+      end
 
     [{dgettext("ui", "人"), humans}, {"Agent", agents}]
     |> Enum.reject(fn {_label, list} -> list == [] end)

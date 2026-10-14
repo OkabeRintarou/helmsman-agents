@@ -39,6 +39,21 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   def edit_parts(edits) do
     edits = List.wrap(edits)
 
+    # The squad part of a squad conversation (add-squads-autopilots-ui D16):
+    # 「小队（成员）」.
+    squad =
+      for %{"squad" => true} = edit <- edits do
+        case List.wrap(edit["fields"]) do
+          [] ->
+            dgettext("ui", "小队")
+
+          fields ->
+            dgettext("ui", "小队（%{fields}）",
+              fields: Enum.map_join(fields, "、", &HelmsmanWeb.AgentDesignSquad.field_label/1)
+            )
+        end
+      end
+
     changed =
       for %{"agent" => agent} = edit <- edits, edit["removed"] != true do
         fields = Enum.reject(List.wrap(edit["fields"]), &(&1 == "name"))
@@ -51,7 +66,7 @@ defmodule HelmsmanWeb.AgentDesignComponents do
       end
 
     removed = for %{"agent" => agent, "removed" => true} <- edits, do: agent
-    {changed, removed}
+    {squad ++ changed, removed}
   end
 
   @doc "「你修改了草稿：…；移除了 …」, or nil without edits."
@@ -107,6 +122,9 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   def error_text(:empty_draft, _helper), do: dgettext("ui", "草稿里还没有 Agent")
   def error_text(:not_found, _helper), do: dgettext("ui", "对话不存在")
   def error_text(:forbidden, _helper), do: dgettext("ui", "没有权限")
+
+  def error_text({:referenced_by_squad, name}, _helper),
+    do: HelmsmanWeb.AgentDesignSquad.referenced_text(name)
 
   def error_text(reason, helper) when is_atom(reason) do
     case RunComponents.unavailable_reason(helper || "", {:skipped, reason}) do
@@ -233,6 +251,11 @@ defmodule HelmsmanWeb.AgentDesignComponents do
 
   attr :errors, :list, default: [], doc: "[{field, message}] of a refused confirmation"
   attr :locked, :string, default: nil, doc: "why the card cannot be edited now"
+
+  attr :remove_reason, :string,
+    default: nil,
+    doc: "why the card cannot be removed (the squad refers to it)"
+
   attr :highlight, :string, default: nil, doc: "a class that replays the highlight"
   attr :scope, :map, required: true
 
@@ -288,7 +311,7 @@ defmodule HelmsmanWeb.AgentDesignComponents do
             label={dgettext("ui", "移除")}
             phx-click="ask_remove"
             phx-value-name={@agent["name"]}
-            disabled_reason={@locked}
+            disabled_reason={@locked || @remove_reason}
           />
         </span>
       </div>
@@ -415,9 +438,10 @@ defmodule HelmsmanWeb.AgentDesignComponents do
     )
   end
 
-  defp byte_text(bytes) when bytes < 1024, do: "#{bytes} B"
+  @doc "「512 B」 / 「1.2 KB」."
+  def byte_text(bytes) when bytes < 1024, do: "#{bytes} B"
 
-  defp byte_text(bytes),
+  def byte_text(bytes),
     do: :erlang.float_to_binary(bytes / 1024, decimals: 1) <> " KB"
 
   @doc "「1.2 KB / 8 KB」 of a message being typed."
@@ -426,11 +450,19 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   ## Confirmation (D8, D14)
 
   attr :agents, :list, required: true
+  attr :squad, :map, default: nil, doc: "the squad part of a squad conversation's snapshot"
+  attr :summary, :map, default: nil, doc: "its `trigger_summary`"
 
-  @doc "The list of the confirmation dialog (#36 puts the squad in front of it)."
+  @doc "The list of the confirmation dialog; a squad conversation's squad comes first (D16)."
   def confirm_list(assigns) do
+    assigns =
+      assign(assigns, :keys, MapSet.new(assigns.agents, &String.downcase(&1["name"] || "")))
+
     ~H"""
     <ul id="design-confirm-list" class="flex flex-col gap-1">
+      <li :if={@squad} data-squad>
+        <HelmsmanWeb.AgentDesignSquad.confirm_row squad={@squad} summary={@summary} keys={@keys} />
+      </li>
       <li :for={a <- @agents} class="flex flex-wrap items-center gap-2" data-name={a["name"]}>
         <span class="font-mono text-body text-fg">{a["name"]}</span>
         <.badge tone={:muted}>{provider_label(a["provider"])}</.badge>

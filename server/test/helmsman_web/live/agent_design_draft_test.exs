@@ -392,11 +392,398 @@ defmodule HelmsmanWeb.AgentDesignDraftTest do
       assert entry(design.id, "qa") == nil
     end
 
+    # The buttons keep their click while usable: a `false` disabled_reason makes `<.button>`
+    # inert in the browser, which pushed events do not show (code-reply-7).
+    test "添加 Agent and the card actions are live while the draft is open", ctx do
+      drafted(ctx, %{"name" => "fe-dev"})
+      {view, _} = open_page(ctx)
+
+      for id <- ~w(design-add draft-agent-0-edit draft-agent-0-remove design-confirm-open) do
+        assert has_element?(view, "##{id}[phx-click]"), id
+        refute has_element?(view, "##{id}[data-hm-disabled]"), id
+        refute has_element?(view, "##{id}[aria-disabled]"), id
+      end
+
+      view |> element("#design-add") |> render_click()
+      assert open?(view, "agent-panel")
+    end
+
     test "草稿已满", ctx do
       drafted(ctx, for(i <- 1..8, do: %{"name" => "a#{i}"}))
       {view, _} = open_page(ctx)
       assert has_element?(view, "#design-add[aria-disabled=true]")
       assert has_element?(view, "#design-add-reason", "草稿最多 8 个 Agent")
+    end
+  end
+
+  # add-squads-autopilots-ui D16: the squad part of a squad conversation.
+  defp squad_drafted(ctx, agents, squad) do
+    design = start_squad!(ctx)
+    for a <- agents, do: propose!(design.id, a)
+    if squad, do: propose_squad!(design.id, squad)
+    reply!(design.id, "看看小队")
+    design
+  end
+
+  defp save_squad(view, params),
+    do: render_submit(view, "squad_form_submit", %{"squad" => params})
+
+  describe "小队草稿" do
+    test "AI 提出小队", ctx do
+      bob = actor_name(ctx.ws, ctx.bob)
+      design = start_squad!(ctx)
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#design-squad [data-field=name]", "未命名")
+
+      propose!(design.id, %{"name" => "web-lead"})
+      propose!(design.id, %{"name" => "fe-dev"})
+
+      propose_squad!(design.id, %{
+        "name" => "web-team",
+        "description" => "做网页",
+        "leader" => "web-lead",
+        "instructions" => "按 **顺序** 分工",
+        "members" => [
+          %{"name" => "fe-dev", "role_note" => "写前端"},
+          %{"name" => bob, "role_note" => "拍板产品问题"}
+        ]
+      })
+
+      assert has_element?(view, "#design-squad[data-name=web-team] [data-field=name]", "web-team")
+      assert has_element?(view, "#design-squad [data-updated-by=ai]", "AI 修改")
+      assert has_element?(view, "#design-squad [data-field=description]", "做网页")
+      assert has_element?(view, "#design-squad [data-field=leader]", "web-lead")
+      assert has_element?(view, "#design-squad [data-field=leader] [data-origin=new]", "新")
+
+      assert has_element?(view, "#design-squad-member-0[data-member=fe-dev]", "写前端")
+      assert has_element?(view, "#design-squad-member-0 [data-origin=new]", "新")
+      assert has_element?(view, "#design-squad-member-0 [data-kind]", "托管 Agent")
+      assert has_element?(view, ~s(#design-squad-member-1[data-member="#{bob}"]), "拍板产品问题")
+      assert has_element?(view, "#design-squad-member-1 [data-origin=existing]", "已有")
+      assert has_element?(view, "#design-squad-member-1 [data-kind]", "人")
+      assert has_element?(view, "#design-squad-trigger", "能触发这个小队的成员")
+      refute has_element?(view, "#design-squad-missing")
+
+      # The instructions: sanitised Markdown, folded, with their size.
+      assert has_element?(view, "#design-squad details[data-field=instructions] summary", "说明（")
+      refute has_element?(view, "#design-squad details[open]")
+      assert has_element?(view, "#design-squad details strong", "顺序")
+
+      # The cards are below the block.
+      html = view |> element("#design-draft") |> render()
+      {squad_at, _} = :binary.match(html, ~s(id="design-squad"))
+      {card_at, _} = :binary.match(html, ~s(id="draft-agent-0"))
+      assert squad_at < card_at
+    end
+
+    test "受限成员", ctx do
+      managed_agent_fixture(ctx.alice_scope, %{name: "keel/qa", access: "owner_only"})
+      managed_agent_fixture(ctx.alice_scope, %{name: "keel/lead", access: "workspace"})
+
+      squad_drafted(ctx, [], %{
+        "name" => "web-team",
+        "leader" => "keel/lead",
+        "members" => [%{"name" => "keel/qa", "role_note" => "测试"}]
+      })
+
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#design-squad-trigger-box[data-warn=restricted]")
+      assert has_element?(view, "#design-squad-trigger", ~r/能触发这个小队的成员 1 \/ 2/)
+      assert has_element?(view, "#design-squad-trigger [data-restricted]", "keel/qa")
+      assert has_element?(view, "#design-squad-member-0 [data-origin=existing]", "已有")
+    end
+
+    test "编辑小队 is live without a turn", ctx do
+      squad_drafted(ctx, [%{"name" => "web-lead"}], %{
+        "name" => "web-team",
+        "leader" => "web-lead"
+      })
+
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#design-squad-edit[phx-click]")
+      refute has_element?(view, "#design-squad-edit[data-hm-disabled]")
+      assert has_element?(view, "#draft-agent-0-remove[data-hm-disabled]")
+      assert has_element?(view, "#draft-agent-0-edit[phx-click]")
+      refute has_element?(view, "#draft-agent-0-edit[data-hm-disabled]")
+    end
+
+    test "Agent 对话没有小队区块", ctx do
+      drafted(ctx, %{"name" => "fe-dev"})
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#draft-agent-0")
+      refute has_element?(view, "#design-squad")
+      refute has_element?(view, "#design-squad-edit")
+    end
+  end
+
+  describe "修改小队草稿" do
+    test "用户改成员说明", ctx do
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "qa"}], %{
+          "name" => "web-team",
+          "leader" => "web-lead",
+          "members" => [%{"name" => "qa", "role_note" => "测试"}]
+        })
+
+      {view, _} = open_page(ctx)
+      view |> element("#design-squad-edit") |> render_click()
+      assert open?(view, "squad-panel")
+      assert in_portal?(view, "squad-panel", "#squad-panel-title", "编辑小队")
+      assert in_portal?(view, "squad-panel", "#squad-form-submit", "保存到草稿")
+
+      assert in_portal?(
+               view,
+               "squad-panel",
+               "#squad-form-member-0[data-member=qa] [data-origin=new]"
+             )
+
+      save_squad(view, %{"members" => %{"0" => %{"role_note" => "端到端测试"}}})
+
+      refute open?(view, "squad-panel")
+      assert has_element?(view, "#design-squad-member-0[data-member=qa]", "端到端测试")
+      assert has_element?(view, "#design-squad [data-updated-by=user]", "你修改")
+      assert has_element?(view, "#design-pending", "小队（成员）")
+
+      squad = design!(design.id).draft["squad"]
+      assert squad["members"] == [%{"name" => "qa", "role_note" => "端到端测试"}]
+      assert squad["name"] == "web-team"
+      assert squad["leader"] == "web-lead"
+    end
+
+    test "面板的 leader 候选里草稿新 Agent 在前并带「新」", ctx do
+      managed_agent_fixture(ctx.alice_scope, %{name: "keel/lead"})
+      managed_agent_fixture(ctx.bob_scope, %{name: "bob/lead"})
+      squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "fe-dev"}], nil)
+      {view, _} = open_page(ctx)
+      view |> element("#design-squad-edit") |> render_click()
+
+      options =
+        view
+        |> portal("squad-panel")
+        |> LazyHTML.query("#squad-form-leader option")
+        |> Enum.map(&{LazyHTML.attribute(&1, "value"), LazyHTML.text(&1)})
+        |> Enum.reject(fn {[value], _} -> value == "" end)
+
+      assert [{["web-lead"], "web-lead（新）"}, {["fe-dev"], "fe-dev（新）"} | existing] = options
+      existing_names = Enum.map(existing, fn {[v], _} -> v end)
+      assert "keel/lead" in existing_names
+      assert "helper" in existing_names
+      # The leader's owner is not checked in the draft: bob's agent is selectable.
+      assert "bob/lead" in existing_names
+      refute in_portal?(view, "squad-panel", "#squad-form-leader option[disabled]")
+
+      # Members: the people and the draft's agents (新) too.
+      assert in_portal?(
+               view,
+               "squad-panel",
+               ~s(#squad-form-add option[value="fe-dev"]),
+               "fe-dev（新）"
+             )
+
+      assert in_portal?(
+               view,
+               "squad-panel",
+               ~s(#squad-form-add optgroup[label="人"] option),
+               actor_name(ctx.ws, ctx.bob)
+             )
+    end
+
+    # code-review-7 P2-2: the domain resolves the squad's names case-insensitively.
+    test "references in another case: selected, kept when only the description changes",
+         ctx do
+      managed_agent_fixture(ctx.alice_scope, %{name: "keel/fe"})
+
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "qa"}], %{
+          "name" => "web-team",
+          "leader" => "WEB-LEAD",
+          "members" => [
+            %{"name" => "QA", "role_note" => "测试"},
+            %{"name" => "KEEL/FE", "role_note" => "前端"}
+          ]
+        })
+
+      assert design!(design.id).draft["squad"]["leader"] == "WEB-LEAD"
+      {view, _} = open_page(ctx)
+      view |> element("#design-squad-edit") |> render_click()
+
+      assert portal_attr(view, "squad-panel", "#squad-form-leader option[selected]", "value") ==
+               "web-lead"
+
+      assert in_portal?(
+               view,
+               "squad-panel",
+               "#squad-form-member-0[data-member=qa] [data-origin=new]"
+             )
+
+      assert in_portal?(view, "squad-panel", ~s(#squad-form-member-1[data-member="keel/fe"]))
+      refute in_portal?(view, "squad-panel", "#squad-form-member-1 [data-origin=new]")
+
+      assert portal_attr(
+               view,
+               "squad-panel",
+               "#squad-form-member-1 [data-actor-kind]",
+               "data-actor-kind"
+             ) ==
+               "agent"
+
+      # The leader and the members are no candidates to add.
+      for name <- ~w(web-lead qa keel/fe),
+          do: refute(in_portal?(view, "squad-panel", ~s(#squad-form-add option[value="#{name}"])))
+
+      save_squad(view, %{"description" => "新描述"})
+      refute open?(view, "squad-panel")
+
+      squad = design!(design.id).draft["squad"]
+      assert squad["description"] == "新描述"
+      assert squad["leader"] == "WEB-LEAD"
+
+      assert squad["members"] == [
+               %{"name" => "QA", "role_note" => "测试"},
+               %{"name" => "KEEL/FE", "role_note" => "前端"}
+             ]
+
+      assert has_element?(view, "#design-pending", "小队（描述）")
+    end
+
+    test "a stale save merges references in another case as unchanged", ctx do
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "qa"}], %{
+          "name" => "web-team",
+          "leader" => "WEB-LEAD",
+          "members" => [%{"name" => "QA", "role_note" => "测试"}]
+        })
+
+      {view, _} = open_page(ctx)
+      view |> element("#design-squad-edit") |> render_click()
+
+      {:ok, _} =
+        AgentDesigns.put_squad(ctx.alice_scope, design.id, version(design.id), %{
+          "members" => [%{"name" => "qa", "role_note" => "端到端测试"}]
+        })
+
+      save_squad(view, %{"description" => "新描述"})
+      assert in_portal?(view, "squad-panel", "#squad-form-notice", "草稿刚被更新")
+      assert in_portal?(view, "squad-panel", "#squad-form-member-0-note[value=端到端测试]")
+
+      assert portal_attr(view, "squad-panel", "#squad-form-leader option[selected]", "value") ==
+               "web-lead"
+
+      save_squad(view, %{"description" => "新描述"})
+      squad = design!(design.id).draft["squad"]
+      assert squad["description"] == "新描述"
+      assert squad["leader"] == "WEB-LEAD"
+      assert squad["members"] == [%{"name" => "qa", "role_note" => "端到端测试"}]
+    end
+
+    test "校验错误 in the panel; the leader moves out of the members", ctx do
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "qa"}], %{
+          "name" => "web-team",
+          "members" => [%{"name" => "qa", "role_note" => ""}]
+        })
+
+      {view, _} = open_page(ctx)
+      view |> element("#design-squad-edit") |> render_click()
+
+      save_squad(view, %{"name" => "web-lead", "leader" => "web-lead"})
+      assert open?(view, "squad-panel")
+      assert in_portal?(view, "squad-panel", "#squad-form", "与草稿里的 Agent 重名")
+
+      long = String.duplicate("a", 2049)
+      save_squad(view, %{"name" => "web-team", "members" => %{"0" => %{"role_note" => long}}})
+
+      assert in_portal?(
+               view,
+               "squad-panel",
+               "#squad-form-member-0[data-member=qa]",
+               "qa 的职责说明不能超过 2048 字节"
+             )
+
+      assert design!(design.id).draft["squad"]["leader"] == nil
+    end
+
+    test "保存时草稿已被更新: the latest loaded, the user's fields kept", ctx do
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "qa"}], %{
+          "name" => "web-team",
+          "description" => "旧描述",
+          "members" => [%{"name" => "qa", "role_note" => "测试"}]
+        })
+
+      {tab_a, _} = open_page(ctx)
+      tab_a |> element("#design-squad-edit") |> render_click()
+
+      {:ok, _} =
+        AgentDesigns.put_squad(ctx.alice_scope, design.id, version(design.id), %{
+          "description" => "另一个标签页的描述"
+        })
+
+      save_squad(tab_a, %{"leader" => "web-lead"})
+      assert open?(tab_a, "squad-panel")
+      assert in_portal?(tab_a, "squad-panel", "#squad-form-notice", "草稿刚被更新")
+      assert in_portal?(tab_a, "squad-panel", "#squad-form-description", "另一个标签页的描述")
+
+      assert portal_attr(tab_a, "squad-panel", "#squad-form-leader option[selected]", "value") ==
+               "web-lead"
+
+      save_squad(tab_a, %{"leader" => "web-lead"})
+      refute open?(tab_a, "squad-panel")
+      squad = design!(design.id).draft["squad"]
+      assert squad["leader"] == "web-lead"
+      assert squad["description"] == "另一个标签页的描述"
+    end
+
+    test "移除被引用的 Agent", ctx do
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}, %{"name" => "qa"}, %{"name" => "docs"}], %{
+          "name" => "web-team",
+          "leader" => "web-lead",
+          "members" => [%{"name" => "qa", "role_note" => ""}]
+        })
+
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#draft-agent-1[data-name=qa]")
+      assert has_element?(view, "#draft-agent-1-remove[aria-disabled=true]")
+      assert has_element?(view, "#draft-agent-1-remove-reason", "先在小队里移除 qa")
+      assert has_element?(view, "#draft-agent-0-remove-reason", "先在小队里移除 web-lead")
+      refute has_element?(view, "#draft-agent-2-remove[aria-disabled=true]")
+      refute has_element?(view, "#draft-agent-1-edit[aria-disabled=true]")
+
+      html = render_click(view, "ask_remove", %{"name" => "qa"})
+      assert html =~ "先在小队里移除 qa"
+      refute open?(view, "design-remove")
+
+      # The domain still refuses (another tab put qa in the squad meanwhile).
+      html = render_click(view, "remove", %{"name" => "qa"})
+      assert html =~ "先在小队里移除 qa"
+      assert entry(design.id, "qa")
+    end
+
+    test "轮进行中", ctx do
+      design =
+        squad_drafted(ctx, [%{"name" => "web-lead"}], %{
+          "name" => "web-team",
+          "leader" => "web-lead"
+        })
+
+      {view, _} = open_page(ctx)
+      view |> element("#design-squad-edit") |> render_click()
+      {:ok, _} = AgentDesigns.send(ctx.alice_scope, design.id, "继续")
+
+      assert has_element?(view, "#design-squad-edit[aria-disabled=true]")
+      assert has_element?(view, "#design-squad-edit-reason", "等 helper 回复完再修改")
+
+      assert in_portal?(
+               view,
+               "squad-panel",
+               "#squad-form-locked-notice",
+               "helper 正在回复，回复结束后才能保存"
+             )
+
+      assert portal_attr(view, "squad-panel", "#squad-form-submit", "disabled") != nil
+      save_squad(view, %{"name" => "other"})
+      assert design!(design.id).draft["squad"]["name"] == "web-team"
     end
   end
 end

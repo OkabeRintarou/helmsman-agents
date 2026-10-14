@@ -241,6 +241,17 @@ defmodule HelmsmanWeb.AgentLive.ShowTest do
       assert has_element?(view, "#agent-runs-open [data-run-triggers-tip]", "先补测试")
     end
 
+    # An enabled 运行 button is a live patch link, not inert (`disabled_reason` nil, not
+    # false: code-reply-7).
+    test "the enabled 运行 button opens the panel", ctx do
+      {:ok, view, _html} = open(ctx, :alice, ctx.path)
+      assert has_element?(view, ~s(a#agent-run[data-phx-link="patch"][href$="?panel=run"]))
+      refute has_element?(view, "#agent-run[data-hm-disabled]")
+
+      view |> element("#agent-run") |> render_click()
+      assert open?(view, "run-panel")
+    end
+
     test "a second trigger merges", ctx do
       {:ok, view, _html} = open(ctx, :alice, ctx.path <> "?panel=run")
       submit_run(view, ctx.task.ident, "一")

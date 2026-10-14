@@ -146,8 +146,45 @@ defmodule HelmsmanWeb.FormErrors do
 
   defp text(_field, {"cannot be set in a draft", _}), do: dgettext("ui", "草稿里不能设置这一项")
 
+  # The squad part of a squad conversation's draft (add-squads-autopilots-ui D16).
+  defp text(:leader, {"you may not make it the leader", _}),
+    do: dgettext("ui", "你不能把它设为 leader：只能选你自己的 Agent 或草稿里的新 Agent")
+
+  defp text(:name, {"is the name of an agent in the draft", _}),
+    do: dgettext("ui", "与草稿里的 Agent 重名")
+
+  defp text(_field, {"%{name} does not exist", opts}),
+    do: dgettext("ui", "%{name} 不存在", name: opts[:name])
+
+  defp text(_field, {"%{name} is not a managed agent", opts}),
+    do: dgettext("ui", "%{name} 不是托管 Agent", name: opts[:name])
+
+  defp text(_field, {"%{name} is the leader", opts}),
+    do: dgettext("ui", "%{name} 已是 leader，不能同时是成员", name: opts[:name])
+
+  defp text(_field, {"%{name} is listed twice", opts}),
+    do: dgettext("ui", "%{name} 重复了", name: opts[:name])
+
+  defp text(_field, {"%{name} cannot be a member", opts}),
+    do: dgettext("ui", "%{name} 不能作为成员", name: opts[:name])
+
+  defp text(_field, {"the role note of %{name} should be at most %{count} bytes", opts}),
+    do: dgettext("ui", "%{name} 的职责说明不能超过 %{count} 字节", name: opts[:name], count: opts[:count])
+
+  defp text(_field, {"should have at most %{count} members", opts}),
+    do: dgettext("ui", "最多 %{count} 个成员", count: opts[:count])
+
+  defp text(field, {"should be at most " <> rest, []} = error) do
+    case Integer.parse(rest) do
+      {count, " bytes"} -> dgettext("ui", "不能超过 %{count} 字节", count: count)
+      _ -> text_fallback(field, error)
+    end
+  end
+
   defp text(_field, {"does not exist", _}), do: dgettext("ui", "不存在")
   defp text(_field, {"is disabled", _}), do: dgettext("ui", "已停用，不能指派")
   defp text(_field, {"cannot be the system identity", _}), do: dgettext("ui", "不能指派给系统身份")
   defp text(_field, error), do: HelmsmanWeb.CoreComponents.translate_error(error)
+
+  defp text_fallback(_field, error), do: HelmsmanWeb.CoreComponents.translate_error(error)
 end

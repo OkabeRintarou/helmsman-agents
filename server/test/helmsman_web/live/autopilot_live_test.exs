@@ -603,6 +603,17 @@ defmodule HelmsmanWeb.AutopilotLiveTest do
       refute view |> element("#{record(ok)} [data-result]") |> render() =~ "More."
       assert has_element?(view, "#{record(missed)} [data-record-status]", "已跳过")
       assert has_element?(view, "#{record(missed)} [data-reason]", "服务停机错过")
+
+      # Below md the link column is hidden (390 px overflow, walkthrough 5.1); the
+      # row's record panel carries the same link.
+      assert has_element?(view, "#{record(ok)} td.hidden [data-link]")
+      view |> element(record(ok)) |> render_click()
+
+      assert in_portal?(
+               view,
+               "record-panel",
+               ~s([data-detail="link"] a[href="/w/#{ctx.ws.slug}/t/#{task.ident}"])
+             )
     end
 
     test "the content of a webhook record", ctx do

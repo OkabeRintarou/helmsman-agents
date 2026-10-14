@@ -13,14 +13,29 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
   Nothing secret is read: helpers come with name, CLI, owner and dispatchability only,
   runtimes and accounts are resolved to names, the draft has no secret fields.
+
+  A conversation may design a squad (add-squads-autopilots-ui D16): the start area's
+  kind choice (`?kind=squad` preselects it), the squad block above the cards
+  (`HelmsmanWeb.AgentDesignSquad`), its `SquadForm` `:draft` panel and the squad in the
+  confirmation.
   """
   use HelmsmanWeb, :live_view
 
   import HelmsmanWeb.AgentDesignComponents
   import HelmsmanWeb.AgentComponents, only: [provider_label: 1]
 
-  alias Helmsman.{AgentDesigns, Events, ProviderAccounts, Runtimes}
-  alias HelmsmanWeb.{AgentDesignTurn, AgentForm, FormErrors, RunLog, Url}
+  alias Helmsman.{Actors, AgentDesigns, Events, ProviderAccounts, Runtimes}
+
+  alias HelmsmanWeb.{
+    AgentDesignSquad,
+    AgentDesignTurn,
+    AgentForm,
+    FormErrors,
+    RunLog,
+    SquadForm,
+    Url
+  }
+
   alias HelmsmanWeb.Components.Menu
 
   @max_bytes 8192
@@ -28,7 +43,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
   @max_agents 8
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     scope = socket.assigns.current_scope
 
     if connected?(socket), do: Events.subscribe(ProviderAccounts.topic(scope.user.id))
@@ -45,11 +60,15 @@ defmodule HelmsmanWeb.AgentDesignLive do
         message: "",
         input_gen: 0,
         helper_choice: nil,
+        kind_choice: if(params["kind"] == "squad", do: "squad", else: "agent"),
         start_errors: %{},
         message_errors: [],
         send_warning: nil,
         lookup: %{runtimes: %{}, accounts: %{}},
+        humans: MapSet.new(),
         agent_form: nil,
+        squad_form: nil,
+        squad_invalid: nil,
         form_gen: 0,
         confirming: nil,
         invalid: nil,
@@ -113,7 +132,17 @@ defmodule HelmsmanWeb.AgentDesignLive do
         _ -> %{}
       end
 
-    assign(socket, :lookup, %{runtimes: runtimes, accounts: accounts})
+    # The workspace's people, to tell them from agents among the squad's members.
+    humans =
+      case Actors.list_assignable(scope) do
+        {:ok, actors} ->
+          for %{kind: :human, name: name} <- actors, into: MapSet.new(), do: String.downcase(name)
+
+        _ ->
+          MapSet.new()
+      end
+
+    assign(socket, lookup: %{runtimes: runtimes, accounts: accounts}, humans: humans)
   end
 
   # Check, subscribe, read again (D2).
@@ -156,6 +185,8 @@ defmodule HelmsmanWeb.AgentDesignLive do
       max_seq: 0,
       turn: AgentDesignTurn.close(socket.assigns.turn),
       agent_form: nil,
+      squad_form: nil,
+      squad_invalid: nil,
       confirming: nil,
       invalid: nil,
       removing: nil,
@@ -199,7 +230,22 @@ defmodule HelmsmanWeb.AgentDesignLive do
     |> track_draft(previous, view)
     |> check_confirming(view)
     |> close_panel_if_closed(view)
+    |> refresh_squad_form(previous, view)
   end
+
+  # The open squad panel follows the draft's new agents (its candidates), keeping the input.
+  defp refresh_squad_form(%{assigns: %{squad_form: %{} = form}} = socket, previous, view) do
+    if previous && previous.draft_version == view.draft_version,
+      do: socket,
+      else:
+        assign(
+          socket,
+          :squad_form,
+          SquadForm.refresh(form, socket.assigns.current_scope, view.draft)
+        )
+  end
+
+  defp refresh_squad_form(socket, _previous, _view), do: socket
 
   # Cards whose content changed get the highlight; errors of a refused confirmation stay
   # until the draft changes; the narrow-screen 草稿 tab gets its dot.
@@ -221,6 +267,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
     |> assign(
       highlight: %{names: changed, version: view.draft_version},
       invalid: nil,
+      squad_invalid: nil,
       draft_dot?: socket.assigns.draft_dot? or (old != nil and socket.assigns.tab == :chat)
     )
   end
@@ -248,7 +295,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
   defp close_panel_if_closed(socket, %{status: :open}), do: socket
 
   defp close_panel_if_closed(socket, _view),
-    do: assign(socket, agent_form: nil, removing: nil, discarding?: false)
+    do: assign(socket, agent_form: nil, squad_form: nil, removing: nil, discarding?: false)
 
   defp agents(%{"agents" => agents}) when is_list(agents), do: agents
   defp agents(_draft), do: []
@@ -264,14 +311,28 @@ defmodule HelmsmanWeb.AgentDesignLive do
         do: assign(socket, :helper_choice, helper),
         else: socket
 
-    {:noreply, assign(socket, message: params["message"] || socket.assigns.message)}
+    {:noreply,
+     assign(socket,
+       message: params["message"] || socket.assigns.message,
+       kind_choice: kind_param(params["kind"], socket.assigns.kind_choice)
+     )}
   end
 
   def handle_event("start", params, socket) do
     text = params["message"] || ""
     helper = params["helper"] || socket.assigns.helper_choice
-    socket = assign(socket, message: text, helper_choice: helper, start_errors: %{})
-    result = AgentDesigns.start(socket.assigns.current_scope, %{helper: helper, message: text})
+    kind = kind_param(params["kind"], socket.assigns.kind_choice)
+
+    socket =
+      assign(socket, message: text, helper_choice: helper, kind_choice: kind, start_errors: %{})
+
+    result =
+      AgentDesigns.start(socket.assigns.current_scope, %{
+        helper: helper,
+        message: text,
+        kind: kind
+      })
+
     {:noreply, started(socket, result, helper)}
   end
 
@@ -408,9 +469,18 @@ defmodule HelmsmanWeb.AgentDesignLive do
   end
 
   def handle_event("ask_remove", %{"name" => name}, socket) do
-    if locked_reason(socket.assigns) == nil and find_agent(socket, name),
-      do: {:noreply, assign(socket, :removing, name)},
-      else: {:noreply, socket}
+    entry = locked_reason(socket.assigns) == nil && find_agent(socket, name)
+
+    cond do
+      !entry ->
+        {:noreply, socket}
+
+      AgentDesignSquad.references?(socket.assigns.design.draft, entry["name"]) ->
+        {:noreply, put_flash(socket, :error, AgentDesignSquad.referenced_text(entry["name"]))}
+
+      true ->
+        {:noreply, assign(socket, :removing, name)}
+    end
   end
 
   def handle_event("remove", %{"name" => name}, %{assigns: %{design: %{} = design}} = socket) do
@@ -434,6 +504,49 @@ defmodule HelmsmanWeb.AgentDesignLive do
   def handle_event("dismiss_remove", _params, socket),
     do: {:noreply, assign(socket, :removing, nil)}
 
+  ## Events: the squad part (D16)
+
+  def handle_event("edit_squad", _params, %{assigns: %{design: %{} = design}} = socket) do
+    if AgentDesignSquad.squad?(design) and locked_reason(socket.assigns) == nil do
+      gen = socket.assigns.form_gen + 1
+
+      form =
+        SquadForm.draft(socket.assigns.current_scope, gen, design, socket.assigns.squad_invalid)
+
+      {:noreply, assign(socket, form_gen: gen, squad_form: form)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("close_squad_panel", _params, socket),
+    do: {:noreply, assign(socket, :squad_form, nil)}
+
+  def handle_event(
+        "squad_form_submit",
+        params,
+        %{assigns: %{squad_form: %{mode: :draft} = form, design: %{} = design}} = socket
+      ) do
+    if locked_reason(socket.assigns) do
+      {:noreply, socket}
+    else
+      form = SquadForm.change(%{form | notice: nil, error: nil}, params)
+      attrs = SquadForm.draft_attrs(form)
+
+      result =
+        AgentDesigns.put_squad(socket.assigns.current_scope, design.id, form.version, attrs)
+
+      {:noreply, squad_saved(socket, form, result)}
+    end
+  end
+
+  def handle_event("squad_form_" <> _ = event, params, %{assigns: %{squad_form: %{}}} = socket) do
+    case SquadForm.handle_event(event, params, socket) do
+      {:noreply, socket} -> {:noreply, socket}
+      _other -> {:noreply, socket}
+    end
+  end
+
   ## Events: confirm and discard (D8)
 
   def handle_event("ask_confirm", _params, %{assigns: %{design: %{} = design}} = socket) do
@@ -442,7 +555,9 @@ defmodule HelmsmanWeb.AgentDesignLive do
         {:noreply,
          assign(socket, :confirming, %{
            version: design.draft_version,
-           agents: agents(design.draft)
+           agents: agents(design.draft),
+           squad: AgentDesignSquad.squad?(design) && AgentDesignSquad.squad(design.draft),
+           summary: design[:trigger_summary]
          })},
       else: {:noreply, socket}
   end
@@ -497,6 +612,43 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
   defp seen(form, _socket), do: form
 
+  # The result of saving the squad panel (D16): errors as the agent draft panel's.
+  defp squad_saved(socket, _form, {:ok, view}),
+    do: socket |> assign(:squad_form, nil) |> show(view, false)
+
+  defp squad_saved(socket, form, {:error, {:invalid_squad, %Ecto.Changeset{} = cs}}) do
+    form = %{form | errors: %{}, member_errors: %{}, members_error: []}
+    assign(socket, :squad_form, SquadForm.put_changeset(form, cs))
+  end
+
+  defp squad_saved(socket, form, {:error, :stale}) do
+    socket = reread(socket)
+
+    case socket.assigns.design do
+      %{status: :open} = fresh ->
+        assign(
+          socket,
+          :squad_form,
+          SquadForm.rebase(form, socket.assigns.current_scope, fresh)
+        )
+
+      _ ->
+        assign(socket, :squad_form, nil)
+    end
+  end
+
+  defp squad_saved(socket, _form, {:error, :design_closed}),
+    do: socket |> assign(:squad_form, nil) |> reread()
+
+  defp squad_saved(socket, form, {:error, :turn_running}),
+    do: socket |> assign(:squad_form, form) |> reread()
+
+  defp squad_saved(socket, form, {:error, reason}),
+    do: assign(socket, :squad_form, %{form | error: error_text(reason, helper_name(socket))})
+
+  defp kind_param(kind, _current) when kind in ["agent", "squad"], do: kind
+  defp kind_param(_kind, current), do: current
+
   defp started(socket, {:ok, view}, _helper),
     do: socket |> assign(message: "", input_gen: socket.assigns.input_gen + 1) |> enter(view)
 
@@ -532,6 +684,18 @@ defmodule HelmsmanWeb.AgentDesignLive do
     end
   end
 
+  defp confirmed(socket, {:ok, %{squad: %{name: name}, agents: agents}}) do
+    flash =
+      case agents do
+        [] -> dgettext("ui", "已创建小队 %{name}", name: name)
+        _ -> dgettext("ui", "已创建小队 %{name} 与 %{n} 个 Agent", name: name, n: length(agents))
+      end
+
+    socket
+    |> put_flash(:info, flash)
+    |> push_navigate(to: Url.squad_path(socket.assigns.current_scope.workspace.slug, name))
+  end
+
   defp confirmed(socket, {:ok, %{agents: [agent]}}) do
     slug = socket.assigns.current_scope.workspace.slug
 
@@ -546,13 +710,17 @@ defmodule HelmsmanWeb.AgentDesignLive do
     |> push_navigate(to: ~p"/w/#{socket.assigns.current_scope.workspace.slug}/agents")
   end
 
-  defp confirmed(socket, {:error, {:invalid, errors}}),
-    do:
-      assign(
-        socket,
-        :invalid,
-        Map.new(errors, fn {name, cs} -> {name, FormErrors.messages(cs)} end)
-      )
+  # The agents' errors (keyed by agent name only) go to their cards; the squad's
+  # (D16, `{:invalid_squad, changeset}`) to the squad block.
+  defp confirmed(socket, {:error, {:invalid, errors}}) do
+    assign(socket,
+      invalid: Map.new(errors, fn {name, cs} -> {name, FormErrors.messages(cs)} end),
+      squad_invalid: nil
+    )
+  end
+
+  defp confirmed(socket, {:error, {:invalid_squad, %Ecto.Changeset{} = cs}}),
+    do: assign(socket, invalid: nil, squad_invalid: FormErrors.messages(cs))
 
   defp confirmed(socket, {:error, :stale}),
     do: socket |> reread() |> put_flash(:error, dgettext("ui", "草稿刚被更新，请检查后再确认"))
@@ -597,6 +765,19 @@ defmodule HelmsmanWeb.AgentDesignLive do
           )
 
         nil ->
+          socket
+      end
+
+    socket =
+      case {socket.assigns.squad_form, socket.assigns.design} do
+        {%{} = form, %{draft: draft}} ->
+          assign(
+            socket,
+            :squad_form,
+            SquadForm.refresh(form, socket.assigns.current_scope, draft)
+          )
+
+        _ ->
           socket
       end
 
@@ -650,6 +831,12 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
       design.current_run != nil ->
         dgettext("ui", "等 %{helper} 回复完再确认", helper: design.helper.name)
+
+      AgentDesignSquad.squad?(design) ->
+        design.draft
+        |> AgentDesignSquad.squad()
+        |> AgentDesignSquad.missing()
+        |> AgentDesignSquad.missing_text()
 
       agents(design.draft) == [] ->
         dgettext("ui", "草稿里还没有 Agent")
@@ -708,7 +895,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} shell={@shell}>
       <:header>
-        <.page_header title={dgettext("ui", "用对话创建 Agent")}>
+        <.page_header title={page_heading(@design)}>
           <:crumb navigate={~p"/w/#{@current_scope.workspace.slug}/agents"}>Agents</:crumb>
         </.page_header>
       </:header>
@@ -724,6 +911,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
         :if={!@forbidden? and @design == nil}
         helpers={@helpers}
         choice={@helper_choice}
+        kind={@kind_choice}
         message={@message}
         gen={@input_gen}
         errors={@start_errors}
@@ -786,6 +974,8 @@ defmodule HelmsmanWeb.AgentDesignLive do
             design={@design}
             lookup={@lookup}
             invalid={@invalid}
+            squad_invalid={@squad_invalid}
+            humans={@humans}
             locked={locked_reason(assigns)}
             confirm_reason={confirm_reason(assigns)}
             highlight={@highlight}
@@ -801,6 +991,17 @@ defmodule HelmsmanWeb.AgentDesignLive do
         on_cancel={JS.push("close_panel")}
         locked={
           @agent_form && @design.current_run &&
+            dgettext("ui", "%{helper} 正在回复，回复结束后才能保存", helper: @design.helper.name)
+        }
+      />
+
+      <SquadForm.panel
+        :if={@design}
+        form={@squad_form}
+        scope={@current_scope}
+        on_cancel={JS.push("close_squad_panel")}
+        locked={
+          @squad_form && @design.current_run &&
             dgettext("ui", "%{helper} 正在回复，回复结束后才能保存", helper: @design.helper.name)
         }
       />
@@ -821,15 +1022,22 @@ defmodule HelmsmanWeb.AgentDesignLive do
       <.confirm_dialog
         id="design-confirm"
         show={@confirming != nil}
-        title={@confirming && dgettext("ui", "创建 %{n} 个 Agent？", n: length(@confirming.agents))}
+        title={@confirming && confirm_title(@confirming)}
         confirm_label={dgettext("ui", "创建")}
         on_confirm="confirm"
         confirm_value={if(@confirming, do: %{version: @confirming.version}, else: %{})}
         on_cancel={JS.push("dismiss_confirm")}
       >
         <div :if={@confirming} class="flex flex-col gap-3">
-          <.confirm_list agents={@confirming.agents} />
-          <p class="text-body text-fg-muted">
+          <.confirm_list
+            agents={@confirming.agents}
+            squad={@confirming.squad || nil}
+            summary={@confirming.summary}
+          />
+          <p :if={@confirming.squad} class="text-body text-fg-muted" data-squad-note>
+            {dgettext("ui", "小队属于工作区，创建后可以在小队页修改成员与说明。")}
+          </p>
+          <p :if={@confirming.agents != []} class="text-body text-fg-muted">
             {dgettext(
               "ui",
               "它们属于你，运行在你的机器上。环境变量、额外 MCP 服务器、追加参数与指定成员请在创建后到 Agent 的编辑面板设置。"
@@ -853,6 +1061,21 @@ defmodule HelmsmanWeb.AgentDesignLive do
     """
   end
 
+  defp page_heading(design) do
+    if AgentDesignSquad.squad?(design),
+      do: dgettext("ui", "用对话创建小队"),
+      else: dgettext("ui", "用对话创建 Agent")
+  end
+
+  defp confirm_title(%{squad: %{} = squad, agents: []}),
+    do: dgettext("ui", "创建小队 %{name}？", name: squad["name"])
+
+  defp confirm_title(%{squad: %{} = squad, agents: agents}),
+    do: dgettext("ui", "创建小队 %{name} 与 %{n} 个 Agent？", name: squad["name"], n: length(agents))
+
+  defp confirm_title(%{agents: agents}),
+    do: dgettext("ui", "创建 %{n} 个 Agent？", n: length(agents))
+
   defp tab_class(active?) do
     [
       "-mb-px inline-flex h-9 items-center gap-1.5 border-b-2 text-body",
@@ -867,6 +1090,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
   attr :helpers, :list, required: true
   attr :choice, :string, default: nil
+  attr :kind, :string, default: "agent"
   attr :message, :string, required: true
   attr :gen, :integer, required: true
   attr :errors, :map, required: true
@@ -885,11 +1109,22 @@ defmodule HelmsmanWeb.AgentDesignLive do
     ~H"""
     <div id="design-start" class="mx-auto flex w-full max-w-[720px] flex-col gap-4 px-4 py-8">
       <div>
-        <h2 class="text-title font-semibold text-fg">{dgettext("ui", "描述你想要的 Agent")}</h2>
-        <p class="mt-1 text-body text-fg-muted">
+        <h2 :if={@kind != "squad"} class="text-title font-semibold text-fg">
+          {dgettext("ui", "描述你想要的 Agent")}
+        </h2>
+        <h2 :if={@kind == "squad"} class="text-title font-semibold text-fg">
+          {dgettext("ui", "描述你想要的小队")}
+        </h2>
+        <p :if={@kind != "squad"} class="mt-1 text-body text-fg-muted">
           {dgettext(
             "ui",
             "用你自己的话说：它做什么、怎么工作、用哪个模型都可以。AI 会追问并起草，你确认后才会创建。"
+          )}
+        </p>
+        <p :if={@kind == "squad"} class="mt-1 text-body text-fg-muted">
+          {dgettext(
+            "ui",
+            "用你自己的话说：小队做什么、需要哪些角色、谁来当 leader。AI 会追问并起草小队与它需要的新 Agent，你确认后才会创建。"
           )}
         </p>
       </div>
@@ -907,6 +1142,27 @@ defmodule HelmsmanWeb.AgentDesignLive do
           placeholder={dgettext("ui", "例如：它负责什么、要遵守哪些约定、想用哪个模型")}
           errors={Map.get(@errors, :message, [])}
         />
+
+        <fieldset id="design-start-kind" class="flex flex-col gap-1">
+          <legend class="mb-1 text-label font-medium text-fg">{dgettext("ui", "要创建")}</legend>
+          <div class="inline-flex w-fit rounded-field border border-border-strong bg-surface p-0.5">
+            <label
+              :for={{value, label} <- [{"agent", "Agent"}, {"squad", dgettext("ui", "小队")}]}
+              for={"design-start-kind-#{value}"}
+              class="inline-flex h-7 cursor-pointer items-center rounded-field px-3 text-body text-fg-muted has-checked:bg-selected has-checked:font-medium has-checked:text-fg has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-brand"
+            >
+              <input
+                type="radio"
+                id={"design-start-kind-#{value}"}
+                name="kind"
+                value={value}
+                checked={@kind == value}
+                class="sr-only"
+              />
+              {label}
+            </label>
+          </div>
+        </fieldset>
 
         <div class="flex flex-col gap-1">
           <label for="design-start-helper" class="text-label font-medium text-fg">
@@ -1209,7 +1465,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
         {dgettext("ui", "这个对话已确认，创建了")}
         <%= for {a, i} <- Enum.with_index(@design.created_agents) do %>
           <span :if={i > 0}>、</span><.link
-            navigate={Url.agent_path(@scope.workspace.slug, a.name)}
+            navigate={created_path(@design, @scope.workspace.slug, a.name)}
             class="font-mono font-medium text-brand-fg hover:underline"
             data-created
           >{a.name}</.link>
@@ -1224,12 +1480,23 @@ defmodule HelmsmanWeb.AgentDesignLive do
     """
   end
 
+  # A squad conversation created its squad too (D16): that name links to the squad page.
+  defp created_path(design, slug, name) do
+    squad_name = AgentDesignSquad.squad?(design) && AgentDesignSquad.squad(design.draft)["name"]
+
+    if is_binary(squad_name) and String.downcase(squad_name) == String.downcase(name),
+      do: Url.squad_path(slug, name),
+      else: Url.agent_path(slug, name)
+  end
+
   ## Draft column (D6, D8)
 
   attr :class, :any, default: nil
   attr :design, :map, required: true
   attr :lookup, :map, required: true
   attr :invalid, :map, default: nil
+  attr :squad_invalid, :map, default: nil
+  attr :humans, :any, required: true
   attr :locked, :string, default: nil
   attr :confirm_reason, :string, default: nil
   attr :highlight, :map, required: true
@@ -1237,11 +1504,14 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
   defp draft_column(assigns) do
     list = agents(assigns.design.draft)
+    squad? = AgentDesignSquad.squad?(assigns.design)
 
     assigns =
       assign(assigns,
         list: list,
         n: length(list),
+        squad?: squad?,
+        squad: squad? && AgentDesignSquad.squad(assigns.design.draft),
         pending: edits_text(assigns.design.pending_edits),
         full?: length(list) >= @max_agents
       )
@@ -1265,7 +1535,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
           icon="lucide-plus"
           class="ml-auto"
           phx-click="add_agent"
-          disabled_reason={@locked || (@full? && dgettext("ui", "草稿最多 8 个 Agent"))}
+          disabled_reason={@locked || if(@full?, do: dgettext("ui", "草稿最多 8 个 Agent"))}
         >
           {dgettext("ui", "添加 Agent")}
         </.button>
@@ -1289,12 +1559,34 @@ defmodule HelmsmanWeb.AgentDesignLive do
           >
             {dgettext("ui", "%{n} 个 Agent 未通过校验，没有创建任何 Agent", n: map_size(@invalid))}
           </p>
+          <p
+            :if={@squad_invalid}
+            id="design-squad-invalid"
+            role="alert"
+            class="rounded-field border border-danger tint-danger px-3 py-2 text-caption text-danger-fg"
+          >
+            {dgettext("ui", "小队未通过校验，没有创建任何 Agent 与小队")}
+          </p>
+
+          <AgentDesignSquad.block
+            :if={@squad?}
+            design={@design}
+            humans={@humans}
+            errors={@squad_invalid}
+            locked={@locked}
+            scope={@scope}
+          />
 
           <div :if={@list == []} id="design-draft-empty">
             <.empty_state
               icon="lucide-bot"
               title={dgettext("ui", "草稿里还没有 Agent")}
-              description={dgettext("ui", "AI 提出的 Agent 会出现在这里。你也可以直接添加。")}
+              description={
+                if(@squad?,
+                  do: dgettext("ui", "小队需要的新 Agent 会出现在这里，你也可以直接添加；小队也可以只用工作区已有的成员。"),
+                  else: dgettext("ui", "AI 提出的 Agent 会出现在这里。你也可以直接添加。")
+                )
+              }
             >
               <:action>
                 <.button
@@ -1317,6 +1609,11 @@ defmodule HelmsmanWeb.AgentDesignLive do
             lookup={@lookup}
             errors={card_errors(@invalid, a["name"])}
             locked={@locked}
+            remove_reason={
+              if(AgentDesignSquad.references?(@design.draft, a["name"]),
+                do: AgentDesignSquad.referenced_text(a["name"])
+              )
+            }
             highlight={highlight_class(@highlight, a["name"])}
             scope={@scope}
           />
@@ -1337,10 +1634,26 @@ defmodule HelmsmanWeb.AgentDesignLive do
           phx-click="ask_confirm"
           disabled_reason={@confirm_reason}
         >
-          {dngettext("ui", "确认创建 %{count} 个 Agent", "确认创建 %{count} 个 Agent", @n)}
+          {confirm_label(@squad?, @squad, @n)}
         </.button>
       </footer>
     </section>
     """
   end
+
+  defp confirm_label(true, squad, 0),
+    do: dgettext("ui", "确认创建小队 %{name}", name: AgentDesignSquad.display_name(squad || %{}))
+
+  defp confirm_label(true, squad, n),
+    do:
+      dngettext(
+        "ui",
+        "确认创建小队 %{name} 与 %{count} 个 Agent",
+        "确认创建小队 %{name} 与 %{count} 个 Agent",
+        n,
+        name: AgentDesignSquad.display_name(squad || %{})
+      )
+
+  defp confirm_label(_squad?, _squad, n),
+    do: dngettext("ui", "确认创建 %{count} 个 Agent", "确认创建 %{count} 个 Agent", n)
 end

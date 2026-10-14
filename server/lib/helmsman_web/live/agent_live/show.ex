@@ -565,7 +565,12 @@ defmodule HelmsmanWeb.AgentLive.Show do
               variant="primary"
               icon="lucide-play"
               patch={@run_path}
-              disabled_reason={match?({:disabled, _}, @run_state) && elem(@run_state, 1)}
+              disabled_reason={
+                case @run_state do
+                  {:disabled, reason} -> reason
+                  _ -> nil
+                end
+              }
             >
               {dgettext("ui", "运行")}
             </.button>

@@ -15,7 +15,7 @@ defmodule HelmsmanWeb.AgentDesignLiveTest do
   import Ecto.Query
   import Helmsman.RunsFixtures, only: [agent_actor: 2, profile: 1]
 
-  alias Helmsman.{AgentDesigns, Agents, Repo}
+  alias Helmsman.{AgentDesigns, Agents, Repo, Squads}
   alias Helmsman.Daemons.Runtime
   alias HelmsmanWeb.AgentDesignComponents
 
@@ -188,6 +188,68 @@ defmodule HelmsmanWeb.AgentDesignLiveTest do
       render_submit(view, "start", %{"message" => "你好", "helper" => "helper"})
       assert has_element?(view, "#design-start-helper-error", "已停用")
       assert view |> element("#design-start textarea") |> render() =~ "你好"
+    end
+  end
+
+  describe "开始小队对话" do
+    test "开始小队对话", ctx do
+      conn = log_in_user(build_conn(), ctx.alice)
+      {:ok, view, _html} = live(conn, ctx.path <> "?kind=squad")
+
+      assert has_element?(view, "#design-start-kind-squad[checked]")
+      refute has_element?(view, "#design-start-kind-agent[checked]")
+      assert has_element?(view, "#design-start h2", "描述你想要的小队")
+
+      # The placeholder and the visibility note are those of an agent conversation.
+      assert has_element?(
+               view,
+               ~s(#design-start textarea[placeholder="例如：它负责什么、要遵守哪些约定、想用哪个模型"])
+             )
+
+      assert has_element?(view, "#design-visibility", "对话会在你的机器上由 helper 处理")
+
+      text = "建一个网页小队：一个 leader，前端、评审、测试各一个"
+
+      view
+      |> form("#design-start-form", %{"message" => text, "helper" => "helper"})
+      |> render_submit()
+
+      refute has_element?(view, "#design-start")
+      assert has_element?(view, "#design-messages [data-role=user]", text)
+      assert has_element?(view, "#design-squad [data-field=name]", "未命名")
+      assert has_element?(view, "#design-squad-missing", "名字 / leader")
+      assert has_element?(view, "#design-squad [data-field=leader]", "未选")
+
+      {:ok, current} = AgentDesigns.current(ctx.alice_scope)
+      assert current.kind == :squad
+    end
+
+    test "the kind choice: Agent by default, switchable", ctx do
+      {view, _html} = open_page(ctx)
+      assert has_element?(view, "#design-start-kind-agent[checked]")
+
+      view |> form("#design-start-form", %{"kind" => "squad"}) |> render_change()
+      assert has_element?(view, "#design-start-kind-squad[checked]")
+
+      view |> form("#design-start-form", %{"kind" => "agent"}) |> render_change()
+
+      view
+      |> form("#design-start-form", %{"message" => "一个 Agent", "helper" => "helper"})
+      |> render_submit()
+
+      {:ok, current} = AgentDesigns.current(ctx.alice_scope)
+      assert current.kind == :agent
+      refute has_element?(view, "#design-squad")
+    end
+
+    test "an open conversation is entered whatever the kind", ctx do
+      start!(ctx, "已有的 Agent 对话")
+      conn = log_in_user(build_conn(), ctx.alice)
+      {:ok, view, _html} = live(conn, ctx.path <> "?kind=squad")
+
+      refute has_element?(view, "#design-start")
+      assert has_element?(view, "#design-messages [data-role=user]", "已有的 Agent 对话")
+      refute has_element?(view, "#design-squad")
     end
   end
 
@@ -512,6 +574,196 @@ defmodule HelmsmanWeb.AgentDesignLiveTest do
       {:ok, architect} = Agents.get(ctx.alice_scope, "architect")
       assert architect.access == "workspace"
       assert architect.capabilities == ["create_tasks"]
+    end
+  end
+
+  describe "确认创建小队" do
+    defp squad_ready(ctx, agents, squad) do
+      design = start_squad!(ctx)
+      for a <- agents, do: propose!(design.id, a)
+      propose_squad!(design.id, squad)
+      reply!(design.id, "可以确认了")
+      design
+    end
+
+    test "确认创建小队与新 Agent", ctx do
+      bob = actor_name(ctx.ws, ctx.bob)
+
+      squad_ready(
+        ctx,
+        [%{"name" => "web-lead"}, %{"name" => "fe-dev"}, %{"name" => "qa"}],
+        %{
+          "name" => "web-team",
+          "leader" => "web-lead",
+          "members" => [
+            %{"name" => "fe-dev", "role_note" => "写前端"},
+            %{"name" => "qa", "role_note" => "测试"},
+            %{"name" => bob, "role_note" => "拍板"}
+          ]
+        }
+      )
+
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#design-confirm-open", "确认创建小队 web-team 与 3 个 Agent")
+      view |> element("#design-confirm-open") |> render_click()
+
+      assert in_portal?(
+               view,
+               "design-confirm",
+               "#design-confirm-title",
+               "创建小队 web-team 与 3 个 Agent？"
+             )
+
+      names =
+        view
+        |> portal("design-confirm")
+        |> LazyHTML.query("#design-confirm-list > li")
+        |> Enum.map(fn li ->
+          case LazyHTML.attribute(LazyHTML.query(li, "[data-name]"), "data-name") do
+            [name | _] -> name
+            [] -> li |> LazyHTML.attribute("data-name") |> List.first()
+          end
+        end)
+
+      assert names == ["web-team", "web-lead", "fe-dev", "qa"]
+      assert in_portal?(view, "design-confirm", "#design-confirm-squad [data-leader=web-lead]")
+      assert in_portal?(view, "design-confirm", "#design-confirm-squad", "3 个成员")
+      assert in_portal?(view, "design-confirm", "#design-confirm-squad", "能触发这个小队的成员")
+
+      {:error, {:live_redirect, %{to: to}}} = result = confirm_now(view)
+      assert to == "/w/#{ctx.ws.slug}/squads/web-team"
+      {:ok, _show, html} = follow_redirect(result, log_in_user(build_conn(), ctx.alice))
+      assert html =~ "已创建小队 web-team 与 3 个 Agent"
+
+      {:ok, squad} = Squads.get(ctx.alice_scope, "web-team")
+      assert squad.leader.name == "web-lead"
+      assert Enum.map(squad.members, & &1.name) == ["fe-dev", "qa", bob]
+    end
+
+    test "只用已有身份组小队", ctx do
+      managed_agent_fixture(ctx.alice_scope, %{name: "keel/lead"})
+      managed_agent_fixture(ctx.alice_scope, %{name: "keel/fe"})
+
+      squad_ready(ctx, [], %{
+        "name" => "web-team",
+        "leader" => "keel/lead",
+        "members" => [%{"name" => "keel/fe", "role_note" => ""}]
+      })
+
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#design-confirm-open", "确认创建小队 web-team")
+      refute has_element?(view, "#design-confirm-open", "个 Agent")
+      refute has_element?(view, "#design-confirm-open[aria-disabled=true]")
+
+      view |> element("#design-confirm-open") |> render_click()
+      assert in_portal?(view, "design-confirm", "#design-confirm-title", "创建小队 web-team？")
+
+      {:error, {:live_redirect, %{to: to}}} = result = confirm_now(view)
+      assert to == "/w/#{ctx.ws.slug}/squads/web-team"
+      {:ok, _show, html} = follow_redirect(result, log_in_user(build_conn(), ctx.alice))
+      assert html =~ "已创建小队 web-team"
+      refute html =~ "已创建小队 web-team 与"
+    end
+
+    test "小队还缺 leader", ctx do
+      squad_ready(ctx, [%{"name" => "fe-dev"}], %{"name" => "web-team"})
+      {view, _} = open_page(ctx)
+
+      assert has_element?(view, "#design-confirm-open[aria-disabled=true]")
+      assert has_element?(view, "#design-confirm-open-reason", "小队还缺leader")
+      refute has_element?(view, "#design-confirm-open-reason", "名字")
+      assert has_element?(view, "#design-squad-missing", "小队还缺leader")
+    end
+
+    test "小队还缺名字与 leader, and a running turn wins", ctx do
+      design = squad_ready(ctx, [], %{"description" => "网页"})
+      {view, _} = open_page(ctx)
+      assert has_element?(view, "#design-confirm-open-reason", "小队还缺名字 / leader")
+
+      {:ok, _} = AgentDesigns.send(ctx.alice_scope, design.id, "继续")
+      assert has_element?(view, "#design-confirm-open-reason", "等 helper 回复完再确认")
+    end
+
+    # code-review-7 P2-1: "squad" is a valid agent name; only a squad conversation's
+    # squad errors go to the squad block.
+    test "an agent named squad in an agent conversation keeps its errors on its card", ctx do
+      ready(ctx, [%{"name" => "squad"}])
+      {view, _} = open_page(ctx)
+      view |> element("#design-confirm-open") |> render_click()
+      managed_agent_fixture(ctx.bob_scope, %{name: "squad"})
+      confirm_now(view)
+
+      assert has_element?(view, "#design-invalid", "1 个 Agent 未通过校验，没有创建任何 Agent")
+      assert has_element?(view, "#draft-agent-0[data-name=squad] [role=alert]", "名字")
+      refute has_element?(view, "#design-squad-invalid")
+      refute has_element?(view, "#design-squad")
+
+      view |> element("#draft-agent-0-edit") |> render_click()
+      assert in_portal?(view, "agent-panel", "#agent-form-basic", "已被")
+    end
+
+    test "an agent named squad in a squad conversation: an agent-only error on its card",
+         ctx do
+      {daemon, _} = daemon_fixture(ctx.alice, %{name: "alice-mbp", workspace_ids: [ctx.ws.id]})
+      mbp = runtime_fixture(ctx.ws, daemon, %{provider: "claude"})
+
+      squad_ready(ctx, [%{"name" => "squad", "runtime_id" => mbp.id}], %{
+        "name" => "web-team",
+        "leader" => "squad"
+      })
+
+      {:ok, _} = Helmsman.Runtimes.disable(ctx.alice_scope, mbp.id)
+      {view, _} = open_page(ctx)
+      view |> element("#design-confirm-open") |> render_click()
+      confirm_now(view)
+
+      assert has_element?(view, "#design-invalid", "1 个 Agent 未通过校验")
+      assert has_element?(view, "#draft-agent-0[data-name=squad] [role=alert]", "运行时")
+      refute has_element?(view, "#design-squad-invalid")
+      assert {:error, :not_found} = Squads.get(ctx.alice_scope, "web-team")
+    end
+
+    # code-review-8 P2-1: with `{:invalid_squad, changeset}` (baec153) a name error of an
+    # agent named squad in a squad conversation is the agent's, not the squad's.
+    test "an agent named squad in a squad conversation: a name error on its card", ctx do
+      design =
+        squad_ready(ctx, [%{"name" => "squad"}], %{"name" => "web-team", "leader" => "squad"})
+
+      {view, _} = open_page(ctx)
+      view |> element("#design-confirm-open") |> render_click()
+      managed_agent_fixture(ctx.bob_scope, %{name: "squad"})
+      confirm_now(view)
+
+      assert design!(design.id).status == :open
+      assert has_element?(view, "#design-invalid", "1 个 Agent 未通过校验")
+      assert has_element?(view, "#draft-agent-0[data-name=squad] [role=alert]", "名字")
+      refute has_element?(view, "#design-squad-invalid")
+      assert {:error, :not_found} = Squads.get(ctx.alice_scope, "web-team")
+
+      view |> element("#draft-agent-0-edit") |> render_click()
+      assert in_portal?(view, "agent-panel", "#agent-form-basic", "已被")
+    end
+
+    test "leader 是别人的 Agent", ctx do
+      bob_helper = managed_agent_fixture(ctx.bob_scope, %{name: "bob-helper"})
+      managed_agent_fixture(ctx.alice_scope, %{name: "alice/lead"})
+      design = start_squad!(ctx, "建一个小队", ctx.bob_scope, bob_helper.name)
+      propose_squad!(design.id, %{"name" => "web-team", "leader" => "alice/lead"})
+      reply!(design.id, "好了")
+
+      {view, _} = open_page(ctx, ctx.bob)
+      refute has_element?(view, "#design-confirm-open[aria-disabled=true]")
+      view |> element("#design-confirm-open") |> render_click()
+      confirm_now(view)
+
+      assert has_element?(view, "#design-squad-invalid", "小队未通过校验，没有创建任何 Agent 与小队")
+      assert has_element?(view, "#design-squad-leader-errors [data-error]", "你不能把它设为 leader")
+      assert {:error, :not_found} = Squads.get(ctx.bob_scope, "web-team")
+      assert design!(design.id).status == :open
+
+      # The errors also go to the fields of the squad panel.
+      view |> element("#design-squad-edit") |> render_click()
+      assert in_portal?(view, "squad-panel", "#squad-form", "你不能把它设为 leader")
     end
   end
 
