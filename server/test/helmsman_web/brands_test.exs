@@ -224,4 +224,12 @@ defmodule HelmsmanWeb.BrandsTest do
       assert Brands.host_icon(nil, "copilot") == nil
     end
   end
+
+  # update-actor-icons 4.6: the protocol's vendor keys are exactly the icons of the
+  # vendor and platform tables.
+  test "HelmsmanProtocol.Vendor.keys/0 is the vendor and platform keys" do
+    keys = Enum.map(Brands.vendors() ++ Brands.platforms(), &elem(&1, 0))
+    assert Enum.sort(HelmsmanProtocol.Vendor.keys()) == Enum.sort(keys)
+    assert length(HelmsmanProtocol.Vendor.keys()) == length(keys)
+  end
 end

@@ -3,7 +3,7 @@ defmodule HelmsmanWeb.Brands do
   Brand icon tables (add-actor-avatars D17): CLI, model vendor and platform keys
   mapped to the vendored lobe-icons names in `priv/static/images/brand/`, plus the
   inference of a model's vendor (`model_vendor/2`) and of a provider account's icon
-  from its base URL (`host_icon/2`).
+  from its base URL (`host_icon/2`, delegated to `HelmsmanProtocol.Vendor`).
 
   Every table is a compile-time constant; the authoritative versions are the
   web-components「品牌图标」「模型名」and web-provider-accounts tables.
@@ -129,53 +129,6 @@ defmodule HelmsmanWeb.Brands do
 
   @families [~w(zai zhipu), ~w(moonshot kimi), ~w(xai grok), ~w(yi zeroone), ~w(qwen bailian)]
 
-  @hosts [
-    {"api.anthropic.com", "anthropic"},
-    {"api.openai.com", "openai"},
-    {"z.ai", "zai"},
-    {"bigmodel.cn", "zhipu"},
-    {"minimax.chat", "minimax"},
-    {"minimaxi.com", "minimax"},
-    {"minimax.io", "minimax"},
-    {"dashscope.aliyuncs.com", "bailian"},
-    {"dashscope-intl.aliyuncs.com", "bailian"},
-    {"moonshot.cn", "moonshot"},
-    {"moonshot.ai", "moonshot"},
-    {"deepseek.com", "deepseek"},
-    {"volces.com", "volcengine"},
-    {"generativelanguage.googleapis.com", "gemini"},
-    {"aiplatform.googleapis.com", "vertexai"},
-    {"x.ai", "xai"},
-    {"mistral.ai", "mistral"},
-    {"hunyuan.cloud.tencent.com", "hunyuan"},
-    {"hunyuan.tencentcloudapi.com", "hunyuan"},
-    {"baidubce.com", "wenxin"},
-    {"baichuan-ai.com", "baichuan"},
-    {"stepfun.com", "stepfun"},
-    {"lingyiwanwu.com", "zeroone"},
-    {"01.ai", "zeroone"},
-    {"xf-yun.com", "spark"},
-    {"llama.com", "meta"},
-    {"cohere.com", "cohere"},
-    {"cohere.ai", "cohere"},
-    {"perplexity.ai", "perplexity"},
-    {"openrouter.ai", "openrouter"},
-    {"siliconflow.cn", "siliconcloud"},
-    {"siliconflow.com", "siliconcloud"},
-    {"openai.azure.com", "azure"},
-    {"services.ai.azure.com", "azure"},
-    {"cognitiveservices.azure.com", "azure"},
-    {"groq.com", "groq"},
-    {"together.xyz", "together"},
-    {"together.ai", "together"},
-    {"fireworks.ai", "fireworks"},
-    {"huggingface.co", "huggingface"}
-  ]
-
-  @bedrock ~r/^bedrock(?:-runtime)?\.[a-z0-9-]+\.amazonaws\.com$/
-  @ollama_port 11_434
-  @official %{"claude" => "anthropic", "codex" => "openai"}
-
   @doc "The CLI table as `[{key, icon, display name}]`, in key order."
   def clis, do: @clis |> Enum.map(fn {key, {icon, name}} -> {key, icon, name} end) |> Enum.sort()
 
@@ -290,33 +243,10 @@ defmodule HelmsmanWeb.Brands do
 
   @doc """
   The icon inferred for a provider account from its base URL (host suffix table, then
-  port 11434 for Ollama) or, without a base URL, from its CLI's official endpoint.
+  port 11434 for Ollama) or, without a base URL, from its CLI's official endpoint:
+  `HelmsmanProtocol.Vendor.from_base_url/2`, which the daemon shares
+  (update-actor-icons D6).
   """
   @spec host_icon(String.t() | nil, String.t() | atom() | nil) :: String.t() | nil
-  def host_icon(base_url, cli) do
-    case base_url && String.trim(base_url) do
-      blank when blank in [nil, ""] ->
-        @official[key(cli)]
-
-      url ->
-        uri = parse(url)
-        host = uri.host && String.downcase(uri.host)
-        by_host(host) || if(uri.port == @ollama_port, do: "ollama")
-    end
-  end
-
-  defp parse(url) do
-    case URI.parse(url) do
-      %URI{host: host} = uri when is_binary(host) and host != "" -> uri
-      _ -> URI.parse("http://" <> url)
-    end
-  end
-
-  defp by_host(nil), do: nil
-
-  defp by_host(host) do
-    Enum.find_value(@hosts, fn {suffix, icon} ->
-      if host == suffix or String.ends_with?(host, "." <> suffix), do: icon
-    end) || if(Regex.match?(@bedrock, host), do: "bedrock")
-  end
+  def host_icon(base_url, cli), do: HelmsmanProtocol.Vendor.from_base_url(base_url, cli)
 end
