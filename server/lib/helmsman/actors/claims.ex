@@ -23,7 +23,10 @@ defmodule Helmsman.Actors.Claims do
     {"squads", "actor_id"},
     {"squads", "leader_agent_id"},
     {"agent_designs", "helper_agent_id"},
-    {"autopilots", "agent_id"}
+    {"autopilots", "agent_id"},
+    # Agents' and squads' avatars only: a human's avatar is their user's
+    # (`add-actor-avatars` decision 3).
+    {"avatars", "actor_id"}
   ]
   @arrays [
     {"feedback", "mentions"},

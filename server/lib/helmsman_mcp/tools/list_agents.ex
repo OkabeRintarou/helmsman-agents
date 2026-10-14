@@ -9,17 +9,26 @@ defmodule HelmsmanMCP.Tools.ListAgents do
         "whether running now (busy), how many runs are queued and whether a managed " <>
         "agent is woken when a task it created makes progress (wake_on_requested); and " <>
         "the squads: leader, members and their roles (assign a task to a squad or " <>
-        "mention it to start its leader).",
+        "mention it to start its leader). has_avatar tells whether an agent or squad has " <>
+        "an avatar; avatar_url is its address (readable with the same API token) or null.",
     schema: %{},
     mode: :read
 
-  alias Helmsman.{Agents, Squads}
+  alias Helmsman.{Actors, Agents, Squads}
+  alias HelmsmanMCP.Present
 
   @impl HelmsmanMCP.Tool
   def call(_args, %{scope: scope}) do
     with {:ok, agents} <- Agents.list(scope),
          {:ok, squads} <- Squads.list(scope) do
-      {:ok, %{agents: Enum.map(agents, &view/1), squads: Enum.map(squads, &squad_view/1)}}
+      appearance = Actors.appearance(scope)
+      avatar = &Present.put_avatar(&1, scope, appearance)
+
+      {:ok,
+       %{
+         agents: Enum.map(agents, &(&1 |> view() |> avatar.())),
+         squads: Enum.map(squads, &(&1 |> squad_view() |> avatar.()))
+       }}
     end
   end
 

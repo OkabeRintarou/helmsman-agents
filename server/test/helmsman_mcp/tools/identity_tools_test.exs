@@ -90,7 +90,13 @@ defmodule HelmsmanMCP.Tools.IdentityToolsTest do
       assert {:ok, result} = Whoami.call(%{}, ctx(scope, sid))
 
       assert result == %{
-               actor: %{name: "keel/dev", kind: :agent, disabled: false},
+               actor: %{
+                 name: "keel/dev",
+                 kind: :agent,
+                 disabled: false,
+                 has_avatar: false,
+                 avatar_url: nil
+               },
                source: "default",
                user: %{name: ctx.human, role: :member},
                workspace: %{slug: ws.slug, name: ws.name}

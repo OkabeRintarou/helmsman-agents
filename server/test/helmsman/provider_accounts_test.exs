@@ -156,7 +156,7 @@ defmodule Helmsman.ProviderAccountsTest do
       assert {:ok, [%{name: "oai", models: %{"default" => "o"}, base_url: _, id: _} = option]} =
                ProviderAccounts.options(ctx.scope, "codex")
 
-      assert Map.keys(option) |> Enum.sort() == [:base_url, :headers, :id, :models, :name]
+      assert Map.keys(option) |> Enum.sort() == [:base_url, :headers, :icon, :id, :models, :name]
     end
   end
 

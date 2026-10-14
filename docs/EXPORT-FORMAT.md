@@ -4,6 +4,7 @@ A gzip UTF-8 JSON snapshot identified by `format: helmsman-export`, `version: 1`
 All object keys sort alphabetically. Times use UTC ISO 8601 with six fractional digits and `Z`.
 Identity references are actor names; project references are keys; tasks use `KEY-N`, feedback `KEY-N#M`.
 No database IDs, users, memberships, emails, tokens, secrets, runs, provider configuration or repository credentials are exported.
+Avatars are not exported either (no image bytes, avatar addresses or keys, for users or identities); imports never create, change or delete an avatar.
 
 | Object | Fields |
 | --- | --- |

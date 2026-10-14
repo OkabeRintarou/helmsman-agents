@@ -435,6 +435,47 @@ defmodule Helmsman.PolicyMatrixTest do
             # delegate: only run scopes with the capability (squads tests)
             for role <- @roles, kind <- [:human, :agent] do
               {:delegate, role, kind, @none, :forbidden}
+            end,
+            # set_avatar / remove_avatar (add-actor-avatars decision 12): the
+            # user's own whatever the role; an agent's by its owner (member
+            # and above), removed by admins too; a squad's by who may manage
+            # it (a squad without a leader: admins); the coarse check member
+            # and above; agents never (tokens and runs in avatars_test.exs)
+            for action <- [:set_avatar, :remove_avatar],
+                role <- @roles,
+                kind <- [:human, :agent],
+                resource <- [
+                  nil,
+                  %User{id: 10},
+                  %User{id: 11},
+                  %Actor{workspace_id: 1, kind: :agent, owner_id: 10},
+                  %Actor{workspace_id: 1, kind: :agent, owner_id: 11},
+                  %Actor{workspace_id: 2, kind: :agent, owner_id: 10},
+                  {%Actor{workspace_id: 1, kind: :squad}, nil},
+                  {%Actor{workspace_id: 1, kind: :squad},
+                   %Actor{workspace_id: 1, kind: :agent, owner_id: 10}},
+                  {%Actor{workspace_id: 1, kind: :squad},
+                   %Actor{workspace_id: 1, kind: :agent, owner_id: 11}},
+                  {%Actor{workspace_id: 2, kind: :squad}, nil},
+                  @other_human,
+                  @system_actor
+                ] do
+              admin? = role in [:owner, :admin]
+              member? = role != :viewer
+
+              allowed =
+                kind == :human and
+                  case resource do
+                    nil -> member?
+                    %User{id: id} -> id == 10
+                    %Actor{workspace_id: 1, owner_id: 10} -> member?
+                    %Actor{workspace_id: 1} -> action == :remove_avatar and admin?
+                    {%Actor{workspace_id: 1}, %Actor{owner_id: 10}} -> member?
+                    {%Actor{workspace_id: 1}, _leader} -> admin?
+                    _other -> false
+                  end
+
+              {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
             end
           ]
           |> List.flatten()

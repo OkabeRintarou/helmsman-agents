@@ -8,8 +8,33 @@ defmodule HelmsmanMCP.Present do
   shown until it is added here.
   """
 
+  alias Helmsman.Accounts.Scope
+  alias Helmsman.Avatars
   alias Helmsman.Projects.Project
   alias Helmsman.Runs.Outcome
+
+  @doc """
+  The avatar fields of an identity view (`add-actor-avatars` decision
+  13) for the avatar `key` (nil: none): `has_avatar` for every caller;
+  `avatar_url`, the REST read address, only for an API token's scope
+  (`Helmsman.Avatars.api_url/2`), else nil.
+  """
+  @spec avatar(Scope.t(), String.t() | nil) :: %{
+          has_avatar: boolean(),
+          avatar_url: String.t() | nil
+        }
+  def avatar(%Scope{} = scope, key),
+    do: %{has_avatar: is_binary(key), avatar_url: Avatars.api_url(scope, key)}
+
+  @doc """
+  Adds the avatar fields to the identity view `view`, looked up by its
+  `name` in `appearance` (`Helmsman.Actors.appearance/1`).
+  """
+  @spec put_avatar(map(), Scope.t(), map()) :: map()
+  def put_avatar(%{name: name} = view, %Scope{} = scope, appearance) do
+    key = get_in(appearance, [name, :avatar_key])
+    Map.merge(view, avatar(scope, key))
+  end
 
   @doc "A project."
   @spec project(Project.t()) :: map()

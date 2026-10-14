@@ -31,6 +31,7 @@ defmodule Helmsman.ProviderAccounts do
           base_url: String.t(),
           models: %{String.t() => String.t()},
           headers: [String.t()],
+          icon: String.t() | nil,
           api_key_set: boolean(),
           agents: [agent_ref()],
           inserted_at: DateTime.t(),
@@ -41,7 +42,8 @@ defmodule Helmsman.ProviderAccounts do
           name: String.t(),
           base_url: String.t(),
           models: %{String.t() => String.t()},
-          headers: [String.t()]
+          headers: [String.t()],
+          icon: String.t() | nil
         }
 
   @doc "The most provider accounts a user may have."
@@ -158,6 +160,7 @@ defmodule Helmsman.ProviderAccounts do
       base_url: view.base_url,
       models: view.models,
       api_key: "set",
+      icon: view.icon,
       header_names: view.headers,
       headers: JSON.encode!(Enum.map(view.headers, &%{"name" => &1, "value" => "set"}))
     }
@@ -215,7 +218,8 @@ defmodule Helmsman.ProviderAccounts do
              name: a.name,
              base_url: a.base_url,
              models: a.models,
-             headers: a.header_names
+             headers: a.header_names,
+             icon: a.icon
            }
          )
        )}
@@ -260,6 +264,7 @@ defmodule Helmsman.ProviderAccounts do
         base_url: account.base_url,
         models: account.models || %{},
         headers: account.header_names,
+        icon: account.icon,
         api_key_set: true,
         agents: Map.get(agents, account.id, []),
         inserted_at: account.inserted_at,

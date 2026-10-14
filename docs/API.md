@@ -14,6 +14,7 @@ Authorization: Bearer hm_...
 - 工作区端点都在 `/api/v1/w/:slug/` 下，`:slug` 必须是 Token 所属的工作区，否则 404（不暴露别的工作区是否存在）。
 - 每个请求都按 Token 用户在该工作区的**当前**角色执行；权限规则与网页、MCP 相同。
 - 运行令牌（`hmr_`）、守护进程令牌（`hmd_`）与其他凭据一律 401。
+- 唯一的例外是读取头像 `GET /avatars/:key`：`mcp`、`api:read`、`api:write` 任一 scope 都可以（MCP 视图里的 `avatar_url` 要能用同一个 Token 读取）；运行令牌与守护进程令牌仍然 401。
 
 ## 身份：`X-Helmsman-Actor`
 
@@ -52,6 +53,7 @@ Authorization: Bearer hm_...
 | GET | `/me/tasks` | `list_my_tasks` | read |
 | GET | `/actors` | `list_actors` | read |
 | GET | `/agents` | `list_agents`（含小队） | read |
+| GET | `/avatars/:key` | 头像图片（`list_actors` 等返回的 `avatar_url`；带 `ETag`，`If-None-Match` 命中时 304） | read 或 mcp |
 | GET | `/projects` | `list_projects` | read |
 | POST | `/projects` | `create_project`（201） | write |
 | GET | `/projects/:key` | `get_project` | read |

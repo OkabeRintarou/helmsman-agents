@@ -65,7 +65,10 @@ defmodule Helmsman.Policy do
     :manage_provider_accounts,
     # creation conversations and confirming their drafts
     # (`add-agent-conversation` decision 6)
-    :design_agents
+    :design_agents,
+    # avatars (`add-actor-avatars` decision 12)
+    :set_avatar,
+    :remove_avatar
   ]
 
   # Actions with an authorization clause below.
@@ -131,7 +134,9 @@ defmodule Helmsman.Policy do
     :design,
     :manage_squads,
     :manage_autopilots,
-    :delegate
+    :delegate,
+    :set_avatar,
+    :remove_avatar
   ]
 
   # The capability a run token needs for each action it may attempt; any
@@ -454,6 +459,45 @@ defmodule Helmsman.Policy do
           (role_at_least?(scope, :admin) or
              (role_at_least?(scope, :member) and same_user?(scope, leader)))
       )
+
+  ## Avatars (`add-actor-avatars` decision 12; management actions: agents
+  ## never)
+
+  # Only a person's own web session: never an API token or a run.
+  defp check(%Scope{via: via, token: token, run: run}, action, _resource)
+       when action in [:set_avatar, :remove_avatar] and
+              (via not in [nil, :web] or not is_nil(token) or not is_nil(run)),
+       do: {:error, :forbidden}
+
+  # The coarse check before the target is locked: member and above (the
+  # user's own avatar needs no workspace and is not checked this way).
+  defp check(%Scope{} = scope, action, nil) when action in [:set_avatar, :remove_avatar],
+    do: allow_if(role_at_least?(scope, :member))
+
+  # The user's own avatar: the user, whatever the role (viewers too).
+  defp check(%Scope{user: %User{id: id}}, action, %User{id: id})
+       when action in [:set_avatar, :remove_avatar],
+       do: :ok
+
+  # An agent's: its owner, member and above; admins and above may also
+  # remove it.
+  defp check(%Scope{} = scope, action, %Actor{kind: :agent} = agent)
+       when action in [:set_avatar, :remove_avatar] do
+    owner? = role_at_least?(scope, :member) and same_user?(scope, agent)
+    admin? = action == :remove_avatar and role_at_least?(scope, :admin)
+    allow_if(in_workspace?(scope, agent) and (owner? or admin?))
+  end
+
+  # A squad's, with its current leader (nil: a squad with only its
+  # identity, e.g. imported): who may manage the squad (admin and above,
+  # or a member who owns the leader).
+  defp check(%Scope{} = scope, action, {%Actor{kind: :squad} = squad, leader})
+       when action in [:set_avatar, :remove_avatar] do
+    leader_owner? =
+      match?(%Actor{}, leader) and role_at_least?(scope, :member) and same_user?(scope, leader)
+
+    allow_if(in_workspace?(scope, squad) and (role_at_least?(scope, :admin) or leader_owner?))
+  end
 
   ## Autopilots (`add-autopilots` decision 4; a management action: agents
   ## and run tokens never)

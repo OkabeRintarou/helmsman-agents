@@ -343,7 +343,9 @@ defmodule HelmsmanWeb.API.Schemas.ActorList do
   @moduledoc false
   require OpenApiSpex
   alias OpenApiSpex.Schema
-  import HelmsmanWeb.API.Schemas.Helpers, only: [nullable: 1, string: 0, time: 0]
+
+  import HelmsmanWeb.API.Schemas.Helpers,
+    only: [avatar_properties: 0, nullable: 1, string: 0, time: 0]
 
   OpenApiSpex.schema(
     %{
@@ -352,16 +354,17 @@ defmodule HelmsmanWeb.API.Schemas.ActorList do
       type: :array,
       items: %Schema{
         type: :object,
-        properties: %{
-          name: string(),
-          kind: %Schema{type: :string, enum: ["human", "agent", "squad", "system"]},
-          owner: nullable(string()),
-          disabled: %Schema{type: :boolean},
-          project: nullable(string()),
-          worktree: nullable(string()),
-          last_seen_at: nullable(time())
-        },
-        required: [:name, :kind, :disabled]
+        properties:
+          Map.merge(avatar_properties(), %{
+            name: string(),
+            kind: %Schema{type: :string, enum: ["human", "agent", "squad", "system"]},
+            owner: nullable(string()),
+            disabled: %Schema{type: :boolean},
+            project: nullable(string()),
+            worktree: nullable(string()),
+            last_seen_at: nullable(time())
+          }),
+        required: [:name, :kind, :disabled, :has_avatar, :avatar_url]
       }
     },
     struct?: false,
@@ -373,7 +376,7 @@ defmodule HelmsmanWeb.API.Schemas.AgentList do
   @moduledoc false
   require OpenApiSpex
   alias OpenApiSpex.Schema
-  import HelmsmanWeb.API.Schemas.Helpers, only: [nullable: 1, string: 0]
+  import HelmsmanWeb.API.Schemas.Helpers, only: [avatar_properties: 0, nullable: 1, string: 0]
 
   OpenApiSpex.schema(
     %{
@@ -385,45 +388,57 @@ defmodule HelmsmanWeb.API.Schemas.AgentList do
           type: :array,
           items: %Schema{
             type: :object,
-            properties: %{
-              name: string(),
-              kind: %Schema{type: :string, enum: ["managed", "external"]},
-              owner: string(),
-              provider: nullable(string()),
-              description: nullable(string()),
-              disabled: %Schema{type: :boolean},
-              archived: %Schema{type: :boolean},
-              busy: %Schema{type: :boolean},
-              queued: %Schema{type: :integer},
-              wake_on_requested: %Schema{type: :boolean}
-            },
-            required: [:name, :kind, :owner, :disabled, :archived, :busy, :queued]
+            properties:
+              Map.merge(avatar_properties(), %{
+                name: string(),
+                kind: %Schema{type: :string, enum: ["managed", "external"]},
+                owner: string(),
+                provider: nullable(string()),
+                description: nullable(string()),
+                disabled: %Schema{type: :boolean},
+                archived: %Schema{type: :boolean},
+                busy: %Schema{type: :boolean},
+                queued: %Schema{type: :integer},
+                wake_on_requested: %Schema{type: :boolean}
+              }),
+            required: [
+              :name,
+              :kind,
+              :owner,
+              :disabled,
+              :archived,
+              :busy,
+              :queued,
+              :has_avatar,
+              :avatar_url
+            ]
           }
         },
         squads: %Schema{
           type: :array,
           items: %Schema{
             type: :object,
-            properties: %{
-              name: string(),
-              description: nullable(string()),
-              leader: string(),
-              members: %Schema{
-                type: :array,
-                items: %Schema{
-                  type: :object,
-                  properties: %{
-                    name: string(),
-                    kind: string(),
-                    role_note: nullable(string())
-                  },
-                  required: [:name, :kind]
-                }
-              },
-              disabled: %Schema{type: :boolean},
-              busy: %Schema{type: :boolean}
-            },
-            required: [:name, :leader, :members, :disabled, :busy]
+            properties:
+              Map.merge(avatar_properties(), %{
+                name: string(),
+                description: nullable(string()),
+                leader: string(),
+                members: %Schema{
+                  type: :array,
+                  items: %Schema{
+                    type: :object,
+                    properties: %{
+                      name: string(),
+                      kind: string(),
+                      role_note: nullable(string())
+                    },
+                    required: [:name, :kind]
+                  }
+                },
+                disabled: %Schema{type: :boolean},
+                busy: %Schema{type: :boolean}
+              }),
+            required: [:name, :leader, :members, :disabled, :busy, :has_avatar, :avatar_url]
           }
         }
       },
@@ -566,7 +581,9 @@ defmodule HelmsmanWeb.API.Schemas.Me do
   @moduledoc false
   require OpenApiSpex
   alias OpenApiSpex.Schema
-  import HelmsmanWeb.API.Schemas.Helpers, only: [nullable: 1, string: 0, time: 0, strings: 0]
+
+  import HelmsmanWeb.API.Schemas.Helpers,
+    only: [avatar_properties: 0, nullable: 1, string: 0, time: 0, strings: 0]
 
   OpenApiSpex.schema(
     %{
@@ -574,14 +591,27 @@ defmodule HelmsmanWeb.API.Schemas.Me do
       description: "Who the token acts as.",
       type: :object,
       properties: %{
-        user: %Schema{type: :object, properties: %{name: string()}, required: [:name]},
+        user: %Schema{
+          type: :object,
+          properties: Map.put(avatar_properties(), :name, string()),
+          required: [:name, :has_avatar, :avatar_url]
+        },
         workspace: %Schema{
           type: :object,
           properties: %{slug: string(), name: string()},
           required: [:slug, :name]
         },
         role: %Schema{type: :string, enum: ["owner", "admin", "member", "viewer"]},
-        actor: HelmsmanWeb.API.Schemas.ActorRef,
+        actor: %Schema{
+          type: :object,
+          description: "The current identity.",
+          properties:
+            Map.merge(avatar_properties(), %{
+              name: string(),
+              kind: %Schema{type: :string, enum: ["human", "agent", "squad", "system"]}
+            }),
+          required: [:name, :kind, :has_avatar, :avatar_url]
+        },
         actor_source: %Schema{type: :string, enum: ["header", "default", "human"]},
         token: %Schema{
           type: :object,

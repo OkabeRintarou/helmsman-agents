@@ -8,7 +8,9 @@ defmodule Helmsman.Actors do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
+  alias Helmsman.Agents.AgentProfile
   alias Helmsman.ApiTokens.ApiToken
+  alias Helmsman.Avatars.Avatar
   alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.Repo
@@ -679,4 +681,52 @@ defmodule Helmsman.Actors do
       {:ok, actors}
     end
   end
+
+  @type appearance :: %{
+          kind: Actor.kind(),
+          provider: atom() | nil,
+          managed?: boolean(),
+          avatar_key: String.t() | nil
+        }
+
+  @doc """
+  How every identity of the workspace is shown (`add-actor-avatars`
+  decision 7), by name, in one query and without avatar bytes: the
+  kind, an agent's CLI (`provider`) and whether it is managed, and the
+  read key of its avatar (an agent's or squad's own, a human's from
+  their user; none for the system identity and unclaimed humans).
+  Disabled, archived and unclaimed identities are included. A scope that
+  may not list the identities (`:view_members`) gets `%{}`.
+  """
+  @spec appearance(Scope.t()) :: %{String.t() => appearance()}
+  def appearance(%Scope{workspace: %Workspace{id: workspace_id}} = scope) do
+    case Policy.authorize(scope, :view_members) do
+      :ok ->
+        from(a in Actor,
+          left_join: p in AgentProfile,
+          on: p.actor_id == a.id and a.kind == :agent,
+          left_join: own in Avatar,
+          on: own.actor_id == a.id and a.kind in [:agent, :squad],
+          left_join: user in Avatar,
+          on: user.user_id == a.user_id and a.kind == :human,
+          where: a.workspace_id == ^workspace_id,
+          select:
+            {a.name, a.kind, p.provider, not is_nil(p.actor_id), coalesce(own.key, user.key)}
+        )
+        |> Repo.all()
+        |> Map.new(fn {name, kind, provider, managed?, key} ->
+          {name,
+           %{kind: kind, provider: provider_atom(provider), managed?: managed?, avatar_key: key}}
+        end)
+
+      {:error, :forbidden} ->
+        %{}
+    end
+  end
+
+  def appearance(%Scope{}), do: %{}
+
+  @providers Map.new(HelmsmanProtocol.providers(), &{Atom.to_string(&1), &1})
+
+  defp provider_atom(provider), do: Map.get(@providers, provider)
 end

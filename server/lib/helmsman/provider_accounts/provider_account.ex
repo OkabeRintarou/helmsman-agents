@@ -18,6 +18,7 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
   @max_url 2_048
   @max_key 8_192
   @max_model 128
+  @icon_format ~r/\A[a-z0-9]{1,32}\z/
 
   @derive {Inspect, except: [:api_key, :headers]}
   schema "provider_accounts" do
@@ -29,6 +30,8 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
     field :models, :map, default: %{}
     field :header_names, {:array, :string}, default: []
     field :headers, Helmsman.Encrypted.Binary, redact: true
+    # `add-actor-avatars` decision 19: nil lets the interface infer it.
+    field :icon, :string
     timestamps(type: :utc_datetime)
   end
 
@@ -39,14 +42,16 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
   @doc """
   Validates `attrs` for `account` (decision 2). On an existing account a
   missing or empty `api_key` keeps the stored one; `models` replaces the
-  mapping as a whole; `cli` cannot change. Does not read the database: the
+  mapping as a whole; `cli` cannot change. An empty `icon` is nil (the
+  interface infers the icon); any other must be 1-32 characters of a-z
+  and 0-9, from no fixed list. Does not read the database: the
   per-user limit and name uniqueness are checked by the context and the
   unique index.
   """
   @spec changeset(t(), map()) :: Ecto.Changeset.t()
   def changeset(%__MODULE__{} = account, attrs) when is_map(attrs) do
     account
-    |> cast(drop_blank_key(attrs), [:name, :cli, :base_url, :api_key, :models])
+    |> cast(drop_blank_key(attrs), [:name, :cli, :base_url, :api_key, :models, :icon])
     |> update_change(:name, &String.trim/1)
     |> normalize_models()
     |> validate_required([:name, :cli, :base_url, :api_key])
@@ -57,10 +62,15 @@ defmodule Helmsman.ProviderAccounts.ProviderAccount do
     |> validate_base_url()
     |> validate_api_key()
     |> validate_models()
+    |> validate_format(:icon, @icon_format, message: "must be 1-32 characters of a-z and 0-9")
     |> apply_headers(attrs, account)
     |> unique_constraint(:name,
       name: :provider_accounts_user_id_name_index,
       message: "is already used by another of your provider accounts"
+    )
+    |> check_constraint(:icon,
+      name: :provider_accounts_icon_format,
+      message: "must be 1-32 characters of a-z and 0-9"
     )
     |> scrub_invalid()
   end

@@ -50,6 +50,22 @@ defmodule HelmsmanWeb.Router do
     plug HelmsmanWeb.API.WorkspaceSlug
   end
 
+  # `add-actor-avatars` decisions 5 and 13: the one REST read that also
+  # accepts the `mcp` scope (the MCP views' avatar addresses); any Accept
+  # header (an image is not JSON).
+  pipeline :api_avatar do
+    plug HelmsmanWeb.Plugs.BearerAuth, scope: ["mcp", "api:read", "api:write"], via: :api
+    plug HelmsmanWeb.API.WorkspaceSlug
+  end
+
+  # `add-actor-avatars` decision 5: the browser's avatar images. The
+  # session's user only: no CSRF or flash (GET only), any Accept header,
+  # and the page CSP is replaced by the image's own.
+  pipeline :avatar_image do
+    plug :fetch_session
+    plug :fetch_current_scope_for_user
+  end
+
   pipeline :api_public do
     plug HelmsmanWeb.API.PublicRateLimit
     plug OpenApiSpex.Plug.PutApiSpec, module: HelmsmanWeb.API.ApiSpec
@@ -126,6 +142,12 @@ defmodule HelmsmanWeb.Router do
     get "/filters/:id/run", FiltersController, :run
     get "/exports/:id", BackupController, :show
     get "/imports/:id", BackupController, :import_status
+  end
+
+  scope "/api/v1/w/:slug", HelmsmanWeb.API do
+    pipe_through :api_avatar
+
+    get "/avatars/:key", AvatarsController, :show
   end
 
   # Binary snapshot download; bearer authentication and workspace checks still apply.
@@ -218,6 +240,13 @@ defmodule HelmsmanWeb.Router do
         live "/ui/projects", UiLive, :projects
       end
     end
+  end
+
+  scope "/", HelmsmanWeb do
+    pipe_through :avatar_image
+
+    get "/w/:slug/avatars/:key", AvatarController, :workspace
+    get "/users/avatar/:key", AvatarController, :own
   end
 
   ## Authentication routes

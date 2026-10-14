@@ -368,7 +368,14 @@ defmodule Helmsman.Agents do
         where: a.id in ^ids,
         select:
           {a.id,
-           %{id: a.id, name: a.name, cli: a.cli, base_url: a.base_url, headers: a.header_names}}
+           %{
+             id: a.id,
+             name: a.name,
+             cli: a.cli,
+             base_url: a.base_url,
+             headers: a.header_names,
+             icon: a.icon
+           }}
     )
     |> Map.new(fn {id, account} ->
       {id, account |> Map.delete(:base_url) |> Map.put(:host, URI.parse(account.base_url).host)}

@@ -12,6 +12,7 @@ defmodule Helmsman do
       AgentDesigns,
       Autopilots,
       Agents,
+      Avatars,
       Agents.AgentProfile,
       Daemons,
       Daemons.Daemon,

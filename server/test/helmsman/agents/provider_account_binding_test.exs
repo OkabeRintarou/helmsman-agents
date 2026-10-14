@@ -41,7 +41,8 @@ defmodule Helmsman.Agents.ProviderAccountBindingTest do
                name: "zai",
                cli: "claude",
                host: "api.z.ai",
-               headers: []
+               headers: [],
+               icon: nil
              }
 
       {_viewer, viewer_scope} = member_scope_fixture(ctx.workspace, :viewer)

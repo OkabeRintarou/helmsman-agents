@@ -16,6 +16,22 @@ defmodule HelmsmanWeb.API.Schemas.Helpers do
   @doc false
   def strings, do: %Schema{type: :array, items: %Schema{type: :string}}
 
+  @doc false
+  # `add-actor-avatars` decision 13: the avatar fields of an identity view.
+  def avatar_properties do
+    %{
+      has_avatar: %Schema{type: :boolean, description: "Whether the identity has an avatar."},
+      avatar_url: %Schema{
+        type: :string,
+        format: :uri,
+        nullable: true,
+        description:
+          "The avatar's address (GET /api/v1/w/{slug}/avatars/{key}, readable with the " <>
+            "same API token); null without an avatar or for a run token."
+      }
+    }
+  end
+
   @summary_properties %{
     id: %Schema{type: :string, description: "Task ID (e.g. BOS-12)."},
     project_key: %Schema{type: :string},
