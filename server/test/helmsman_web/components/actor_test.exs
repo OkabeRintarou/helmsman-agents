@@ -4,6 +4,8 @@ defmodule HelmsmanWeb.Components.ActorTest do
   import Phoenix.LiveViewTest
   import HelmsmanWeb.Components.Actor
 
+  alias Helmsman.Avatars.Icons
+
   @agent %{name: "keel/dev", kind: :agent, owner_name: "alice", managed?: true}
 
   test "four kinds of actors" do
@@ -92,7 +94,9 @@ defmodule HelmsmanWeb.Components.ActorTest do
       assert mark(%{name: "a", kind: :human}, size: :lg) =~ "size-10"
       assert mark(%{name: "a", kind: :human}, size: :xl) =~ "size-16"
 
-      assert mark(%{name: "a", kind: :human}) =~ ~r/data-actor-mark="human" aria-hidden="true"/
+      assert mark(%{name: "a", kind: :human}) =~
+               ~r/data-actor-mark="human"[^>]*aria-hidden="true"/
+
       labelled = mark(%{name: "a", kind: :human}, label: "alice 的头像")
       assert labelled =~ ~s(role="img")
       assert labelled =~ ~s(aria-label="alice 的头像")
@@ -217,5 +221,156 @@ defmodule HelmsmanWeb.Components.ActorTest do
     assert two =~ ~s(aria-describedby="w-tip")
 
     assert render_component(&working_chip/1, id: "w", agents: []) == ""
+  end
+
+  describe "update-actor-icons D4, D11 (web-components 身份标记 / Actor 标识)" do
+    @claude %{
+      name: "keel/dev",
+      kind: :agent,
+      owner_name: "alice",
+      managed?: true,
+      provider: "claude"
+    }
+
+    defp source(html), do: Regex.run(~r/data-mark="(\w+)"/, html, capture: :all_but_first)
+    defp brand(html), do: Regex.run(~r/data-brand="([\w-]+)"/, html, capture: :all_but_first)
+    defp chip(actor), do: render_component(&actor_chip/1, actor: actor)
+
+    test "各类缺省标记: initial circle, Codex plate, neutral bot, squad, system" do
+      marks = [
+        mark(%{name: "alice", kind: :human}),
+        mark(%{name: "keel/review", kind: :agent, managed?: true, provider: "codex"}),
+        mark(%{name: "x/dev", kind: :agent, managed?: false, provider: "codex", vendor: "zai"}),
+        mark(%{name: "backend-team", kind: :squad}),
+        mark(%{name: "helmsman", kind: :system, avatar_icon: "openai"})
+      ]
+
+      assert Enum.map(marks, &source/1) ==
+               [["default"], ["cli"], ["default"], ["default"], ["default"]]
+
+      [alice, codex, external, squad, system] = marks
+      assert alice =~ ">A</text>"
+      assert brand(codex) == ["codex"]
+      assert external =~ "lucide-bot"
+      assert squad =~ "lucide-users"
+      assert system =~ "lucide-settings"
+      refute system =~ "data-brand"
+    end
+
+    test "账号厂商优先 / 运行时厂商: the vendor replaces the CLI icon" do
+      account = Map.merge(@claude, %{vendor: "zai", vendor_source: :account})
+      assert source(mark(account)) == ["vendor"]
+      assert brand(mark(account)) == ["zai"]
+
+      runtime = Map.merge(@claude, %{vendor: "zai", vendor_source: :runtime})
+      assert brand(mark(runtime)) == ["zai"]
+
+      # Old daemon: no vendor; an account that is not recognised: nil vendor (D4 领域 1).
+      assert brand(mark(@claude)) == ["claude"]
+
+      assert brand(mark(Map.merge(@claude, %{vendor: nil, vendor_source: :account}))) == [
+               "claude"
+             ]
+    end
+
+    test "unknown vendors and icons count as absent" do
+      assert brand(mark(Map.put(@claude, :vendor, "newco"))) == ["claude"]
+      assert brand(mark(Map.put(@claude, :avatar_icon, "nope"))) == ["claude"]
+      assert source(mark(%{name: "alice", kind: :human, avatar_icon: "nope"})) == ["default"]
+      # A CLI icon is not a vendor: the vendor must be in the vendor or platform table.
+      assert brand(mark(Map.put(@claude, :vendor, "codex"))) == ["claude"]
+      # Platforms count as vendors.
+      assert brand(mark(Map.put(@claude, :vendor, "bedrock"))) == ["bedrock"]
+    end
+
+    test "external Agents never show a vendor or CLI, only their built-in icon" do
+      external = %{@claude | managed?: false} |> Map.put(:vendor, "zai")
+      assert external |> mark() |> source() == ["default"]
+      assert external |> Map.put(:avatar_icon, "kimi") |> mark() |> brand() == ["kimi"]
+    end
+
+    test "内置图标: a circle for people, a rounded square for Agents and squads" do
+      alice = mark(%{name: "alice", kind: :human, avatar_icon: "openai"})
+      assert source(alice) == ["icon"]
+      assert brand(alice) == ["openai"]
+
+      refute alice =~ ">A</text>"
+
+      [plate] =
+        Regex.run(~r/class="([^"]*)"\s+data-brand="openai"/, alice, capture: :all_but_first)
+
+      assert plate =~ "rounded-full"
+      assert plate =~ "bg-id-plate"
+      assert plate =~ "border-id-plate-border"
+
+      squad = mark(%{name: "backend-team", kind: :squad, avatar_icon: "claude"})
+      assert brand(squad) == ["claude"]
+      refute squad =~ "lucide-users"
+
+      [plate] =
+        Regex.run(~r/class="([^"]*)"\s+data-brand="claude"/, squad, capture: :all_but_first)
+
+      assert plate =~ "rounded-[25%]"
+
+      # The icon is 70% of the edge (inside the circle's inscribed square, ~70.7%).
+      assert alice =~ ~r/(size-\[70%\])/
+    end
+
+    test "the built-in icon wins over the vendor and the CLI; the image over all" do
+      agent = Map.merge(@claude, %{vendor: "zai", avatar_icon: "deepseek"})
+      assert brand(mark(agent)) == ["deepseek"]
+
+      image = mark(Map.put(agent, :avatar_url, "/a.webp"))
+      assert image =~ ~s(src="/a.webp")
+      # Under the image, the mark the identity falls back to from level 2 on.
+      assert brand(image) == ["deepseek"]
+    end
+
+    test "disabled identities with a built-in icon are desaturated too" do
+      html = mark(%{name: "s", kind: :squad, avatar_icon: "qwen", state: :disabled})
+      assert html =~ "opacity-70 grayscale"
+    end
+
+    test "带厂商的提示: the vendor's name follows the CLI" do
+      html = chip(Map.merge(@claude, %{vendor: "zai", vendor_source: :account}))
+      assert html =~ "所属：alice · 托管 · Claude Code · Z.ai"
+
+      plain = chip(@claude)
+      assert plain =~ "所属：alice · 托管 · Claude Code"
+      refute plain =~ "Z.ai"
+    end
+
+    test "内置图标的提示, for every kind, readable by assistive technology" do
+      dave = chip(%{name: "dave", kind: :human, avatar_icon: "deepseek"})
+      assert dave =~ "图标：DeepSeek"
+      assert dave =~ ~r/<span class="sr-only">\s*图标：DeepSeek\s*<\/span>/
+      assert dave =~ ~s(tabindex="0")
+
+      squad = chip(%{name: "backend-team", kind: :squad, avatar_icon: "githubcopilot"})
+      assert squad =~ "图标：GitHub Copilot"
+
+      agent = chip(Map.merge(@claude, %{avatar_icon: "zai", vendor: "openai"}))
+      assert agent =~ "所属：alice · 托管 · Claude Code · 图标：Z.ai"
+      refute agent =~ "OpenAI"
+
+      compact =
+        render_component(&actor_chip/1,
+          actor: Map.put(@claude, :avatar_icon, "zai"),
+          compact: true
+        )
+
+      assert compact =~ "keel/dev · 所属：alice · 托管 · Claude Code · 图标：Z.ai"
+    end
+
+    test "an image avatar names neither the icon nor the vendor" do
+      html = chip(Map.merge(@claude, %{vendor: "zai", avatar_url: "/a.webp"}))
+      assert html =~ ~r/<span class="sr-only">\s*所属：alice · 托管 · Claude Code\s*<\/span>/
+      refute chip(%{name: "dave", kind: :human, avatar_url: "/a", avatar_icon: "openai"}) =~ "图标："
+    end
+
+    test "Brands.icon_names/0 equals the domain's icon keys (D2)" do
+      assert Enum.sort(HelmsmanWeb.Brands.icon_names()) ==
+               Enum.sort(Icons.keys())
+    end
   end
 end

@@ -63,11 +63,13 @@ defmodule HelmsmanWeb.AvatarEditorTest do
     ])
   end
 
-  test "the avatar section offers 上传图片… and no 移除头像 without an avatar", %{view: view} do
+  test "the avatar section offers 上传图片… / 选择图标… and no 恢复缺省头像 without an avatar",
+       %{view: view} do
     html = render(view)
     assert html =~ "显示在你加入的所有工作区"
     assert has_element?(view, "#my-avatar-menu-trigger[aria-label='更换头像']")
-    assert has_element?(view, "#my-avatar-upload-item")
+    assert has_element?(view, "#my-avatar-upload-item", "上传图片…")
+    assert has_element?(view, "#my-avatar-icon-item", "选择图标…")
     refute has_element?(view, "#my-avatar-remove-item")
     assert has_element?(view, "#avatar-section [data-actor-mark=human]")
   end
@@ -202,8 +204,11 @@ defmodule HelmsmanWeb.AvatarEditorTest do
     nonce = open_dialog(view)
     render_upload(upload(view, "avatar-#{nonce}.webp", ctx.webp), "avatar-#{nonce}.webp")
 
+    assert has_element?(view, "#my-avatar-remove-item", "恢复缺省头像")
     view |> element("#my-avatar-remove-item") |> render_click()
     assert in_portal?(view, "my-avatar-remove", "#my-avatar-remove[role=alertdialog]")
+    assert in_portal?(view, "my-avatar-remove", "#my-avatar-remove", "恢复缺省头像？")
+    assert in_portal?(view, "my-avatar-remove", "#my-avatar-remove-default", "首字母")
     assert in_portal?(view, "my-avatar-remove", "#my-avatar-remove-cancel[autofocus]")
 
     render_click(editor(view), "remove", %{})

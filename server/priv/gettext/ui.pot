@@ -2320,7 +2320,6 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
-#: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/provider_account_form.ex
@@ -9367,21 +9366,6 @@ msgstr ""
 msgid "未识别"
 msgstr ""
 
-#: lib/helmsman_web/avatar_editor.ex
-#, elixir-autogen, elixir-format
-msgid "移除后恢复缺省头像。"
-msgstr ""
-
-#: lib/helmsman_web/avatar_editor.ex
-#, elixir-autogen, elixir-format
-msgid "移除头像"
-msgstr ""
-
-#: lib/helmsman_web/avatar_editor.ex
-#, elixir-autogen, elixir-format
-msgid "移除头像？"
-msgstr ""
-
 #: lib/helmsman_web/live/user_live/settings.ex
 #, elixir-autogen, elixir-format
 msgid "管理头像、显示名、邮箱和密码"
@@ -9420,4 +9404,114 @@ msgstr ""
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "未知图标（%{key}）"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "%{cli} 图标"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "%{vendor}（来自绑定的供应商账号）"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "%{vendor}（来自运行时的 %{cli} 配置）"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "CLI"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "上传图片"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "内置图标"
+msgstr ""
+
+#: lib/helmsman_web/components/actor.ex
+#, elixir-autogen, elixir-format
+msgid "图标：%{name}"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "头像来源"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "小队图标"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "平台网关"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "恢复后显示缺省头像："
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "恢复缺省"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "恢复缺省头像"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "恢复缺省头像？"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "搜索图标"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "机器人图标"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "模型厂商"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "没有匹配的图标"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "缺省头像："
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "这个图标不可用"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "选择图标…"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "首字母"
 msgstr ""

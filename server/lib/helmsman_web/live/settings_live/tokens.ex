@@ -68,9 +68,12 @@ defmodule HelmsmanWeb.SettingsLive.Tokens do
 
   defp new_form, do: %{params: @default_params, errors: %{}}
 
-  # The shell reloaded `@appearance`: the streamed rows show the default Agents' marks.
+  # The shell reloaded `@appearance` (a runtime's vendor too, update-actor-icons D13): the
+  # streamed rows show the default Agents' marks.
   @impl true
-  def handle_info({:avatars_changed}, socket), do: {:noreply, load(socket)}
+  def handle_info(message, socket) when message in [{:avatars_changed}, {:runtimes_changed}],
+    do: {:noreply, load(socket)}
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   defp load(socket) do

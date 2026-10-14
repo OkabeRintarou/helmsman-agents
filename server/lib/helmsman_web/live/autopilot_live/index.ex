@@ -164,8 +164,10 @@ defmodule HelmsmanWeb.AutopilotLive.Index do
   def handle_info({:autopilot_run, id, _record_id}, socket),
     do: {:noreply, reload_row(socket, id)}
 
-  # The shell reloaded `@appearance`: the streamed rows show the targets' marks.
-  def handle_info({:avatars_changed}, socket), do: {:noreply, load(socket)}
+  # The shell reloaded `@appearance` (a runtime's vendor too, update-actor-icons D13): the
+  # streamed rows show the targets' marks.
+  def handle_info(message, socket) when message in [{:avatars_changed}, {:runtimes_changed}],
+    do: {:noreply, load(socket)}
 
   ## Helpers
 

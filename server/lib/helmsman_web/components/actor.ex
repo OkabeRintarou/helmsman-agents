@@ -12,22 +12,26 @@ defmodule HelmsmanWeb.Components.Actor do
 
   import HelmsmanWeb.CoreComponents, only: [icon: 1, tooltip_class: 1]
 
-  alias HelmsmanWeb.Brands
+  alias HelmsmanWeb.{Appearance, Brands}
   alias HelmsmanWeb.Components.Brand
 
   @doc """
-  The graphic part of an identity (add-actor-avatars D2), from the `actor` map
-  (`kind`, `name`, and when known `provider`, `managed?`, `avatar_url`, `state`):
+  The graphic part of an identity (add-actor-avatars D2, update-actor-icons D4, D11),
+  from the `actor` map (`kind`, `name`, and when known `provider`, `managed?`,
+  `avatar_url`, `avatar_icon`, `vendor`, `state`). Under an image avatar it draws what
+  `HelmsmanWeb.Appearance.mark/1` resolves (`data-mark`):
 
-  * humans: a circle, the avatar or the initial on one of eight tints chosen by name;
-  * managed Agents: a rounded square, the avatar or the CLI's brand icon on the plate;
-    external Agents and unknown CLIs: the neutral square with Lucide `bot`;
-  * squads: the avatar or Lucide `users` on the brand fill; the system: an outlined
-    square with Lucide `settings` (never an avatar).
+  * a built-in icon (`icon`): the icon on the light plate, a circle for humans and a
+    rounded square for Agents and squads;
+  * a managed Agent's vendor (`vendor`) or CLI (`cli`) icon on the plate;
+  * otherwise the default (`default`): humans a circle with the initial on one of eight
+    tints chosen by name; external Agents and unknown CLIs the neutral square with
+    Lucide `bot`; squads Lucide `users` on the brand fill; the system an outlined square
+    with Lucide `settings` (never an avatar).
 
   Disabled / archived identities are desaturated. The avatar `<img data-avatar>` sits on
-  top of the default mark; `app.js` hides it when it fails to load. Decorative unless
-  `label` is given.
+  top of that mark; `app.js` hides it when it fails to load. Decorative unless `label`
+  is given.
   """
   attr :actor, :map, required: true
   attr :size, :atom, default: :sm, values: [:xs, :sm, :md, :lg, :xl]
@@ -37,13 +41,15 @@ defmodule HelmsmanWeb.Components.Actor do
   def actor_mark(assigns) do
     actor = assigns.actor
     kind = actor |> Map.get(:kind, :human) |> to_kind()
-    cli = if kind == :agent and Map.get(actor, :managed?) != false, do: cli_icon(actor)
-    src = if kind != :system, do: Map.get(actor, :avatar_url)
+    actor = Map.put(actor, :kind, kind)
+    src = if Appearance.image?(actor), do: Map.get(actor, :avatar_url)
+    mark = Appearance.mark(actor)
 
     assigns =
       assign(assigns,
         kind: kind,
-        cli: cli,
+        mark: mark,
+        plate: plate_icon(mark),
         src: src,
         inactive?: Map.get(actor, :state) in [:disabled, :archived, "disabled", "archived"],
         name: Map.get(actor, :name) || ""
@@ -59,12 +65,13 @@ defmodule HelmsmanWeb.Components.Actor do
         @class
       ]}
       data-actor-mark={@kind}
+      data-mark={mark_source(@mark)}
       role={@label && "img"}
       aria-label={@label}
       aria-hidden={if(@label, do: nil, else: "true")}
     >
       <span
-        :if={@kind == :human}
+        :if={@kind == :human and !@plate}
         class={["inline-flex size-full items-center justify-center", tint(@name)]}
         data-tint={tint_index(@name)}
       >
@@ -82,13 +89,14 @@ defmodule HelmsmanWeb.Components.Actor do
         </svg>
       </span>
       <Brand.brand_icon
-        :if={@kind == :agent}
-        icon={@cli}
+        :if={@plate || @kind == :agent}
+        icon={@plate}
         fallback={:bot}
         size={@size}
+        shape={if(@kind == :human, do: :round, else: :square)}
       />
       <span
-        :if={@kind == :squad}
+        :if={@kind == :squad and !@plate}
         class="inline-flex size-full items-center justify-center bg-id-squad text-id-squad-ink"
       >
         <.icon name="lucide-users" class="size-[60%]" />
@@ -111,10 +119,11 @@ defmodule HelmsmanWeb.Components.Actor do
     """
   end
 
-  defp cli_icon(actor) do
-    icon = Brands.cli_icon(Map.get(actor, :provider))
-    if icon && Brand.vendored?(icon), do: icon
-  end
+  defp plate_icon({_source, icon}), do: icon
+  defp plate_icon(:default), do: nil
+
+  defp mark_source({source, _icon}), do: source
+  defp mark_source(:default), do: :default
 
   @tints {"bg-id-tint-1 text-id-tint-1-ink", "bg-id-tint-2 text-id-tint-2-ink",
           "bg-id-tint-3 text-id-tint-3-ink", "bg-id-tint-4 text-id-tint-4-ink",
@@ -135,7 +144,10 @@ defmodule HelmsmanWeb.Components.Actor do
 
   * Agents get a tooltip with the owner and "托管" / "外接" (only when the map has
     `managed?`; a bare `%{name, kind}` reference claims neither), and for managed
-    Agents with a known CLI its display name (「所属：alice · 托管 · Claude Code」).
+    Agents with a known CLI its display name (「所属：alice · 托管 · Claude Code」),
+    followed by the vendor's name when the mark shows the vendor (「 · Z.ai」).
+  * A mark showing a built-in icon adds 「图标：<name>」 for every kind (after the
+    Agent's text; the whole tooltip of humans and squads), update-actor-icons D11.
   * `compact` shows only the icon; the name moves to the tooltip and accessible name.
   * `disabled_reason` renders the chip at 60% opacity and exposes the reason
     (tooltip, and as visually hidden text for assistive technology).
@@ -160,10 +172,19 @@ defmodule HelmsmanWeb.Components.Actor do
       Map.get(actor, :name, "") <>
         if(unclaimed?, do: dgettext("ui", "（未认领）"), else: state_suffix(Map.get(actor, :state)))
 
+    shown = Map.put(actor, :kind, kind)
+    shown = if Appearance.image?(shown), do: :image, else: Appearance.mark(shown)
+
     info =
-      if unclaimed?,
-        do: dgettext("ui", "导入的身份，尚未被成员认领"),
-        else: agent_info(kind, actor)
+      [
+        if(unclaimed?, do: dgettext("ui", "导入的身份，尚未被成员认领"), else: agent_info(kind, actor, shown)),
+        icon_info(shown)
+      ]
+      |> Enum.filter(& &1)
+      |> case do
+        [] -> nil
+        parts -> Enum.join(parts, " · ")
+      end
 
     parts = [assigns.compact && name, info, assigns.disabled_reason]
     tip = parts |> Enum.filter(&is_binary/1) |> Enum.join(" · ")
@@ -219,7 +240,7 @@ defmodule HelmsmanWeb.Components.Actor do
   defp unclaimed?(actor),
     do: Map.get(actor, :unclaimed) == true or Map.get(actor, :state) in [:unclaimed, "unclaimed"]
 
-  defp agent_info(:agent, actor) do
+  defp agent_info(:agent, actor, shown) do
     mode =
       case Map.fetch(actor, :managed?) do
         {:ok, true} -> dgettext("ui", "托管")
@@ -231,13 +252,20 @@ defmodule HelmsmanWeb.Components.Actor do
     owner = Map.get(actor, :owner_name)
     owner = owner && dgettext("ui", "所属：%{owner}", owner: owner)
 
-    case Enum.filter([owner, mode, cli], & &1) do
+    vendor = if match?({:vendor, _}, shown), do: Brands.vendor_name(elem(shown, 1))
+
+    case Enum.filter([owner, mode, cli, vendor], & &1) do
       [] -> nil
       parts -> Enum.join(parts, " · ")
     end
   end
 
-  defp agent_info(_kind, _actor), do: nil
+  defp agent_info(_kind, _actor, _shown), do: nil
+
+  # Any identity showing a built-in icon names it (web-visual-system: a brand icon always
+  # comes with its name).
+  defp icon_info({:icon, icon}), do: dgettext("ui", "图标：%{name}", name: Brands.icon_label(icon))
+  defp icon_info(_shown), do: nil
 
   @doc """
   Presence dot: online (success), busy (brand), offline (hollow fg-subtle);

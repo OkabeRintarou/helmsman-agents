@@ -59,8 +59,11 @@ defmodule HelmsmanWeb.Components.Brand do
   A brand icon on its plate. `icon` is a lobe-icons name (`HelmsmanWeb.Brands`); nil or
   an unknown name renders the neutral `fallback` (`:bot` for CLIs, `:cpu` for vendors and
   platforms). Decorative unless `label` is given (then `role="img"` with that name).
+  `shape` `:round` draws a circular plate (a person's built-in icon avatar,
+  update-actor-icons D11); the icon keeps 70% of the edge, inside the inscribed square.
   """
   attr :icon, :string, default: nil
+  attr :shape, :atom, default: :square, values: [:square, :round]
   attr :fallback, :atom, default: :cpu, values: [:cpu, :bot]
   attr :size, :atom, default: :sm, values: [:tiny, :xs, :sm, :md, :lg, :xl]
   attr :label, :string, default: nil
@@ -73,7 +76,8 @@ defmodule HelmsmanWeb.Components.Brand do
     ~H"""
     <span
       class={[
-        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[25%]",
+        "inline-flex shrink-0 items-center justify-center overflow-hidden",
+        if(@shape == :round, do: "rounded-full", else: "rounded-[25%]"),
         size_class(@size),
         @icon && "border border-id-plate-border bg-id-plate text-id-plate-ink",
         !@icon && "bg-id-neutral text-id-neutral-ink",

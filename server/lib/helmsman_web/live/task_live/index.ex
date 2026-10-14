@@ -526,10 +526,16 @@ defmodule HelmsmanWeb.TaskLive.Index do
   def handle_info(:reload_search, socket),
     do: {:noreply, socket |> Throttle.done(:reload_search) |> reread_rows()}
 
-  # The shell reloaded the identity appearance (add-actor-avatars D7); streamed rows are
-  # only rendered when inserted, so the rows shown are read again.
+  # The shell reloaded the identity appearance (add-actor-avatars D7; a runtime's vendor,
+  # update-actor-icons D13); streamed rows are only rendered when inserted, so the rows
+  # shown are read again.
   def handle_info(message, socket)
-      when message in [{:avatars_changed}, {:agents_changed}, {:members_changed}],
+      when message in [
+             {:avatars_changed},
+             {:agents_changed},
+             {:members_changed},
+             {:runtimes_changed}
+           ],
       do: {:noreply, Throttle.schedule(socket, :reload_rows)}
 
   def handle_info({:squad, _id}, socket), do: {:noreply, Throttle.schedule(socket, :reload_rows)}

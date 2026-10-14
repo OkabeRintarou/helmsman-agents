@@ -3,11 +3,13 @@
 // result at 40 and 20 px in the identity's shape, then encode a 256×256 WebP (JPEG when
 // the browser cannot encode WebP) and hand it to the component's live upload. Saving is
 // done by the server once the upload completes; the file name carries the dialog's
-// nonce so a stale upload is dropped. No blob: URLs are created (CSP).
+// nonce (read when the save starts) so a stale upload is dropped. A save whose encoding
+// finishes after the nonce changed or the image tab was hidden is abandoned
+// (update-actor-icons D12). No blob: URLs are created (CSP).
 import {
   OUTPUT, MAX_SOURCE_BYTES, initialState, zoomTo, panBy, sourceRect, keyAction, attempts,
-  firstFitting, fileName,
-} from "./avatar_crop"
+  firstFitting, fileName, shouldUpload,
+} from "./avatar_crop.js"
 
 const toBlob = (canvas, type, quality) =>
   new Promise(resolve => canvas.toBlob(resolve, type, quality))
@@ -17,7 +19,9 @@ export default {
     this.state = initialState()
     this.bitmap = null
     this.saving = false
+    this.saveOp = 0
     this.loadSeq = 0
+    this.nonce = this.el.dataset.nonce
     this.q = sel => this.el.querySelector(sel)
     this.view = this.q("[data-crop-view]")
     this.zoom = this.q("[data-crop-zoom]")
@@ -81,9 +85,29 @@ export default {
     this.setControls()
   },
 
+  // A renewed nonce (dialog closed or reopened, tab switched) ends a save in progress:
+  // its upload will not happen, so the controls are usable again at once. The save's
+  // operation is retired with it: when its encoding finishes later it no longer owns the
+  // controls, which may belong to a newer save by then.
+  updated() {
+    const nonce = this.el.dataset.nonce
+    if (nonce === this.nonce) return
+    this.nonce = nonce
+    if (this.saving) {
+      this.saveOp += 1
+      this.setSaving(false)
+    }
+  },
+
   destroyed() {
     this.dead = true
     this.bitmap?.close?.()
+  },
+
+  // The image tab: the tab panel holding the hook is not hidden.
+  visible() {
+    const panel = this.el.closest("[role=tabpanel]")
+    return !panel || !panel.hidden
   },
 
   size() { return this.view.clientWidth || 256 },
@@ -166,16 +190,26 @@ export default {
 
   async save() {
     if (this.saving || !this.bitmap) return
+    const op = this.saveOp = (this.saveOp || 0) + 1
     const seq = this.loadSeq
+    const nonce = this.el.dataset.nonce
     this.setSaving(true)
     const blob = await this.encode()
-    if (this.dead) return
-    if (seq !== this.loadSeq) return this.setSaving(false)
+    // Retired (updated() renewed the nonce): drop it without touching the controls.
+    if (op !== this.saveOp) return
+    const current = {
+      dead: this.dead, seq, loadSeq: this.loadSeq, nonce, currentNonce: this.el.dataset.nonce,
+      visible: this.visible(),
+    }
+    if (!shouldUpload(current)) {
+      if (!this.dead) this.setSaving(false)
+      return
+    }
     if (!blob) {
       this.setSaving(false)
       return this.push("client_error", {code: "too_complex"})
     }
-    const file = new File([blob], fileName(this.el.dataset.nonce, blob.type), {type: blob.type})
+    const file = new File([blob], fileName(nonce, blob.type), {type: blob.type})
     const form = document.getElementById(this.el.dataset.uploadForm)
     this.uploadTo(form, "avatar", [file])
   },

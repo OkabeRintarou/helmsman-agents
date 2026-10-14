@@ -812,7 +812,37 @@ defmodule HelmsmanWeb.Dev.UiLive do
       %{name: "keel/gone", kind: :agent, provider: "codex", avatar_url: "/dev/missing.png"},
       %{name: "backend-team", kind: :squad},
       %{name: "pic-team", kind: :squad, avatar_url: demo_avatar()},
-      %{name: "helmsman", kind: :system}
+      %{name: "helmsman", kind: :system},
+      # update-actor-icons: built-in icons and vendor defaults.
+      %{name: "dave", kind: :human, avatar_icon: "openai"},
+      %{name: "icon-team", kind: :squad, avatar_icon: "claude"},
+      %{
+        name: "keel/ds",
+        kind: :agent,
+        provider: "claude",
+        managed?: true,
+        owner_name: "alice",
+        avatar_icon: "deepseek"
+      },
+      %{
+        name: "keel/zai",
+        kind: :agent,
+        provider: "claude",
+        managed?: true,
+        owner_name: "alice",
+        vendor: "zai",
+        vendor_source: :account
+      },
+      %{
+        name: "keel/kimi",
+        kind: :agent,
+        provider: "codex",
+        managed?: true,
+        owner_name: "bob",
+        vendor: "moonshot",
+        vendor_source: :runtime
+      },
+      %{name: "old-team", kind: :squad, avatar_icon: "qwen", state: :archived}
     ]
   end
 

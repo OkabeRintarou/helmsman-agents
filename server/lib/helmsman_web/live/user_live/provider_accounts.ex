@@ -44,7 +44,7 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
        form_gen: 0,
        confirm: nil,
        in_use: nil,
-       avatar_url: AvatarData.user_avatar_url(scope.user)
+       avatar: AvatarData.user_avatar(scope.user)
      )
      |> stream_configure(:accounts, dom_id: &"provider-account-#{&1.id}")
      |> stream(:accounts, [])
@@ -268,7 +268,7 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
       flash={@flash}
       current_scope={@current_scope}
       active={:provider_accounts}
-      avatar_url={@avatar_url}
+      avatar={@avatar}
     >
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">

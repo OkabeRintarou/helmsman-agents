@@ -192,6 +192,40 @@ defmodule HelmsmanWeb.Brands do
     )
   end
 
+  @icon_labels Map.new(Map.values(@clis)) |> Map.merge(@vendor_names)
+
+  # CLI icon => CLI key, for the built-in icon search (`copilot` finds `githubcopilot`).
+  @cli_keys Map.new(@clis, fn {key, {icon, _name}} -> {icon, key} end)
+
+  @doc """
+  Display name of any icon of the tables (a CLI icon gets its CLI's name, e.g.
+  `githubcopilot` → 「GitHub Copilot」), nil when unknown.
+  """
+  @spec icon_label(String.t() | nil) :: String.t() | nil
+  def icon_label(icon), do: @icon_labels[key(icon)]
+
+  @doc """
+  The built-in avatar icons (update-actor-icons D12) in their three groups
+  `[{:cli | :vendor | :platform, [%{icon, name, terms}]}]`, each group ordered by
+  display name; `terms` are the lower-case strings the search matches (name, icon and,
+  for CLIs, the CLI key).
+  """
+  def icon_groups do
+    cli = Enum.map(@clis, fn {_key, {icon, name}} -> {icon, name} end)
+
+    for {group, list} <- [cli: cli, vendor: @vendors, platform: @platforms] do
+      items =
+        list
+        |> Enum.map(fn {icon, name} ->
+          terms = Enum.uniq(Enum.map([name, icon, @cli_keys[icon]], &(&1 && String.downcase(&1))))
+          %{icon: icon, name: name, terms: Enum.reject(terms, &is_nil/1)}
+        end)
+        |> Enum.sort_by(& &1.name)
+
+      {group, items}
+    end
+  end
+
   @doc "The icon of an Agent's CLI (`provider`), nil when the CLI is unknown."
   @spec cli_icon(String.t() | atom() | nil) :: String.t() | nil
   def cli_icon(provider), do: with({icon, _} <- @clis[key(provider)], do: icon)

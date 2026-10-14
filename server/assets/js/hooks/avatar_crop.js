@@ -86,3 +86,11 @@ export const firstFitting = sizes => {
 }
 
 export const fileName = (nonce, type) => `avatar-${nonce}.${extension(type)}`
+
+// Whether a save whose encoding just finished may still upload (update-actor-icons
+// D12): the hook is alive, no other image was chosen since (`seq`), the dialog's nonce
+// is still the one read when the save started (closing, reopening, choosing another
+// image or switching tabs renews it) and the image tab is still shown.
+export const shouldUpload = ({dead, seq, loadSeq, nonce, currentNonce, visible}) =>
+  !dead && seq === loadSeq && typeof nonce === "string" && nonce !== "" &&
+    nonce === currentNonce && visible === true

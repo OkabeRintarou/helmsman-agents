@@ -1,8 +1,9 @@
 defmodule HelmsmanWeb.AvatarData do
   @moduledoc """
-  The avatar domain functions the web layer uses (add-actor-avatars D7, D10, D11):
-  thin wrappers of `Helmsman.Avatars` and `Helmsman.Actors.appearance/1`, the avatar
-  read addresses (D5) and the Chinese messages of the error codes.
+  The avatar domain functions the web layer uses (add-actor-avatars D7, D10, D11;
+  update-actor-icons D3, D12, D13): thin wrappers of `Helmsman.Avatars` and
+  `Helmsman.Actors.appearance/1`, the avatar read addresses (D5) and the Chinese
+  messages of the error codes.
   """
   use Gettext, backend: HelmsmanWeb.Gettext
   use HelmsmanWeb, :verified_routes
@@ -11,9 +12,10 @@ defmodule HelmsmanWeb.AvatarData do
 
   @type target :: Avatars.target()
 
+  defdelegate can_manage?(scope, target), to: Avatars
   defdelegate put(scope, target, binary), to: Avatars
   defdelegate delete(scope, target), to: Avatars
-  defdelegate can_manage?(scope, target), to: Avatars
+  defdelegate put_icon(scope, target, icon), to: Avatars
 
   @doc "`Helmsman.Actors.appearance/1`; empty without a workspace."
   def appearance(%{workspace: %{id: id}} = scope) when is_integer(id),
@@ -21,20 +23,23 @@ defmodule HelmsmanWeb.AvatarData do
 
   def appearance(_scope), do: %{}
 
-  @doc "`Helmsman.Avatars.user_avatar_key/1` (nil without a user)."
-  def user_avatar_key(user_id) when is_integer(user_id), do: Avatars.user_avatar_key(user_id)
-  def user_avatar_key(_user_id), do: nil
-
-  @doc "Address of the signed-in user's own avatar (`/users/avatar/:key`), nil without one."
-  @spec user_avatar_url(map() | nil) :: String.t() | nil
-  def user_avatar_url(%{id: id}) do
-    case user_avatar_key(id) do
-      nil -> nil
-      key -> ~p"/users/avatar/#{key}"
+  @doc """
+  The signed-in user's own avatar as the user menu and the account settings page show
+  it: `%{avatar_url, avatar_icon}` (`/users/avatar/:key` for an image, the icon name for
+  a built-in icon, both nil without a custom avatar or a user).
+  """
+  @spec user_avatar(map() | nil) :: %{avatar_url: String.t() | nil, avatar_icon: String.t() | nil}
+  def user_avatar(%{id: id}) when is_integer(id) do
+    case Avatars.user_avatar(id) do
+      {:image, key} -> %{avatar_url: ~p"/users/avatar/#{key}", avatar_icon: nil}
+      {:icon, icon} -> %{avatar_url: nil, avatar_icon: icon}
+      nil -> no_avatar()
     end
   end
 
-  def user_avatar_url(_user), do: nil
+  def user_avatar(_user), do: no_avatar()
+
+  defp no_avatar, do: %{avatar_url: nil, avatar_icon: nil}
 
   @doc "Address of an avatar `key` readable in the workspace `slug` (`/w/:slug/avatars/:key`)."
   @spec workspace_avatar_url(String.t(), String.t() | nil) :: String.t() | nil
@@ -56,6 +61,7 @@ defmodule HelmsmanWeb.AvatarData do
       animated: dgettext("ui", "不支持动图"),
       forbidden: dgettext("ui", "你没有权限修改这个头像"),
       not_found: dgettext("ui", "身份不存在"),
+      unknown_icon: dgettext("ui", "这个图标不可用"),
       too_many_files: dgettext("ui", "一次只能上传一张图片"),
       too_complex: dgettext("ui", "图片过于复杂，请换一张"),
       source_too_large: dgettext("ui", "图片不能超过 10 MB")

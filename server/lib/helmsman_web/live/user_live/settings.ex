@@ -11,7 +11,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
       flash={@flash}
       current_scope={@current_scope}
       active={:account}
-      avatar_url={@avatar_url}
+      avatar={@avatar}
       class="max-w-[400px]"
     >
       <.header>
@@ -27,7 +27,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
           target={:me}
           rights={:set}
           size={:xl}
-          actor={%{name: user_name(@current_scope.user), kind: :human, avatar_url: @avatar_url}}
+          actor={Map.merge(@avatar, %{name: user_name(@current_scope.user), kind: :human})}
         />
         <div class="flex min-w-0 flex-col gap-0.5">
           <h2 id="avatar-heading" class="text-title font-semibold text-fg">
@@ -171,7 +171,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:trigger_submit, false)
-      |> assign(:avatar_url, AvatarData.user_avatar_url(user))
+      |> assign(:avatar, AvatarData.user_avatar(user))
 
     {:ok, socket}
   end
@@ -180,8 +180,8 @@ defmodule HelmsmanWeb.UserLive.Settings do
 
   @impl true
   def handle_info({:user_avatar_changed}, socket) do
-    url = AvatarData.user_avatar_url(socket.assigns.current_scope.user)
-    {:noreply, assign(socket, :avatar_url, url)}
+    avatar = AvatarData.user_avatar(socket.assigns.current_scope.user)
+    {:noreply, assign(socket, :avatar, avatar)}
   end
 
   def handle_info({:put_flash, kind, message}, socket),

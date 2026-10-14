@@ -30,8 +30,10 @@ defmodule HelmsmanWeb.Shell do
     subscription to that topic for workspace pages) *before* reading the table, and
     reloads it on `{:avatars_changed}`, `{:agents_changed}`, `{:members_changed}`,
     `{:workspace_imported, _}` and `{:squad, _id}` before passing the message on.
-    `{:user_avatar_changed}` on `user:<id>` only refreshes `shell.user_avatar_url` (the
-    user menu).
+    `{:user_avatar_changed}` on `user:<id>` only refreshes `shell.user_avatar` (the user
+    menu: an image or a built-in icon). `{:runtimes_changed}` (a runtime's state or
+    reported vendor changed, update-actor-icons D13) reloads the table too, then goes on
+    to the page.
   * Shows `{:put_flash, kind, message}` sent by components of the page.
 
   The scope is read from `socket.assigns.current_scope` (`user`, `workspace`). For a
@@ -79,7 +81,7 @@ defmodule HelmsmanWeb.Shell do
         path: nil,
         uri: nil,
         import_notice: false,
-        user_avatar_url: AvatarData.user_avatar_url(user_of(scope))
+        user_avatar: AvatarData.user_avatar(user_of(scope))
       })
       |> attach_hook(:hm_shell_params, :handle_params, &handle_params/3)
       |> attach_hook(:hm_shell_info, :handle_info, &handle_info/2)
@@ -181,12 +183,17 @@ defmodule HelmsmanWeb.Shell do
     do: {:halt, put_flash(socket, kind, message)}
 
   defp handle_info({:user_avatar_changed}, socket) do
-    url = AvatarData.user_avatar_url(user_of(socket.assigns[:current_scope]))
-    {:halt, assign(socket, :shell, %{socket.assigns.shell | user_avatar_url: url})}
+    avatar = AvatarData.user_avatar(user_of(socket.assigns[:current_scope]))
+    {:halt, assign(socket, :shell, %{socket.assigns.shell | user_avatar: avatar})}
   end
 
   defp handle_info(message, socket)
-       when message in [{:avatars_changed}, {:agents_changed}, {:members_changed}],
+       when message in [
+              {:avatars_changed},
+              {:agents_changed},
+              {:members_changed},
+              {:runtimes_changed}
+            ],
        do: forward(message, reload_appearance(socket))
 
   defp handle_info({:squad, _id} = message, socket),
