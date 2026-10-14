@@ -101,6 +101,9 @@ defmodule HelmsmanDaemon.RunsTest do
     :ok = Supervisor.terminate_child(sup, Runs)
     Process.exit(worker, :kill)
     eventually(fn -> not Process.alive?(worker) end)
+    # Registry removes dead workers asynchronously. Reconciliation's live
+    # inventory must no longer contain the worker before Runs restarts.
+    eventually(fn -> Registry.lookup(HelmsmanDaemon.RunRegistry, 5) == [] end)
     {:ok, _} = Supervisor.restart_child(sup, Runs)
     refute File.exists?(Paths.run(5))
     refute File.exists?(Paths.record(5))

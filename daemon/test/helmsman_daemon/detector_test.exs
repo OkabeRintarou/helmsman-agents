@@ -29,6 +29,68 @@ defmodule HelmsmanDaemon.DetectorTest do
     def min_version, do: Version.parse!("2.0.0")
   end
 
+  defmodule WithVendor do
+    alias HelmsmanDaemon.Adapters.Claude
+    def provider, do: :claude
+    def detect, do: {:ok, %{version: "2.1.0", models: []}}
+    def min_version, do: Version.parse!("2.1.0")
+    def vendor, do: Claude.vendor()
+  end
+
+  defmodule InvalidVendor do
+    def provider, do: :cursor
+    def detect, do: {:ok, %{version: "2.1.0", models: []}}
+    def min_version, do: Version.parse!("2.1.0")
+    def vendor, do: "https://private.example/SECRET"
+  end
+
+  defmodule RaisingVendor do
+    def provider, do: :copilot
+    def detect, do: {:ok, %{version: "2.1.0", models: []}}
+    def min_version, do: Version.parse!("2.1.0")
+    def vendor, do: raise("SECRET")
+  end
+
+  test "available vendor is inferred, optional failures do not affect availability" do
+    [claude, invalid, raising, missing, old] =
+      Detector.scan([WithVendor, InvalidVendor, RaisingVendor, Legacy, Old])
+
+    assert claude.available
+    assert claude.vendor == "anthropic"
+
+    for cli <- [invalid, raising, missing] do
+      assert cli.available
+      assert cli.vendor == nil
+    end
+
+    assert old.vendor == nil
+    refute function_exported?(HelmsmanDaemon.Adapters.Copilot, :vendor, 0)
+    refute function_exported?(HelmsmanDaemon.Adapters.Cursor, :vendor, 0)
+  end
+
+  test "settings-only changes trigger sync once" do
+    start_supervised!({Detector, adapters: [WithVendor], detect_interval_ms: 100_000})
+    owner = self()
+
+    connection =
+      spawn(fn ->
+        receive do
+          message -> send(owner, message)
+        end
+      end)
+
+    Process.register(connection, Connection)
+    on_exit(fn -> if Process.alive?(connection), do: Process.exit(connection, :kill) end)
+    path = Path.join([System.get_env("HOME"), ".claude", "settings.json"])
+    File.mkdir_p!(Path.dirname(path))
+    File.write!(path, JSON.encode!(%{"env" => %{"ANTHROPIC_BASE_URL" => "https://api.z.ai"}}))
+    Detector.refresh()
+    assert_receive {:"$gen_cast", :sync}
+    assert [%{vendor: "zai"}] = Detector.inventory()
+    Detector.refresh()
+    refute_receive {:"$gen_cast", :sync}
+  end
+
   test "old version unavailable and no CLI refuses startup" do
     [old, missing] = Detector.scan([Old, Toggle])
     assert old.version == "1.9.0"

@@ -4,7 +4,7 @@ defmodule HelmsmanDaemon.Detector do
   require Logger
   alias HelmsmanDaemon.{Adapter, Env, ProcScan}
   alias HelmsmanDaemon.Adapters.Codex.Config, as: CodexConfig
-  alias HelmsmanProtocol.CLI
+  alias HelmsmanProtocol.{CLI, Vendor}
 
   def scan(adapters \\ Adapter.registered()), do: Enum.map(adapters, &detect/1)
   def available?(clis), do: Enum.any?(clis, & &1.available)
@@ -43,12 +43,22 @@ defmodule HelmsmanDaemon.Detector do
             ),
           else: %{
             cli(adapter, info.version, info.models, true, nil)
-            | efforts: Map.get(info, :efforts, [])
+            | efforts: Map.get(info, :efforts, []),
+              vendor: vendor(adapter)
           }
 
       :error ->
         cli(adapter, info.version, info.models, false, "Invalid CLI version")
     end
+  end
+
+  defp vendor(adapter) do
+    value = if function_exported?(adapter, :vendor, 0), do: adapter.vendor()
+    if Vendor.valid?(value), do: value
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
   end
 
   defp cli(adapter, version, models, available, reason) do

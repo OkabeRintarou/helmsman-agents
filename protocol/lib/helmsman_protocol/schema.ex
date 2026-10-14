@@ -209,7 +209,9 @@ defmodule HelmsmanProtocol.Schema do
   defp decode_value(:string_map, value, _, _, _) when is_map(value) and not is_struct(value) do
     if Enum.all?(value, fn {k, v} ->
          is_binary(k) and is_binary(v) and String.valid?(k) and String.valid?(v)
-       end), do: {:ok, value}, else: invalid([], :type)
+       end),
+       do: {:ok, value},
+       else: invalid([], :type)
   end
 
   defp decode_value(:json_object, value, _, _, _) when is_map(value) and not is_struct(value) do

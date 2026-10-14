@@ -14,6 +14,7 @@ defmodule HelmsmanProtocol.Fixtures do
   def cli do
     %{
       "provider" => "claude",
+      "vendor" => nil,
       "version" => "2.0",
       "models" => ["sonnet"],
       "efforts" => ["high"],

@@ -208,6 +208,10 @@ defmodule HelmsmanDaemon.RunWorkerDescendantsTest do
         Port.open({:spawn_executable, System.find_executable("python3")}, args: [@helper, older])
 
       older_pid = pid!(older)
+      {:ok, older_info} = ProcScan.stat(File.read!("/proc/#{older_pid}/stat"))
+      # The cleanup lower bound subtracts one tick. Ensure this process
+      # really predates that bound, even on a fast or warmed test runner.
+      eventually(fn -> ProcScan.now_ticks() > older_info.start end)
 
       {_, _} = run(46, @success, pid_file)
       payload = finished(46)

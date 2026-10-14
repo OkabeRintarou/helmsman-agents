@@ -88,10 +88,10 @@ defmodule HelmsmanDaemon.CLI do
     )
   end
 
-  defp dispatch(["runtimes"], [], _opts) do
+  defp dispatch(["runtimes"], [], opts) do
     case Config.load() do
       {:ok, _} ->
-        print_clis()
+        print_clis(Keyword.get(opts, :adapters, HelmsmanDaemon.Adapter.registered()))
 
         case Credentials.metadata() do
           {:ok, credentials} -> Login.print_workspaces(credentials.workspaces)
@@ -196,8 +196,8 @@ defmodule HelmsmanDaemon.CLI do
     end
   end
 
-  defp print_clis do
-    Enum.each(Detector.scan(), fn cli ->
+  defp print_clis(adapters) do
+    Enum.each(Detector.scan(adapters), fn cli ->
       availability = if cli.available, do: "available", else: cli.unavailable_reason
       IO.puts("#{cli.provider}: #{cli.version || "unknown"} #{availability}")
 

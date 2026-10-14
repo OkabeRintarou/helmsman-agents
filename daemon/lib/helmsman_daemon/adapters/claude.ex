@@ -15,7 +15,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
   """
   @behaviour HelmsmanDaemon.Adapter
   require Logger
-  alias HelmsmanDaemon.Adapters.Claude.Provider
+  alias HelmsmanDaemon.Adapters.Claude.{Provider, Vendor}
   alias HelmsmanDaemon.{Exec, Launch}
   alias HelmsmanProtocol.Event
 
@@ -32,6 +32,8 @@ defmodule HelmsmanDaemon.Adapters.Claude do
     {~r/Connection refused.*ConnectionRefused/i, :provider_network},
     {~r/Prompt is too long/i, :context_overflow}
   ]
+
+  def vendor, do: Vendor.infer()
 
   def provider, do: :claude
   def executable, do: "claude"

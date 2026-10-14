@@ -42,6 +42,8 @@ defmodule HelmsmanDaemon.Adapter do
           required(:models) => [String.t()],
           optional(:efforts) => [String.t()]
         }
+  @callback vendor() :: String.t() | nil
+  @optional_callbacks vendor: 0
   @callback detect() :: {:ok, detection()} | {:error, String.t()}
   @callback prepare(RunSpec.t(), Path.t(), Path.t()) ::
               {:ok, Launch.t()} | {:error, {atom(), String.t()}}

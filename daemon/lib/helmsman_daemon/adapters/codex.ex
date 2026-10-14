@@ -1,10 +1,12 @@
 defmodule HelmsmanDaemon.Adapters.Codex do
   @moduledoc "Unattended Codex app-server with a shared Codex home and per-thread MCP."
   @behaviour HelmsmanDaemon.Adapter
-  alias HelmsmanDaemon.Adapters.Codex.{Config, Home, Output, Provider, Source}
+  alias HelmsmanDaemon.Adapters.Codex.{Config, Home, Output, Provider, Source, Vendor}
   alias HelmsmanDaemon.{Env, Exec, Launch}
   @minimum Version.parse!("0.162.0")
   @efforts ~w(low medium high xhigh)
+  def vendor, do: Vendor.infer()
+
   def provider, do: :codex
   def executable, do: Application.get_env(:helmsman_daemon, :codex_executable, "codex")
   def min_version, do: @minimum

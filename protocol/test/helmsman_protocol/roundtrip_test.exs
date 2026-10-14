@@ -116,7 +116,11 @@ defmodule HelmsmanProtocol.RoundtripTest do
       "clis",
       if(:rand.uniform(2) == 1,
         do: [],
-        else: [Fixtures.cli() |> Map.put("provider", pick(~w(claude codex copilot cursor)))]
+        else: [
+          Fixtures.cli()
+          |> Map.put("provider", pick(~w(claude codex copilot cursor)))
+          |> Map.put("vendor", maybe(pick(HelmsmanProtocol.Vendor.keys() ++ ["newco"])))
+        ]
       )
     )
   end
