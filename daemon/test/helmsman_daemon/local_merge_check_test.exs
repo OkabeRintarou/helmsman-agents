@@ -185,7 +185,7 @@ defmodule HelmsmanDaemon.LocalMergeCheckTest do
   test "rechecks the latest watch list on every interval", %{user: user} do
     seed_cache(user)
     head = task_branch(user)
-    start_checker(merge_check_interval_ms: 100)
+    checker = start_checker(merge_check_interval_ms: 100)
     LocalMergeCheck.update([%{workspace_id: 1, name: "app", watch: [watch(head)]}])
     assert_receive {:repo_status, %{results: [%{merged: :no}]}}, 5_000
 
@@ -194,9 +194,18 @@ defmodule HelmsmanDaemon.LocalMergeCheckTest do
     assert_receive {:repo_status, %{results: [%{merged: :yes}]}}, 5_000
 
     LocalMergeCheck.update([%{workspace_id: 1, name: "app", watch: []}])
-    Process.sleep(50)
+    # A check already in flight still reports; once it is done nothing is pending.
+    eventually(fn -> idle?(checker) end, 1_000)
     flush()
-    refute_receive {:repo_status, _}, 300
+
+    send(checker, :tick)
+    assert idle?(checker)
+    refute_received {:repo_status, _}
+  end
+
+  defp idle?(checker) do
+    state = :sys.get_state(checker)
+    state.task == nil and state.queue == []
   end
 
   test "a local run's finalization triggers one check with the latest watch list", %{user: user} do
