@@ -3,7 +3,9 @@ defmodule Helmsman.Avatars.Avatar do
   An avatar (`add-actor-avatars` decision 3): a user's (`user_id`, shown on
   their human identities) or an agent's or squad's (`workspace_id` and
   `actor_id`). `key`, the first 32 hex digits of the SHA-256 of `data`, is
-  the read key; `data` is only loaded when asked for.
+  the read key; `data` is only loaded when asked for. A built-in icon
+  avatar (`update-actor-icons` D1) has only `icon`: no image columns and
+  so no read key.
   """
 
   use Ecto.Schema
@@ -19,6 +21,7 @@ defmodule Helmsman.Avatars.Avatar do
     field :key, :string
     field :byte_size, :integer
     field :edge, :integer
+    field :icon, :string
     belongs_to :updated_by, Helmsman.Accounts.User
 
     timestamps(type: :utc_datetime_usec)

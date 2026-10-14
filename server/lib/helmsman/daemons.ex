@@ -394,7 +394,8 @@ defmodule Helmsman.Daemons do
       Repo.insert_all(Runtime, rows,
         conflict_target: [:workspace_id, :daemon_id, :provider],
         on_conflict:
-          {:replace, [:cli_version, :models, :efforts, :status, :unavailable_reason, :updated_at]}
+          {:replace,
+           [:cli_version, :models, :efforts, :status, :unavailable_reason, :vendor, :updated_at]}
       )
     end
   end
@@ -409,10 +410,21 @@ defmodule Helmsman.Daemons do
       efforts: cli.efforts,
       status: if(cli.available, do: "online", else: "offline"),
       unavailable_reason: if(cli.available, do: nil, else: cli.unavailable_reason),
+      vendor: vendor(cli),
       inserted_at: time,
       updated_at: time
     }
   end
+
+  # `update-actor-icons` D10: only a known vendor of an available CLI is
+  # kept. PLACEHOLDER(update-actor-icons): `Map.get/2` and `Helmsman.Vendor`
+  # until `HelmsmanProtocol.CLI` has `vendor` (group 1).
+  defp vendor(%{available: true} = cli) do
+    vendor = Map.get(cli, :vendor)
+    if Helmsman.Vendor.valid?(vendor), do: vendor
+  end
+
+  defp vendor(_cli), do: nil
 
   defp available_runtimes(id, valid) do
     Repo.all(
@@ -443,7 +455,7 @@ defmodule Helmsman.Daemons do
           order_by: r.id,
           select:
             {r.workspace_id, r.id, r.status, r.unavailable_reason, r.cli_version, r.models,
-             r.efforts}
+             r.efforts, r.vendor}
       )
       |> Enum.group_by(&elem(&1, 0))
 

@@ -11,6 +11,7 @@ defmodule Helmsman.Daemons.Runtime do
     field :efforts, {:array, :string}, default: []
     field :status, :string, default: "offline"
     field :unavailable_reason, :string
+    field :vendor, :string
     field :disabled_at, :utc_datetime
     timestamps(type: :utc_datetime)
   end

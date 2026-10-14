@@ -4,7 +4,9 @@ defmodule Helmsman.Avatars do
   identity in every workspace) and those of agents and squads.
 
   Files are checked by `Helmsman.Avatars.Image` (decision 4) and stored in
-  the database (decision 3). A write locks its target (the user row, or
+  the database (decision 3). An avatar is either such an image or a
+  built-in icon key (`Helmsman.Avatars.Icons`, `update-actor-icons` D1):
+  writing one form replaces the other in the same row. A write locks its target (the user row, or
   the identity row `FOR UPDATE` and a squad's row `FOR SHARE`), authorizes
   against the current state with `Helmsman.Policy` (`:set_avatar`,
   `:remove_avatar`, decision 12), replaces or deletes the avatar and, once
@@ -17,7 +19,7 @@ defmodule Helmsman.Avatars do
 
   alias Helmsman.Accounts.{Scope, User}
   alias Helmsman.Actors.Actor
-  alias Helmsman.Avatars.{Avatar, Image}
+  alias Helmsman.Avatars.{Avatar, Icons, Image}
   alias Helmsman.{Config, Events, Policy, Repo, Tx, Workspaces}
   alias Helmsman.Squads.Squad
 
@@ -25,8 +27,9 @@ defmodule Helmsman.Avatars do
   @type target :: :me | {:actor, String.t()}
   @type put_error :: Image.error() | :forbidden | :not_found
   @type fetched :: %{data: binary(), content_type: String.t(), key: String.t()}
+  @type user_avatar :: nil | {:image, String.t()} | {:icon, String.t()}
 
-  @replaced [:content_type, :data, :key, :byte_size, :edge, :updated_by_id, :updated_at]
+  @replaced [:content_type, :data, :key, :byte_size, :edge, :icon, :updated_by_id, :updated_at]
 
   @doc """
   Sets the avatar of `target` to `data`, replacing the current one. An
@@ -39,7 +42,40 @@ defmodule Helmsman.Avatars do
           {:ok, %{key: String.t(), content_type: String.t()}} | {:error, put_error()}
   def put(%Scope{} = scope, target, data) when is_binary(data) do
     with {:ok, image} <- Image.validate(data) do
-      write(scope, :set_avatar, target, &upsert(&1, &2, data, image))
+      fields = %{
+        content_type: image.content_type,
+        data: data,
+        key: Avatar.key(data),
+        byte_size: byte_size(data),
+        edge: image.edge,
+        icon: nil
+      }
+
+      write(scope, :set_avatar, target, fn owner, scope ->
+        upsert(owner, scope, fields)
+        {:ok, %{key: fields.key, content_type: fields.content_type}}
+      end)
+    end
+  end
+
+  @doc """
+  Sets the avatar of `target` to the built-in icon `icon`, replacing the
+  current avatar (an image included), with the permissions of `put/3`
+  (`update-actor-icons` D3). An icon that is not in
+  `Helmsman.Avatars.Icons.keys/0` is `:unknown_icon` and changes nothing.
+  """
+  @spec put_icon(Scope.t(), target(), String.t()) ::
+          {:ok, %{icon: String.t()}} | {:error, :forbidden | :not_found | :unknown_icon}
+  def put_icon(%Scope{} = scope, target, icon) do
+    if Icons.valid?(icon) do
+      fields = %{content_type: nil, data: nil, key: nil, byte_size: nil, edge: nil, icon: icon}
+
+      write(scope, :set_avatar, target, fn owner, scope ->
+        upsert(owner, scope, fields)
+        {:ok, %{icon: icon}}
+      end)
+    else
+      {:error, :unknown_icon}
     end
   end
 
@@ -124,10 +160,23 @@ defmodule Helmsman.Avatars do
     end
   end
 
-  @doc "The read key of the user's avatar, or nil."
+  @doc "The read key of the user's image avatar; nil without one (an icon included)."
   @spec user_avatar_key(pos_integer()) :: String.t() | nil
   def user_avatar_key(user_id) when is_integer(user_id),
     do: Repo.one(from(a in Avatar, where: a.user_id == ^user_id, select: a.key))
+
+  @doc """
+  The user's own avatar: `{:image, key}` (its read key), `{:icon, name}`
+  (a built-in icon) or nil.
+  """
+  @spec user_avatar(pos_integer()) :: user_avatar()
+  def user_avatar(user_id) when is_integer(user_id) do
+    case Repo.one(from(a in Avatar, where: a.user_id == ^user_id, select: {a.key, a.icon})) do
+      nil -> nil
+      {nil, icon} when is_binary(icon) -> {:icon, icon}
+      {key, _icon} -> {:image, key}
+    end
+  end
 
   @doc """
   The absolute address of the REST read route of avatar `key` for MCP and
@@ -196,23 +245,16 @@ defmodule Helmsman.Avatars do
     end
   end
 
-  defp upsert(owner, scope, data, image) do
+  # `fields` sets every column of both forms (`update-actor-icons` D1), so
+  # the replacement clears the other form.
+  defp upsert(owner, scope, fields) do
     now = DateTime.utc_now()
-    key = Avatar.key(data)
 
     row =
       owner
       |> owner_fields()
-      |> Map.merge(%{
-        content_type: image.content_type,
-        data: data,
-        key: key,
-        byte_size: byte_size(data),
-        edge: image.edge,
-        updated_by_id: scope.user.id,
-        inserted_at: now,
-        updated_at: now
-      })
+      |> Map.merge(fields)
+      |> Map.merge(%{updated_by_id: scope.user.id, inserted_at: now, updated_at: now})
 
     {1, _} =
       Repo.insert_all(Avatar, [row],
@@ -221,7 +263,6 @@ defmodule Helmsman.Avatars do
       )
 
     notify(owner)
-    {:ok, %{key: key, content_type: image.content_type}}
   end
 
   defp remove(owner, _scope) do

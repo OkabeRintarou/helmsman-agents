@@ -273,4 +273,56 @@ defmodule HelmsmanWeb.API.AvatarsControllerTest do
       assert %{"name" => "keel/dev", "has_avatar" => true, "avatar_url" => nil} = whoami["actor"]
     end
   end
+
+  # update-actor-icons 3.3 (D14): an icon is not an image avatar.
+  describe "built-in icons" do
+    setup ctx do
+      {:ok, _} = Avatars.put_icon(ctx.alice_scope, {:actor, "keel/dev"}, "zai")
+      {:ok, _} = Avatars.put_icon(ctx.alice_scope, :me, "zai")
+      :ok
+    end
+
+    test "REST: no avatar, no address, no icon key; the old image is gone", ctx do
+      agents = ctx.token |> api_get(w(ctx.slug, "/agents")) |> body!(200)
+
+      assert %{"has_avatar" => false, "avatar_url" => nil} =
+               by_name(agents["data"]["agents"], "keel/dev")
+
+      me = ctx.token |> api_get(w(ctx.slug, "/me")) |> body!(200)
+      assert %{"has_avatar" => false, "avatar_url" => nil} = me["data"]["user"]
+      assert %{"has_avatar" => false, "avatar_url" => nil} = me["data"]["actor"]
+
+      for body <- [agents, me, ctx.token |> api_get(w(ctx.slug, "/actors")) |> body!(200)] do
+        refute Jason.encode!(body) =~ "zai"
+      end
+
+      for key <- [ctx.agent_key, ctx.alice_key] do
+        ctx.token |> api_get(w(ctx.slug, "/avatars/#{key}")) |> error!(404, "not_found")
+      end
+    end
+
+    test "MCP: list_agents, list_actors and whoami", ctx do
+      %{api_token: api_token} = api_token_fixture(ctx.alice_scope, %{scopes: ["mcp"]})
+
+      session = %{
+        scope: token_scope_fixture(ctx.alice, ctx.workspace, :mcp, api_token),
+        sid: "s#{System.unique_integer([:positive])}"
+      }
+
+      :ok = Sessions.register(session.sid, session.scope, self())
+      agents = call!(session, "list_agents")
+      assert %{"has_avatar" => false, "avatar_url" => nil} = by_name(agents["agents"], "keel/dev")
+      actors = call!(session, "list_actors")
+      assert %{"has_avatar" => false, "avatar_url" => nil} = by_name(actors, "keel/dev")
+
+      assert %{"has_avatar" => false, "avatar_url" => nil} =
+               by_name(actors, ctx.alice_scope.actor.name)
+
+      call!(session, "identify", %{name: "keel/dev"})
+      whoami = call!(session, "whoami")
+      assert %{"has_avatar" => false, "avatar_url" => nil} = whoami["actor"]
+
+      for payload <- [agents, actors, whoami], do: refute(Jason.encode!(payload) =~ "zai")
+    end
+  end
 end

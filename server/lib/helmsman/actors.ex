@@ -11,8 +11,10 @@ defmodule Helmsman.Actors do
   alias Helmsman.Agents.AgentProfile
   alias Helmsman.ApiTokens.ApiToken
   alias Helmsman.Avatars.Avatar
+  alias Helmsman.Daemons.Runtime
   alias Helmsman.Locks
   alias Helmsman.Policy
+  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
   alias Helmsman.Runs.RunTokens
   alias Helmsman.Tx
@@ -686,15 +688,23 @@ defmodule Helmsman.Actors do
           kind: Actor.kind(),
           provider: atom() | nil,
           managed?: boolean(),
-          avatar_key: String.t() | nil
+          avatar_key: String.t() | nil,
+          avatar_icon: String.t() | nil,
+          vendor: String.t() | nil,
+          vendor_source: :account | :runtime | nil
         }
 
   @doc """
   How every identity of the workspace is shown (`add-actor-avatars`
   decision 7), by name, in one query and without avatar bytes: the
   kind, an agent's CLI (`provider`) and whether it is managed, and the
-  read key of its avatar (an agent's or squad's own, a human's from
-  their user; none for the system identity and unclaimed humans).
+  read key of its image avatar and its built-in icon (an agent's or
+  squad's own, a human's from their user; none for the system identity
+  and unclaimed humans). A managed agent also gets the vendor of its
+  default mark (`update-actor-icons` D4): with a provider account, the
+  account's icon or the vendor inferred from its base URL
+  (`vendor_source` `:account`, even when nothing is inferred); otherwise
+  the vendor its runtime last reported (`:runtime`), if any.
   Disabled, archived and unclaimed identities are included. A scope that
   may not list the identities (`:view_members`) gets `%{}`.
   """
@@ -709,14 +719,29 @@ defmodule Helmsman.Actors do
           on: own.actor_id == a.id and a.kind in [:agent, :squad],
           left_join: user in Avatar,
           on: user.user_id == a.user_id and a.kind == :human,
+          left_join: pa in ProviderAccount,
+          on: pa.id == p.provider_account_id,
+          left_join: r in Runtime,
+          on: r.id == p.runtime_id,
           where: a.workspace_id == ^workspace_id,
           select:
-            {a.name, a.kind, p.provider, not is_nil(p.actor_id), coalesce(own.key, user.key)}
+            {a.name, a.kind, p.provider, not is_nil(p.actor_id), coalesce(own.key, user.key),
+             coalesce(own.icon, user.icon), {pa.id, pa.icon, pa.base_url}, r.vendor}
         )
         |> Repo.all()
-        |> Map.new(fn {name, kind, provider, managed?, key} ->
+        |> Map.new(fn {name, kind, provider, managed?, key, icon, account, runtime_vendor} ->
+          {vendor, source} = vendor(provider, account, runtime_vendor)
+
           {name,
-           %{kind: kind, provider: provider_atom(provider), managed?: managed?, avatar_key: key}}
+           %{
+             kind: kind,
+             provider: provider_atom(provider),
+             managed?: managed?,
+             avatar_key: key,
+             avatar_icon: icon,
+             vendor: vendor,
+             vendor_source: source
+           }}
         end)
 
       {:error, :forbidden} ->
@@ -725,6 +750,16 @@ defmodule Helmsman.Actors do
   end
 
   def appearance(%Scope{}), do: %{}
+
+  # `update-actor-icons` D4, domain side.
+  defp vendor(provider, {account_id, icon, base_url}, _runtime_vendor)
+       when not is_nil(account_id),
+       do: {icon || Helmsman.Vendor.from_base_url(base_url, provider), :account}
+
+  defp vendor(_provider, _account, runtime_vendor) when is_binary(runtime_vendor),
+    do: {runtime_vendor, :runtime}
+
+  defp vendor(_provider, _account, _runtime_vendor), do: {nil, nil}
 
   @providers Map.new(HelmsmanProtocol.providers(), &{Atom.to_string(&1), &1})
 
