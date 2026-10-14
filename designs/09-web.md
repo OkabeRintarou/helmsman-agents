@@ -76,6 +76,7 @@
 | `project:<id>` | `TaskLive.Index` | 用 `stream_insert` 更新那一行；不在当前筛选条件里的行移除 |
 | `task:<id>` | `TaskLive.Show` | 重新加载详情；用户正在编辑的字段不覆盖，只提示「有更新」 |
 | `workspace:<id>` | 外壳（`Shell.on_mount`，每个 `/w/:slug` 页面一份），页面不得再自行订阅 | 外壳处理工作区改名 / 改 slug；其余消息（项目增减、成员变化、待回答数量等）交给页面的 `handle_info/2`，如 `DashboardLive`、侧栏、设置页 |
+| `workspace:<id>:squads` | 外壳（与 `workspace:<id>` 同一处订阅），页面不得再自行订阅 | `{:squad, id}` → 外壳重读外观表（身份标记），再转发给页面；小队页按原有子句处理（`add-actor-avatars` D7） |
 | `workspace:<id>:agents`（Presence） | `DashboardLive`、`AgentLive.Index` | 在线的外接 Agent |
 | `workspace:<id>:runs` | `DashboardLive`、`AgentLive.*`、侧栏 | Agent 忙闲、队列长度（13 §9） |
 | `workspace:<id>:runtimes` | `RuntimesLive`、`AgentLive.*` | 机器上线 / 离线 |

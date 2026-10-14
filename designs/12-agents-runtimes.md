@@ -61,6 +61,7 @@
 同一台机器、同一个 CLI，用户可能有多个模型供应商的账号（如 Claude Code 接 z.ai 与火山方舟），希望不同 Agent 各用各的地址、密钥与模型，分别计费（`add-provider-accounts`）。
 
 - **属于用户，不属于工作区**：名称、CLI 类型（`claude` | `codex`，创建后不可改）、base URL（`https`；本机回环地址可 `http`；不含凭据与查询串）、密钥、模型映射（Claude：`default` `opus` `sonnet` `haiku` `fable` `subagent`；Codex：`default`，必填）；Codex 账号另可带最多 8 个自定义请求头，值与密钥同等对待（只写、加密、只经进程环境交给 CLI；`add-provider-account-headers`），不支持查询参数。在个人设置页增删改，每人最多 32 个。
+- **图标**：账号可以选一个厂商或平台图标（`icon`）；不选时，按 base URL 的主机推断，界面上显示为「自动（<推断出的名称>）」。用于 Agent 的身份标记（03 §1）与账号列表，只有所属用户能改（`add-actor-avatars`）。
 - **密钥只写不读**：加密存储，读取只给「已设置」；编辑时留空 = 不变，不能清空；错误与日志里不出现。
 - **只有所属用户能用**：Agent 只能绑定所属用户自己的、CLI 相同的账号；多个 Agent 共用一个账号，换密钥只改一处，之后领取的运行生效。仍被未归档 Agent 绑定的账号不能删除。别人（含 owner / admin、实例管理员）看不到、用不了；工作区成员读取 Agent 时只看到账号名与主机名。账号的增删改查只能在本人的网页会话里做（管理动作 `manage_provider_accounts`）：运行令牌、Agent 身份、`hm_` Token 一律不能读写，即使属于同一个用户；密钥只在领取运行时读出、写进 RunSpec。
 - **为什么不用 `env`**：CLI 的用户配置会盖过进程环境（Claude Code 的 `~/.claude/settings.json` 的 `env`；Codex 配置里选定的 `model_provider`），而且只覆盖地址和令牌不够——用户配置里的 `apiKeyHelper`、模型映射会一起漏到 Agent 的供应商那里。守护进程按账号生成覆盖（Claude 用 `--settings`、Codex 用 `-c model_providers.helmsman_account`，14 §4），密钥只经进程环境 `HELMSMAN_PROVIDER_API_KEY` 交给 CLI，不落盘、不进命令行（没有写进私有文件的退路）；做不到就中止运行。
@@ -80,7 +81,7 @@
 | 表 | 列 |
 |---|---|
 | `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改；重新登录不改名）、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash` / `previous_token_expires_at`（轮换后旧令牌的 24 小时宽限）、`auth_epoch`（授权代次，缺省 1：同机重新登录与吊销时加 1，轮换不变；旧代次的连接与令牌不能再写入，`add-agent-profiles-runtimes` 决策 21）、`max_concurrency`（守护进程上报，缺省 4）、`last_seen_at`、`revoked_at`、`repo_registration`（守护进程上报的「是否允许网页登记本地仓库」，协议 7；低于 7 为否，15 §8） |
-| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models text[]`、`efforts text[]`、`status`（`online` \| `offline`）、`unavailable_reason`（CLI 找到了但不可用的原因）、`disabled_at` |
+| `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models text[]`、`efforts text[]`、`status`（`online` \| `offline`）、`unavailable_reason`（CLI 找到了但不可用的原因）、`disabled_at`、`vendor`（厂商键，由守护进程推断：没绑账号的 Agent 实际连到的模型厂商，只上报键；服务端只存认识的键，用于 Agent 的身份标记，03 §1、14 §2，`update-actor-icons`） |
 | `local_repositories` | 与运行时一样由守护进程上报、按工作区登记：机器主人在 `config.toml` 里登记的本地仓库（名字、显示用的路径、开放给哪些工作区）。路径只在机器上配置，服务端不下发绝对路径；机器主人允许网页登记后（本机设置的根目录），可以在网页上登记 / 移除，服务端只下发相对根目录的路径，由守护进程重新校验（15 §8） |
 
 唯一键 `(workspace_id, daemon_id, provider)`。

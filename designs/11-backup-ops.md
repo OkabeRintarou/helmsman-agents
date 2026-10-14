@@ -20,7 +20,7 @@
 - 引用一律用对外 ID（actor 名、项目 Key、`KEY-N`、`KEY-N#M`），不出现数据库主键、用户 ID 或邮箱，所以能导进另一个实例或另一个工作区。Agent 的 `owner` 是所属用户的 human 身份名，只供参考。
 - 事件按任务内的顺序号 `n` 标识（第 n 次迁移）。
 - 顺序确定（身份按名字、任务按项目与编号……，对象键按字母序），同一数据两次导出只有 `exported_at` 不同。
-- 不导出：用户账号、成员关系、Token、检索列与其他可重算的派生字段（反馈计数、待回答、版本号）、**私有筛选器**（它属于某个用户，而用户不导出）；共享筛选器导出时带上作者的 actor 名，仅供参考。
+- 不导出：用户账号、成员关系、Token、检索列与其他可重算的派生字段（反馈计数、待回答、版本号）、**私有筛选器**（它属于某个用户，而用户不导出）、头像（图片与内置图标都不导出，`add-actor-avatars`）；共享筛选器导出时带上作者的 actor 名，仅供参考。
 - 也不导出执行相关的数据：Agent 配置（含加密的环境变量）、守护进程与运行时、运行与执行记录（含 `source_run_id`、触发结果）、小队配置、自动化、GitHub 安装与 PR、本地仓库。它们绑定具体的机器、仓库和账号，换个实例没有意义；Agent 和小队作为 actor 名字保留在历史里。
 - 导出在 `REPEATABLE READ, READ ONLY` 事务里流式读写，所有表来自同一个快照，不会出现「任务状态变了、事件还没有」这种半截数据。
 - 只有 admin 以上能导出。导出可能很大：用 Oban 任务在后台生成文件（数据目录 `HELMSMAN_DATA_DIR`），完成后只给发起人下载，保留 24 小时；同一工作区同时只有一个进行中的导出。`mix helmsman.export --workspace acme` 直接写文件。
@@ -87,7 +87,7 @@
 
 LiveView 不需要 REST；REST 给脚本、CI 和不支持 MCP 的工具用，与 MCP 共用领域层（`add-rest-api`）。
 
-- 前缀 `/api/v1/w/:slug`，`Authorization: Bearer hm_…`；`GET` 要 `api:read` 或 `api:write`（写包含读），其余方法要 `api:write`，缺了 403 `insufficient_scope`。`slug` 必须是 Token 所属的工作区，否则 404。运行令牌（`hmr_`）与守护进程令牌一律 401（托管 Agent 只用 MCP）。
+- 前缀 `/api/v1/w/:slug`，`Authorization: Bearer hm_…`；`GET` 要 `api:read` 或 `api:write`（写包含读），其余方法要 `api:write`，缺了 403 `insufficient_scope`。`slug` 必须是 Token 所属的工作区，否则 404。运行令牌（`hmr_`）与守护进程令牌一律 401（托管 Agent 只用 MCP）。唯一例外：`GET /api/v1/w/:slug/avatars/:key`（返回 `image/*`）除了 `api:read` 之外，也接受带 `mcp` scope 的 `hm_` Token，这样 MCP 客户端可以显示 `avatar_url`；运行令牌在这里同样是 401（`add-actor-avatars`）。
 - **REST 是 MCP 工具的另一种传输**：有对应工具的端点参数同名、同义、同上限，成功返回 `{"data": <工具的 JSON 结果>}`，以后给工具加参数 REST 自动获得；写入身份按 03 §4 的 REST 列（`X-Helmsman-Actor` 或请求体的 `actor` / `author` → Token 缺省 Agent → 本人 human），读取时的当前身份同序（用于 `/me/tasks`、BQL `currentUser()`）；没有会话，不建会话 Agent。
 - 资源与 bosun 的 REST 一一对应：`projects`、`projects/:key`、`projects/:key/tasks`、`tasks/:id`、`tasks/:id/transition`、`tasks/:id/feedback`、`tasks/:id/feedback/:seq`（单条与修订，同 bosun，避免在 URL 里编码 `#`）、`POST tasks/:id/links`、`DELETE tasks/:id/links/:type/:to`、`search`、`query`、`filters`、`filters/:id`、`filters/:id/run`、`actors`；另有 `me`、`me/tasks`、`agents`（含小队）、运行（13 §10）、`autopilots/:id/run`、`exports` / `exports/:id/download` / `imports`（§1，`add-export-import`）。端点表见 `add-rest-api` 决策 6。
 - 不走 `/api/v1` 的端点：守护进程 Channel `/daemon/socket`（14 §3）、设备码登录 `/daemon/device/*`（12 §3.1）、GitHub webhook `/webhooks/github`（15 §1）、自动化 webhook `/hooks/autopilots/:id`（16 §2.4）。

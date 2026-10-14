@@ -8,7 +8,7 @@
 - **只协商有会话的协议版本**（2025-03-26、2025-06-18、2025-11-25）：`identify` 设置的身份挂在会话上（03 §4–5）。MCP 2026-07-28 起的无会话请求返回 400（不支持的协议版本），客户端需回退到 `initialize` 握手。支持无会话版本是扩展点：身份只能来自每次请求的 `actor` 参数或 Token 的缺省 Agent。
 - 每个请求必须带 `Authorization: Bearer hm_…`，Token 要有 `mcp` scope；无效 / 吊销 / 过期 → 401。
 - **Token 决定工作区**，所以 URL 里不带 slug；一个 Agent 要访问两个工作区就配两个 Token。
-- 托管 Agent 运行中用的是 `hmr_` 运行令牌（12 §4）：同一个端点、同一套工具，区别是身份固定为这个 Agent、运行结束令牌即失效、`identify` 只返回当前身份，并且只能做这次运行 `capabilities` 允许的事（缺省只能写本次运行的任务，13 §2.3）。
+- 托管 Agent 运行中用的是 `hmr_` 运行令牌（12 §4）：同一个端点、同一套工具，区别是身份固定为这个 Agent、运行结束令牌即失效、`identify` 只返回当前身份，并且只能做这次运行 `capabilities` 允许的事（缺省只能写本次运行的任务，13 §2.3）。身份视图（`whoami`、`list_actors`、`list_agents`）里的 `has_avatar` 如实返回，`avatar_url` 只对 `hm_` Token 填写，运行令牌下恒为 `null`（`add-actor-avatars` 决策记录 P2-3）。
 
 ```elixir
 # router.ex

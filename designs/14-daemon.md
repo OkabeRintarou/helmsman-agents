@@ -47,6 +47,20 @@
 - 在 `PATH` 里找 `claude`、`codex`、`copilot`、`cursor-agent`，执行 `--version` 取版本；低于最低支持版本的标记为不可用并说明原因。
 - 能列出模型的 CLI 顺便取模型列表（例如 `cursor-agent --list-models`），连同支持的推理强度（如 Claude 的 `--effort`），随注册上报，供界面下拉。
 - 每 10 分钟重新检测一次；`helmsman daemon restart` 立即重测。
+- **推断厂商**（`update-actor-icons`）：对可用的 Claude Code 与 Codex，推断不绑账号时实际连到的模型厂商，作为 CLI 的 `vendor` 上报。不可用的 CLI，以及 Copilot 与 Cursor，都不推断。推断只读文件，不执行 CLI。
+  - **Claude Code** 取 `env`，来源的优先级是：托管设置（Linux `/etc/claude-code/managed-settings.json`，macOS `/Library/Application Support/ClaudeCode/managed-settings.json`）高于用户设置（`$CLAUDE_CONFIG_DIR` 或 `~/.claude` 下的 `settings.json`），用户设置高于守护进程交给 CLI 的环境。「用户设置高于环境」已经实测；托管设置这一级按文档实现，没有实测。判定：
+    - `CLAUDE_CODE_USE_BEDROCK` 为真 → bedrock；`USE_VERTEX` 为真 → vertexai；`USE_FOUNDRY` 为真 → azure；
+    - 其他 `CLAUDE_CODE_USE_*` 为真 → 不报；
+    - 否则看 `ANTHROPIC_BASE_URL` 的主机，没有设置时为 anthropic。
+    - 某个设置文件存在却读不出时，不报。
+  - **Codex** 读所用 Codex 目录（§4）里的 `config.toml`，校验规则与运行前相同，校验失败就不报。`model_provider` 缺省为 `openai`：
+    - `openai`：看配置顶层的 `openai_base_url`，没有设置时为 openai。环境变量 `OPENAI_BASE_URL` 不看，实测 Codex 0.162 不用它。
+    - `ollama`：ollama。
+    - 其他内置 provider：不报。
+    - 自定义 provider：看它的 `base_url`。
+  - 主机到厂商键的映射只有一份：`HelmsmanProtocol.Vendor`，守护进程与界面共用。
+  - **隐私**：只上报厂商键。URL、主机名、环境变量的值、文件内容都不进入上报、任何级别的日志、执行事件、`status.json`、`helmsman runtimes` 的输出与错误原因。
+  - 设置文件变化时同样会触发 `sync`。
 - 一个 CLI 都没有时拒绝启动，并提示去安装。
 - 检测到 Codex、而所用的 Codex 目录（缺省为用户的 `~/.codex`，§4）没有可用的模型来源（未登录、选定的 provider 未定义或缺 `env_key` 变量）时，启动时打印一行提示；运行时照常上报为可用（同一运行时上绑定了供应商账号的 Agent 不受影响，`update-codex-provider-check`、`update-codex-user-home`）。原私有目录 `~/.helmsman/codex` 存在而未配置 `[codex] home` 时另提示一次。
 
@@ -61,7 +75,7 @@
 
 | 消息 | 内容 / 回复 |
 |---|---|
-| `join` | 协议版本、机器信息、检测到的 CLI、本机认为仍在跑的运行。回复：`daemon_id`、每个工作区每个 CLI 的 `runtime_id`；需要立即终止的运行 |
+| `join` | 协议版本、机器信息、检测到的 CLI（每项可选的 `vendor`：推断出的厂商键，§2；新增的是可选字段，不升协议版本，旧服务端忽略它）、本机认为仍在跑的运行。回复：`daemon_id`、每个工作区每个 CLI 的 `runtime_id`；需要立即终止的运行 |
 | `sync` | 与 `join` 相同的机器信息与 CLI 列表：每 10 分钟重新检测后（§2）、收到 `config_changed` 后、`config.toml` 变化后（30 秒检查）、网页登记 / 移除成功后发送。协议 7 起 `join` / `sync` 带 `repo_registration`（是否有有效的允许根目录，不上报根目录本身）。回复同 `join` |
 | `claim` | 无参数（空闲槽位由服务端算，13 §4.1）→ 运行描述列表（下表） |
 | `starting` | `run_id`：工作目录已就绪，请求启动 CLI。回复 `proceed` 或 `abort`（13 §4.2） |
