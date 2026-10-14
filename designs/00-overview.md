@@ -39,6 +39,7 @@ Helmsman **不直接调用 LLM API，也不保存模型密钥**。干活的是�
 | **守护进程**（Elixir，单文件分发）：Claude Code、Codex、Copilot CLI、Cursor CLI | Windows 守护进程 |
 | **GitHub**（github.com）：每任务一个分支与 PR，独立验收后自动合并，CI 失败 / 冲突自动打回给 Agent | GitHub Enterprise Server、GitLab / Gitea（以后按同一接口加） |
 | **小队**（leader Agent 委派 / 拆分）、**自动化**（定时 / 手动 / webhook） | Skills 市场、跨工作区共享 Agent |
+| **规格流程**：任务上的 OpenSpec 结构规格，起草 → 评审 → 修订 → 定稿 / 批准，只存在 Helmsman，可导出 / 导入 change 目录（17） | 规格与代码仓库同步、OpenSpec 主规格与归档 |
 | MCP 工具全集（与 bosun 对齐，供托管和外接 Agent 共用） | 邮件 / IM 通知、对外 Webhook（后续，见 §10） |
 | LiveView 界面，实时刷新；中英文全文检索、BQL、保存的筛选器 | |
 | 工作区级 JSON 导出 / 导入（含从 bosun 导入） | |
@@ -171,6 +172,7 @@ helmsman-agents/
 | 14 | [14-daemon.md](14-daemon.md) | 守护进程：协议、CLI 适配器、运行环境、进程管理、分支、安全模型 |
 | 15 | [15-github.md](15-github.md) | GitHub App、每任务分支与 PR、验收后自动合并、CI 失败自动打回 |
 | 16 | [16-squads-autopilots.md](16-squads-autopilots.md) | 小队（leader 委派 / 拆分）、自动化（定时 / 手动 / webhook） |
+| 17 | [17-specs.md](17-specs.md) | 规格流程：版本、结构校验、评审与裁定、定稿方式与批准、编排、运行上下文、与 OpenSpec 互通 |
 
 ## 7. 配置（环境变量）
 
@@ -247,6 +249,8 @@ helmsman-agents/
 | 27 | M6 | `add-github-ui` | 前端 | GitHub 设置页、项目绑定 GitHub 仓库与合并设置、PR 卡片、重新验收 / 立即合并 / 重试、验收面板的合并预告；本地仓库部分拆到 #48（`add-github-ui` 决策记录） | 22、26 |
 | 48 | M6 | `add-local-repositories-ui` | 前端 | 本地仓库模式的界面：项目绑定本地仓库（与 GitHub 切换）、本地分支卡片（审查命令、合并状态、标记已合并）、指派到别的机器时的提示、切换模式的提示（#44 决策 5、6、10、12）；在 #27 预留的位置上实现 | 27、44 |
 | 53 | M6 | `add-local-repo-web-registration` | 架构 | 用户确认：在网页上登记 / 移除本地仓库。机器主人在本机设置允许的根目录（缺省为空 = 关闭），守护进程按请求列出根目录下的 git 仓库（只回相对路径与名字），登记时守护进程重新校验后写入配置（与 `helmsman repos add` 相同）；只有机器主人能做；操作记录；配置锁；协议 7。守护进程与协议 hm-coder3、服务端 hm-coder、界面 hm-frontend（界面要求写在本变更里） | 44、48 |
+| 54 | M9 | `add-spec-workflow` | 架构 | 用户提出（17）：任务的规格（OpenSpec 结构、只追加的版本、`openspec validate --strict` 等价的结构校验）、评审请求 / 评审 / 问题讨论 / 裁定、定稿方式（项目与小队，缺省人批准）与门槛、`delegate` 的规格角色、`spec_review` / `spec_reviewed` / `spec_decided` 触发、提示词里的规格上下文、MCP / REST、单份规格的 change 目录导出导入、工作区导出 v2。服务端 hm-coder（领域与派发）、hm-coder3（MCP / REST / 导出导入） | 34、40、41 |
+| 55 | M9 | `add-spec-workflow-ui` | 前端 | 任务页规格卡片、规格页 `/w/:slug/t/:ident/spec`（渲染、版本对比、评审与讨论、批准 / 退回、导出导入）、仪表盘待处理、项目与小队的定稿方式设置（`add-spec-workflow` design「界面契约」） | 36、54 |
 | 28 | M7 | `add-run-steering` | 架构 | 插话、回执、兜底触发 | 19、21、25 |
 | 29 | M7 | `add-copilot-adapter`、`add-cursor-adapter` | 架构 | 两个独立变更，先实测再实现，做不到隔离就不启用（`add-codex-adapter` 已提前到 21）。实测结论：Copilot 用私有持久 `COPILOT_HOME` + `gh` 登录可以隔离；Cursor 本机配置可隔离，但团队策略与仓库 hooks 关不掉，缺省不启用（`[cursor] enabled`），守护进程增加脱离进程组的后代跟踪 | 20 |
 | 49 | M7 | `add-agent-conversation` | 架构 | 对话创建 Agent（12 §6）：创建对话（每人每工作区一个）、每轮一条无任务的设计运行（不恢复会话、服务端重放对话记录，能力 `read` + `design`，不重试）、草稿工具 `get_design` / `propose_agent` / `withdraw_agent`、用户改草稿、确认后一次创建多个 Agent、停止 / 排队超时 / 过期；小队接口定好，#34 落地。M6 之后，不阻塞首个可用版本 | 19、45、46、47 |

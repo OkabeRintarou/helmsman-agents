@@ -74,6 +74,9 @@ end
 | `run_agent(agent, task_id?, instructions?)` | 手动触发一个托管 Agent（13 §2.1「手动」）；受 12 §2.1 约束 |
 | `list_runs(task_id)` `cancel_run(run_id)` | 查看 / 停止运行 |
 | `delegate(task_id, to, instructions)` | 只对小队 leader 的运行（能力 `delegate`）列出：把本次运行的任务（执行方是这个小队）委派给小队里的托管成员；无权触发该成员时返回 `cannot_invoke`（16 §1.2） |
+| `get_spec(task_id, version?, files?)` `diff_spec(task_id, from, to?)` `list_spec_reviews(task_id, version?, unresolved_only?)` | 规格的读取（17），所有调用者 |
+| `submit_spec_version` `submit_spec_review` `reply_spec_issue` `rule_spec_issue` `finalize_spec` `update_spec` `cancel_spec_review` | 规格的写入，能写该任务者（运行令牌限本任务）；裁定与提出定稿只限协调者（17 §4）；`delegate` 另有 `spec: draft \| review \| revise`（`add-spec-workflow`） |
+| `request_spec_review(task_id, reviewers, instructions?)` | 只对非运行令牌列出；托管 Agent 评审人得到 `spec_review` 运行（13 §2.1） |
 | `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` | 只对设计运行（能力 `design`）列出：读写创建对话的草稿，不能创建 Agent（12 §6，`add-agent-conversation`）；小队对话的设计运行另有 `propose_squad`（只在 `squad` 对话里列出，16 §1.4） |
 
 所有写工具都接受可选的 `actor` / `author` 参数（03 §4 第 1 条），正常不需要；运行令牌下被忽略。

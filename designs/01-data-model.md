@@ -36,6 +36,10 @@ erDiagram
     squads ||--o{ squad_members : ""
     workspaces ||--o{ autopilots : ""
     autopilots ||--o{ autopilot_runs : ""
+    tasks ||--o| task_specs : ""
+    task_specs ||--o{ task_spec_versions : ""
+    task_specs ||--o{ task_spec_reviews : ""
+    task_spec_reviews ||--o{ task_spec_issues : ""
     workspaces ||--o{ github_installations : ""
     github_installations ||--o{ repositories : ""
     repositories ||--o{ projects : ""
@@ -106,6 +110,12 @@ erDiagram
 | `imports` | `workspace_id`、`user_id`（`SET NULL`）、`mode`（merge \| replace）、`dry_run`、`source`（helmsman \| bosun）、`file_sha256`、`file_name`、`status`（queued \| running \| succeeded \| failed）、`report jsonb`、`errors jsonb`、`upload`（数据目录里的上传文件，处理完置空）、`started_at`、`finished_at`、时间戳 | 每次导入（含试运行与失败的）一条审计记录，永久保留（11 §1.2，`add-export-import`） |
 | `exports` | `workspace_id`、`user_id`（发起人，CASCADE）、`status`、`file`（数据目录里的相对名）、`size`、`sha256`、`counts jsonb`、`error`、`expires_at`、时间戳 | 只给发起人下载，完成 24 小时后连同文件删除（11 §1.1） |
 | `actor_claims` | `workspace_id`、`actor_id`（未认领的 human，CASCADE）、`user_id`（申请人，CASCADE）、`status`（pending \| approved \| rejected \| cancelled）、`decided_by_id`、`decided_at`、时间戳 | 部分唯一 `(actor_id, user_id) WHERE status = 'pending'`；批准即合并（11 §1.2） |
+| `task_specs` | `workspace_id`、`task_id`（CASCADE）、`change_id`、`status`（draft \| in_review \| pending_approval \| finalized \| abandoned）、`latest_version`、`final_version`、`proposal_version` / `proposal_summary` / `proposal_by_id` / `proposal_run_id` / `proposed_at`、`request_seq` / `review_seq` / `event_seq`、`created_by_id`、`lock_version`、时间戳 | 唯一 `task_id`、`(workspace_id, change_id)`；CHECK `finalized ⇔ final_version`、`pending_approval ⇔ proposal_version`；任务的规格（17，`add-spec-workflow` 决策 2） |
+| `task_spec_blobs` / `task_spec_versions` / `task_spec_files` | blob：`spec_id`、`sha256`、`content`、`bytes`；版本：`spec_id`、`number`、`author_id`、`source_run_id`、`note`、`validation jsonb`、`valid`（「曾定稿」由审计事件得出，版本行不更新）；文件：`version_id`、`path`、`blob_id` | 唯一 `(spec_id, sha256)`、`(spec_id, number)`；文件主键 `(version_id, path)`；版本只插入 |
+| `task_spec_review_requests` / `task_spec_reviews` | 请求：`spec_id`、`number`、`version_id`、`reviewer_id`、`requested_by_id`、`request_run_id`、`note`、`status`（requested \| submitted \| cancelled \| lapsed）、`close_reason`、`review_id`、`closed_at`；评审：`spec_id`、`number`、`version_id`、`reviewer_id`、`source_run_id`、`verdict`（pass \| fail \| comment）、`summary` | 唯一 `(spec_id, number)`；请求部分唯一 `(version_id, reviewer_id) WHERE status = 'requested'` |
+| `task_spec_issues` / `task_spec_issue_notes` / `task_spec_events` | 问题：`spec_id`、`review_id`、`number`、`severity`（P1 \| P2 \| P3）、`file`、`line`、`anchor`、`body`、`suggestion`、`resolution`（冗余：最后一条改状态的讨论）；讨论：`issue_id`、`number`、`author_id`、`source_run_id`、`kind`（reply \| withdraw \| ruling \| comment）、`resolution`、`fixed_in_version`、`body`；审计：`spec_id`、`number`、`actor_id`、`source_run_id`、`action`、`version`、`data` | 唯一 `(review_id, number)`、`(issue_id, number)`、`(spec_id, number)`；讨论与审计只插入；规格与请求的可变字段始终等于审计事件的重放结果（导入据此合并） |
+
+`projects` 另有 `spec_finalize`（approval \| leader，缺省 approval）；`squads` 另有 `spec_finalize`（可空 = 继承项目，17 §4）。
 
 说明：
 
@@ -156,7 +166,7 @@ erDiagram
 | 领取运行（13 §4.1） | 先 `FOR UPDATE SKIP LOCKED` 锁运行行，之后对其余锁**只用 try**：工作区维护锁（`pg_try_advisory_xact_lock_shared`，导入期间拿不到 → 不派发该工作区）、任务锁 `k_task`、Agent 配置行 `FOR UPDATE SKIP LOCKED`；依赖复查需要时 `try` 工作区图锁（`Locks.try_graph/1`）。拿不到就跳过这条，不等待，所以不会和任务写操作形成等待环 |
 | 运行状态变化（13 §4.4） | 先在**只锁运行行**的事务里做条件更新（`WHERE daemon_id = $d AND status = $expected`），提交；任务侧的副作用（NEW → IN_PROGRESS、兜底回帖等）再在之后的事务里按任务写的锁顺序执行，按 `source_run_id` 幂等 |
 
-完整顺序：**维护锁 → 成员关系行 → 自动化行（`autopilots`，按 id 升序，`add-autopilots` 决策 2）→ 图锁 → actor 行 → 小队行（`squads`，按 id 升序，`add-squads`）→ Agent 配置行 → 守护进程行 → `daemon_workspaces` → 本地仓库操作记录行（`local_repository_changes`）→ 项目行 → 任务行（按主键升序）→ `task_pull_requests` 行 → 运行时行 → 本地仓库行 → 运行行 → `run_steers` 行 → 运行令牌行**（运行进入终态与吊销令牌都以 `UPDATE` 这两行完成，运行 scope 的写入在最后对它们 `FOR SHARE` 复核，二者因此串行，`add-run-lifecycle` 决策 27）；设备码登录先锁设备码行再进入这个顺序（`add-agent-profiles-runtimes` 决策 19）。多个工作区的维护锁、成员行按工作区 id 升序；同一工作区里锁多个成员行时一律按成员行 id 升序（`Members.lock_members/2` 的顺序），不按 `user_id`。成员关系行：写事务复核授权时对请求方的成员行加 `FOR SHARE`，与改角色、移除成员（对相关成员行按 id 升序 `FOR UPDATE`）串行化（`add-workspaces-actors` 决策 6）；守护进程的注册同样在成员行 `FOR SHARE` 之后才锁守护进程行，所以与移除成员串行、不成环。领取是唯一先锁运行行、再碰其他锁的路径，所以它对其余锁只用 `try`；运行状态变化只锁运行行。
+完整顺序：**维护锁 → 成员关系行 → 自动化行（`autopilots`，按 id 升序，`add-autopilots` 决策 2）→ 图锁 → actor 行 → 小队行（`squads`，按 id 升序，`add-squads`）→ Agent 配置行 → 守护进程行 → `daemon_workspaces` → 本地仓库操作记录行（`local_repository_changes`）→ 项目行 → 任务行（按主键升序）→ 规格行（`task_specs`；规格的子表只在持有它 `FOR UPDATE` 时写，`add-spec-workflow` 决策 13）→ `task_pull_requests` 行 → 运行时行 → 本地仓库行 → 运行行 → `run_steers` 行 → 运行令牌行**（运行进入终态与吊销令牌都以 `UPDATE` 这两行完成，运行 scope 的写入在最后对它们 `FOR SHARE` 复核，二者因此串行，`add-run-lifecycle` 决策 27）；设备码登录先锁设备码行再进入这个顺序（`add-agent-profiles-runtimes` 决策 19）。多个工作区的维护锁、成员行按工作区 id 升序；同一工作区里锁多个成员行时一律按成员行 id 升序（`Members.lock_members/2` 的顺序），不按 `user_id`。成员关系行：写事务复核授权时对请求方的成员行加 `FOR SHARE`，与改角色、移除成员（对相关成员行按 id 升序 `FOR UPDATE`）串行化（`add-workspaces-actors` 决策 6）；守护进程的注册同样在成员行 `FOR SHARE` 之后才锁守护进程行，所以与移除成员串行、不成环。领取是唯一先锁运行行、再碰其他锁的路径，所以它对其余锁只用 `try`；运行状态变化只锁运行行。
 
 **字段编辑的版本检查**不用 Ecto 的 `optimistic_lock`，而是在行锁里自己比：
 

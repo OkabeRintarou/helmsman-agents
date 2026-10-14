@@ -8,15 +8,18 @@
 
 ```json
 {
-  "format": "helmsman-export", "version": 1, "exported_at": "...",
+  "format": "helmsman-export", "version": 2, "exported_at": "...",
   "source": {"host": "...", "app_version": "..."},
   "workspace": {"slug": "...", "name": "..."},
   "actors": [...], "projects": [...], "tasks": [...], "task_events": [...],
-  "feedback": [...], "links": [...], "saved_filters": [...]
+  "feedback": [...], "links": [...], "saved_filters": [...],
+  "specs": [...], "spec_versions": [...], "spec_review_requests": [...], "spec_reviews": [...],
+  "spec_issues": [...], "spec_issue_notes": [...], "spec_events": [...]
 }
 ```
 
 - gzip 压缩的 UTF-8 JSON；字段表见 `docs/EXPORT-FORMAT.md`。
+- **版本 2**（`add-spec-workflow`）加入任务的规格（17）：规格、版本与文件原文、评审请求、评审、问题、讨论与审计事件，以及项目的 `spec_finalize`；不含校验结果、问题的处理状态（导入时重算）与运行引用。导入接受 v1 与 v2；升版本是为了让旧服务端明确拒绝（`unsupported_format`），而不是静默丢掉规格。规格的 merge 按自己的序列逐份快进，与任务的事件 / 反馈比较相互独立；replace 随任务一并删除规格。
 - 引用一律用对外 ID（actor 名、项目 Key、`KEY-N`、`KEY-N#M`），不出现数据库主键、用户 ID 或邮箱，所以能导进另一个实例或另一个工作区。Agent 的 `owner` 是所属用户的 human 身份名，只供参考。
 - 事件按任务内的顺序号 `n` 标识（第 n 次迁移）。
 - 顺序确定（身份按名字、任务按项目与编号……，对象键按字母序），同一数据两次导出只有 `exported_at` 不同。
@@ -89,7 +92,7 @@ LiveView 不需要 REST；REST 给脚本、CI 和不支持 MCP 的工具用，�
 
 - 前缀 `/api/v1/w/:slug`，`Authorization: Bearer hm_…`；`GET` 要 `api:read` 或 `api:write`（写包含读），其余方法要 `api:write`，缺了 403 `insufficient_scope`。`slug` 必须是 Token 所属的工作区，否则 404。运行令牌（`hmr_`）与守护进程令牌一律 401（托管 Agent 只用 MCP）。唯一例外：`GET /api/v1/w/:slug/avatars/:key`（返回 `image/*`）除了 `api:read` 之外，也接受带 `mcp` scope 的 `hm_` Token，这样 MCP 客户端可以显示 `avatar_url`；运行令牌在这里同样是 401（`add-actor-avatars`）。
 - **REST 是 MCP 工具的另一种传输**：有对应工具的端点参数同名、同义、同上限，成功返回 `{"data": <工具的 JSON 结果>}`，以后给工具加参数 REST 自动获得；写入身份按 03 §4 的 REST 列（`X-Helmsman-Actor` 或请求体的 `actor` / `author` → Token 缺省 Agent → 本人 human），读取时的当前身份同序（用于 `/me/tasks`、BQL `currentUser()`）；没有会话，不建会话 Agent。
-- 资源与 bosun 的 REST 一一对应：`projects`、`projects/:key`、`projects/:key/tasks`、`tasks/:id`、`tasks/:id/transition`、`tasks/:id/feedback`、`tasks/:id/feedback/:seq`（单条与修订，同 bosun，避免在 URL 里编码 `#`）、`POST tasks/:id/links`、`DELETE tasks/:id/links/:type/:to`、`search`、`query`、`filters`、`filters/:id`、`filters/:id/run`、`actors`；另有 `me`、`me/tasks`、`agents`（含小队）、运行（13 §10）、`autopilots/:id/run`、`exports` / `exports/:id/download` / `imports`（§1，`add-export-import`）。端点表见 `add-rest-api` 决策 6。
+- 资源与 bosun 的 REST 一一对应：`projects`、`projects/:key`、`projects/:key/tasks`、`tasks/:id`、`tasks/:id/transition`、`tasks/:id/feedback`、`tasks/:id/feedback/:seq`（单条与修订，同 bosun，避免在 URL 里编码 `#`）、`POST tasks/:id/links`、`DELETE tasks/:id/links/:type/:to`、`search`、`query`、`filters`、`filters/:id`、`filters/:id/run`、`actors`；另有 `me`、`me/tasks`、`agents`（含小队）、运行（13 §10）、`autopilots/:id/run`、`exports` / `exports/:id/download` / `imports`（§1，`add-export-import`）、任务的规格 `tasks/:id/spec/*`（与规格的 MCP 工具一致；另有只限人的 `finalize` / `reject`、OpenSpec 目录的 `export` / `import`（请求体为 `tar.gz` / `zip`）、`me/specs`，17、`add-spec-workflow`）。端点表见 `add-rest-api` 决策 6。
 - 不走 `/api/v1` 的端点：守护进程 Channel `/daemon/socket`（14 §3）、设备码登录 `/daemon/device/*`（12 §3.1）、GitHub webhook `/webhooks/github`（15 §1）、自动化 webhook `/hooks/autopilots/:id`（16 §2.4）。
 - 错误体统一 `{"error": "<稳定的错误码>", "message": "...", "detail": {...}}`，由 `HelmsmanWeb.ErrorMapper` 映射：400 参数（`invalid_params` / `invalid_json`）/ 401 认证 / 403 权限（`forbidden` `insufficient_scope` `agent_disabled`）/ 404 不存在 / 409 状态冲突（`invalid_transition` `blocked` `replaced` `self_verify_requires_tests` `cycle` `superseded` `stale` `busy` `project_archived` `run_active` `not_dispatched` 等）/ 413 请求体过大 / 415 不是 JSON / 422 校验失败（`validation_failed`、`invalid_bql` 等）/ 429 限流 / 500 `internal`（只给引用号，细节进日志）。`/api` 下未知路径也返回 404 的同一错误体。
 - `GET /api/v1/workflow.md?lang=en|zh`（缺省 `en`）与 `GET /api/v1/openapi.json` 不需要认证，按 IP 限流。

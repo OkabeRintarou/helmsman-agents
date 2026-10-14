@@ -14,6 +14,7 @@
 | `/w/:slug/projects` | `ProjectLive.Index` | 项目卡片 |
 | `/w/:slug/p/:key` | `TaskLive.Index` | 任务列表：状态多选、标签、执行方、搜索框，全部同步到 URL query |
 | `/w/:slug/t/:ident` | `TaskLive.Show` | 任务详情 |
+| `/w/:slug/t/:ident/spec` | `SpecLive.Show` | 任务的规格（17）：版本、渲染 / 源码、对比、评审与讨论、批准 / 退回、导出导入；`add-spec-workflow-ui` |
 | `/w/:slug/query` | `QueryLive` | BQL 编辑、结果表、保存筛选器 |
 | `/w/:slug/agents`、`/w/:slug/agents/:name` | `AgentLive.Index` / `.Show` | Agent 列表、配置、运行与用量（12 §5） |
 | `/w/:slug/agent-design` | `AgentDesignLive` | 对话创建 Agent（12 §6）：对话 + 实时草稿、确认创建；只有本人能看；不放在 `/agents/*name` 下以免与 Agent 名冲突；`add-agent-conversation-ui` |
@@ -59,6 +60,7 @@
 - 打回 / 重开 / 拒绝 / 重新提交 / 撤销：面板要求填原因，原因作为 Feedback 写入（撤销为 `comment`，其余为 `review`），事件引用它（05 §3 第 5 步）。执行方是托管 Agent 时，面板提示「将触发 keel/dev 按此意见修改」。
 - **指派**：选择器里人、Agent、小队分组；选托管 Agent 或小队时弹出确认：「开始」或「暂不开始」（13 §2）；无权触发的置灰并说明原因；运行时离线时提示会排队等待。
 - **运行卡片**：每条显示触发原因、Agent、状态、耗时、用量；点开是实时滚动的执行记录（文本、工具调用、工具输出折叠显示）。
+- **规格卡片**（17）：状态、`change_id`、最新版本（校验是否通过）、定稿版本、待完成的评审、未解决的 P1 / P2；没有规格时「开始规格」；待批准时对人显示「批准」「退回」；链到规格页。
 - 字段编辑带 `lock_version`；收到 `{:error, :stale}` 时提示「已被 X 修改」并重新加载，保留用户输入的草稿。
 
 ## 4. Markdown 与 Mermaid
@@ -81,6 +83,7 @@
 | `workspace:<id>:runs` | `DashboardLive`、`AgentLive.*`、侧栏 | Agent 忙闲、队列长度（13 §9） |
 | `workspace:<id>:runtimes` | `RuntimesLive`、`AgentLive.*` | 机器上线 / 离线 |
 | `run:<id>` | 运行记录弹窗、`RunLive.Show` | 追加执行事件；事件很多时只保留最近 500 条在页面上，更早的按需加载 |
+| `task:<id>` 的 `{:spec_changed, task_id}`、`workspace:<id>` 的 `{:spec_attention_changed, workspace_id}` | `TaskLive.Show`、`SpecLive.Show`；`DashboardLive` | 重读规格 / 待处理（17，`add-spec-workflow` 决策 22） |
 | `agent_design:<id>` | `AgentDesignLive`（`get` 成功后才订阅） | 对话、草稿或状态变了 → 重读（消息只含 ID）；当前轮的实时文本另订阅它的 `run:<id>` |
 | `workspace:<id>:filters`、`workspace:<id>:filters:<user_id>` | 外壳（与 `workspace:<id>` 同一处订阅；后者只订阅当前用户自己的） | `{:filters_changed, _}` → 重读并刷新侧栏的筛选器，再交给页面（`QueryLive` 刷新当前筛选器与列表面板）；`add-bql-filters` 决策 10、`add-search-query-ui` D8 |
 | `user:<id>` | 根布局 | 被移出工作区 / 角色变化 → 重新挂载 |

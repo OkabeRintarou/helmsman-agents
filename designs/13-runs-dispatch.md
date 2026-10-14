@@ -43,11 +43,12 @@
 |---|---|---|---|
 | **指派** `assign` | 任务的执行方被设为托管 Agent 或小队（建单时或修改时），任务在 NEW / IN_PROGRESS，且没有勾选「暂不开始」 | work | 完成这个任务 |
 | **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己） | reply | 回应这条 Feedback，**不改变**执行方 |
-| **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行 | work | 按 leader 的指示做；不看依赖 |
+| **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行；可带规格角色 `draft` / `review` / `revise`（17 §5，`review` 同时建评审请求） | work | 按 leader 的指示做；不看依赖 |
 | **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent` | work | 按附带的说明做 |
 | **自动化** `autopilot` | 仅运行模式的自动化被触发（定时 / 手动 / webhook，16 §2）；建任务模式不用它——建出的任务指派给目标，就是普通的 `assign` | work（无任务） | 按自动化的说明做，最后输出即结果；不合并、不自动重试也不能人工重试，优先级 1；授权来源是这次触发的授权来源（16 §2.5），链为空（`add-autopilots` 决策 11） |
 | **创建对话** `design` | 用户在创建对话里发了一条消息（12 §6） | work（无任务） | 按对话修改草稿并回复；不合并、不自动重试、租约过期不重排，优先级 3（`add-agent-conversation`） |
 | **插话兜底** `steer` | 人写 Feedback 时插话正在运行的托管 Agent（§8），且这条 Feedback 没有为该 Agent 排上别的触发 | 与被插话的运行相同 | 处理这条 Feedback；被插话的运行成功结束且有回执时，领取前移除（`add-run-steering` 决策 5、7） |
+| **请求评审** `spec_review` | 人（网页 / REST）或外接 Agent 协调者请托管 Agent 评审任务规格的最新版本（17 §5）；leader 运行里请评审用委派（`spec: "review"`） | reply | 评审该版本并 `submit_spec_review`；评审请求已结束（新版本、取消）时领取前丢弃（`add-spec-workflow` 决策 10） |
 
 **延续**——是之前某次授权的继续，授权**继承**自该任务上这个 Agent 最近一次「指派」（或委派）的授权来源，而不是那个碰巧改了状态的人：
 
@@ -59,6 +60,8 @@
 | **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源（建任务时记为 `task_grants` 的 `requested`） |
 | **依赖满足** `unblocked` | 见 §2.4 | work | 不新建运行：把因依赖延后的 `deferred` 运行改为 `queued`，在 `triggers` 末尾追加一条不带授权来源的中性标记（授权仍由原指派类触发承担，领取时照常复核） |
 | **委派完成** `delegate_done` | 委派出去的运行结束：成功，或失败且不会自动重试，或被停止而不是人请求的；任务仍在 NEW / IN_PROGRESS、执行方仍是该小队、小队未停用（`add-squads` 决策 9） | work（以小队身份，目标为当前 leader） | leader 决定下一步；授权与链继承发起委派的那次 leader 运行 |
+| **评审完成** `spec_reviewed` | 人提交的评审完成了一个由运行建立的评审请求（例如 leader 请人类成员评审），任务在 NEW / IN_PROGRESS、执行方是托管 Agent 或小队（17 §5） | work（执行方是小队时以小队身份、目标为当前 leader） | 看评审、决定下一步；授权与链继承「任务 × 执行方」的指派授权（同打回） |
+| **定稿决定** `spec_decided` | 人定稿、批准或退回规格且选择唤醒（缺省唤醒），任务在 NEW / IN_PROGRESS、执行方是托管 Agent 或小队 | 同上 | 定稿 → 按规格继续实现；退回 → 修订；授权同上（`add-spec-workflow` 决策 11） |
 
 引起延续或提及的身份就是目标 Agent 自己时不触发（例如执行方 Agent 自己把任务改回 IN_PROGRESS）。系统身份写的 Feedback 不引起提及、回答与回调；触发结果保存在引起它的 Feedback 上（`feedback.dispatch`），界面据此把被拒的提及置灰并说明原因。
 
@@ -119,7 +122,7 @@
 - 合并时状态取更「急」的：`deferred` 的行并入一个立即可跑的触发（不受依赖约束，或受约束但依赖已满足）后变为 `queued`（例如被阻塞的指派又收到「手动运行」）；`queued` 的行不会因并入受约束的触发而降回 `deferred`，交给领取时的复查。
 - **同一任务同一时刻最多一个运行在执行**（不论哪个 Agent、哪条 lane）：它们共用一个代码分支（15 §2），并发会互相踩。不同任务之间完全并行。
 
-**领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、Agent 已归档、运行时已禁用；触发逐条处理——绑定执行方的触发（指派、打回、重新提交、委派完成，以小队身份的运行绑定该小队；委派绑定它的小队；回答绑定提问所在运行绑定的执行方）在执行方已换成别人时丢弃，再按 §2.2 复核授权并丢弃失效的，一条不剩才取消（`add-squads` 决策 10）。
+**领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、Agent 已归档、运行时已禁用；触发逐条处理——绑定执行方的触发（指派、打回、重新提交、委派完成，以小队身份的运行绑定该小队；委派绑定它的小队；回答绑定提问所在运行绑定的执行方）在执行方已换成别人时丢弃，再按 §2.2 复核授权并丢弃失效的，一条不剩才取消（`add-squads` 决策 10）。`spec_reviewed` / `spec_decided` 与指派一样绑定执行方；`spec_review` 与规格角色为 `review` 的委派在其评审请求已结束时丢弃（`add-spec-workflow` 决策 10、11）。
 
 ## 4. 状态
 
@@ -206,6 +209,7 @@ SELECT r.* FROM runs r
 | 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
 | 插话结算（§8） | 运行以 `succeeded` 结束、且有已回执的插话 | Oban 唯一键（`steer_settle`） |
 | 依赖方复查（§2.4） | 运行被领取、进入终态、记下推送的同一事务里（`ReleaseDependents`） | Oban 唯一键（`task_id`） |
+| 评审请求结算（`spec_settle`） | 带评审请求的运行进入终态且不会自动重试（含人停止）：终态事务只插入 Job；Job 在独立事务里按任务写的顺序（任务行 → 规格行，不锁运行行）把没交评审的请求记为 `lapsed`；`delegate_done` 的 Job 在唤醒之前先做同样的结算（`add-spec-workflow` 决策 10） | `(run_id, spec_settle)` |
 
 ## 5. 失败与重试
 
@@ -258,6 +262,7 @@ SELECT r.* FROM runs r
 - 任务正文、历史、全部反馈**不**塞进提示词，让 Agent 自己用 `get_task` 取：提示词保持短小（Copilot CLI 的提示词走命令行参数），也避免把可能过期的快照当真。触发它的那条 Feedback 例外，原文直接放进去。
 - 恢复会话时省略 instructions 和通用部分，只发「触发原因」那一段。
 - 没有关联仓库的项目：工作目录是一个空的临时目录，「代码」一段改为说明这一点。
+- **规格**（17 §6）：任务有规格时，触发原因之后加一行规格状态（≤ 512 字节，恢复会话也带），已定稿时写明按定稿版本实现；任务没有规格而 Epic 有已定稿的规格时指向 Epic 的规格；leader 运行在小队一节之后另有 `## Specs` 一节（≤ 2 KB）。英文定稿见 `add-spec-workflow` 决策 12。没有规格的任务提示词不变。
 
 ## 7. 任务状态联动与防循环
 
