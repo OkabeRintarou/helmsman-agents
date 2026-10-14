@@ -137,7 +137,7 @@ CI 失败或合并冲突时，不需要人介入：
 
 不在 GitHub 上的代码（内网仓库、本机试用）可以用**某台守护进程机器上的本地仓库**（`add-local-repositories`）：
 
-- **登记在机器上**：机器主人在守护进程的 `config.toml` 里登记本地仓库（`helmsman repos add <路径> --name app --workspace acme`），守护进程上报，服务端只在主人开放的那些工作区（按工作区 ID 记录，改 slug 不影响）里登记为 `local_repositories`；撤销开放后该工作区的绑定保留但不可用。路径只在机器上配置，服务端只用名字；路径只对机器主人与 owner / admin 可见。
+- **登记在机器上**：机器主人在守护进程的 `config.toml` 里登记本地仓库（`helmsman repos add <路径> --name app --workspace acme`），守护进程上报，服务端只在主人开放的那些工作区（按工作区 ID 记录，改 slug 不影响）里登记为 `local_repositories`；撤销开放后该工作区的绑定保留但不可用。路径只在机器上配置，服务端只用名字；路径只对机器主人与 owner / admin 可见。机器主人也可以在本机设置允许的根目录（`[repos] allowed_roots`，只能在机器上改，缺省为空即关闭），之后在运行时页登记 / 移除自己机器上的仓库：守护进程列出根目录下的 git 仓库（限深度与数量、不跟随符号链接，只返回相对路径与名字），登记时守护进程重新校验路径在根内（逐级 `lstat`、git 目录也须在根内）后写入配置，效果与 `helmsman repos add` 相同；只有机器主人能做，工作区 owner / admin 也不行；每次操作记入 `local_repository_changes`（`add-local-repo-web-registration`，协议 7）。
 - **一个项目一台机器**：项目在 GitHub 仓库与本地仓库之间二选一（owner / admin 绑定）。没有远端在机器之间同步分支，所以只有该仓库所在守护进程上的运行时能执行这个项目的运行，别的机器领到会以 `workspace_prepare` 失败。
 - **先复制再交付**：守护进程把用户仓库 fetch 到 `~/.helmsman/repos/local/<name>.git`，在缓存的任务 worktree（分支 `hm/<工作区 ID>/<ident>`）里执行；收尾时不强推地把分支推进用户仓库（在用户仓库一侧的 receive-pack 命令里强制 `receive.denyCurrentBranch=refuse`、不运行 hook，用户自己设了 `updateInstead` 也不会改动其工作区），被拒就推救援分支。用户仓库只会多出 `hm/<工作区 ID>/…` 分支，工作区、`HEAD`、其他分支与 hook 都不受影响。出处、待推送账本与 GitHub 模式相同（14 §7）。
 - **审查与合并都由人在本地做**：没有 PR、CI 与自动合并，§4 的合并策略与前提不适用；验收照常（VERIFIED 时记下最近交付的提交）。任务详情的「本地分支」卡片给出审查与合并命令。

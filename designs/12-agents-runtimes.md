@@ -79,9 +79,9 @@
 
 | 表 | 列 |
 |---|---|
-| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改；重新登录不改名）、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash` / `previous_token_expires_at`（轮换后旧令牌的 24 小时宽限）、`auth_epoch`（授权代次，缺省 1：同机重新登录与吊销时加 1，轮换不变；旧代次的连接与令牌不能再写入，`add-agent-profiles-runtimes` 决策 21）、`max_concurrency`（守护进程上报，缺省 4）、`last_seen_at`、`revoked_at` |
+| `daemons` | `user_id`、`machine_id`（守护进程首次启动时生成并持久化）、`name`（缺省主机名，可改；重新登录不改名）、`os`、`arch`、`version`、`protocol_version`、`token_hash`、`token_issued_at`、`previous_token_hash` / `previous_token_expires_at`（轮换后旧令牌的 24 小时宽限）、`auth_epoch`（授权代次，缺省 1：同机重新登录与吊销时加 1，轮换不变；旧代次的连接与令牌不能再写入，`add-agent-profiles-runtimes` 决策 21）、`max_concurrency`（守护进程上报，缺省 4）、`last_seen_at`、`revoked_at`、`repo_registration`（守护进程上报的「是否允许网页登记本地仓库」，协议 7；低于 7 为否，15 §8） |
 | `runtimes` | `workspace_id`、`daemon_id`、`provider`、`cli_version`、`models text[]`、`efforts text[]`、`status`（`online` \| `offline`）、`unavailable_reason`（CLI 找到了但不可用的原因）、`disabled_at` |
-| `local_repositories` | 与运行时一样由守护进程上报、按工作区登记：机器主人在 `config.toml` 里登记的本地仓库（名字、显示用的路径、开放给哪些工作区）。路径只在机器上配置，服务端不下发路径（15 §8） |
+| `local_repositories` | 与运行时一样由守护进程上报、按工作区登记：机器主人在 `config.toml` 里登记的本地仓库（名字、显示用的路径、开放给哪些工作区）。路径只在机器上配置，服务端不下发绝对路径；机器主人允许网页登记后（本机设置的根目录），可以在网页上登记 / 移除，服务端只下发相对根目录的路径，由守护进程重新校验（15 §8） |
 
 唯一键 `(workspace_id, daemon_id, provider)`。
 
@@ -112,7 +112,7 @@
 
 - `/w/:slug/agents`：Agent 列表（在线 / 忙碌 / 空闲 / 离线、所属用户、CLI、最近运行）；新建、编辑、归档。
 - `/w/:slug/agents/:name`：配置、正在跑和排队的运行、历史运行、用量统计。
-- `/w/:slug/settings/runtimes`：我的机器与运行时（在线状态、CLI 版本、并发上限）；admin 看全部，可以禁用。
+- `/w/:slug/settings/runtimes`：我的机器与运行时（在线状态、CLI 版本、并发上限）；admin 看全部，可以禁用。「本地仓库」分区列出本工作区的本地仓库；机器主人可以在允许网页登记的自己的机器上登记 / 移除本地仓库（owner / admin 也不能替别人做），下方有「网页操作记录」（`add-local-repo-web-registration`，15 §8）。
 - 新建 Agent 的表单里，运行时下拉只列出自己的运行时（§3.3），模型下拉来自所选运行时上报的列表；「供应商账号」下拉只列出自己的、与所选 CLI 相同的账号（空 = CLI 默认登录），选了账号后模型改为自由输入。
 - 个人设置页：供应商账号的增删改（§2.2），列出每个账号被哪些 Agent 使用。
 - `/w/:slug/agent-design`：对话创建 Agent（§6）；Agent 列表页头与新建面板里有入口。

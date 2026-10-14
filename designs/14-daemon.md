@@ -16,6 +16,8 @@
 | `helmsman daemon start [--foreground]` | 启动；缺省安装为后台服务并启动（Linux 写 systemd 用户服务，需要 `loginctl enable-linger` 才能不登录也运行；macOS 写 launchd 代理），服务环境 = 执行时的 `PATH` + `daemon.env`；只有安装后的二进制能装服务；没有 systemd 用户会话时用 `--foreground` 交给自己的进程管理器 |
 | `helmsman daemon stop \| restart \| status [--json] \| logs [-f] [-n N]` | `stop` 停止并取消自启（运行中的运行由服务端按规则重试）；`restart` 先用当前二进制与 `PATH` 重写服务定义（升级后用它）；`status` 看服务、连接、在跑的运行与磁盘占用；`logs` 在 Linux 读 journald、macOS 读 `logs/daemon.log` |
 | `helmsman runtimes` | 列出检测到的 CLI、版本、绑定的工作区 |
+| `helmsman repos add <路径> --name <名字> --workspace <slug>… \| remove <名字> \| list` | 登记 / 移除 / 列出本机的本地仓库（15 §8） |
+| `helmsman repos roots [add <目录> \| remove <目录>]` | 允许网页登记本地仓库的根目录（`[repos] allowed_roots`，只能在本机设置；为空即网页不能登记或移除，`add-local-repo-web-registration`） |
 | `helmsman --version` | 版本、协议版本、目标平台 |
 | `helmsman logout` | 先停后台服务，再吊销本机令牌、删除本地凭据（含钥匙串项） |
 
@@ -23,7 +25,8 @@
 
 ```
 ~/.helmsman/
-├── config.toml           # 服务器地址、并发上限、工作根目录、[[local_repositories]]（本地仓库模式，15 §8）
+├── config.toml           # 服务器地址、并发上限、工作根目录、[[local_repositories]]（本地仓库模式，15 §8）、[repos] allowed_roots（允许网页登记的根目录）
+├── config.lock           # config.toml 读改写的建议锁（CLI 与网页登记共用，0600，从不删除）
 ├── credentials           # 服务器地址、daemon_id、签发时间（0600）；hmd_ 令牌：macOS 缺省在登录钥匙串（`[credentials] store`；每代一项，文件只记已提交 / 写入中 / 待删除的代次，崩溃后可恢复），其他平台在这个文件里
 ├── status.json           # 运行状态：PID、版本、连接、在跑的运行（0600，不含令牌；`daemon status` 读它）
 ├── daemon.env            # 可选：后台服务的环境变量（KEY=VALUE，0600），例如 CURSOR_API_KEY
@@ -59,7 +62,7 @@
 | 消息 | 内容 / 回复 |
 |---|---|
 | `join` | 协议版本、机器信息、检测到的 CLI、本机认为仍在跑的运行。回复：`daemon_id`、每个工作区每个 CLI 的 `runtime_id`；需要立即终止的运行 |
-| `sync` | 与 `join` 相同的机器信息与 CLI 列表：每 10 分钟重新检测后（§2）、收到 `config_changed` 后发送。回复同 `join` |
+| `sync` | 与 `join` 相同的机器信息与 CLI 列表：每 10 分钟重新检测后（§2）、收到 `config_changed` 后、`config.toml` 变化后（30 秒检查）、网页登记 / 移除成功后发送。协议 7 起 `join` / `sync` 带 `repo_registration`（是否有有效的允许根目录，不上报根目录本身）。回复同 `join` |
 | `claim` | 无参数（空闲槽位由服务端算，13 §4.1）→ 运行描述列表（下表） |
 | `starting` | `run_id`：工作目录已就绪，请求启动 CLI。回复 `proceed` 或 `abort`（13 §4.2） |
 | `started` | `run_id, session_id?` |
@@ -67,8 +70,10 @@
 | `heartbeat` | 每 30 秒；所有在跑的运行的 `run_id, last_seq`。回复：服务端认为已结束、应立即终止的运行 |
 | `steer_ack` | `run_id, feedback_id`：CLI 已把插话纳入当前会话（以适配器的确认为准）；与事件同一套重发，`finished` 在它得到回复之后才上报（13 §8） |
 | `git_token` | `run_id`：请求新的推送令牌（安装令牌 1 小时过期，长任务结束时可能已失效） |
-| `cleanup_check` | 协议 4（`add-pr-reconcile-merge`；版本累积：2 供应商账号、3 本地仓库、4 清理、5 供应商账号请求头、6 仓库的只读检出 `repo.mode = snapshot`（`add-autopilots`））：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
+| `cleanup_check` | 协议 4（`add-pr-reconcile-merge`；版本累积：2 供应商账号、3 本地仓库、4 清理、5 供应商账号请求头、6 仓库的只读检出 `repo.mode = snapshot`（`add-autopilots`）、7 网页登记本地仓库（`add-local-repo-web-registration`））：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
 | `repo_status` | 协议 3：本地仓库模式下，`join` / `sync` 回复给出要检查的分支，守护进程 fetch 用户仓库后上报每个分支的提交是否已进入基础分支（15 §8） |
+| `repo_browse_result` | 协议 7：对 `repo_browse` 的回送，`request_id`、根目录标签、候选仓库（相对路径、建议名字、已登记的名字，≤ 200）、`truncated` 或错误码（15 §8） |
+| `repo_change_result` | 协议 7：对 `repo_register` / `repo_remove` 的回送，`request_id`、动作、名字、错误码（空 = 成功）；成功时先发 `sync` 再发它 |
 | `pushed` | `run_id, branch, base_sha, head_sha, commits, rescue_branch?` |
 | `finished` | `run_id, status, failure_reason?, error?, session_id, summary, usage` |
 | `rotate_token` | 令牌满 30 天时请求新的 `hmd_`（12 §4）。回复新令牌；旧令牌在 24 小时宽限期后失效 |
@@ -82,6 +87,7 @@
 | `steer` | `run_id, feedback_id, text`：插话（13 §8） |
 | `config_changed` | 运行时开关等变了，守护进程发一次 `sync`（Agent 配置不需要拉取：每次领取时都在运行描述里） |
 | `revoked` | 令牌被吊销，守护进程停止并删除本地令牌 |
+| `repo_browse` / `repo_register` / `repo_remove` | 协议 7：机器主人在网页上列出允许根目录下的仓库 / 登记 / 移除本地仓库，带 `request_id`；守护进程在连接进程之外串行执行、从头校验，用上面两条结果消息回送（15 §8） |
 
 **运行描述**（`claim` 的回复，结构定义在 `protocol/`）：
 
@@ -216,6 +222,7 @@ Codex 因此以 `sandbox: danger-full-access` 运行，不用它自带的 bubble
 - 建议运行守护进程的系统用户**不配置任何 GitHub 凭据**（§5），这样推送和合并只能经过 Helmsman。
 - 守护进程不会把**启动它的那个会话**的凭据通道（编辑器终端的 git askpass 与 IPC、被注入的 git 配置）交给 Agent（§5 的清理），但会把守护进程用户自己的凭据交给它；从服务管理器或干净的登录 shell 启动最稳妥。
 - 登录时只为**勾选的工作区**注册运行时（12 §3.1），`hmd_` 令牌泄露的影响限于这些工作区。
+- 网页登记本地仓库默认关闭：只有机器主人在本机设置了允许的根目录（`[repos] allowed_roots`）才开放，且只开放给机器主人自己的网页会话。服务端只能下发「根目录标签 + 相对路径」，守护进程逐级 `lstat`（根以下不跟随符号链接）、要求真实路径与 git 目录都在根内后才写入配置；服务端只知道「是否允许」，不知道根目录（`add-local-repo-web-registration`）。
 - macOS 把 `hmd_` 令牌放进登录钥匙串，防的是它以明文出现在文件、备份与同步盘里；同一用户的进程（包括 Agent）仍能用 `security` 读出它，与上面「没有边界」一致。
 
 Helmsman 自己能保证的：
