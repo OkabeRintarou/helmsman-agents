@@ -167,9 +167,18 @@ defmodule HelmsmanWeb.AgentDesignComponents do
 
   ## Messages (D4)
 
+  @doc "The helper Agent as an actor map with its CLI and avatar (add-actor-avatars D7)."
+  def helper_actor(helper, appearance),
+    do:
+      Appearance.decorate(
+        %{name: helper.name, kind: :agent, provider: helper[:provider]},
+        appearance
+      )
+
   attr :message, :map, required: true
   attr :helper, :map, required: true
   attr :scope, :map, required: true
+  attr :appearance, :map, default: %{}
 
   def message(%{message: %{role: :user}} = assigns) do
     assigns = assign(assigns, :edits, edits_text(assigns.message[:edits]))
@@ -190,7 +199,7 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   def message(%{message: %{role: :assistant}} = assigns) do
     ~H"""
     <div class="flex items-start gap-2" data-role="assistant">
-      <.actor_chip actor={%{name: @helper.name, kind: :agent}} compact />
+      <.actor_chip actor={helper_actor(@helper, @appearance)} compact />
       <div class="min-w-0 max-w-[85%] rounded-box border border-border bg-surface px-3 py-2">
         <.markdown
           content={@message.content || ""}
@@ -452,6 +461,7 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   attr :agents, :list, required: true
   attr :squad, :map, default: nil, doc: "the squad part of a squad conversation's snapshot"
   attr :summary, :map, default: nil, doc: "its `trigger_summary`"
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance`"
 
   @doc "The list of the confirmation dialog; a squad conversation's squad comes first (D16)."
   def confirm_list(assigns) do
@@ -461,7 +471,12 @@ defmodule HelmsmanWeb.AgentDesignComponents do
     ~H"""
     <ul id="design-confirm-list" class="flex flex-col gap-1">
       <li :if={@squad} data-squad>
-        <HelmsmanWeb.AgentDesignSquad.confirm_row squad={@squad} summary={@summary} keys={@keys} />
+        <HelmsmanWeb.AgentDesignSquad.confirm_row
+          squad={@squad}
+          summary={@summary}
+          keys={@keys}
+          appearance={@appearance}
+        />
       </li>
       <li :for={a <- @agents} class="flex flex-wrap items-center gap-2" data-name={a["name"]}>
         <span class="font-mono text-body text-fg">{a["name"]}</span>

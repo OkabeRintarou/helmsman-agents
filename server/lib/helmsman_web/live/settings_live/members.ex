@@ -203,7 +203,8 @@ defmodule HelmsmanWeb.SettingsLive.Members do
     do: {:noreply, socket}
 
   @impl true
-  def handle_info({:members_changed}, socket), do: {:noreply, load(socket)}
+  def handle_info(message, socket) when message in [{:members_changed}, {:avatars_changed}],
+    do: {:noreply, load(socket)}
 
   defp change_role(socket, member, role) do
     case Members.change_role(socket.assigns.current_scope, member.membership_id, role) do
@@ -345,7 +346,10 @@ defmodule HelmsmanWeb.SettingsLive.Members do
         <.data_table id="members" rows={@streams.members} label={dgettext("ui", "成员")} rich>
           <:col :let={m} label={dgettext("ui", "成员")} class="w-[40%]">
             <span class="flex min-w-0 items-center gap-2">
-              <.avatar name={m.display_name} />
+              <.actor_mark
+                actor={Appearance.decorate(%{name: m.actor_name, kind: :human}, @appearance)}
+                size={:md}
+              />
               <span class="flex min-w-0 flex-col">
                 <span class="flex items-center gap-1.5 truncate text-fg">
                   <span class="truncate" data-name>{m.display_name}</span>

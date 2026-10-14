@@ -102,6 +102,15 @@ defmodule HelmsmanWeb.RunLive.ShowTest do
 
       assert has_element?(view, "#run-properties [data-provider-account]", "zai")
       refute has_element?(view, "#run-properties [data-provider-account]", "volc")
+      # The account's icon, inferred from its address (add-actor-avatars D19).
+      assert has_element?(view, "#run-properties [data-provider-account] [data-account-icon=zai]")
+
+      assert has_element?(
+               view,
+               "#run-properties [data-provider-account] [data-account-host]",
+               "api.z.ai"
+             )
+
       refute html =~ "sk-zai-run"
     end
 

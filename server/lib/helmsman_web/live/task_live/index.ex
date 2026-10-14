@@ -523,19 +523,19 @@ defmodule HelmsmanWeb.TaskLive.Index do
 
   # With a search text the rows already shown are read again (add-search-query-ui D2):
   # as many as are loaded, at most 200; the rest comes with 加载更多.
-  def handle_info(:reload_search, socket) do
-    socket = Throttle.done(socket, :reload_search)
-    %{current_scope: scope, project: project, filters: filters} = socket.assigns
-    count = max(MapSet.size(socket.assigns.shown), TaskData.page_size())
+  def handle_info(:reload_search, socket),
+    do: {:noreply, socket |> Throttle.done(:reload_search) |> reread_rows()}
 
-    case read_rows(scope, project.key, Filter.domain_opts(filters), count) do
-      {:ok, rows, has_more, cursor} ->
-        {:noreply, show_page(socket, filters, rows, has_more, cursor)}
+  # The shell reloaded the identity appearance (add-actor-avatars D7); streamed rows are
+  # only rendered when inserted, so the rows shown are read again.
+  def handle_info(message, socket)
+      when message in [{:avatars_changed}, {:agents_changed}, {:members_changed}],
+      do: {:noreply, Throttle.schedule(socket, :reload_rows)}
 
-      {:error, _} ->
-        {:noreply, socket}
-    end
-  end
+  def handle_info({:squad, _id}, socket), do: {:noreply, Throttle.schedule(socket, :reload_rows)}
+
+  def handle_info(:reload_rows, socket),
+    do: {:noreply, socket |> Throttle.done(:reload_rows) |> reread_rows()}
 
   def handle_info({:run_updated, %{task: ident}}, socket) when is_binary(ident) do
     if MapSet.member?(socket.assigns.shown, ident) do
@@ -660,6 +660,18 @@ defmodule HelmsmanWeb.TaskLive.Index do
   # next page instead of reporting an empty list.
   # The first `count` rows in pages of `TaskData.page/4` (the domain reads at most 200 at
   # a time), with whether more follow and the cursor of the last (code-review-1 P2-1).
+  defp reread_rows(%{assigns: %{filters: nil}} = socket), do: socket
+
+  defp reread_rows(socket) do
+    %{current_scope: scope, project: project, filters: filters} = socket.assigns
+    count = max(MapSet.size(socket.assigns.shown), TaskData.page_size())
+
+    case read_rows(scope, project.key, Filter.domain_opts(filters), count) do
+      {:ok, rows, has_more, cursor} -> show_page(socket, filters, rows, has_more, cursor)
+      {:error, _} -> socket
+    end
+  end
+
   defp read_rows(scope, key, opts, count, cursor \\ nil, acc \\ []) do
     with {:ok, rows, has_more, next} <- TaskData.page(scope, key, opts, cursor) do
       acc = acc ++ rows
@@ -895,7 +907,13 @@ defmodule HelmsmanWeb.TaskLive.Index do
         </:col>
         <:col :let={task} label={dgettext("ui", "执行方")} class="w-32">
           <span :if={task.assignee}>
-            <TaskComponents.actor_ref actor={task.assignee} agents={@agents} slug={@slug} compact />
+            <TaskComponents.actor_ref
+              actor={task.assignee}
+              agents={@agents}
+              appearance={@appearance}
+              slug={@slug}
+              compact
+            />
           </span>
         </:col>
         <:col :let={task} label={dgettext("ui", "更新")} secondary class="w-24">

@@ -27,6 +27,7 @@ import topbar from "../vendor/topbar"
 import Hotkeys from "./hooks/hotkeys"
 import Editor from "./hooks/editor"
 import Mermaid from "./hooks/mermaid"
+import AvatarCropper from "./hooks/avatar_cropper"
 
 const RECENT_TASKS = "hm:recent-tasks"
 const recentTasks = () => {
@@ -41,7 +42,30 @@ const liveSocket = new LiveSocket("/live", Socket, {
     recent_tasks: recentTasks(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }),
-  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid},
+  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid, AvatarCropper},
+  dom: {
+    // A failed avatar stays hidden across patches until its address changes.
+    onBeforeElUpdated(from, to) {
+      if (from.dataset.avatarFailed && from.dataset.avatarFailed === to.getAttribute("src")) {
+        to.setAttribute("hidden", "")
+        to.setAttribute("data-avatar-failed", from.dataset.avatarFailed)
+      }
+    },
+  },
+})
+
+// Identity avatars (add-actor-avatars D2): the <img data-avatar> covers the default
+// mark; when it fails to load (removed, stale address) hide it to show the mark.
+const hideAvatar = img => {
+  img.hidden = true
+  img.dataset.avatarFailed = img.getAttribute("src") || ""
+}
+document.addEventListener("error", ({target}) => {
+  if (target?.tagName === "IMG" && target.hasAttribute("data-avatar")) hideAvatar(target)
+}, true)
+// Images of the static render that failed before this script ran.
+document.querySelectorAll("img[data-avatar]").forEach(img => {
+  if (img.complete && img.naturalWidth === 0) hideAvatar(img)
 })
 
 // Focus return for modal layers (design D5c): remember the element focused when a layer

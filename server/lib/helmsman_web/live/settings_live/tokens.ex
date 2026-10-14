@@ -68,6 +68,11 @@ defmodule HelmsmanWeb.SettingsLive.Tokens do
 
   defp new_form, do: %{params: @default_params, errors: %{}}
 
+  # The shell reloaded `@appearance`: the streamed rows show the default Agents' marks.
+  @impl true
+  def handle_info({:avatars_changed}, socket), do: {:noreply, load(socket)}
+  def handle_info(_message, socket), do: {:noreply, socket}
+
   defp load(socket) do
     scope = socket.assigns.current_scope
 
@@ -256,7 +261,12 @@ defmodule HelmsmanWeb.SettingsLive.Tokens do
       </:actions>
 
       <.settings_section id="own-tokens-section" title={dgettext("ui", "我的 Token")}>
-        <.token_table id="own-tokens" rows={@streams.own} scope={@current_scope} />
+        <.token_table
+          id="own-tokens"
+          rows={@streams.own}
+          scope={@current_scope}
+          appearance={@appearance}
+        />
         <.empty_state
           :if={@own_empty?}
           icon="lucide-key-round"
@@ -270,7 +280,13 @@ defmodule HelmsmanWeb.SettingsLive.Tokens do
         id="all-tokens-section"
         title={dgettext("ui", "工作区全部 Token")}
       >
-        <.token_table id="all-tokens" rows={@streams.all} scope={@current_scope} user_column />
+        <.token_table
+          id="all-tokens"
+          rows={@streams.all}
+          scope={@current_scope}
+          appearance={@appearance}
+          user_column
+        />
       </.settings_section>
 
       <.side_panel
@@ -416,6 +432,7 @@ defmodule HelmsmanWeb.SettingsLive.Tokens do
   attr :rows, :any, required: true
   attr :scope, :map, required: true
   attr :user_column, :boolean, default: false
+  attr :appearance, :map, default: %{}
 
   defp token_table(assigns) do
     ~H"""
@@ -440,8 +457,12 @@ defmodule HelmsmanWeb.SettingsLive.Tokens do
         </span>
       </:col>
       <:col :let={t} label={dgettext("ui", "缺省 Agent")} secondary>
-        <span class="truncate text-fg-muted" data-agent>
-          {(t.default_agent && t.default_agent.name) || "—"}
+        <span class="flex min-w-0" data-agent>
+          <.actor_chip
+            :if={t.default_agent}
+            actor={Appearance.decorate(%{name: t.default_agent.name, kind: :agent}, @appearance)}
+          />
+          <span :if={!t.default_agent} class="text-fg-muted">—</span>
         </span>
       </:col>
       <:col :let={t} label={dgettext("ui", "最近使用")} secondary>

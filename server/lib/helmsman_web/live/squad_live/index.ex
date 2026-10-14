@@ -3,9 +3,10 @@ defmodule HelmsmanWeb.SquadLive.Index do
   `/w/:slug/squads` (spec web-squads 小队列表页, add-squads-autopilots-ui D2): every squad
   of the workspace, the new-squad panel (`?panel=new-squad`) and the conversation entry.
 
-  Subscribes to the squad topic; `{:squad, _}`, and `{:agents_changed}` /
-  `{:runtimes_changed}` forwarded by the shell (leaders' and members' state, the
-  current user's availability) reload the list through `HelmsmanWeb.Throttle`.
+  `{:squad, _}` (the shell alone subscribes to the squad topic, add-actor-avatars D7),
+  `{:agents_changed}` / `{:runtimes_changed}` and `{:avatars_changed}`, all forwarded by
+  the shell (leaders' and members' state, the current user's availability, the marks),
+  reload the list through `HelmsmanWeb.Throttle`.
   """
   use HelmsmanWeb, :live_view
 
@@ -17,7 +18,6 @@ defmodule HelmsmanWeb.SquadLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
-    if connected?(socket), do: SquadData.subscribe(scope.workspace.id)
 
     {:ok,
      socket
@@ -146,8 +146,9 @@ defmodule HelmsmanWeb.SquadLive.Index do
   @impl true
   def handle_info({:squad, _id}, socket), do: {:noreply, Throttle.schedule(socket)}
 
-  def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
-    do: {:noreply, Throttle.schedule(socket)}
+  def handle_info(message, socket)
+      when message in [{:agents_changed}, {:runtimes_changed}, {:avatars_changed}],
+      do: {:noreply, Throttle.schedule(socket)}
 
   def handle_info(:reload, socket), do: {:noreply, socket |> Throttle.done() |> load()}
   def handle_info(_message, socket), do: {:noreply, socket}
@@ -230,7 +231,16 @@ defmodule HelmsmanWeb.SquadLive.Index do
           <:col :let={s} label={dgettext("ui", "小队")} class="w-[30%]">
             <span class="flex min-w-0 flex-col">
               <.link navigate={Url.squad_path(@slug, s.name)} class="min-w-0" data-squad-link>
-                <.actor_chip actor={%{name: s.name, kind: :squad}} />
+                <.actor_chip actor={
+                  Appearance.decorate(
+                    %{
+                      name: s.name,
+                      kind: :squad,
+                      state: if(s.disabled, do: :disabled, else: :active)
+                    },
+                    @appearance
+                  )
+                } />
               </.link>
               <span
                 :if={(s.description || "") != ""}
@@ -243,7 +253,9 @@ defmodule HelmsmanWeb.SquadLive.Index do
           </:col>
           <:col :let={s} label="Leader">
             <span class="flex min-w-0 items-center gap-1.5" data-leader>
-              <.actor_chip actor={%{name: s.leader.name, kind: :agent}} />
+              <.actor_chip actor={
+                Appearance.decorate(%{name: s.leader.name, kind: :agent}, @appearance)
+              } />
               <.badge :if={s.leader.archived} tone={:warning} data-leader-archived>
                 {dgettext("ui", "已归档")}
               </.badge>
@@ -253,7 +265,7 @@ defmodule HelmsmanWeb.SquadLive.Index do
             </span>
           </:col>
           <:col :let={s} label={dgettext("ui", "成员")} secondary>
-            <.member_stack members={s.members} />
+            <.member_stack members={s.members} appearance={@appearance} />
           </:col>
           <:col :let={s} label={dgettext("ui", "你能否触发")} secondary>
             <.tooltip
@@ -276,6 +288,7 @@ defmodule HelmsmanWeb.SquadLive.Index do
         :if={@can_create?}
         form={@squad_form}
         scope={@current_scope}
+        appearance={@appearance}
         close_path={@close_path}
       />
     </Layouts.app>

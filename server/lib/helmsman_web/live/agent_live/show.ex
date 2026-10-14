@@ -13,13 +13,16 @@ defmodule HelmsmanWeb.AgentLive.Show do
   use HelmsmanWeb, :live_view
 
   import HelmsmanWeb.AgentComponents
-  import HelmsmanWeb.ProviderAccountComponents, only: [account_summary: 1, supported?: 1]
+
+  import HelmsmanWeb.ProviderAccountComponents,
+    only: [account_summary: 1, account_icon: 1, supported?: 1]
 
   import HelmsmanWeb.RunComponents,
     only: [run_card: 1, cancellable?: 2, trigger_summary: 1, duration_text: 1]
 
   alias Helmsman.{Agents, Dispatch, Events, Members, Policy, Presence, ProviderAccounts}
-  alias HelmsmanWeb.{AgentForm, MarkdownEditor, RunActions, RunComponents, RunData, Throttle, Url}
+  alias HelmsmanWeb.{AgentForm, AvatarData, MarkdownEditor, RunActions, RunComponents, RunData}
+  alias HelmsmanWeb.{Throttle, Url}
   alias Phoenix.HTML.Engine
 
   @tabs ~w(runs instructions usage)
@@ -70,6 +73,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
            |> stream_configure(:agent_runs, dom_id: &"run-row-#{&1.id}")
            |> stream(:agent_runs, [])
            |> put_agent(agent)
+           |> put_avatar_rights()
            |> RunActions.init()
            |> load_availability()
            |> load_runs()}
@@ -97,6 +101,36 @@ defmodule HelmsmanWeb.AgentLive.Show do
       status: status,
       online?: online?,
       permissions: RunData.agent_permissions(scope, agent)
+    )
+  end
+
+  defp put_avatar_rights(socket) do
+    scope = socket.assigns.current_scope
+
+    assign(
+      socket,
+      :avatar_rights,
+      AvatarData.can_manage?(scope, {:actor, socket.assigns.agent.name})
+    )
+  end
+
+  defp agent_mark(agent, appearance) do
+    state =
+      cond do
+        agent.archived -> :archived
+        agent.disabled -> :disabled
+        true -> :active
+      end
+
+    Appearance.decorate(
+      %{
+        name: agent.name,
+        kind: :agent,
+        managed?: agent.kind == "managed",
+        provider: agent.provider,
+        state: state
+      },
+      appearance
     )
   end
 
@@ -411,7 +445,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
   defp reload(socket) do
     case RunData.agent(socket.assigns.current_scope, socket.assigns.name) do
       {:ok, agent} ->
-        socket = socket |> put_agent(agent) |> load_availability()
+        socket = socket |> put_agent(agent) |> put_avatar_rights() |> load_availability()
 
         case socket.assigns.agent_form do
           nil -> socket
@@ -547,6 +581,17 @@ defmodule HelmsmanWeb.AgentLive.Show do
       <:header>
         <.page_header title={@agent.name}>
           <:crumb navigate={"/w/#{@slug}/agents"}>Agents</:crumb>
+          <:leading>
+            <.live_component
+              module={HelmsmanWeb.AvatarEditor}
+              id="agent-avatar"
+              scope={@current_scope}
+              target={{:actor, @agent.name}}
+              rights={@avatar_rights}
+              size={:lg}
+              actor={agent_mark(@agent, @appearance)}
+            />
+          </:leading>
           <:actions>
             <.agent_status id="agent-status" status={@status} />
             <.button
@@ -653,6 +698,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
             runs={@runs}
             stream={@streams.agent_runs}
             scope={@current_scope}
+            appearance={@appearance}
           />
 
           <div :if={@tab == "instructions"} id="agent-instructions">
@@ -709,11 +755,14 @@ defmodule HelmsmanWeb.AgentLive.Show do
                 {dgettext("ui", "CLI 默认登录")}
               </span>
             </.property_row>
-            <.property_row
-              label={dgettext("ui", "模型")}
-              value={@agent.model || model_default(@agent)}
-              data-model
-            />
+            <.property_row label={dgettext("ui", "模型")} data-model>
+              <.model_label
+                :if={@agent.model}
+                model={@agent.model}
+                account_icon={account_icon(@agent[:provider_account])}
+              />
+              <span :if={!@agent.model}>{model_default(@agent)}</span>
+            </.property_row>
             <.property_row
               label={dgettext("ui", "推理强度")}
               value={@agent.effort || dgettext("ui", "CLI 缺省")}
@@ -786,6 +835,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
   attr :runs, :map, required: true
   attr :stream, :any, required: true
   attr :scope, :map, required: true
+  attr :appearance, :map, default: %{}
 
   defp runs_tab(assigns) do
     runs = assigns.runs
@@ -812,6 +862,7 @@ defmodule HelmsmanWeb.AgentLive.Show do
           id={"run-card-#{run.id}"}
           run={run}
           scope={@scope}
+          appearance={@appearance}
           can_cancel={cancellable?(@scope, run)}
         />
         <.button

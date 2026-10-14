@@ -153,7 +153,15 @@ defmodule HelmsmanWeb.SquadLiveTest do
       assert has_element?(view, "#squad-member-leader", "Leader")
       assert has_element?(view, "#squad-member-leader", "keel/lead")
       assert has_element?(view, "#squad-member-0[data-member='keel/fe']", "写前端")
-      assert has_element?(view, "#squad-member-0 [data-config]", "Claude Code · sonnet · high")
+      assert has_element?(view, "#squad-member-0 [data-config]", "Claude Code")
+
+      assert has_element?(
+               view,
+               "#squad-member-0 [data-config] [data-model-vendor=anthropic]",
+               "sonnet"
+             )
+
+      assert has_element?(view, "#squad-member-0 [data-config]", "high")
       assert has_element?(view, "#squad-member-1[data-member='keel/qa']")
       assert has_element?(view, "#squad-member-2[data-member='#{ctx.bob_name}']", "拍板产品问题")
 

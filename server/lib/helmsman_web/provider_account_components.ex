@@ -6,6 +6,8 @@ defmodule HelmsmanWeb.ProviderAccountComponents do
   """
   use HelmsmanWeb, :html
 
+  alias HelmsmanWeb.Brands
+
   @accounts_path "/users/settings/provider-accounts"
 
   @doc "The provider accounts page; `params` (a keyword list, in order) become its query."
@@ -70,8 +72,53 @@ defmodule HelmsmanWeb.ProviderAccountComponents do
   def mapping_lines(_models), do: []
 
   @doc """
-  An account's name and host (the agent summary `%{id, name, cli, host}`). With
-  `link` set the whole summary links to the account's edit panel.
+  The brand icon of an account (add-actor-avatars D19): its chosen `icon`, otherwise the
+  one inferred from its base URL (`base_url`, or `host` in the agent summaries) and CLI.
+  nil (the neutral icon) when neither is known, and for a chosen key that is not in the
+  tables (web-components 品牌图标「未知键」): a choice is never replaced by inference.
+  """
+  def account_icon(nil), do: nil
+
+  def account_icon(account) do
+    case account[:icon] do
+      icon when is_binary(icon) and icon != "" -> Brands.vendor_icon(icon)
+      _ -> Brands.host_icon(account_url(account), account[:cli])
+    end
+  end
+
+  @doc "An account's brand icon on its plate, named for assistive technology (D19)."
+  attr :account, :map, required: true
+  attr :size, :atom, default: :sm
+
+  def account_icon_mark(assigns) do
+    icon = account_icon(assigns.account)
+    assigns = assign(assigns, icon: icon, label: icon && Brands.vendor_name(icon))
+
+    ~H"""
+    <span class="inline-flex" data-account-icon={@icon || "none"}>
+      <.brand_icon icon={@icon} size={@size} label={@label} />
+    </span>
+    """
+  end
+
+  defp account_url(%{base_url: url}), do: url
+  # Agent / run summaries carry only the host and, when the address names one, the port
+  # (domain-request-2 R10); an IPv6 host goes back into brackets.
+  defp account_url(%{host: host} = account) when is_binary(host) and host != "" do
+    host = if String.contains?(host, ":"), do: "[#{host}]", else: host
+
+    case account[:port] do
+      port when is_integer(port) -> "https://#{host}:#{port}"
+      _ -> "https://" <> host
+    end
+  end
+
+  defp account_url(_account), do: nil
+
+  @doc """
+  An account's brand icon (`account_icon/1`), name and host (the agent summary
+  `%{id, name, cli, host, icon}`). With `link` set the whole summary links to the
+  account's edit panel.
   """
   attr :account, :map, required: true
   attr :link, :boolean, default: false
@@ -102,6 +149,7 @@ defmodule HelmsmanWeb.ProviderAccountComponents do
 
   defp summary_parts(assigns) do
     ~H"""
+    <.account_icon_mark account={@account} size={:xs} />
     <span class="truncate" data-account-name>{@account.name}</span>
     <span :if={@account[:host]} class="truncate font-mono text-label text-fg-muted" data-account-host>
       {@account.host}

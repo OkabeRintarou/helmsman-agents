@@ -1,8 +1,8 @@
 defmodule HelmsmanWeb.UserLive.Settings do
   use HelmsmanWeb, :live_view
 
-  alias Helmsman.Accounts
-  alias HelmsmanWeb.UserAuth
+  alias Helmsman.{Accounts, Events}
+  alias HelmsmanWeb.{AvatarData, UserAuth}
 
   @impl true
   def render(assigns) do
@@ -11,12 +11,33 @@ defmodule HelmsmanWeb.UserLive.Settings do
       flash={@flash}
       current_scope={@current_scope}
       active={:account}
+      avatar_url={@avatar_url}
       class="max-w-[400px]"
     >
       <.header>
         {dgettext("ui", "账号设置")}
-        <:subtitle>{dgettext("ui", "管理显示名、邮箱和密码")}</:subtitle>
+        <:subtitle>{dgettext("ui", "管理头像、显示名、邮箱和密码")}</:subtitle>
       </.header>
+
+      <section id="avatar-section" aria-labelledby="avatar-heading" class="flex items-center gap-4">
+        <.live_component
+          module={HelmsmanWeb.AvatarEditor}
+          id="my-avatar"
+          scope={@current_scope}
+          target={:me}
+          rights={:set}
+          size={:xl}
+          actor={%{name: user_name(@current_scope.user), kind: :human, avatar_url: @avatar_url}}
+        />
+        <div class="flex min-w-0 flex-col gap-0.5">
+          <h2 id="avatar-heading" class="text-title font-semibold text-fg">
+            {dgettext("ui", "头像")}
+          </h2>
+          <p class="text-body text-fg-muted">{dgettext("ui", "显示在你加入的所有工作区")}</p>
+        </div>
+      </section>
+
+      <hr class="my-6 border-border" />
 
       <.form
         for={@display_name_form}
@@ -137,6 +158,7 @@ defmodule HelmsmanWeb.UserLive.Settings do
 
   def mount(_params, _session, socket) do
     user = socket.assigns.current_scope.user
+    if connected?(socket), do: Events.subscribe(Events.topic(:user, user.id))
     email_changeset = Accounts.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Accounts.change_user_password(user, %{}, hash_password: false)
 
@@ -149,9 +171,23 @@ defmodule HelmsmanWeb.UserLive.Settings do
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:trigger_submit, false)
+      |> assign(:avatar_url, AvatarData.user_avatar_url(user))
 
     {:ok, socket}
   end
+
+  defp user_name(user), do: user.display_name || user.email
+
+  @impl true
+  def handle_info({:user_avatar_changed}, socket) do
+    url = AvatarData.user_avatar_url(socket.assigns.current_scope.user)
+    {:noreply, assign(socket, :avatar_url, url)}
+  end
+
+  def handle_info({:put_flash, kind, message}, socket),
+    do: {:noreply, put_flash(socket, kind, message)}
+
+  def handle_info(_message, socket), do: {:noreply, socket}
 
   @impl true
   def handle_event("validate_display_name", %{"user" => user_params}, socket) do

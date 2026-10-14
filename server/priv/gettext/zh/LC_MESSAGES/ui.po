@@ -231,6 +231,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/components/overlay.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
@@ -303,6 +304,7 @@ msgid "命令面板"
 msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "图标"
 msgstr ""
@@ -489,11 +491,6 @@ msgstr ""
 msgid "截止日期"
 msgstr ""
 
-#: lib/helmsman_web/components/actor.ex
-#, elixir-autogen, elixir-format
-msgid "所属：%{owner} · %{mode}"
-msgstr ""
-
 #: lib/helmsman_web/components/layout.ex
 #, elixir-autogen, elixir-format
 msgid "打开导航"
@@ -640,6 +637,7 @@ msgid "最近访问"
 msgstr ""
 
 #: lib/helmsman_web/components/status.ex
+#: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/local_repository_components.ex
 #, elixir-autogen, elixir-format
 msgid "未知"
@@ -1006,6 +1004,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/autopilot_form.ex
+#: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/general.ex
@@ -1255,11 +1254,6 @@ msgstr ""
 #: lib/helmsman_web/live/user_live/settings.ex
 #, elixir-autogen, elixir-format
 msgid "确认链接已发送到新邮箱。"
-msgstr ""
-
-#: lib/helmsman_web/live/user_live/settings.ex
-#, elixir-autogen, elixir-format
-msgid "管理显示名、邮箱和密码"
 msgstr ""
 
 #: lib/helmsman_web/user_auth.ex
@@ -2325,6 +2319,7 @@ msgstr "确认修改"
 
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/provider_account_form.ex
@@ -2778,6 +2773,7 @@ msgstr ""
 msgid "重新开始"
 msgstr ""
 
+#: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/markdown_editor.ex
 #, elixir-autogen, elixir-format
 msgid "预览"
@@ -9247,4 +9243,176 @@ msgstr ""
 #: lib/helmsman_web/agent_design_squad.ex
 #, elixir-autogen, elixir-format
 msgid "（新）"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "一次只能上传一张图片"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "上传图片…"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "不支持动图"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "你没有权限修改这个头像"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "厂商"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "只支持 PNG、JPEG 或 WebP 图片"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#, elixir-autogen, elixir-format
+msgid "品牌图标"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "图片不能超过 10 MB"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "图片过于复杂，请换一张"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "头像"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "头像不能超过 256 KB"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "头像保存失败，请重试"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "头像已更新"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "头像必须是正方形"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "头像裁剪"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "头像边长须在 32 到 1024 像素之间"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "已恢复缺省头像"
+msgstr ""
+
+#: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "平台"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "拖动或用方向键移动图片（按住 Shift 移动更多），+ / - 缩放，0 复位。也可以把图片拖到这里。"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "无法读取这张图片"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "显示在你加入的所有工作区"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "更换头像"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "未识别"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "移除后恢复缺省头像。"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "移除头像"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "移除头像？"
+msgstr ""
+
+#: lib/helmsman_web/live/user_live/settings.ex
+#, elixir-autogen, elixir-format
+msgid "管理头像、显示名、邮箱和密码"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "缩放"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "自动（%{name}）"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "裁剪区"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "账号列表、Agent 与运行页显示这个图标；自动时按地址与 CLI 推断"
+msgstr ""
+
+#: lib/helmsman_web/avatar_data.ex
+#, elixir-autogen, elixir-format
+msgid "身份不存在"
+msgstr ""
+
+#: lib/helmsman_web/avatar_editor.ex
+#, elixir-autogen, elixir-format
+msgid "选择图片…"
+msgstr ""
+
+#: lib/helmsman_web/provider_account_form.ex
+#, elixir-autogen, elixir-format
+msgid "未知图标（%{key}）"
 msgstr ""

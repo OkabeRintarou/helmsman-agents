@@ -20,7 +20,8 @@
   include: rootscrolllock, rootcolor, rootscrollgutter, svg, properties, button, input, select, textarea, checkbox, toggle, radio, fieldset, label, badge, dropdown, tooltip, loading, kbd;
 }
 
-/* Theme values: design D3. HelmsmanWeb.Dev.ThemeTokens parses the `--hm-*` values
+/* Theme values: design D3; the --hm-id-* identity and brand plate tokens: add-actor-avatars D9
+   (the brand plate is light in both themes). HelmsmanWeb.Dev.ThemeTokens parses the `--hm-*` values
    below at compile time to check contrast, so keep them as `oklch(L C H [/ A])`. */
 @plugin "daisyui/packages/bundle/daisyui-theme" {
   name: "helmsman-light";
@@ -81,6 +82,29 @@
   --hm-on-brand: oklch(1 0 0);
   --hm-on-danger: oklch(1 0 0);
   --hm-on-warning: oklch(0.22 0.01 240);
+  --hm-id-plate: oklch(0.985 0.002 240);
+  --hm-id-plate-ink: oklch(0.22 0.01 240);
+  --hm-id-plate-border: oklch(0.66 0.01 240);
+  --hm-id-squad: oklch(0.52 0.10 210);
+  --hm-id-squad-ink: oklch(1 0 0);
+  --hm-id-neutral: oklch(0.925 0.012 215);
+  --hm-id-neutral-ink: oklch(0.48 0.01 240);
+  --hm-id-tint-1: oklch(0.90 0.05 0);
+  --hm-id-tint-1-ink: oklch(0.40 0.06 0);
+  --hm-id-tint-2: oklch(0.90 0.05 45);
+  --hm-id-tint-2-ink: oklch(0.40 0.06 45);
+  --hm-id-tint-3: oklch(0.90 0.05 90);
+  --hm-id-tint-3-ink: oklch(0.40 0.06 90);
+  --hm-id-tint-4: oklch(0.90 0.05 135);
+  --hm-id-tint-4-ink: oklch(0.40 0.06 135);
+  --hm-id-tint-5: oklch(0.90 0.05 180);
+  --hm-id-tint-5-ink: oklch(0.40 0.06 180);
+  --hm-id-tint-6: oklch(0.90 0.05 225);
+  --hm-id-tint-6-ink: oklch(0.40 0.06 225);
+  --hm-id-tint-7: oklch(0.90 0.05 270);
+  --hm-id-tint-7-ink: oklch(0.40 0.06 270);
+  --hm-id-tint-8: oklch(0.90 0.05 315);
+  --hm-id-tint-8-ink: oklch(0.40 0.06 315);
   --hm-badge-mix: 12%;
 }
 
@@ -143,6 +167,29 @@
   --hm-on-brand: oklch(0.165 0.008 240);
   --hm-on-danger: oklch(0.165 0.008 240);
   --hm-on-warning: oklch(0.165 0.008 240);
+  --hm-id-plate: oklch(0.93 0.005 240);
+  --hm-id-plate-ink: oklch(0.22 0.01 240);
+  --hm-id-plate-border: oklch(0.93 0.005 240);
+  --hm-id-squad: oklch(0.72 0.10 205);
+  --hm-id-squad-ink: oklch(0.165 0.008 240);
+  --hm-id-neutral: oklch(0.30 0.03 215);
+  --hm-id-neutral-ink: oklch(0.72 0.01 240);
+  --hm-id-tint-1: oklch(0.36 0.06 0);
+  --hm-id-tint-1-ink: oklch(0.90 0.06 0);
+  --hm-id-tint-2: oklch(0.36 0.06 45);
+  --hm-id-tint-2-ink: oklch(0.90 0.06 45);
+  --hm-id-tint-3: oklch(0.36 0.06 90);
+  --hm-id-tint-3-ink: oklch(0.90 0.06 90);
+  --hm-id-tint-4: oklch(0.36 0.06 135);
+  --hm-id-tint-4-ink: oklch(0.90 0.06 135);
+  --hm-id-tint-5: oklch(0.36 0.06 180);
+  --hm-id-tint-5-ink: oklch(0.90 0.06 180);
+  --hm-id-tint-6: oklch(0.36 0.06 225);
+  --hm-id-tint-6-ink: oklch(0.90 0.06 225);
+  --hm-id-tint-7: oklch(0.36 0.06 270);
+  --hm-id-tint-7-ink: oklch(0.90 0.06 270);
+  --hm-id-tint-8: oklch(0.36 0.06 315);
+  --hm-id-tint-8-ink: oklch(0.90 0.06 315);
   --hm-badge-mix: 16%;
 }
 
@@ -173,6 +220,29 @@
   --color-on-brand: var(--hm-on-brand);
   --color-on-danger: var(--hm-on-danger);
   --color-on-warning: var(--hm-on-warning);
+  --color-id-plate: var(--hm-id-plate);
+  --color-id-plate-ink: var(--hm-id-plate-ink);
+  --color-id-plate-border: var(--hm-id-plate-border);
+  --color-id-squad: var(--hm-id-squad);
+  --color-id-squad-ink: var(--hm-id-squad-ink);
+  --color-id-neutral: var(--hm-id-neutral);
+  --color-id-neutral-ink: var(--hm-id-neutral-ink);
+  --color-id-tint-1: var(--hm-id-tint-1);
+  --color-id-tint-1-ink: var(--hm-id-tint-1-ink);
+  --color-id-tint-2: var(--hm-id-tint-2);
+  --color-id-tint-2-ink: var(--hm-id-tint-2-ink);
+  --color-id-tint-3: var(--hm-id-tint-3);
+  --color-id-tint-3-ink: var(--hm-id-tint-3-ink);
+  --color-id-tint-4: var(--hm-id-tint-4);
+  --color-id-tint-4-ink: var(--hm-id-tint-4-ink);
+  --color-id-tint-5: var(--hm-id-tint-5);
+  --color-id-tint-5-ink: var(--hm-id-tint-5-ink);
+  --color-id-tint-6: var(--hm-id-tint-6);
+  --color-id-tint-6-ink: var(--hm-id-tint-6-ink);
+  --color-id-tint-7: var(--hm-id-tint-7);
+  --color-id-tint-7-ink: var(--hm-id-tint-7-ink);
+  --color-id-tint-8: var(--hm-id-tint-8);
+  --color-id-tint-8-ink: var(--hm-id-tint-8-ink);
 }
 
 @theme {

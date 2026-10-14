@@ -1,50 +1,141 @@
 defmodule HelmsmanWeb.Components.Actor do
   @moduledoc """
-  Identity components: `avatar/1`, `actor_chip/1`, `presence_dot/1`, `working_chip/1`.
+  Identity components: `actor_mark/1`, `actor_chip/1`, `presence_dot/1`, `working_chip/1`.
 
   An actor is a map `%{name, kind, owner_name, managed?, state}` where `kind` is
-  `:human | :agent | :squad | :system` and `state` is `:active | :disabled | :archived`.
+  `:human | :agent | :squad | :system` and `state` is `:active | :disabled | :archived`;
+  `provider` (an Agent's CLI) and `avatar_url` come from the workspace's appearance
+  table (`HelmsmanWeb.Appearance.decorate/2`).
   """
   use Phoenix.Component
   use Gettext, backend: HelmsmanWeb.Gettext
 
   import HelmsmanWeb.CoreComponents, only: [icon: 1, tooltip_class: 1]
 
-  @doc "Round avatar: image when `src` is given, otherwise the initial on a neutral tint."
-  attr :name, :string, required: true
-  attr :src, :string, default: nil
-  attr :size, :atom, default: :sm, values: [:xs, :sm, :md]
+  alias HelmsmanWeb.Brands
+  alias HelmsmanWeb.Components.Brand
+
+  @doc """
+  The graphic part of an identity (add-actor-avatars D2), from the `actor` map
+  (`kind`, `name`, and when known `provider`, `managed?`, `avatar_url`, `state`):
+
+  * humans: a circle, the avatar or the initial on one of eight tints chosen by name;
+  * managed Agents: a rounded square, the avatar or the CLI's brand icon on the plate;
+    external Agents and unknown CLIs: the neutral square with Lucide `bot`;
+  * squads: the avatar or Lucide `users` on the brand fill; the system: an outlined
+    square with Lucide `settings` (never an avatar).
+
+  Disabled / archived identities are desaturated. The avatar `<img data-avatar>` sits on
+  top of the default mark; `app.js` hides it when it fails to load. Decorative unless
+  `label` is given.
+  """
+  attr :actor, :map, required: true
+  attr :size, :atom, default: :sm, values: [:xs, :sm, :md, :lg, :xl]
+  attr :label, :string, default: nil
   attr :class, :any, default: nil
 
-  def avatar(assigns) do
+  def actor_mark(assigns) do
+    actor = assigns.actor
+    kind = actor |> Map.get(:kind, :human) |> to_kind()
+    cli = if kind == :agent and Map.get(actor, :managed?) != false, do: cli_icon(actor)
+    src = if kind != :system, do: Map.get(actor, :avatar_url)
+
+    assigns =
+      assign(assigns,
+        kind: kind,
+        cli: cli,
+        src: src,
+        inactive?: Map.get(actor, :state) in [:disabled, :archived, "disabled", "archived"],
+        name: Map.get(actor, :name) || ""
+      )
+
     ~H"""
     <span
-      aria-hidden="true"
       class={[
-        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full",
-        "bg-selected font-medium text-fg",
-        avatar_size(@size),
+        "relative inline-flex shrink-0 overflow-hidden",
+        Brand.size_class(@size),
+        if(@kind == :human, do: "rounded-full", else: "rounded-[25%]"),
+        @inactive? && "opacity-70 grayscale",
         @class
       ]}
+      data-actor-mark={@kind}
+      role={@label && "img"}
+      aria-label={@label}
+      aria-hidden={if(@label, do: nil, else: "true")}
     >
-      <img :if={@src} src={@src} alt="" class="size-full object-cover" />
-      <span :if={!@src}>{initial(@name)}</span>
+      <span
+        :if={@kind == :human}
+        class={["inline-flex size-full items-center justify-center", tint(@name)]}
+        data-tint={tint_index(@name)}
+      >
+        <svg viewBox="0 0 100 100" class="size-full" aria-hidden="true">
+          <text
+            x="50"
+            y="50"
+            text-anchor="middle"
+            dominant-baseline="central"
+            font-size="45"
+            font-weight="500"
+            fill="currentColor"
+            phx-no-format
+          >{initial(@name)}</text>
+        </svg>
+      </span>
+      <Brand.brand_icon
+        :if={@kind == :agent}
+        icon={@cli}
+        fallback={:bot}
+        size={@size}
+      />
+      <span
+        :if={@kind == :squad}
+        class="inline-flex size-full items-center justify-center bg-id-squad text-id-squad-ink"
+      >
+        <.icon name="lucide-users" class="size-[60%]" />
+      </span>
+      <span
+        :if={@kind == :system}
+        class="inline-flex size-full items-center justify-center rounded-[25%] border border-border-strong bg-surface text-fg-muted"
+      >
+        <.icon name="lucide-settings" class="size-[60%]" />
+      </span>
+      <img
+        :if={@src}
+        data-avatar
+        src={@src}
+        alt=""
+        class="absolute inset-0 size-full object-cover"
+        draggable="false"
+      />
     </span>
     """
   end
 
-  defp avatar_size(:xs), do: "size-4 text-micro"
-  defp avatar_size(:sm), do: "size-5 text-micro"
-  defp avatar_size(:md), do: "size-7 text-label"
+  defp cli_icon(actor) do
+    icon = Brands.cli_icon(Map.get(actor, :provider))
+    if icon && Brand.vendored?(icon), do: icon
+  end
+
+  @tints {"bg-id-tint-1 text-id-tint-1-ink", "bg-id-tint-2 text-id-tint-2-ink",
+          "bg-id-tint-3 text-id-tint-3-ink", "bg-id-tint-4 text-id-tint-4-ink",
+          "bg-id-tint-5 text-id-tint-5-ink", "bg-id-tint-6 text-id-tint-6-ink",
+          "bg-id-tint-7 text-id-tint-7-ink", "bg-id-tint-8 text-id-tint-8-ink"}
+
+  @doc "The initial's tint (1..8) of a human named `name`: the same name always gets the same tint."
+  def tint_index(name), do: :erlang.phash2(name, 8) + 1
+
+  defp tint(name), do: elem(@tints, tint_index(name) - 1)
 
   defp initial(name),
     do: name |> String.trim() |> String.first() |> Kernel.||("?") |> String.upcase()
 
   @doc """
-  Icon or avatar plus name for a human, Agent, squad or the system.
+  Identity mark (`actor_mark/1`, `size` passed through) plus name for a human, Agent,
+  squad or the system.
 
   * Agents get a tooltip with the owner and "托管" / "外接" (only when the map has
-    `managed?`; a bare `%{name, kind}` reference claims neither).
+    `managed?`; a bare `%{name, kind}` reference claims neither), and for managed
+    Agents with a known CLI its display name (「所属：alice · 托管 · Claude Code」).
   * `compact` shows only the icon; the name moves to the tooltip and accessible name.
   * `disabled_reason` renders the chip at 60% opacity and exposes the reason
     (tooltip, and as visually hidden text for assistive technology).
@@ -55,6 +146,7 @@ defmodule HelmsmanWeb.Components.Actor do
   attr :id, :string, default: nil
   attr :actor, :map, required: true
   attr :compact, :boolean, default: false
+  attr :size, :atom, default: :sm, values: [:xs, :sm, :md, :lg, :xl]
   attr :presence, :atom, default: nil, values: [nil, :online, :busy, :offline]
   attr :disabled_reason, :string, default: nil
   attr :class, :any, default: nil
@@ -99,10 +191,7 @@ defmodule HelmsmanWeb.Components.Actor do
       tabindex={@tip && "0"}
     >
       <span class="relative inline-flex">
-        <.avatar :if={@kind == :human} name={@name} src={@actor[:avatar_url]} />
-        <.icon :if={@kind == :agent} name="lucide-bot" class="size-4 text-fg-muted" />
-        <.icon :if={@kind == :squad} name="lucide-users" class="size-4 text-fg-muted" />
-        <.icon :if={@kind == :system} name="lucide-settings" class="size-4 text-fg-muted" />
+        <.actor_mark actor={Map.put(@actor, :kind, @kind)} size={@size} />
         <.presence_dot
           :if={@presence}
           status={@presence}
@@ -138,10 +227,13 @@ defmodule HelmsmanWeb.Components.Actor do
         :error -> nil
       end
 
-    case {Map.get(actor, :owner_name), mode} do
-      {nil, mode} -> mode
-      {owner, nil} -> dgettext("ui", "所属：%{owner}", owner: owner)
-      {owner, mode} -> dgettext("ui", "所属：%{owner} · %{mode}", owner: owner, mode: mode)
+    cli = if Map.get(actor, :managed?) == true, do: Brands.cli_name(Map.get(actor, :provider))
+    owner = Map.get(actor, :owner_name)
+    owner = owner && dgettext("ui", "所属：%{owner}", owner: owner)
+
+    case Enum.filter([owner, mode, cli], & &1) do
+      [] -> nil
+      parts -> Enum.join(parts, " · ")
     end
   end
 

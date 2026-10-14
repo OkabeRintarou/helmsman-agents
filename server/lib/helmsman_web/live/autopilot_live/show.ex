@@ -617,7 +617,7 @@ defmodule HelmsmanWeb.AutopilotLive.Show do
         <section id="autopilot-config" aria-label={dgettext("ui", "配置")}>
           <.property_list>
             <.property_row label={dgettext("ui", "目标")} data-config="agent">
-              <.actor_chip actor={target_actor(@a.agent)} />
+              <.actor_chip actor={Appearance.decorate(target_actor(@a.agent), @appearance)} />
             </.property_row>
             <.property_row
               label={dgettext("ui", "模式")}

@@ -130,7 +130,7 @@ defmodule HelmsmanWeb.Layouts do
           class="hidden lg:sidebar-collapsed:inline-flex"
           phx-click={JS.dispatch("hm:toggle-sidebar")}
         />
-        <.user_menu user={@user} />
+        <.user_menu user={@user} avatar_url={@shell[:user_avatar_url]} />
       </aside>
       <div class="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
         <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas lg:rounded-box lg:border lg:border-border">
@@ -284,6 +284,7 @@ defmodule HelmsmanWeb.Layouts do
   end
 
   attr :user, :map, default: nil
+  attr :avatar_url, :string, default: nil
 
   defp user_menu(%{user: nil} = assigns), do: ~H""
 
@@ -352,7 +353,7 @@ defmodule HelmsmanWeb.Layouts do
       popover_class="w-56"
     >
       <:trigger>
-        <.avatar name={@name} src={Map.get(@user, :avatar_url)} />
+        <.actor_mark actor={%{name: @name, kind: :human, avatar_url: @avatar_url}} />
         <span class="truncate text-body text-fg lg:sidebar-collapsed:sr-only">{@name}</span>
       </:trigger>
     </.dropdown>
@@ -414,6 +415,11 @@ defmodule HelmsmanWeb.Layouts do
   attr :flash, :map, required: true
   attr :current_scope, :map, required: true
   attr :active, :atom, required: true, values: [:account, :provider_accounts]
+
+  attr :avatar_url, :string,
+    default: nil,
+    doc: "the user's avatar (`AvatarData.user_avatar_url/1`)"
+
   attr :class, :any, default: nil, doc: "classes of the content below the tabs"
   slot :inner_block, required: true
 
@@ -423,6 +429,7 @@ defmodule HelmsmanWeb.Layouts do
       flash={@flash}
       current_scope={@current_scope}
       title={dgettext("ui", "个人设置")}
+      avatar_url={@avatar_url}
       class={@class}
     >
       <:tab navigate="/users/settings" active={@active == :account}>
@@ -466,6 +473,7 @@ defmodule HelmsmanWeb.Layouts do
   attr :flash, :map, required: true
   attr :current_scope, :map, required: true
   attr :title, :string, required: true
+  attr :avatar_url, :string, default: nil
   attr :class, :any, default: nil
 
   slot :tab, required: true do
@@ -497,7 +505,7 @@ defmodule HelmsmanWeb.Layouts do
             {dgettext("ui", "返回工作区")}
           </.link>
           <span id="hm-personal-user" class="flex min-w-0 items-center gap-2 text-body text-fg">
-            <.avatar name={@name} src={Map.get(@current_scope.user, :avatar_url)} />
+            <.actor_mark actor={%{name: @name, kind: :human, avatar_url: @avatar_url}} />
             <span class="truncate">{@name}</span>
           </span>
         </div>

@@ -93,6 +93,7 @@ defmodule HelmsmanWeb.TaskRuns do
   attr :scope, :map, required: true
   attr :uri, :string, required: true
   attr :managed_assignee?, :boolean, default: false
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance`"
 
   def section(assigns) do
     state = assigns.state
@@ -119,6 +120,7 @@ defmodule HelmsmanWeb.TaskRuns do
           id={"run-card-#{run.id}"}
           run={run}
           scope={@scope}
+          appearance={@appearance}
           log={Url.put_params(@uri, %{run: run.id})}
           can_cancel={cancellable?(@scope, run)}
           can_retry={false}
@@ -131,6 +133,7 @@ defmodule HelmsmanWeb.TaskRuns do
             id={"run-card-#{run.id}"}
             run={run}
             scope={@scope}
+            appearance={@appearance}
             log={Url.put_params(@uri, %{run: run.id})}
             can_retry={retryable?(@scope, run)}
           />
@@ -146,6 +149,7 @@ defmodule HelmsmanWeb.TaskRuns do
             id={dom_id}
             run={run}
             scope={@scope}
+            appearance={@appearance}
             log={Url.put_params(@uri, %{run: run.id})}
             can_retry={retryable?(@scope, run)}
           />

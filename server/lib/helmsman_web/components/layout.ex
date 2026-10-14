@@ -43,6 +43,7 @@ defmodule HelmsmanWeb.Components.Layout do
     attr :navigate, :string
   end
 
+  slot :leading, doc: "shown before the title (e.g. an identity's mark)"
   slot :actions
 
   def page_header(assigns) do
@@ -72,6 +73,7 @@ defmodule HelmsmanWeb.Components.Layout do
           </li>
         </ol>
       </nav>
+      <div :if={@leading != []} class="flex flex-none items-center">{render_slot(@leading)}</div>
       <h1 class="min-w-0 flex-1 truncate text-body font-semibold text-fg">{@title}</h1>
       <div :if={@actions != []} class="flex flex-none items-center gap-2">
         {render_slot(@actions)}

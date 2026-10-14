@@ -248,6 +248,7 @@ defmodule HelmsmanWeb.QueryComponents do
   attr :rows, :any, required: true
   attr :slug, :string, required: true
   attr :agents, :map, default: %{}
+  attr :appearance, :map, default: %{}
   attr :has_more, :boolean, default: false
   attr :class, :any, default: nil
 
@@ -299,7 +300,12 @@ defmodule HelmsmanWeb.QueryComponents do
       </:col>
       <:col :let={task} label={dgettext("ui", "执行方")} class="w-12 sm:w-32">
         <span :if={task.assignee}>
-          <TaskComponents.actor_ref actor={task.assignee} agents={@agents} compact />
+          <TaskComponents.actor_ref
+            actor={task.assignee}
+            agents={@agents}
+            appearance={@appearance}
+            compact
+          />
         </span>
       </:col>
       <:col :let={task} label={dgettext("ui", "更新")} secondary class="w-24">

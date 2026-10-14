@@ -8,7 +8,7 @@ defmodule HelmsmanWeb.Dev.UiLiveTest do
     html = html_response(conn, 200)
 
     for section <-
-          ~w(buttons forms overlays menus tabs status identity text markdown layout table icons tokens contrast) do
+          ~w(buttons forms overlays menus tabs status identity brands text markdown layout table icons tokens contrast) do
       assert html =~ ~s(id="section-#{section}"), "missing section #{section}"
     end
   end
@@ -46,5 +46,27 @@ defmodule HelmsmanWeb.Dev.UiLiveTest do
     end
 
     assert has_element?(view, "#section-markdown #demo-editor[data-hm-editor]")
+  end
+
+  test "identity marks and brand icons in both themes (add-actor-avatars 2.4)", %{conn: conn} do
+    {:ok, view, _html} = live(conn, "/dev/ui")
+
+    for theme <- ~w(helmsman-light helmsman-dark) do
+      for kind <- ~w(human agent squad system) do
+        assert has_element?(
+                 view,
+                 "#marks-#{theme}[data-theme=#{theme}] [data-actor-mark=#{kind}]"
+               )
+      end
+
+      assert has_element?(view, "#marks-#{theme} img[data-avatar]")
+      assert has_element?(view, "#marks-#{theme} [data-brand=githubcopilot]")
+      assert has_element?(view, "#brands-#{theme} [data-brand=deepseek] img")
+      assert has_element?(view, "#brands-#{theme} [data-brand=openai] svg")
+      assert has_element?(view, "#brands-#{theme} [data-brand=none] .lucide-cpu")
+      assert has_element?(view, "#brands-#{theme} [data-model-vendor=zai]")
+    end
+
+    assert has_element?(view, "#demo-avatar-menu-trigger[aria-label='更换头像']")
   end
 end

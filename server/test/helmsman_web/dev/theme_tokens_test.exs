@@ -70,8 +70,30 @@ defmodule HelmsmanWeb.Dev.ThemeTokensTest do
 
       test "every check passes its threshold" do
         checks = ThemeTokens.checks(@theme)
-        assert length(checks) == 8 + 30 + 3 + 4 + 4 + 24
+        assert length(checks) == 8 + 30 + 3 + 4 + 4 + 24 + 12
         assert Enum.reject(checks, & &1.pass?) == []
+      end
+
+      test "identity marks and brand plate (add-actor-avatars D9)" do
+        checks = @theme |> ThemeTokens.checks() |> Enum.filter(&(&1.group == :identity))
+        inks = Enum.filter(checks, &(&1.threshold == 4.5))
+
+        assert Enum.map(inks, & &1.bg) ==
+                 ["id-plate", "id-squad", "id-neutral"] ++ for(n <- 1..8, do: "id-tint-#{n}")
+
+        assert Enum.all?(inks, &(&1.ratio >= 4.5))
+
+        [edge] = Enum.filter(checks, &(&1.threshold == 3.0))
+        assert edge.bg == "surface"
+        assert edge.ratio >= 3.0
+
+        assert edge.fg ==
+                 if(@theme == "helmsman-dark", do: "id-plate", else: "id-plate-border")
+      end
+
+      test "the brand plate is light in both themes" do
+        {l, _c, _h, _a} = ThemeTokens.tokens(@theme)["id-plate"]
+        assert l >= 0.9
       end
 
       for {graphic, {graphic_ratio, text_ratio}} <- @semantic[theme] do

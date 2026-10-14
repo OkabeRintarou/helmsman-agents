@@ -164,6 +164,9 @@ defmodule HelmsmanWeb.AutopilotLive.Index do
   def handle_info({:autopilot_run, id, _record_id}, socket),
     do: {:noreply, reload_row(socket, id)}
 
+  # The shell reloaded `@appearance`: the streamed rows show the targets' marks.
+  def handle_info({:avatars_changed}, socket), do: {:noreply, load(socket)}
+
   ## Helpers
 
   defp parse_id(id) do
@@ -291,7 +294,9 @@ defmodule HelmsmanWeb.AutopilotLive.Index do
             </div>
           </:col>
           <:col :let={a} label={dgettext("ui", "目标")}>
-            <span data-target><.actor_chip actor={target_actor(a.agent)} /></span>
+            <span data-target>
+              <.actor_chip actor={Appearance.decorate(target_actor(a.agent), @appearance)} />
+            </span>
           </:col>
           <:col :let={a} label={dgettext("ui", "触发方式")} class="w-[22%]">
             <span class="flex min-w-0 items-center gap-1.5" data-trigger>

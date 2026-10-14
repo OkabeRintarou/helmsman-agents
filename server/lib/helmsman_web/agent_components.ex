@@ -10,6 +10,7 @@ defmodule HelmsmanWeb.AgentComponents do
   import HelmsmanWeb.CoreComponents, only: [icon: 1]
   import HelmsmanWeb.Components.Actor, only: [presence_dot: 1]
   import HelmsmanWeb.Components.Status, only: [badge: 1]
+  import HelmsmanWeb.Components.Brand, only: [brand_icon: 1]
 
   @providers ~w(claude codex copilot cursor)
 
@@ -91,14 +92,14 @@ defmodule HelmsmanWeb.AgentComponents do
   defp tone_class(status) when status in [:idle, :online], do: "text-success-fg"
   defp tone_class(_), do: "text-fg-muted"
 
-  @doc "CLI icon and name."
+  @doc "CLI brand icon (`HelmsmanWeb.Brands` CLI table, neutral bot when unknown) and name."
   attr :provider, :string, required: true
   attr :class, :any, default: nil
 
   def provider(assigns) do
     ~H"""
     <span class={["inline-flex items-center gap-1.5", @class]} data-provider={@provider}>
-      <.icon name="lucide-square-terminal" class="size-4 text-fg-muted" />
+      <.brand_icon icon={HelmsmanWeb.Brands.cli_icon(@provider)} fallback={:bot} size={:xs} />
       <span class="truncate">{provider_label(@provider)}</span>
     </span>
     """

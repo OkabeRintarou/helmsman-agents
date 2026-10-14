@@ -48,6 +48,28 @@ defmodule HelmsmanWeb.SquadComponents do
 
   def config_line(_agent), do: nil
 
+  @doc """
+  The config of a squad member Agent: CLI, model (`model_label/1`) and effort, as
+  `config_line/1` says; nothing for an Agent without CLI.
+  """
+  attr :agent, :map, required: true
+  attr :rest, :global
+
+  def member_config(%{agent: %{provider: provider}} = assigns) when is_binary(provider) do
+    ~H"""
+    <span class="inline-flex min-w-0 items-center gap-1.5 text-caption text-fg-muted" {@rest}>
+      <span>{provider_label(@agent.provider)}</span>
+      <span aria-hidden="true">·</span>
+      <.model_label :if={@agent[:model]} model={@agent.model} />
+      <span :if={!@agent[:model]}>{dgettext("ui", "CLI 缺省模型")}</span>
+      <span aria-hidden="true">·</span>
+      <span>{@agent[:effort] || dgettext("ui", "缺省推理强度")}</span>
+    </span>
+    """
+  end
+
+  def member_config(assigns), do: ~H""
+
   @doc "「能触发这个小队的成员 N / M」 with the restricted members and why it matters."
   attr :id, :string, required: true
   attr :summary, :map, default: nil
@@ -85,6 +107,7 @@ defmodule HelmsmanWeb.SquadComponents do
   @doc "The first members as icons plus「n 个成员」."
   attr :members, :list, required: true
   attr :max, :integer, default: 5
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance`"
 
   def member_stack(assigns) do
     ~H"""
@@ -92,7 +115,7 @@ defmodule HelmsmanWeb.SquadComponents do
       <span class="inline-flex -space-x-1">
         <.actor_chip
           :for={m <- Enum.take(@members, @max)}
-          actor={%{name: m.name, kind: m.kind}}
+          actor={Appearance.decorate(%{name: m.name, kind: m.kind}, @appearance)}
           compact
         />
       </span>
@@ -107,6 +130,7 @@ defmodule HelmsmanWeb.SquadComponents do
   attr :slug, :string, required: true
   attr :name, :string, required: true
   attr :class, :any, default: nil
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance`"
 
   def squad_link(assigns) do
     ~H"""
@@ -115,7 +139,7 @@ defmodule HelmsmanWeb.SquadComponents do
       class={["min-w-0", @class]}
       data-squad-link
     >
-      <.actor_chip actor={%{name: @name, kind: :squad}} />
+      <.actor_chip actor={Appearance.decorate(%{name: @name, kind: :squad}, @appearance)} />
     </.link>
     """
   end

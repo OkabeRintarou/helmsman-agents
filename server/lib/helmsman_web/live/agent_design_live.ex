@@ -856,11 +856,12 @@ defmodule HelmsmanWeb.AgentDesignLive do
     end
   end
 
-  defp helper_items(helpers, scope, current) do
+  defp helper_items(helpers, scope, current, appearance) do
     for h <- helpers, h.name != current do
       item = %{
         id: "design-helper-#{h.name |> String.replace(~r/[^A-Za-z0-9_-]/, "-")}",
         label: h.name,
+        actor: helper_actor(h, appearance),
         description: "#{provider_label(h.provider)} · #{owner_name(h, scope)}",
         on_select: "change_helper",
         value: %{name: h.name}
@@ -966,8 +967,9 @@ defmodule HelmsmanWeb.AgentDesignLive do
             errors={@message_errors}
             warning={@send_warning}
             input_reason={input_reason(assigns)}
-            helper_items={helper_items(@helpers, @current_scope, @design.helper.name)}
+            helper_items={helper_items(@helpers, @current_scope, @design.helper.name, @appearance)}
             scope={@current_scope}
+            appearance={@appearance}
           />
           <.draft_column
             class={@tab != :draft && "max-lg:hidden"}
@@ -980,6 +982,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
             confirm_reason={confirm_reason(assigns)}
             highlight={@highlight}
             scope={@current_scope}
+            appearance={@appearance}
           />
         </div>
       </div>
@@ -999,6 +1002,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
         :if={@design}
         form={@squad_form}
         scope={@current_scope}
+        appearance={@appearance}
         on_cancel={JS.push("close_squad_panel")}
         locked={
           @squad_form && @design.current_run &&
@@ -1033,6 +1037,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
             agents={@confirming.agents}
             squad={@confirming.squad || nil}
             summary={@confirming.summary}
+            appearance={@appearance}
           />
           <p :if={@confirming.squad} class="text-body text-fg-muted" data-squad-note>
             {dgettext("ui", "小队属于工作区，创建后可以在小队页修改成员与说明。")}
@@ -1311,6 +1316,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
   attr :input_reason, :string, default: nil
   attr :helper_items, :list, required: true
   attr :scope, :map, required: true
+  attr :appearance, :map, default: %{}
 
   defp chat_column(assigns) do
     helper = assigns.design.helper
@@ -1336,7 +1342,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
           data-helper={@helper.name}
         >
           <span class="text-fg-muted">{dgettext("ui", "起草：")}</span>
-          <.actor_chip actor={%{name: @helper.name, kind: :agent}} />
+          <.actor_chip actor={helper_actor(@helper, @appearance)} />
           <span class="text-caption text-fg-muted">
             {provider_label(@helper.provider)} · {owner_name(@helper, @scope)}
           </span>
@@ -1384,10 +1390,16 @@ defmodule HelmsmanWeb.AgentDesignLive do
           list_class="flex flex-col gap-3"
         >
           <li :for={{dom_id, m} <- @messages} id={dom_id} data-seq={m.seq}>
-            <.message message={m} helper={@helper} scope={@scope} />
+            <.message message={m} helper={@helper} scope={@scope} appearance={@appearance} />
           </li>
           <:tail>
-            <AgentDesignTurn.turn :if={@turn} turn={@turn} helper={@helper.name} scope={@scope} />
+            <AgentDesignTurn.turn
+              :if={@turn}
+              turn={@turn}
+              helper={@helper.name}
+              scope={@scope}
+              actor={helper_actor(@helper, @appearance)}
+            />
           </:tail>
         </RunLog.follow_list>
       </div>
@@ -1500,6 +1512,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
   attr :locked, :string, default: nil
   attr :confirm_reason, :string, default: nil
   attr :highlight, :map, required: true
+  attr :appearance, :map, default: %{}
   attr :scope, :map, required: true
 
   defp draft_column(assigns) do
@@ -1575,6 +1588,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
             errors={@squad_invalid}
             locked={@locked}
             scope={@scope}
+            appearance={@appearance}
           />
 
           <div :if={@list == []} id="design-draft-empty">

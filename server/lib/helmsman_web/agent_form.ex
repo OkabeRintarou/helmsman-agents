@@ -904,6 +904,13 @@ defmodule HelmsmanWeb.AgentForm do
               placeholder={@p["provider_account_id"] not in ["", nil] && dgettext("ui", "账号的缺省模型")}
               errors={Map.get(@e, :model, [])}
             />
+            <.model_label
+              :if={@p["model"] not in ["", nil]}
+              id="agent-model-preview"
+              model={@p["model"]}
+              account_icon={HelmsmanWeb.ProviderAccountComponents.account_icon(@account)}
+              class="text-caption text-fg-muted"
+            />
             <p
               :if={@p["provider_account_id"] not in ["", nil]}
               id="agent-model-account-hint"

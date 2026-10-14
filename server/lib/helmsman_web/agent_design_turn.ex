@@ -146,11 +146,12 @@ defmodule HelmsmanWeb.AgentDesignTurn do
   attr :turn, :map, required: true
   attr :helper, :string, required: true
   attr :scope, :map, required: true
+  attr :actor, :map, default: nil, doc: "the helper's decorated actor map (its mark)"
 
   def turn(assigns) do
     ~H"""
     <div id="design-turn" class="mt-3 flex items-start gap-2" data-status={@turn.status}>
-      <.actor_chip actor={%{name: @helper, kind: :agent}} compact />
+      <.actor_chip actor={@actor || %{name: @helper, kind: :agent}} compact />
       <div class="flex min-w-0 flex-1 flex-col gap-1.5 rounded-box border border-dashed border-border bg-surface px-3 py-2">
         <div class="flex flex-wrap items-center gap-2">
           <span id="design-turn-phase" class="text-label font-medium text-fg">

@@ -31,6 +31,7 @@ defmodule HelmsmanWeb.ProviderAccountFormTest do
                "cli" => "claude",
                "base_url" => "https://api.z.ai/api/anthropic",
                "models" => %{"default" => "glm-5.3", "haiku" => "glm-4.7-air"},
+               "icon" => nil,
                "api_key" => "sk-new-1"
              }
     end

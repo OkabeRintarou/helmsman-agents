@@ -506,6 +506,73 @@ defmodule HelmsmanWeb.Dev.UiLive do
             <.presence_dot :for={s <- [:online, :busy, :offline]} status={s} />
             <.working_chip id="demo-working" agents={["keel/dev", "keel/reviewer"]} />
           </div>
+          <div class="grid gap-3 lg:grid-cols-2">
+            <div
+              :for={theme <- ~w(helmsman-light helmsman-dark)}
+              id={"marks-#{theme}"}
+              data-theme={theme}
+              class="flex flex-col gap-3 rounded-box border border-border bg-surface p-3 text-fg"
+            >
+              <p class="text-label text-fg-muted">{theme}</p>
+              <div :for={size <- ~w(xs sm md lg xl)a} class="flex flex-wrap items-center gap-2">
+                <.actor_mark :for={actor <- demo_marks()} actor={actor} size={size} />
+              </div>
+              <div class="flex flex-wrap items-center gap-3">
+                <.actor_chip :for={actor <- demo_marks()} actor={actor} />
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-4">
+            <.live_component
+              module={HelmsmanWeb.AvatarEditor}
+              id="demo-avatar"
+              scope={@current_scope}
+              target={:me}
+              rights={:set}
+              size={:xl}
+              actor={%{name: "alice", kind: :human}}
+            />
+            <.live_component
+              module={HelmsmanWeb.AvatarEditor}
+              id="demo-agent-avatar"
+              scope={@current_scope}
+              target={{:actor, "keel/dev"}}
+              rights={:set}
+              size={:lg}
+              actor={%{name: "keel/dev", kind: :agent, provider: "claude", managed?: true}}
+            />
+          </div>
+        </.section>
+
+        <.section id="brands" title={dgettext("ui", "品牌图标")}>
+          <div class="grid gap-3 lg:grid-cols-2">
+            <div
+              :for={theme <- ~w(helmsman-light helmsman-dark)}
+              id={"brands-#{theme}"}
+              data-theme={theme}
+              class="flex flex-col gap-3 rounded-box border border-border bg-surface p-3 text-fg"
+            >
+              <p class="text-label text-fg-muted">{theme}</p>
+              <div :for={{group, list} <- demo_brands()} class="flex flex-col gap-1.5">
+                <p class="text-caption text-fg-muted">{group}</p>
+                <div class="flex flex-wrap gap-2">
+                  <span
+                    :for={{icon, name} <- list}
+                    class="inline-flex items-center gap-1 text-caption"
+                  >
+                    <.brand_icon icon={icon} label={name} />{name}
+                  </span>
+                  <span class="inline-flex items-center gap-1 text-caption">
+                    <.brand_icon icon="foo" />{dgettext("ui", "未知")}
+                  </span>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-x-4 gap-y-2 text-body">
+                <.model_label :for={model <- demo_models()} model={model} />
+                <.model_label model="glm-5.3" account_icon="zai" />
+              </div>
+            </div>
+          </div>
         </.section>
 
         <.section id="text" title={dgettext("ui", "文本")}>
@@ -728,6 +795,67 @@ defmodule HelmsmanWeb.Dev.UiLive do
     </Layouts.app>
     """
   end
+
+  # Every identity mark variant (add-actor-avatars D2), one demo avatar included.
+  defp demo_marks do
+    [
+      %{name: "alice", kind: :human},
+      %{name: "bob", kind: :human, avatar_url: demo_avatar()},
+      %{name: "robert", kind: :human, unclaimed: true},
+      %{name: "keel/dev", kind: :agent, provider: "claude", managed?: true, owner_name: "alice"},
+      %{name: "keel/review", kind: :agent, provider: "codex", managed?: true},
+      %{name: "keel/copilot", kind: :agent, provider: "copilot", managed?: true},
+      %{name: "keel/cursor", kind: :agent, provider: "cursor", managed?: true},
+      %{name: "keel/ext", kind: :agent, managed?: false},
+      %{name: "keel/pic", kind: :agent, provider: "claude", avatar_url: demo_avatar()},
+      %{name: "keel/old", kind: :agent, provider: "claude", state: :disabled},
+      %{name: "keel/gone", kind: :agent, provider: "codex", avatar_url: "/dev/missing.png"},
+      %{name: "backend-team", kind: :squad},
+      %{name: "pic-team", kind: :squad, avatar_url: demo_avatar()},
+      %{name: "helmsman", kind: :system}
+    ]
+  end
+
+  defp demo_brands do
+    [
+      {"CLI", Enum.map(HelmsmanWeb.Brands.clis(), fn {_key, icon, name} -> {icon, name} end)},
+      {dgettext("ui", "厂商"), HelmsmanWeb.Brands.vendors()},
+      {dgettext("ui", "平台"), HelmsmanWeb.Brands.platforms()}
+    ]
+  end
+
+  defp demo_models,
+    do: ~w(claude-sonnet-4-5 gpt-5.1-codex o3 glm-5.3 qwen3-coder-plus MiniMax-M2 kimi-k2
+         deepseek-v3.2 gemini-2.5-pro meta-llama/llama-4-maverick x-ai/foo-1 my-finetune-7b)
+
+  # A generated 48×48 gradient PNG (a stand-in avatar without any asset).
+  @demo_avatar (fn ->
+                  size = 48
+
+                  rows =
+                    for y <- 0..(size - 1), into: <<>> do
+                      pixels =
+                        for x <- 0..(size - 1),
+                            into: <<>>,
+                            do: <<div(x * 255, size), div(y * 255, size), 160>>
+
+                      <<0>> <> pixels
+                    end
+
+                  chunk = fn type, data ->
+                    <<byte_size(data)::32>> <>
+                      type <> data <> <<:erlang.crc32(type <> data)::32>>
+                  end
+
+                  png =
+                    <<137, 80, 78, 71, 13, 10, 26, 10>> <>
+                      chunk.("IHDR", <<size::32, size::32, 8, 2, 0, 0, 0>>) <>
+                      chunk.("IDAT", :zlib.compress(rows)) <> chunk.("IEND", "")
+
+                  "data:image/png;base64," <> Base.encode64(png)
+                end).()
+
+  defp demo_avatar, do: @demo_avatar
 
   attr :id, :string, required: true
   attr :title, :string, required: true

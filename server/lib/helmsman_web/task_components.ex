@@ -46,11 +46,13 @@ defmodule HelmsmanWeb.TaskComponents do
   @doc """
   An actor reference of a task summary (`%{name, kind}`) as an `actor_chip`. Agents
   take `managed?` / `owner_name` from `agents` (`HelmsmanWeb.TaskData.agent_info/1`);
-  without an entry the chip claims neither 托管 nor 外接.
+  without an entry the chip claims neither 托管 nor 外接. `appearance` (the shell's
+  `@appearance`) adds the CLI and avatar (`HelmsmanWeb.Appearance.decorate/2`).
   """
   attr :id, :string, default: nil
   attr :actor, :map, default: nil
   attr :agents, :map, default: %{}
+  attr :appearance, :map, default: %{}
   attr :compact, :boolean, default: false
   attr :class, :any, default: nil
   attr :slug, :string, default: nil, doc: "workspace slug: a squad links to its page"
@@ -69,7 +71,7 @@ defmodule HelmsmanWeb.TaskComponents do
     <.link navigate={@path} class="min-w-0" data-squad-link>
       <.actor_chip
         id={@id}
-        actor={chip_actor(@actor, @agents)}
+        actor={chip_actor(@actor, @agents, @appearance)}
         compact={@compact}
         class={@class}
       />
@@ -81,19 +83,22 @@ defmodule HelmsmanWeb.TaskComponents do
     ~H"""
     <.actor_chip
       id={@id}
-      actor={chip_actor(@actor, @agents)}
+      actor={chip_actor(@actor, @agents, @appearance)}
       compact={@compact}
       class={@class}
     />
     """
   end
 
-  defp chip_actor(%{name: name, kind: kind} = actor, agents)
+  defp chip_actor(actor, agents, appearance),
+    do: actor |> chip_fields(agents) |> Appearance.decorate(appearance)
+
+  defp chip_fields(%{name: name, kind: kind} = actor, agents)
        when kind in ["agent", :agent, "squad", :squad],
        do: Map.merge(Map.take(actor, [:name, :kind, :state]), Map.get(agents, name, %{}))
 
   # Unclaimed humans (imported identities) keep the flag for the chip's 未认领 mark.
-  defp chip_actor(actor, _agents),
+  defp chip_fields(actor, _agents),
     do:
       actor
       |> Map.take([:name, :kind, :state])
@@ -110,6 +115,7 @@ defmodule HelmsmanWeb.TaskComponents do
   attr :entry, :map, required: true
   attr :now, DateTime, default: nil
   attr :agents, :map, default: %{}, doc: "see `actor_ref/1`"
+  attr :appearance, :map, default: %{}, doc: "see `actor_ref/1`"
 
   def history_entry(assigns) do
     entry = assigns.entry
@@ -129,7 +135,7 @@ defmodule HelmsmanWeb.TaskComponents do
     ~H"""
     <li id={@id} class="flex flex-col gap-1.5 py-2">
       <div class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-body">
-        <.actor_ref actor={@entry.actor} agents={@agents} />
+        <.actor_ref actor={@entry.actor} agents={@agents} appearance={@appearance} />
         <span :if={is_nil(@entry.from)} class="text-fg-muted">{dgettext("ui", "创建了任务")}</span>
         <span :if={@reverified?} data-reverified class="inline-flex items-center gap-1 text-fg-muted">
           <.status_icon status="verified" />{dgettext("ui", "重新验收")}

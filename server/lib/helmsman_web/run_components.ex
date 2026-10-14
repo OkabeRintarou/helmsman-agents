@@ -386,6 +386,7 @@ defmodule HelmsmanWeb.RunComponents do
   attr :can_cancel, :boolean, default: false
   attr :can_retry, :boolean, default: false
   attr :now, DateTime, default: nil
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance` (the Agent's mark)"
 
   def run_card(assigns) do
     run = assigns.run
@@ -414,10 +415,11 @@ defmodule HelmsmanWeb.RunComponents do
         <.run_status_badge status={@run.status} />
         <.link
           navigate={agent_path(@scope, @run.agent)}
-          class="truncate text-body font-medium text-fg hover:underline"
+          class="flex min-w-0 items-center gap-1.5 text-body font-medium text-fg hover:underline"
           data-run-agent
         >
-          {@run.agent}
+          <.actor_mark actor={Appearance.decorate(%{name: @run.agent, kind: :agent}, @appearance)} />
+          <span class="truncate">{@run.agent}</span>
         </.link>
         <.link
           :if={@run[:squad]}

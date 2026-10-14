@@ -154,6 +154,9 @@ defmodule HelmsmanWeb.AgentLive.Index do
   def handle_info(%Phoenix.Socket.Broadcast{event: "presence_diff"}, socket),
     do: {:noreply, socket |> load_online() |> render_rows()}
 
+  # The shell reloaded `@appearance`; the streamed rows are rendered again.
+  def handle_info({:avatars_changed}, socket), do: {:noreply, render_rows(socket)}
+
   def handle_info(:reload, socket), do: {:noreply, socket |> Throttle.done() |> load()}
   def handle_info(_message, socket), do: {:noreply, socket}
 
@@ -163,8 +166,12 @@ defmodule HelmsmanWeb.AgentLive.Index do
   defp kind_label("managed"), do: dgettext("ui", "托管")
   defp kind_label(_), do: dgettext("ui", "外接")
 
-  defp chip_actor(a),
-    do: %{name: a.name, kind: :agent, managed?: a.kind == "managed", owner_name: a.owner.name}
+  defp chip_actor(a, appearance),
+    do:
+      Appearance.decorate(
+        %{name: a.name, kind: :agent, managed?: a.kind == "managed", owner_name: a.owner.name},
+        appearance
+      )
 
   @impl true
   def render(assigns) do
@@ -278,7 +285,7 @@ defmodule HelmsmanWeb.AgentLive.Index do
         >
           <:col :let={a} label="Agent" class="w-[24%]">
             <.link navigate={Url.agent_path(@slug, a.name)} class="min-w-0" data-agent-link>
-              <.actor_chip actor={chip_actor(a)} presence={presence(a.status)} />
+              <.actor_chip actor={chip_actor(a, @appearance)} presence={presence(a.status)} />
             </.link>
           </:col>
           <:col :let={a} label={dgettext("ui", "状态")}>

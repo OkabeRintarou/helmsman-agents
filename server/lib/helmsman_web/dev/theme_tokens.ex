@@ -14,7 +14,7 @@ defmodule HelmsmanWeb.Dev.ThemeTokens do
   @type token :: {float(), float(), float(), float()}
   @type rgb :: {float(), float(), float()}
   @type check :: %{
-          group: :text | :solid_button | :subtle | :unavailable | :graphic,
+          group: :text | :solid_button | :subtle | :unavailable | :graphic | :identity,
           fg: String.t(),
           bg: String.t(),
           ratio: float(),
@@ -31,7 +31,7 @@ defmodule HelmsmanWeb.Dev.ThemeTokens do
           |> Regex.scan(File.read!(@css_path), capture: :all_but_first)
           |> Map.new(fn [name, body] ->
             tokens =
-              ~r/--hm-([a-z-]+):\s*oklch\(([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\);/
+              ~r/--hm-([a-z0-9-]+):\s*oklch\(([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\);/
               |> Regex.scan(body, capture: :all_but_first)
               |> Map.new(fn [token | values] ->
                 [l, c, h, a] =
@@ -48,6 +48,7 @@ defmodule HelmsmanWeb.Dev.ThemeTokens do
   @bg4 ~w(surface canvas hover selected)
   @graphics ~w(brand success warning danger info review)
   @buttons [{"on-brand", "brand"}, {"on-danger", "danger"}, {"on-warning", "warning"}]
+  @id_marks ["id-plate", "id-squad", "id-neutral"] ++ for(n <- 1..8, do: "id-tint-#{n}")
 
   @doc "Theme names defined in `app.css`."
   @spec themes() :: [String.t()]
@@ -105,7 +106,12 @@ defmodule HelmsmanWeb.Dev.ThemeTokens do
     (hi + 0.05) / (lo + 0.05)
   end
 
-  @doc "All contrast checks required by design D3 for `theme`."
+  @doc """
+  All contrast checks required by design D3 for `theme`, plus the identity marks of
+  add-actor-avatars D9 (group `:identity`): each mark's ink over its fill (4.5), and the
+  brand plate against `surface` (3.0) — its fill in the dark theme, its border in the
+  light theme.
+  """
   @spec checks(String.t()) :: [check()]
   def checks(theme) do
     tokens = tokens(theme)
@@ -119,7 +125,9 @@ defmodule HelmsmanWeb.Dev.ThemeTokens do
       {:subtle, 3.0, for({bg, rgb} <- bg4, do: {"fg-subtle", color.("fg-subtle"), bg, rgb})},
       {:unavailable, 3.0,
        for({bg, rgb} <- bg4, do: {"fg 60%", mix(color.("fg"), rgb, 0.6), bg, rgb})},
-      {:graphic, 3.0, for(g <- @graphics, {bg, rgb} <- bg4, do: {g, color.(g), bg, rgb})}
+      {:graphic, 3.0, for(g <- @graphics, {bg, rgb} <- bg4, do: {g, color.(g), bg, rgb})},
+      {:identity, 4.5, for(m <- @id_marks, do: {m <> "-ink", color.(m <> "-ink"), m, color.(m)})},
+      {:identity, 3.0, [plate_edge(theme, color)]}
     ]
     |> Enum.flat_map(fn {group, threshold, pairs} ->
       for {fg, fg_rgb, bg, bg_rgb} <- pairs do
@@ -136,6 +144,12 @@ defmodule HelmsmanWeb.Dev.ThemeTokens do
       end
     end)
   end
+
+  defp plate_edge("helmsman-dark", color),
+    do: {"id-plate", color.("id-plate"), "surface", color.("surface")}
+
+  defp plate_edge(_light, color),
+    do: {"id-plate-border", color.("id-plate-border"), "surface", color.("surface")}
 
   defp text_pairs(color, bg4, badge) do
     plain = for fg <- ~w(fg fg-muted), {bg, rgb} <- bg4, do: {fg, color.(fg), bg, rgb}

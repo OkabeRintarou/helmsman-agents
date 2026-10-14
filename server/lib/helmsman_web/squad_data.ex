@@ -21,7 +21,4 @@ defmodule HelmsmanWeb.SquadData do
       _error -> %{}
     end
   end
-
-  @doc "Subscribes the caller to the workspace's squad notifications."
-  def subscribe(workspace_id), do: Helmsman.Events.subscribe(Squads.topic(workspace_id))
 end

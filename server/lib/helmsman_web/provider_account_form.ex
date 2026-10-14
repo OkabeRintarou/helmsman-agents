@@ -33,7 +33,7 @@ defmodule HelmsmanWeb.ProviderAccountForm do
     ]
 
   alias Helmsman.ProviderAccounts
-  alias HelmsmanWeb.{FormErrors, Url}
+  alias HelmsmanWeb.{Brands, FormErrors, Url}
 
   @config_keys ~w(name cli base_url models headers updated_at)a
 
@@ -47,7 +47,7 @@ defmodule HelmsmanWeb.ProviderAccountForm do
       id: nil,
       base: nil,
       agents: [],
-      params: %{"name" => "", "cli" => "claude", "base_url" => "", "models" => %{}},
+      params: %{"name" => "", "cli" => "claude", "base_url" => "", "models" => %{}, "icon" => ""},
       errors: %{},
       error: nil,
       notice: nil
@@ -67,7 +67,8 @@ defmodule HelmsmanWeb.ProviderAccountForm do
         "name" => view.name,
         "cli" => view.cli,
         "base_url" => view.base_url,
-        "models" => view.models || %{}
+        "models" => view.models || %{},
+        "icon" => Map.get(view, :icon) || ""
       },
       errors: %{},
       error: nil,
@@ -96,14 +97,11 @@ defmodule HelmsmanWeb.ProviderAccountForm do
           {:error, form} -> {:noreply, put(socket, form)}
         end
 
-      "account_form_header_add" ->
-        {:noreply, put(socket, add_row(form))}
+      "account_form_icon" ->
+        {:noreply, put(socket, put_icon(form, params["icon"]))}
 
-      "account_form_header_remove" ->
-        {:noreply, put(socket, remove_row(form, params["row"]))}
-
-      "account_form_header_delete" ->
-        {:noreply, put(socket, toggle_delete(form, params["name"]))}
+      "account_form_header_" <> action ->
+        {:noreply, put(socket, header_event(action, form, params))}
 
       _ ->
         {:noreply, socket}
@@ -112,7 +110,22 @@ defmodule HelmsmanWeb.ProviderAccountForm do
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
+  defp header_event("add", form, _params), do: add_row(form)
+  defp header_event("remove", form, params), do: remove_row(form, params["row"])
+  defp header_event("delete", form, params), do: toggle_delete(form, params["name"])
+  defp header_event(_action, form, _params), do: form
+
   defp put(socket, form), do: Phoenix.Component.assign(socket, :account_form, form)
+
+  # add-actor-avatars D19: "" is 自动 (saved as nil); other values must be a vendor or
+  # platform of `HelmsmanWeb.Brands`.
+  defp put_icon(form, icon),
+    do: %{form | params: Map.put(form.params, "icon", icon_param(icon, ""))}
+
+  defp icon_param(icon, default) when is_binary(icon),
+    do: if(icon == "" or Brands.vendor_icon(icon), do: icon, else: default)
+
+  defp icon_param(_icon, default), do: default
 
   ## Custom headers
 
@@ -246,7 +259,8 @@ defmodule HelmsmanWeb.ProviderAccountForm do
       "name" => string(raw, "name", form.params["name"]),
       "cli" => cli,
       "base_url" => string(raw, "base_url", form.params["base_url"]),
-      "models" => models
+      "models" => models,
+      "icon" => icon_param(raw["icon"], form.params["icon"] || "")
     }
   end
 
@@ -402,7 +416,8 @@ defmodule HelmsmanWeb.ProviderAccountForm do
     attrs = %{
       "name" => form.params["name"],
       "base_url" => form.params["base_url"],
-      "models" => models
+      "models" => models,
+      "icon" => if(form.params["icon"] in [nil, ""], do: nil, else: form.params["icon"])
     }
 
     if form.mode == :new, do: Map.put(attrs, "cli", form.params["cli"]), else: attrs
@@ -463,6 +478,8 @@ defmodule HelmsmanWeb.ProviderAccountForm do
         <.icon name="lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
         {notice_text(@form)}
       </div>
+      <%!-- Outside the form: the filterable menu has its own form (forms cannot nest). --%>
+      <.icon_field :if={@form} form={@form} />
       <.account_form :if={@form} form={@form} />
       <:footer :let={cancel}>
         <span />
@@ -498,6 +515,81 @@ defmodule HelmsmanWeb.ProviderAccountForm do
     do: dgettext("ui", "%{name} 已被删除", name: base.name)
 
   attr :form, :map, required: true
+
+  # 图标 (add-actor-avatars D19): 自动 shows what the base URL and CLI infer, and follows
+  # them as they change; the form's hidden `account[icon]` carries the choice.
+  defp icon_field(assigns) do
+    p = assigns.form.params
+    inferred = Brands.host_icon(p["base_url"], p["cli"])
+    chosen = if p["icon"] in [nil, ""], do: nil, else: p["icon"]
+
+    auto =
+      dgettext("ui", "自动（%{name}）",
+        name: (inferred && Brands.vendor_name(inferred)) || dgettext("ui", "未识别")
+      )
+
+    items =
+      [
+        %{
+          id: "provider-account-icon-auto",
+          label: auto,
+          brand: inferred || :none,
+          checked: chosen == nil,
+          on_select: JS.push("account_form_icon", value: %{icon: ""})
+        }
+      ] ++
+        for {group, list} <- [
+              {dgettext("ui", "厂商"), Brands.vendors()},
+              {dgettext("ui", "平台"), Brands.platforms()}
+            ],
+            {key, name} <- list do
+          %{
+            id: "provider-account-icon-#{key}",
+            label: name,
+            group: group,
+            brand: key,
+            checked: chosen == key,
+            on_select: JS.push("account_form_icon", value: %{icon: key})
+          }
+        end
+
+    shown = chosen || inferred
+
+    assigns =
+      assign(assigns,
+        items: items,
+        shown: shown,
+        text:
+          if(chosen,
+            do: Brands.vendor_name(chosen) || dgettext("ui", "未知图标（%{key}）", key: chosen),
+            else: auto
+          )
+      )
+
+    ~H"""
+    <div class="mb-5 flex flex-col gap-1" id="provider-account-icon-field">
+      <span id="provider-account-icon-label" class="text-label font-medium text-fg">
+        {dgettext("ui", "图标")}
+      </span>
+      <.dropdown
+        id="provider-account-icon"
+        items={@items}
+        label={dgettext("ui", "图标")}
+        trigger_class="h-8 w-full justify-start border border-border-strong bg-surface px-2"
+        popover_class="w-72"
+      >
+        <:trigger>
+          <.brand_icon icon={@shown} size={:xs} />
+          <span class="truncate text-body" data-icon-choice={@form.params["icon"] || ""}>{@text}</span>
+          <.icon name="lucide-chevron-down" class="ml-auto size-4 text-fg-muted" />
+        </:trigger>
+      </.dropdown>
+      <span class="text-caption text-fg-muted">
+        {dgettext("ui", "账号列表、Agent 与运行页显示这个图标；自动时按地址与 CLI 推断")}
+      </span>
+    </div>
+    """
+  end
 
   defp account_form(assigns) do
     p = assigns.form.params
@@ -545,6 +637,8 @@ defmodule HelmsmanWeb.ProviderAccountForm do
         <span class="text-body text-fg" data-cli={@p["cli"]}>{provider_label(@p["cli"])}</span>
         <span class="text-caption text-fg-muted">{dgettext("ui", "创建后不能修改")}</span>
       </div>
+
+      <input type="hidden" name="account[icon]" value={@p["icon"] || ""} />
 
       <.input
         id="provider-account-base-url"

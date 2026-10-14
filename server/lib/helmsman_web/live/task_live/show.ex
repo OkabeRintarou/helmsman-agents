@@ -548,6 +548,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
        |> TaskPullRequest.reload()
        |> refresh_steer()}
 
+  # A renamed squad: the task's references follow it (the shell reloaded @appearance).
+  def handle_info({:squad, _id}, socket), do: {:noreply, refresh(socket)}
+
   def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
     do: {:noreply, assign(socket, :availability, availability(socket.assigns.current_scope))}
 
@@ -982,17 +985,19 @@ defmodule HelmsmanWeb.TaskLive.Show do
     buttons = buttons(assigns)
     {primary, secondary} = Enum.split_with(buttons, & &1.primary?)
     slug = assigns.current_scope.workspace.slug
+    mentionable = Enum.map(assigns.assignable, &Appearance.decorate(&1, assigns.appearance))
 
     assigns =
       assign(assigns,
         slug: slug,
+        mentionable: mentionable,
         primary: primary,
         secondary: secondary,
         working: TaskRuns.working_agents(assigns.task_runs),
         assignees: assignee_options(assigns.assignable, assigns.task.assignee),
         availability: assigns.availability,
         mention_candidates:
-          CollabComponents.mention_candidates(assigns.assignable, assigns.availability),
+          CollabComponents.mention_candidates(mentionable, assigns.availability),
         locks: %{
           {"new", "in_progress"} => CollabComponents.start_lock(assigns.task),
           {"cancelled", "new"} =>
@@ -1073,7 +1078,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
             html={elem(@description_html, 1)}
             scope={@current_scope}
             session={@description_session}
-            candidates={@assignable}
+            candidates={@mentionable}
           />
           <FeedbackComponents.timeline
             feedback={@task.feedback}
@@ -1083,6 +1088,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
             can_feedback?={@can_feedback?}
             fresh_after={@fresh_after}
             agents={@agents}
+            appearance={@appearance}
             uri={@uri}
           />
         </section>
@@ -1130,25 +1136,35 @@ defmodule HelmsmanWeb.TaskLive.Show do
                       @assignees,
                       @task,
                       @availability,
-                      @local_branch.project && @local_branch.project.local_repository
+                      @local_branch.project && @local_branch.project.local_repository,
+                      @appearance
                     )
                   }
                   trigger_class="h-7 px-1.5 -mx-1.5 min-w-0"
                 >
                   <:trigger>
-                    <TaskComponents.actor_ref actor={@task.assignee} agents={@agents} />
+                    <TaskComponents.actor_ref
+                      actor={@task.assignee}
+                      agents={@agents}
+                      appearance={@appearance}
+                    />
                   </:trigger>
                 </.dropdown>
                 <TaskComponents.actor_ref
                   :if={!@can_edit?}
                   actor={@task.assignee}
                   agents={@agents}
+                  appearance={@appearance}
                   slug={@slug}
                 />
                 <.field_error error={@field_errors["assignee"]} />
               </.property_row>
               <.property_row label={dgettext("ui", "提出方")} id="task-creator">
-                <TaskComponents.actor_ref actor={@task.created_by} agents={@agents} />
+                <TaskComponents.actor_ref
+                  actor={@task.created_by}
+                  agents={@agents}
+                  appearance={@appearance}
+                />
               </.property_row>
               <TaskCollab.epic_row collab={@collab} task={@task} slug={@slug} can_edit?={@can_edit?} />
               <.property_row label={dgettext("ui", "提交")} id="task-commits">
@@ -1178,6 +1194,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
             state={@task_runs}
             stream={@streams.task_runs}
             scope={@current_scope}
+            appearance={@appearance}
             uri={@uri}
             managed_assignee?={
               @task.assignee != nil and Map.has_key?(@availability, @task.assignee.name)
@@ -1193,6 +1210,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
             can_edit?={@can_edit?}
             can_create?={@shell[:can_create_task?] == true}
             agents={@agents}
+            appearance={@appearance}
           />
           <TaskCollab.links_section collab={@collab} task={@task} slug={@slug} />
           <section aria-labelledby="task-history-title">
@@ -1205,6 +1223,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
                 id={"history-#{i}"}
                 entry={entry}
                 agents={@agents}
+                appearance={@appearance}
               />
             </ol>
           </section>
@@ -1673,8 +1692,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   # D10: agents whose runtime is on another machine than the project's local repository
   # say so and come after the others (still selectable).
-  defp assignee_items(options, task, availability, local) do
-    [none | items] = assignee_items(options, task, availability)
+  defp assignee_items(options, task, availability, local, appearance) do
+    [none | items] = assignee_items(options, task, availability, appearance)
 
     {other, same} =
       Enum.split_with(items, fn item ->
@@ -1699,14 +1718,10 @@ defmodule HelmsmanWeb.TaskLive.Show do
   defp group_label("agent"), do: "Agent"
   defp group_label("squad"), do: dgettext("ui", "小队")
 
-  defp kind_icon("agent"), do: "lucide-bot"
-  defp kind_icon("squad"), do: "lucide-users"
-  defp kind_icon(_kind), do: "lucide-user"
-
   defp kind_group(kind) when kind in ["agent", "squad"], do: group_label(kind)
   defp kind_group(_kind), do: group_label("human")
 
-  defp assignee_items(options, task, availability) do
+  defp assignee_items(options, task, availability, appearance) do
     current = task.assignee && task.assignee.name
 
     [
@@ -1722,7 +1737,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
           %{
             id: assignee_item_id(actor.name),
             label: actor.name,
-            icon: kind_icon(to_string(actor.kind)),
+            actor: Appearance.decorate(actor, appearance),
             group: kind_group(to_string(actor.kind)),
             checked: current == actor.name,
             on_select: "set_field",

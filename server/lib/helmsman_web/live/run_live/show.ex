@@ -8,7 +8,9 @@ defmodule HelmsmanWeb.RunLive.Show do
 
   import HelmsmanWeb.RunComponents
 
-  alias HelmsmanWeb.{RunActions, RunData, RunLog, Url}
+  import HelmsmanWeb.ProviderAccountComponents, only: [account_summary: 1]
+
+  alias HelmsmanWeb.{RunActions, RunData, RunLog, SquadComponents, Url}
 
   @impl true
   def mount(%{"id" => id}, _session, socket) do
@@ -108,7 +110,7 @@ defmodule HelmsmanWeb.RunLive.Show do
           <RunLog.log log={@run_log} events={@streams.run_events} scope={@current_scope} />
         </section>
         <aside id="run-properties" aria-label={dgettext("ui", "属性")}>
-          <.run_properties run={@run} slug={@slug} />
+          <.run_properties run={@run} slug={@slug} appearance={@appearance} />
         </aside>
       </div>
       <RunActions.dialog stop_run={@stop_run} />
@@ -118,6 +120,7 @@ defmodule HelmsmanWeb.RunLive.Show do
 
   attr :run, :map, required: true
   attr :slug, :string, required: true
+  attr :appearance, :map, default: %{}
 
   defp run_properties(assigns) do
     ~H"""
@@ -129,21 +132,24 @@ defmodule HelmsmanWeb.RunLive.Show do
         </span>
       </.property_row>
       <.property_row :if={@run[:squad]} label={dgettext("ui", "小队")} data-squad>
-        <.link navigate={Url.squad_path(@slug, @run.squad.name)} class="text-fg hover:underline">
-          {@run.squad.name}
-        </.link>
+        <SquadComponents.squad_link
+          slug={@slug}
+          name={@run.squad.name}
+          appearance={@appearance}
+        />
       </.property_row>
       <.property_row label="Agent" data-agent>
-        <.link navigate={Url.agent_path(@slug, @run.agent)} class="text-fg hover:underline">
-          {@run.agent}
+        <.link navigate={Url.agent_path(@slug, @run.agent)} class="min-w-0 hover:underline">
+          <.actor_chip actor={Appearance.decorate(%{name: @run.agent, kind: :agent}, @appearance)} />
         </.link>
       </.property_row>
       <.property_row
-        :if={@run[:provider_account_name]}
+        :if={@run.provider_account}
         label={dgettext("ui", "供应商账号")}
-        value={@run.provider_account_name}
         data-provider-account
-      />
+      >
+        <.account_summary account={@run.provider_account} />
+      </.property_row>
       <.property_row label="lane" value={@run.lane} />
       <.property_row label={dgettext("ui", "状态")} data-status>
         <.run_status_badge status={@run.status} />

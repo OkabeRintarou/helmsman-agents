@@ -14,10 +14,17 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
   import HelmsmanWeb.AgentComponents, only: [provider_label: 1]
 
   import HelmsmanWeb.ProviderAccountComponents,
-    only: [accounts_path: 0, edit_path: 1, mapping_lines: 1, split_url: 1]
+    only: [
+      accounts_path: 0,
+      account_icon: 1,
+      account_icon_mark: 1,
+      edit_path: 1,
+      mapping_lines: 1,
+      split_url: 1
+    ]
 
   alias Helmsman.{Events, ProviderAccounts}
-  alias HelmsmanWeb.{ProviderAccountForm, Throttle, Url}
+  alias HelmsmanWeb.{AvatarData, ProviderAccountForm, Throttle, Url}
 
   @shown_agents 2
 
@@ -36,7 +43,8 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
        account_form: nil,
        form_gen: 0,
        confirm: nil,
-       in_use: nil
+       in_use: nil,
+       avatar_url: AvatarData.user_avatar_url(scope.user)
      )
      |> stream_configure(:accounts, dom_id: &"provider-account-#{&1.id}")
      |> stream(:accounts, [])
@@ -256,7 +264,12 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
       )
 
     ~H"""
-    <Layouts.personal flash={@flash} current_scope={@current_scope} active={:provider_accounts}>
+    <Layouts.personal
+      flash={@flash}
+      current_scope={@current_scope}
+      active={:provider_accounts}
+      avatar_url={@avatar_url}
+    >
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
           <h2 class="text-title font-semibold text-fg">{dgettext("ui", "供应商账号")}</h2>
@@ -317,7 +330,10 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
           row_click={&JS.patch(edit_path(&1.id))}
         >
           <:col :let={a} label={dgettext("ui", "名称")} class="w-[13%]">
-            <span class="font-semibold text-fg" data-name>{a.name}</span>
+            <span class="flex min-w-0 items-center gap-2">
+              <.account_icon_mark account={a} />
+              <span class="truncate font-semibold text-fg" data-name>{a.name}</span>
+            </span>
           </:col>
           <:col :let={a} label="CLI" class="w-[13%]">
             <span class="text-fg-muted" data-cli>{provider_label(a.cli)}</span>
@@ -340,7 +356,12 @@ defmodule HelmsmanWeb.UserLive.ProviderAccounts do
               title={Enum.join(mapping_lines(a.models), "\n")}
               data-default-model
             >
-              {default_model(a.models)}<span
+              <.model_label
+                :if={a.models["default"]}
+                model={a.models["default"]}
+                account_icon={account_icon(a)}
+              />
+              <span :if={!a.models["default"]}>{default_model(a.models)}</span><span
                 :if={extra_count(a.models) > 0}
                 class="ml-1 text-fg-muted"
               >+{extra_count(a.models)}</span>

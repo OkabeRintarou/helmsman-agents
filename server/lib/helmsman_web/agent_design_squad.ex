@@ -87,6 +87,7 @@ defmodule HelmsmanWeb.AgentDesignSquad do
   attr :errors, :map, default: nil, doc: "%{field => [message]} of a refused confirmation"
   attr :locked, :string, default: nil, doc: "why the squad cannot be edited now"
   attr :scope, :map, required: true
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance`"
 
   def block(assigns) do
     squad = squad(assigns.design.draft) || %{}
@@ -114,7 +115,7 @@ defmodule HelmsmanWeb.AgentDesignSquad do
       ]}
     >
       <div class="flex min-w-0 flex-wrap items-center gap-2">
-        <.icon name="lucide-users" class="size-4 shrink-0 text-fg-muted" />
+        <.actor_mark actor={Appearance.decorate(%{name: @squad["name"], kind: :squad}, @appearance)} />
         <span
           class={[
             "min-w-0 truncate text-body font-semibold",
@@ -170,7 +171,9 @@ defmodule HelmsmanWeb.AgentDesignSquad do
             {dgettext("ui", "未选")}
           </span>
           <span :if={@squad["leader"] not in [nil, ""]} class="flex min-w-0 items-center gap-1.5">
-            <.actor_chip actor={%{name: @squad["leader"], kind: :agent}} />
+            <.actor_chip actor={
+              Appearance.decorate(%{name: @squad["leader"], kind: :agent}, @appearance)
+            } />
             <.origin new={new?(@keys, @squad["leader"])} />
           </span>
         </.property_row>
@@ -194,7 +197,12 @@ defmodule HelmsmanWeb.AgentDesignSquad do
             class="flex min-w-0 flex-col gap-0.5"
           >
             <span class="flex min-w-0 flex-wrap items-center gap-1.5">
-              <.actor_chip actor={%{name: m["name"], kind: member_kind(m["name"], @keys, @humans)}} />
+              <.actor_chip actor={
+                Appearance.decorate(
+                  %{name: m["name"], kind: member_kind(m["name"], @keys, @humans)},
+                  @appearance
+                )
+              } />
               <span class="text-caption text-fg-muted" data-kind>
                 {kind_label(member_kind(m["name"], @keys, @humans))}
               </span>
@@ -275,6 +283,7 @@ defmodule HelmsmanWeb.AgentDesignSquad do
   attr :squad, :map, required: true
   attr :summary, :map, default: nil
   attr :keys, :any, required: true, doc: "lower-cased names of the draft's new agents"
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance`"
 
   @doc "The squad row in front of the confirmation dialog's list."
   def confirm_row(assigns) do
@@ -287,7 +296,7 @@ defmodule HelmsmanWeb.AgentDesignSquad do
       class="flex flex-col gap-1 rounded-field border border-border px-3 py-2"
     >
       <div class="flex flex-wrap items-center gap-2">
-        <.icon name="lucide-users" class="size-4 text-fg-muted" />
+        <.actor_mark actor={Appearance.decorate(%{name: @squad["name"], kind: :squad}, @appearance)} />
         <span class="font-mono text-body font-semibold text-fg">{@squad["name"]}</span>
         <span class="text-caption text-fg-muted" data-leader={@squad["leader"]}>
           {dgettext("ui", "leader %{name}", name: @squad["leader"])}

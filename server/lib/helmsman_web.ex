@@ -91,6 +91,7 @@ defmodule HelmsmanWeb do
       # Core UI components (daisyUI classes may only appear in these modules)
       import HelmsmanWeb.CoreComponents
       import HelmsmanWeb.Components.Actor
+      import HelmsmanWeb.Components.Brand, only: [brand_icon: 1, model_label: 1]
       import HelmsmanWeb.Components.DataTable
       import HelmsmanWeb.Components.FilterBar
       import HelmsmanWeb.Components.Layout
@@ -101,6 +102,7 @@ defmodule HelmsmanWeb do
       import HelmsmanWeb.Components.Text
 
       # Common modules used in templates
+      alias HelmsmanWeb.Appearance
       alias HelmsmanWeb.Layouts
       alias Phoenix.LiveView.JS
 

@@ -507,6 +507,7 @@ defmodule HelmsmanWeb.SquadForm do
   attr :close_path, :string, default: nil
   attr :on_cancel, JS, default: %JS{}
   attr :locked, :string, default: nil, doc: "why saving a `:draft` form is unavailable now"
+  attr :appearance, :map, default: %{}, doc: "the shell's `@appearance` (member marks)"
 
   def panel(assigns) do
     ~H"""
@@ -550,7 +551,7 @@ defmodule HelmsmanWeb.SquadForm do
         <.icon name="lucide-hourglass" class="mt-0.5 size-4 shrink-0" />
         {@locked}
       </div>
-      <.squad_form :if={@form} form={@form} scope={@scope} />
+      <.squad_form :if={@form} form={@form} scope={@scope} appearance={@appearance} />
       <:footer :let={cancel}>
         <span />
         <div class="flex items-center gap-2">
@@ -582,6 +583,7 @@ defmodule HelmsmanWeb.SquadForm do
 
   attr :form, :map, required: true
   attr :scope, :map, required: true
+  attr :appearance, :map, default: %{}
 
   defp squad_form(assigns) do
     form = assigns.form
@@ -692,7 +694,12 @@ defmodule HelmsmanWeb.SquadForm do
             class="flex flex-col gap-1.5 rounded-field border border-border px-3 py-2"
           >
             <div class="flex items-center gap-2">
-              <.actor_chip actor={%{name: m["name"], kind: member_kind(@form, m["name"])}} />
+              <.actor_chip actor={
+                Appearance.decorate(
+                  %{name: m["name"], kind: member_kind(@form, m["name"])},
+                  @appearance
+                )
+              } />
               <.badge
                 :if={@form.mode == :draft and new?(@form, m["name"])}
                 tone={:brand}

@@ -9,7 +9,9 @@ defmodule HelmsmanWeb.Components.Menu do
       %{label: "删除", danger: true, disabled_reason: "只有管理员可以删除"}
       %{type: :divider}
 
-  Keys: `label` (required), `id`, `icon`, `description`, `shortcut`, `checked`
+  Keys: `label` (required), `id`, `icon` (or `actor`: an identity map shown with
+  `actor_mark/1`, or `brand`: a brand icon name, `:none` for the neutral one),
+  `description`, `shortcut`, `checked`
   (`true`/`false` turns it into a `menuitemradio`; `:client` renders a check that CSS
   shows, for client-side state such as the theme), `group` (heading shown when it
   changes), `danger`, `disabled_reason`, `attrs` (extra HTML attributes), and one
@@ -25,6 +27,7 @@ defmodule HelmsmanWeb.Components.Menu do
 
   import HelmsmanWeb.CoreComponents, only: [icon: 1, kbd: 1]
 
+  alias HelmsmanWeb.Components.{Actor, Brand}
   alias Phoenix.LiveView.JS
 
   @filter_threshold 8
@@ -288,6 +291,12 @@ defmodule HelmsmanWeb.Components.Menu do
   defp item_body(assigns) do
     ~H"""
     <.icon :if={@item[:icon]} name={@item.icon} class="size-4 shrink-0 text-fg-muted" />
+    <Actor.actor_mark :if={@item[:actor]} actor={@item.actor} size={:xs} />
+    <Brand.brand_icon
+      :if={@item[:brand]}
+      icon={if(@item.brand == :none, do: nil, else: @item.brand)}
+      size={:xs}
+    />
     <span class="flex min-w-0 flex-1 flex-col">
       <span class="truncate">{@item.label}</span>
       <span :if={@item[:description]} class="truncate text-caption text-fg-muted">

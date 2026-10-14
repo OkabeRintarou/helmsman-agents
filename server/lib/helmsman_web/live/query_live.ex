@@ -23,7 +23,7 @@ defmodule HelmsmanWeb.QueryLive do
 
   import HelmsmanWeb.QueryComponents
 
-  alias HelmsmanWeb.{FilterForm, QueryData, TaskData, Url}
+  alias HelmsmanWeb.{FilterForm, QueryData, TaskData, Throttle, Url}
 
   @page 50
   @max_results 10_000
@@ -523,7 +523,51 @@ defmodule HelmsmanWeb.QueryLive do
     end
   end
 
+  # The shell reloaded the identity appearance (add-actor-avatars D7); streamed rows are
+  # only rendered when inserted, so the rows shown are read again.
+  def handle_info(message, socket)
+      when message in [{:avatars_changed}, {:agents_changed}, {:members_changed}],
+      do: {:noreply, Throttle.schedule(socket, :reload_rows)}
+
+  def handle_info({:squad, _id}, socket), do: {:noreply, Throttle.schedule(socket, :reload_rows)}
+
+  def handle_info(:reload_rows, socket),
+    do: {:noreply, socket |> Throttle.done(:reload_rows) |> reread_rows()}
+
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp reread_rows(%{assigns: %{result: %{loaded: loaded, bql: bql} = result}} = socket)
+       when loaded > 0 do
+    case read_loaded(socket.assigns.current_scope, bql, loaded, 0, []) do
+      {:ok, tasks, total} ->
+        Enum.reduce(tasks, assign(socket, :result, %{result | total: total}), fn task, socket ->
+          stream_insert(socket, :tasks, task)
+        end)
+
+      {:error, _} ->
+        socket
+    end
+  end
+
+  defp reread_rows(socket), do: socket
+
+  # The rows shown, read again in pages of the query limit (200).
+  defp read_loaded(scope, bql, loaded, offset, acc) do
+    limit = min(loaded - offset, 200)
+
+    case QueryData.query(scope, bql, limit: limit, offset: offset) do
+      {:ok, %{tasks: tasks, total: total}} ->
+        acc = acc ++ tasks
+        offset = offset + length(tasks)
+
+        if offset < loaded and length(tasks) == limit,
+          do: read_loaded(scope, bql, loaded, offset, acc),
+          else: {:ok, acc, total}
+
+      {:error, _} = error ->
+        error
+    end
+  end
 
   ## Rendering
 
@@ -723,6 +767,7 @@ defmodule HelmsmanWeb.QueryLive do
             rows={@streams.tasks}
             slug={@slug}
             agents={@agents}
+            appearance={@appearance}
             has_more={has_more?(@result)}
             class={@result.total == 0 && "hidden"}
           />

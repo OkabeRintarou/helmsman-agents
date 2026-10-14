@@ -5,14 +5,16 @@ defmodule HelmsmanWeb.SquadLive.Show do
   whether the current user can trigger the squad; 编辑 (`?panel=edit`), 停用 / 启用 for
   those who manage it.
 
-  `{:squad, id}` of this squad, and `{:agents_changed}` / `{:runtimes_changed}` from the
-  shell, reload it through `HelmsmanWeb.Throttle`; a rename patches to the new path.
+  `{:squad, id}` of this squad, and `{:agents_changed}` / `{:runtimes_changed}`, all
+  forwarded by the shell (which alone subscribes to the squad topic, add-actor-avatars
+  D7), reload it through `HelmsmanWeb.Throttle`; a rename patches to the new path. The
+  page header holds the squad's avatar (`HelmsmanWeb.AvatarEditor`).
   """
   use HelmsmanWeb, :live_view
 
   import HelmsmanWeb.SquadComponents
 
-  alias HelmsmanWeb.{SquadData, SquadForm, Throttle, Url}
+  alias HelmsmanWeb.{AvatarData, SquadData, SquadForm, Throttle, Url}
   alias HelmsmanWeb.SquadLive.Index
 
   @fold_bytes 2048
@@ -24,8 +26,6 @@ defmodule HelmsmanWeb.SquadLive.Show do
 
     case SquadData.get(scope, name) do
       {:ok, squad} ->
-        if connected?(socket), do: SquadData.subscribe(scope.workspace.id)
-
         {:ok,
          socket
          |> assign(
@@ -37,11 +37,28 @@ defmodule HelmsmanWeb.SquadLive.Show do
            gone?: false,
            expanded?: false
          )
-         |> put_squad(squad)}
+         |> put_squad(squad)
+         |> put_avatar_rights()}
 
       _error ->
         raise HelmsmanWeb.NotFoundError
     end
+  end
+
+  defp member_actor(agent, appearance) do
+    actor = %{
+      name: agent.name,
+      kind: :agent,
+      provider: agent[:provider],
+      state: if(agent[:disabled], do: :disabled, else: :active)
+    }
+
+    Appearance.decorate(actor, appearance)
+  end
+
+  defp put_avatar_rights(socket) do
+    target = {:actor, socket.assigns.squad.name}
+    assign(socket, :avatar_rights, AvatarData.can_manage?(socket.assigns.current_scope, target))
   end
 
   defp put_squad(socket, squad) do
@@ -142,7 +159,9 @@ defmodule HelmsmanWeb.SquadLive.Show do
   def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
     do: {:noreply, Throttle.schedule(socket)}
 
-  def handle_info(:reload, socket), do: {:noreply, socket |> Throttle.done() |> reload()}
+  def handle_info(:reload, socket),
+    do: {:noreply, socket |> Throttle.done() |> reload() |> put_avatar_rights()}
+
   def handle_info(_message, socket), do: {:noreply, socket}
 
   # Reads the squad by its id among the list, so a rename is followed (D3).
@@ -195,6 +214,26 @@ defmodule HelmsmanWeb.SquadLive.Show do
       <:header>
         <.page_header title={@squad.name}>
           <:crumb navigate={"/w/#{@slug}/squads"}>{dgettext("ui", "小队")}</:crumb>
+          <:leading>
+            <.live_component
+              module={HelmsmanWeb.AvatarEditor}
+              id="squad-avatar"
+              scope={@current_scope}
+              target={{:actor, @squad.name}}
+              rights={@avatar_rights}
+              size={:lg}
+              actor={
+                Appearance.decorate(
+                  %{
+                    name: @squad.name,
+                    kind: :squad,
+                    state: if(@squad.disabled, do: :disabled, else: :active)
+                  },
+                  @appearance
+                )
+              }
+            />
+          </:leading>
           <:actions>
             <.badge :if={@squad.disabled} id="squad-disabled-badge">{dgettext("ui", "已停用")}</.badge>
             <.button
@@ -298,7 +337,7 @@ defmodule HelmsmanWeb.SquadLive.Show do
               >
                 <div class="flex flex-wrap items-center gap-2">
                   <.link navigate={Url.agent_path(@slug, @squad.leader.name)} class="min-w-0">
-                    <.actor_chip actor={%{name: @squad.leader.name, kind: :agent}} />
+                    <.actor_chip actor={member_actor(@squad.leader, @appearance)} />
                   </.link>
                   <.badge tone={:brand}>Leader</.badge>
                   <.badge :if={@squad.leader.archived} tone={:warning}>
@@ -307,13 +346,7 @@ defmodule HelmsmanWeb.SquadLive.Show do
                   <.badge :if={@squad.leader.disabled and not @squad.leader.archived}>
                     {dgettext("ui", "已停用")}
                   </.badge>
-                  <span
-                    :if={config_line(@squad.leader)}
-                    class="text-caption text-fg-muted"
-                    data-config
-                  >
-                    {config_line(@squad.leader)}
-                  </span>
+                  <.member_config agent={@squad.leader} data-config />
                 </div>
               </li>
               <li
@@ -328,16 +361,17 @@ defmodule HelmsmanWeb.SquadLive.Show do
                     navigate={Url.agent_path(@slug, m.name)}
                     class="min-w-0"
                   >
-                    <.actor_chip actor={%{name: m.name, kind: :agent}} />
+                    <.actor_chip actor={member_actor(m, @appearance)} />
                   </.link>
-                  <.actor_chip :if={m.kind != "agent"} actor={%{name: m.name, kind: :human}} />
+                  <.actor_chip
+                    :if={m.kind != "agent"}
+                    actor={Appearance.decorate(%{name: m.name, kind: :human}, @appearance)}
+                  />
                   <span class="text-caption text-fg-subtle" data-kind>
                     {if(m.kind == "agent", do: dgettext("ui", "托管 Agent"), else: dgettext("ui", "人"))}
                   </span>
                   <.badge :if={m.disabled} data-member-disabled>{dgettext("ui", "已停用")}</.badge>
-                  <span :if={config_line(m)} class="text-caption text-fg-muted" data-config>
-                    {config_line(m)}
-                  </span>
+                  <.member_config agent={m} data-config />
                 </div>
                 <p :if={(m.role_note || "") != ""} class="text-body text-fg" data-role-note>
                   {m.role_note}
@@ -388,6 +422,7 @@ defmodule HelmsmanWeb.SquadLive.Show do
         :if={@squad.can_manage}
         form={@squad_form}
         scope={@current_scope}
+        appearance={@appearance}
         close_path={@close_path}
       />
 

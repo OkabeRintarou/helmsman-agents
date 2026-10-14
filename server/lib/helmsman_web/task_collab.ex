@@ -495,6 +495,7 @@ defmodule HelmsmanWeb.TaskCollab do
   attr :can_edit?, :boolean, required: true
   attr :can_create?, :boolean, required: true
   attr :agents, :map, default: %{}
+  attr :appearance, :map, default: %{}
   attr :uri, :string, required: true
 
   @doc "An epic's 步骤 section (D7); nothing for a task."
@@ -574,6 +575,7 @@ defmodule HelmsmanWeb.TaskCollab do
               :if={step.assignee}
               actor={step.assignee}
               agents={@agents}
+              appearance={@appearance}
               compact
             />
             <.dropdown

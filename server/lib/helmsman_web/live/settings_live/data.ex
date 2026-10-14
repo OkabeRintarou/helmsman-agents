@@ -917,7 +917,9 @@ defmodule HelmsmanWeb.SettingsLive.Data do
               id={"unclaimed-#{dom_key(name)}"}
               class="flex flex-wrap items-center gap-x-3 gap-y-2 py-2 text-body"
             >
-              <.actor_chip actor={%{name: name, kind: :human, unclaimed: true}} />
+              <.actor_chip actor={
+                Appearance.decorate(%{name: name, kind: :human, unclaimed: true}, @appearance)
+              } />
               <span class="min-w-0 flex-1" />
               <% claims = claims_for(@claims, name) %>
               <% mine = Enum.find(claims, &(&1.user_id == @me)) %>
@@ -983,7 +985,9 @@ defmodule HelmsmanWeb.SettingsLive.Data do
                 id={"agent-#{dom_key(agent.name)}"}
                 class="flex items-center gap-3 py-2 text-body"
               >
-                <.actor_chip actor={%{name: agent.name, kind: :agent, managed?: false}} />
+                <.actor_chip actor={
+                  Appearance.decorate(%{name: agent.name, kind: :agent, managed?: false}, @appearance)
+                } />
                 <span class="min-w-0 flex-1 truncate text-fg-muted">
                   {dgettext("ui", "所属：%{owner}", owner: agent.owner_name || "—")}
                 </span>

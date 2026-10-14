@@ -25,6 +25,14 @@ defmodule HelmsmanWeb.Shell do
     `{:projects_changed}`. The current item of the group follows the query string
     (`?filter=<ID>`).
   * Handles the `hm:switch-workspace` event from the workspace switcher.
+  * Keeps the identity appearance table in `@appearance` (add-actor-avatars D7,
+    `HelmsmanWeb.Appearance`): it subscribes to `workspace:<id>:squads` (the only
+    subscription to that topic for workspace pages) *before* reading the table, and
+    reloads it on `{:avatars_changed}`, `{:agents_changed}`, `{:members_changed}`,
+    `{:workspace_imported, _}` and `{:squad, _id}` before passing the message on.
+    `{:user_avatar_changed}` on `user:<id>` only refreshes `shell.user_avatar_url` (the
+    user menu).
+  * Shows `{:put_flash, kind, message}` sent by components of the page.
 
   The scope is read from `socket.assigns.current_scope` (`user`, `workspace`). For a
   `Helmsman.Accounts.Scope` the switcher lists `Helmsman.Workspaces.list_for_user/1`; the
@@ -39,8 +47,9 @@ defmodule HelmsmanWeb.Shell do
   alias Helmsman.Events
   alias Helmsman.Policy
   alias Helmsman.Projects
+  alias Helmsman.Squads
   alias Helmsman.Workspaces
-  alias HelmsmanWeb.{Nav, QueryData}
+  alias HelmsmanWeb.{Appearance, AvatarData, Nav, QueryData}
 
   @max_recent 10
 
@@ -54,9 +63,11 @@ defmodule HelmsmanWeb.Shell do
 
     if connected?(socket), do: subscribe_workspace(scope)
     if connected?(socket), do: subscribe_filters(scope)
+    if connected?(socket), do: subscribe_squads(scope)
 
     socket =
       socket
+      |> assign(:appearance, Appearance.load(scope))
       |> assign(:shell, %{
         nav: [],
         nav_items: socket.assigns[:shell_nav_items] || Nav.items(),
@@ -67,7 +78,8 @@ defmodule HelmsmanWeb.Shell do
         recent_tasks: recent_tasks(socket),
         path: nil,
         uri: nil,
-        import_notice: false
+        import_notice: false,
+        user_avatar_url: AvatarData.user_avatar_url(user_of(scope))
       })
       |> attach_hook(:hm_shell_params, :handle_params, &handle_params/3)
       |> attach_hook(:hm_shell_info, :handle_info, &handle_info/2)
@@ -160,10 +172,30 @@ defmodule HelmsmanWeb.Shell do
         import_notice: socket.view != HelmsmanWeb.SettingsLive.Data
     }
 
-    forward(message, assign(socket, :shell, shell))
+    socket |> assign(:shell, shell) |> reload_appearance() |> then(&forward(message, &1))
   end
 
+  # Notices of components such as HelmsmanWeb.AvatarEditor (their own flash only
+  # reaches the page on a redirect).
+  defp handle_info({:put_flash, kind, message}, socket),
+    do: {:halt, put_flash(socket, kind, message)}
+
+  defp handle_info({:user_avatar_changed}, socket) do
+    url = AvatarData.user_avatar_url(user_of(socket.assigns[:current_scope]))
+    {:halt, assign(socket, :shell, %{socket.assigns.shell | user_avatar_url: url})}
+  end
+
+  defp handle_info(message, socket)
+       when message in [{:avatars_changed}, {:agents_changed}, {:members_changed}],
+       do: forward(message, reload_appearance(socket))
+
+  defp handle_info({:squad, _id} = message, socket),
+    do: forward(message, reload_appearance(socket))
+
   defp handle_info(message, socket), do: forward(message, socket)
+
+  defp reload_appearance(socket),
+    do: assign(socket, :appearance, Appearance.load(socket.assigns[:current_scope]))
 
   # Pages without handle_info/2 would log "undefined handle_info" for every broadcast.
   defp forward(_message, socket) do
@@ -200,6 +232,9 @@ defmodule HelmsmanWeb.Shell do
 
   defp handle_event(_event, _params, socket), do: {:cont, socket}
 
+  defp user_of(%{user: user}), do: user
+  defp user_of(_scope), do: nil
+
   defp user_id(%{user: %{id: id}}), do: id
   defp user_id(_scope), do: nil
 
@@ -218,6 +253,11 @@ defmodule HelmsmanWeb.Shell do
   end
 
   defp subscribe_filters(_scope), do: :ok
+
+  defp subscribe_squads(%Scope{workspace: %{id: id}}) when is_integer(id),
+    do: Events.subscribe(Squads.topic(id))
+
+  defp subscribe_squads(_scope), do: :ok
 
   defp filters(%Scope{workspace: %{}} = scope) do
     case QueryData.list_filters(scope) do
