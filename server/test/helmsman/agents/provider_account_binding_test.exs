@@ -41,6 +41,7 @@ defmodule Helmsman.Agents.ProviderAccountBindingTest do
                name: "zai",
                cli: "claude",
                host: "api.z.ai",
+               port: nil,
                headers: [],
                icon: nil
              }

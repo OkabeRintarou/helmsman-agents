@@ -25,7 +25,7 @@ defmodule Helmsman.Runs do
   alias Helmsman.GitHub.PullRequests
   alias Helmsman.Links
   alias Helmsman.Policy
-  alias Helmsman.ProviderAccounts.ProviderAccount
+  alias Helmsman.ProviderAccounts
   alias Helmsman.Repo
   alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent, Triggers}
   alias Helmsman.Runs.Workers.SideEffect, as: SideEffectJob
@@ -69,6 +69,7 @@ defmodule Helmsman.Runs do
           required(:attempt) => pos_integer(),
           required(:daemon) => String.t() | nil,
           required(:provider_account_name) => String.t() | nil,
+          required(:provider_account) => ProviderAccounts.summary() | nil,
           required(:initiator) => %{id: pos_integer(), name: String.t() | nil},
           required(:retry_of_id) => pos_integer() | nil,
           required(:retry_run_id) => pos_integer() | nil,
@@ -976,7 +977,8 @@ defmodule Helmsman.Runs do
   `delegate_done` has `member`; `autopilot` has `autopilot: %{id, name}`,
   nil once deleted, and `source`: "schedule" | "manual" | "webhook"),
   failure_reason, priority, attempt, daemon, provider_account_name (the
-  account the claim used; nil: none or deleted), initiator: %{id, name},
+  account the claim used; nil: none or deleted), provider_account (its
+  summary, `Helmsman.ProviderAccounts.summaries/1`, or nil), initiator: %{id, name},
   retry_of_id, retry_run_id, events_seq, summary, usage,
   cancel_requested_by, claimed_at, started_at, finished_at, last_event_at,
   inserted_at, updated_at}`. Never the error text (`get/2`).
@@ -1007,7 +1009,11 @@ defmodule Helmsman.Runs do
     users = names(User, Enum.map(runs, & &1.root_initiator_user_id))
 
     accounts =
-      names(ProviderAccount, runs |> Enum.map(& &1.provider_account_id) |> Enum.reject(&is_nil/1))
+      ProviderAccounts.summaries(
+        runs
+        |> Enum.map(& &1.provider_account_id)
+        |> Enum.reject(&is_nil/1)
+      )
 
     retries = Retry.targets(runs)
     squads = squad_names(runs |> Enum.map(& &1.squad_id) |> Enum.reject(&is_nil/1))
@@ -1027,7 +1033,9 @@ defmodule Helmsman.Runs do
         priority: run.priority,
         attempt: run.attempt,
         daemon: run.daemon_id && daemons[run.daemon_id],
-        provider_account_name: run.provider_account_id && accounts[run.provider_account_id],
+        provider_account_name:
+          run.provider_account_id && get_in(accounts, [run.provider_account_id, :name]),
+        provider_account: run.provider_account_id && accounts[run.provider_account_id],
         initiator: %{
           id: run.root_initiator_user_id,
           name: users[run.root_initiator_user_id]
@@ -1094,11 +1102,6 @@ defmodule Helmsman.Runs do
 
   defp names(Daemon, ids),
     do: Map.new(Repo.all(from(d in Daemon, where: d.id in ^ids, select: {d.id, d.name})))
-
-  defp names(ProviderAccount, []), do: %{}
-
-  defp names(ProviderAccount, ids),
-    do: Map.new(Repo.all(from(a in ProviderAccount, where: a.id in ^ids, select: {a.id, a.name})))
 
   defp names(User, ids),
     do: Map.new(Repo.all(from(u in User, where: u.id in ^ids, select: {u.id, u.display_name})))

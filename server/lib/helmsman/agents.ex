@@ -6,7 +6,6 @@ defmodule Helmsman.Agents do
   alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.{Daemon, Runtime}
   alias Helmsman.{Events, Policy, ProviderAccounts, Repo, Runs, Workspaces}
-  alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Runs.Run
 
   @execution_fields ~w(provider runtime_id provider_account_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids wake_on_requested)
@@ -360,27 +359,7 @@ defmodule Helmsman.Agents do
 
   # The account summary any reader of the agent sees (decision 14): never
   # the key or the full address.
-  defp account_summaries([]), do: %{}
-
-  defp account_summaries(ids) do
-    Repo.all(
-      from a in ProviderAccount,
-        where: a.id in ^ids,
-        select:
-          {a.id,
-           %{
-             id: a.id,
-             name: a.name,
-             cli: a.cli,
-             base_url: a.base_url,
-             headers: a.header_names,
-             icon: a.icon
-           }}
-    )
-    |> Map.new(fn {id, account} ->
-      {id, account |> Map.delete(:base_url) |> Map.put(:host, URI.parse(account.base_url).host)}
-    end)
-  end
+  defp account_summaries(ids), do: ProviderAccounts.summaries(ids)
 
   # The owner's accounts page shows which agents use an account: notified
   # when the agent's binding changes from `old` to `new`.

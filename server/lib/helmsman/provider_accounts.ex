@@ -226,6 +226,60 @@ defmodule Helmsman.ProviderAccounts do
     end
   end
 
+  @type summary :: %{
+          id: pos_integer(),
+          name: String.t(),
+          cli: String.t(),
+          host: String.t() | nil,
+          port: pos_integer() | nil,
+          headers: [String.t()],
+          icon: String.t() | nil
+        }
+
+  @doc """
+  The summaries of the accounts `ids`, by id, in one query: what any
+  reader of an agent or run bound to them sees (`add-provider-accounts`
+  decision 14; `port` and `icon` from `add-actor-avatars` decision 19).
+  Never the key, the full address or the header values; `port` only when
+  the address writes one. No authorization: callers have authorized
+  reading the agent or run.
+  """
+  @spec summaries([pos_integer()]) :: %{pos_integer() => summary()}
+  def summaries([]), do: %{}
+
+  def summaries(ids) when is_list(ids) do
+    Repo.all(
+      from(a in ProviderAccount,
+        where: a.id in ^Enum.uniq(ids),
+        select: {a.id, a.name, a.cli, a.base_url, a.header_names, a.icon}
+      )
+    )
+    |> Map.new(fn {id, name, cli, base_url, headers, icon} ->
+      uri = URI.parse(base_url)
+
+      {id,
+       %{
+         id: id,
+         name: name,
+         cli: cli,
+         host: uri.host,
+         port: explicit_port(base_url, uri),
+         headers: headers,
+         icon: icon
+       }}
+    end)
+  end
+
+  # URI.parse/1 fills in the scheme's default port; only a port written in
+  # the address counts. Addresses never carry credentials (validated).
+  defp explicit_port(base_url, %URI{port: port}) when is_integer(port) do
+    if Regex.match?(~r{\A[a-z][a-z0-9+.-]*://[^/?#]*:\d+(?:[/?#]|\z)}i, base_url),
+      do: port,
+      else: nil
+  end
+
+  defp explicit_port(_base_url, _uri), do: nil
+
   defp authorize(scope), do: Policy.authorize(scope, :manage_provider_accounts)
 
   defp own(scope, id, row_lock \\ false) do
