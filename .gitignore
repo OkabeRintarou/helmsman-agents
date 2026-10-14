@@ -20,6 +20,13 @@ erl_crash.dump
 cover/
 burrito_out/
 
+# Daemon binaries built by scripts/build-daemon.sh for the image and releases
+/daemon-dist/
+/dist/
+/daemon/priv/credentials_lock
+/daemon/priv/credentials_lock.tmp
+/daemon/priv/credentials_lock.*.tmp
+
 # Frontend assets
 node_modules/
 

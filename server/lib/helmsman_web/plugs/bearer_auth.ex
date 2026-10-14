@@ -55,9 +55,7 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   def call(conn, %{scopes: required_scopes, via: via}) do
     with {:ok, token} <- bearer_token(conn),
          {:ok, scope, quota} <- authenticate(token, required_scopes, via) do
-      if via == :api do
-        Logger.metadata(workspace_id: scope.workspace.id, token_id: scope.token.id)
-      end
+      put_log_metadata(scope)
 
       conn
       |> put_quota(via, quota)
@@ -126,6 +124,16 @@ defmodule HelmsmanWeb.Plugs.BearerAuth do
   end
 
   defp put_quota(conn, _via, _quota), do: conn
+
+  # The request's log lines name the workspace and the token or run (never
+  # the token itself).
+  defp put_log_metadata(%Scope{workspace: workspace, token: token, run: run}) do
+    Logger.metadata(
+      workspace_id: workspace.id,
+      token_id: token && token.id,
+      run_id: run && run.id
+    )
+  end
 
   # MCP keeps its short body; REST uses the error body of
   # `HelmsmanWeb.ErrorMapper` (`add-rest-api` decision 1).

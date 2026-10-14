@@ -31,6 +31,7 @@ defmodule Helmsman.Runs do
   alias Helmsman.Runs.Workers.SideEffect, as: SideEffectJob
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
+  alias Helmsman.Tx
   alias Helmsman.Workspaces.Workspace
 
   @max_chain 5
@@ -555,9 +556,20 @@ defmodule Helmsman.Runs do
   # decision 9); a delegated run that wakes its leader gets its
   # `delegate_done` effect (`add-squads` decision 9). Every path that ends
   # a run calls it: `Lifecycle.end!/3`, `cancel_pending/2` and
-  # `Helmsman.Runs.Stop.cancel_for_initiator/2`.
+  # `Helmsman.Runs.Stop.cancel_for_initiator/2`. Also emits
+  # `[:helmsman, :runs, :finished]` per run after the commit (the metric
+  # `helmsman.runs.finished.count`).
   @spec after_ended([Run.t()]) :: :ok
   def after_ended(runs) do
+    Enum.each(runs, fn run ->
+      Tx.after_commit(fn ->
+        :telemetry.execute([:helmsman, :runs, :finished], %{count: 1}, %{
+          status: run.status,
+          failure_reason: run.failure_reason
+        })
+      end)
+    end)
+
     runs
     |> Enum.filter(&design_run?/1)
     |> Enum.each(fn run -> {:ok, _job} = Oban.insert(SettleTurn.new(%{run_id: run.id})) end)
@@ -604,6 +616,25 @@ defmodule Helmsman.Runs do
 
   def stopped_by_person?(%Run{cancel_requested_by_id: id}),
     do: Repo.exists?(from(a in Actor, where: a.id == ^id and a.kind == :human))
+
+  @doc """
+  The number of pending runs on the instance by status, `:queued` and
+  `:deferred` (the metric `helmsman.runs.queued.count`).
+  """
+  @spec count_pending() :: %{queued: non_neg_integer(), deferred: non_neg_integer()}
+  def count_pending do
+    counts =
+      Repo.all(
+        from(r in Run,
+          where: r.status in [:queued, :deferred],
+          group_by: r.status,
+          select: {r.status, count()}
+        )
+      )
+      |> Map.new()
+
+    %{queued: Map.get(counts, :queued, 0), deferred: Map.get(counts, :deferred, 0)}
+  end
 
   @doc """
   Moves the pending runs of the agent `agent_id` to the runtime

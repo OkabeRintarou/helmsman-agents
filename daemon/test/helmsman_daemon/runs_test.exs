@@ -82,7 +82,11 @@ defmodule HelmsmanDaemon.RunsTest do
     Process.exit(worker, :kill)
     eventually(fn -> not Process.alive?(worker) end)
     {:ok, _} = Supervisor.restart_child(sup, Runs)
-    eventually(fn -> not alive?(pid) and not alive?(child) end)
+
+    eventually(fn ->
+      not alive?(pid) and not alive?(child) and not File.exists?(Paths.record(4))
+    end)
+
     assert Runs.active() == []
     refute File.exists?(Paths.record(4))
     assert File.ls!(Paths.run(4)) == ["raw.log"]

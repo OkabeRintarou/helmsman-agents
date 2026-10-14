@@ -15,6 +15,10 @@ defmodule Helmsman.RateLimit do
       (`/api/v1/workflow.md`, `/api/v1/openapi.json`) per client IP
     * `:autopilot_webhook` - authenticated webhook requests per autopilot
       (`add-autopilots` decision 14)
+    * `:daemon_device_ip` / `:daemon_device_user` - daemon device code
+      requests per client IP / per user
+    * `:public_download_ip` - `/install.sh` and daemon downloads per client
+      IP
   """
 
   use Hammer, backend: :ets
@@ -28,6 +32,7 @@ defmodule Helmsman.RateLimit do
           | :daemon_device_user
           | :public_api_ip
           | :autopilot_webhook
+          | :public_download_ip
 
   @doc """
   Counts one request against `bucket` for `key`.

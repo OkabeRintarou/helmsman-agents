@@ -1,10 +1,13 @@
 defmodule HelmsmanProtocol.MixProject do
   use Mix.Project
 
+  # Shared by protocol, server and daemon; release tags are v<VERSION>.
+  @version "../VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
+
   def project do
     [
       app: :helmsman_protocol,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       deps: deps(),

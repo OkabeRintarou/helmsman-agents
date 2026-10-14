@@ -10,10 +10,12 @@ defmodule HelmsmanDaemon do
     LocalMergeCheck,
     Paths,
     Runs,
-    StateStore
+    StateStore,
+    StatusFile
   }
 
   def start_daemon(opts \\ []) do
+    :persistent_term.put({__MODULE__, :started}, true)
     opts = Keyword.put(opts, :codex_hint_once, :atomics.new(1, []))
     Env.scrub_process!()
     Paths.ensure!()
@@ -21,6 +23,7 @@ defmodule HelmsmanDaemon do
 
     children = [
       {Config, opts},
+      {StatusFile, opts},
       {StateStore, opts},
       {Detector, opts},
       {Registry, keys: :unique, name: HelmsmanDaemon.RunRegistry},
@@ -34,6 +37,29 @@ defmodule HelmsmanDaemon do
 
     Supervisor.start_link(children, strategy: :rest_for_one, name: HelmsmanDaemon.Supervisor)
   end
+
+  @doc "Stops a running daemon tree gracefully (VM shutdown, e.g. SIGTERM from the service manager)."
+  def stop_daemon do
+    case Process.whereis(HelmsmanDaemon.Supervisor) do
+      nil ->
+        :ok
+
+      pid ->
+        :persistent_term.put({__MODULE__, :stopping}, true)
+
+        try do
+          Supervisor.stop(pid, :shutdown, 90_000)
+        catch
+          :exit, _ -> :ok
+        end
+    end
+  end
+
+  @doc "True once this VM has started the daemon tree."
+  def started?, do: :persistent_term.get({__MODULE__, :started}, false)
+
+  @doc "True once `stop_daemon/0` has begun; the daemon tree ending then is a normal exit."
+  def stopping?, do: :persistent_term.get({__MODULE__, :stopping}, false)
 
   def security_notice do
     path = Path.join(Paths.state(), ".security_notice_shown")

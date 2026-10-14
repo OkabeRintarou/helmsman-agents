@@ -1,0 +1,135 @@
+#!/bin/sh
+# Installs the Helmsman daemon <%= @version_comment %> from <%= @server_comment %>.
+#
+#   curl -fsSL <%= @server_comment %>/install.sh | sh
+#
+# Downloads the helmsman binary for this machine with its SHA-256 checksum,
+# verifies it and installs it to ${HELMSMAN_BIN_DIR:-$HOME/.local/bin}/helmsman
+# (no root needed). A running background service is never restarted.
+# (Not HELMSMAN_INSTALL_DIR: the binary reads that one as the directory it
+# unpacks its payload to.)
+set -eu
+
+server=<%= @server %>
+version=<%= @version %>
+
+say() {
+  printf '%s\n' "$*"
+}
+
+fail() {
+  printf 'helmsman install: %s\n' "$*" >&2
+  exit 1
+}
+
+os=$(uname -s)
+arch=$(uname -m)
+
+case $os in
+  Linux) os=linux ;;
+  Darwin) os=macos ;;
+  *) fail "unsupported operating system: $os (Linux and macOS are supported)" ;;
+esac
+
+case $arch in
+  x86_64 | amd64) arch=x64 ;;
+  aarch64 | arm64) arch=arm64 ;;
+  *) fail "unsupported architecture: $arch (x86_64 and arm64 are supported)" ;;
+esac
+
+target=$os-$arch
+binary=helmsman-$target
+
+if [ -n "${HELMSMAN_BIN_DIR:-}" ]; then
+  install_dir=$HELMSMAN_BIN_DIR
+elif [ -n "${HOME:-}" ]; then
+  install_dir=$HOME/.local/bin
+else
+  fail "HOME is not set; set HELMSMAN_BIN_DIR to the directory to install to"
+fi
+
+if command -v curl >/dev/null 2>&1; then
+  fetch() { curl -fsSL -o "$2" "$1"; }
+elif command -v wget >/dev/null 2>&1; then
+  fetch() { wget -qO- "$1" >"$2"; }
+else
+  fail "curl or wget is required"
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+  verify() { (cd "$tmp" && sha256sum -c "$binary.check" >/dev/null 2>&1); }
+elif command -v shasum >/dev/null 2>&1; then
+  verify() { (cd "$tmp" && shasum -a 256 -c "$binary.check" >/dev/null 2>&1); }
+else
+  fail "sha256sum or shasum is required"
+fi
+
+tmp=
+staged=
+cleanup() {
+  if [ -n "$tmp" ]; then rm -rf "$tmp"; fi
+  if [ -n "$staged" ]; then rm -f "$staged"; fi
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/helmsman-install.XXXXXX")
+
+say "Downloading helmsman $version ($target) from $server"
+fetch "$server/downloads/daemon/$target" "$tmp/$binary" ||
+  fail "download of $binary failed"
+fetch "$server/downloads/daemon/$target.sha256" "$tmp/$binary.sha256" ||
+  fail "download of $binary.sha256 failed"
+
+# Only the hash is taken from the checksum file; the file name is ours.
+hash=
+read -r hash _rest <"$tmp/$binary.sha256" || true
+case $hash in
+  "" | *[!0-9a-fA-F]*) fail "$binary.sha256 is not a SHA-256 checksum" ;;
+esac
+[ ${#hash} -eq 64 ] || fail "$binary.sha256 is not a SHA-256 checksum"
+printf '%s  %s\n' "$hash" "$binary" >"$tmp/$binary.check"
+verify || fail "checksum mismatch for $binary; nothing was installed"
+
+mkdir -p "$install_dir"
+dest=$install_dir/helmsman
+# Staged next to the destination, so the final rename is atomic.
+staged=$install_dir/.helmsman.install.$$
+cp "$tmp/$binary" "$staged"
+chmod 0755 "$staged"
+mv -f "$staged" "$dest"
+staged=
+
+say "Installed $dest"
+# The binary would unpack its payload to HELMSMAN_INSTALL_DIR.
+unset HELMSMAN_INSTALL_DIR
+"$dest" --version || fail "$dest does not run on this machine"
+
+case ":${PATH:-}:" in
+  *":$install_dir:"*) ;;
+  *)
+    say ""
+    say "$install_dir is not on your PATH. Add it, for example:"
+    say "  export PATH=\"$install_dir:\$PATH\""
+    ;;
+esac
+
+service=
+if [ -n "${HOME:-}" ]; then
+  for file in "$HOME"/.config/systemd/user/helmsman-daemon*.service \
+    "$HOME"/Library/LaunchAgents/dev.helmsman.helmsman-daemon*.plist \
+    "${HELMSMAN_HOME:-$HOME/.helmsman}"/service/dev.helmsman.helmsman-daemon*.plist; do
+    if [ -e "$file" ]; then service=yes; fi
+  done
+fi
+
+say ""
+say "Next steps:"
+say "  helmsman login --server $server"
+say "  helmsman daemon start"
+
+if [ -n "$service" ]; then
+  say ""
+  say "A background service is installed and was not restarted. If it is running,"
+  say "run 'helmsman daemon restart' to switch it to the new version."
+fi

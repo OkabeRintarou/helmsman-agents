@@ -24,6 +24,24 @@ config :helmsman,
   ecto_repos: [Helmsman.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# Several instances starting at once: one runs the migrations, the others
+# wait on a PostgreSQL advisory lock (bin/start runs bin/migrate first).
+config :helmsman, Helmsman.Repo, migration_lock: :pg_advisory_lock
+
+# Runtime web settings; production sets them in config/runtime.exs
+# (add-release-distribution decision 3):
+#   * secure_cookies / force_ssl - the public URL is https (PHX_URL_SCHEME)
+#   * trusted_proxies - CIDRs whose X-Forwarded-For / -Proto are honoured
+#   * daemon_dist_dir / daemon_download_url - where /downloads/daemon/* serves
+#     the daemon binaries from
+#   * data_dir - export and import files (set below, per environment)
+config :helmsman,
+  secure_cookies: false,
+  force_ssl: false,
+  trusted_proxies: [],
+  daemon_dist_dir: nil,
+  daemon_download_url: nil
+
 # Authentication rate limits, as {limit, window_ms} per bucket.
 config :helmsman, Helmsman.RateLimit,
   magic_link_ip: {5, :timer.minutes(1)},
@@ -33,7 +51,8 @@ config :helmsman, Helmsman.RateLimit,
   daemon_device_ip: {10, :timer.minutes(1)},
   daemon_device_user: {20, :timer.minutes(1)},
   autopilot_webhook: {10, :timer.minutes(1)},
-  public_api_ip: {120, :timer.minutes(1)}
+  public_api_ip: {120, :timer.minutes(1)},
+  public_download_ip: {60, :timer.minutes(1)}
 
 # Requests per minute per API token (designs/03 §2).
 config :helmsman, :api_token_rate_limit, 600
@@ -68,6 +87,8 @@ config :helmsman, Oban,
        {"15 3 * * *", Helmsman.Daemons.Workers.PruneDeviceCodes},
        {"* * * * *", Helmsman.Runs.Workers.Sweep},
        {"45 4 * * *", Helmsman.Runs.Workers.PruneEvents},
+       {"5 4 * * *", Helmsman.Runs.Workers.PruneTokens},
+       {"10 4 * * *", Helmsman.Accounts.Workers.PruneUserTokens},
        {"*/15 * * * *", Helmsman.GitHub.Workers.ReconcileSweep},
        {"*/10 * * * *", Helmsman.Dispatch.Workers.DependencySweep},
        {"* * * * *", Helmsman.AgentDesigns.Sweep},
@@ -132,6 +153,12 @@ config :esbuild,
     cd: Path.expand("../assets", __DIR__),
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ],
+  # The theme bootstrap, loaded synchronously before the stylesheet: a file of
+  # its own because the Content Security Policy allows no inline script.
+  helmsman_theme: [
+    args: ~w(js/theme.js --minify --target=es2022 --outdir=../priv/static/assets/js),
+    cd: Path.expand("../assets", __DIR__)
+  ],
   # Mermaid in its own file, loaded only by pages that show a diagram (designs/09 §6).
   helmsman_mermaid: [
     args:
@@ -152,12 +179,25 @@ config :tailwind,
     env: %{"NODE_PATH" => [Path.expand("../deps", __DIR__), Mix.Project.build_path()]}
   ]
 
-# Configure Elixir's Logger
+# Configure Elixir's Logger. The metadata is the allowlist production also
+# uses for JSON logs (config/runtime.exs): identifiers only, never tokens.
 config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   # REST (`add-rest-api` decision 1): the token, its workspace and the
-  # identity a request acts as.
-  metadata: [:request_id, :workspace_id, :token_id, :api_actor]
+  # identity a request acts as; MCP and daemons: the run, the daemon, the
+  # tool call (`add-release-distribution` decision 6).
+  metadata: [
+    :request_id,
+    :workspace_id,
+    :token_id,
+    :api_actor,
+    :run_id,
+    :daemon_id,
+    :mcp_tool,
+    :actor,
+    :duration_ms,
+    :result
+  ]
 
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
@@ -175,5 +215,17 @@ config :helmsman,
 
 import_config "#{config_env()}.exs"
 
-# Provider headers, like API keys, are write-only credentials in form parameters.
-config :phoenix, :filter_parameters, ["password", "secret", "api_key", "headers"]
+# Never logged: credentials (tokens, secrets, passwords, API keys, the
+# Authorization header), provider headers and agent environment variables
+# (the agent form's `env_add` / `env_new`), write-only credentials in form
+# parameters. Matched as substrings of parameter names.
+config :phoenix, :filter_parameters, [
+  "password",
+  "secret",
+  "api_key",
+  "token",
+  "authorization",
+  "headers",
+  "env_add",
+  "env_new"
+]

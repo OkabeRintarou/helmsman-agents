@@ -11,6 +11,8 @@ defmodule HelmsmanWeb.DaemonSocket do
       {_, token} ->
         case Daemons.authenticate(token) do
           {:ok, daemon} ->
+            Logger.metadata(daemon_id: daemon.id)
+
             {:ok,
              socket
              |> assign(:daemon_id, daemon.id)

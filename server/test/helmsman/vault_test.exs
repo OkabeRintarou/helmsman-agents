@@ -18,7 +18,7 @@ defmodule Helmsman.VaultTest do
   end
 
   describe "config/runtime.exs in production" do
-    @vars ~w(DATABASE_URL SECRET_KEY_BASE HELMSMAN_MAILER_ADAPTER HELMSMAN_VAULT_KEY)
+    @vars ~w(DATABASE_URL SECRET_KEY_BASE HELMSMAN_MAILER_ADAPTER HELMSMAN_VAULT_KEY PHX_HOST)
 
     setup do
       saved = Map.new(@vars, &{&1, System.get_env(&1)})
@@ -33,7 +33,8 @@ defmodule Helmsman.VaultTest do
       System.put_env(%{
         "DATABASE_URL" => "ecto://u:p@localhost/db",
         "SECRET_KEY_BASE" => String.duplicate("a", 64),
-        "HELMSMAN_MAILER_ADAPTER" => "log"
+        "HELMSMAN_MAILER_ADAPTER" => "log",
+        "PHX_HOST" => "hm.example.com"
       })
 
       :ok

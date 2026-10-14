@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs the pending database migrations and exits; non-zero when they fail
+# (database unreachable, a migration error). Concurrent runs wait on the
+# migration lock, so one instance migrates.
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+exec ./helmsman eval Helmsman.Release.migrate

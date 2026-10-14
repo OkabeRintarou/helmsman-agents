@@ -1,0 +1,14 @@
+#!/bin/sh
+# The container command: migrates, then serves. A failed migration exits
+# non-zero without serving, so the container stops (and restarts per its
+# policy) instead of running against an old schema.
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+
+if ! ./migrate; then
+  echo "helmsman: database migration failed; not starting the server" >&2
+  exit 1
+fi
+
+exec ./server

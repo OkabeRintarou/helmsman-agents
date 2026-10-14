@@ -19,12 +19,19 @@ defmodule HelmsmanMCP.Pipeline do
   Success is the JSON of the value; a domain error is the text of
   `HelmsmanMCP.ErrorText`; anything unexpected is a generic text with a
   reference that the log repeats with the details.
+
+  Every call of a registered tool logs one line (designs/11 §3,
+  `add-release-distribution` decision 6) with the workspace, the identity
+  name, the run (run tokens), the tool, the duration and the result class
+  (`ok`, `error`, `internal`), never arguments or results, and emits
+  `[:helmsman, :mcp, :tool_call]` (`duration`; `tool` and `result` only).
   """
 
   require Logger
 
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors
+  alias Helmsman.Actors.Actor
   alias HelmsmanMCP.{Context, ErrorText, Identity, Rejected, Sessions, Tools}
 
   @writer_keys ["actor", "author"]
@@ -97,16 +104,56 @@ defmodule HelmsmanMCP.Pipeline do
   end
 
   defp run(module, ctx) do
-    module.mode()
-    |> execute(module, ctx)
-    |> to_text(ctx)
-  catch
-    kind, reason -> internal_error(ctx, Exception.format(kind, reason, __STACKTRACE__))
+    started = System.monotonic_time()
+    {class, result, actor} = call(module, ctx)
+    log_call(ctx, actor, class, System.monotonic_time() - started)
+    result
   end
+
+  # Returns the result class, the result and the identity it ran as.
+  defp call(module, ctx) do
+    {outcome, actor} = execute(module.mode(), module, ctx)
+    {class, result} = to_text(outcome, ctx)
+    {class, result, actor}
+  catch
+    kind, reason ->
+      {:internal, internal_error(ctx, Exception.format(kind, reason, __STACKTRACE__)), nil}
+  end
+
+  defp log_call(ctx, actor, class, duration) do
+    duration_ms = System.convert_time_unit(duration, :native, :millisecond)
+    scope = ctx.scope
+
+    metadata =
+      Enum.reject(
+        [
+          workspace_id: scope.workspace && scope.workspace.id,
+          actor: identity_name(actor || scope.actor),
+          run_id: scope.run && scope.run.id,
+          mcp_tool: ctx.tool,
+          duration_ms: duration_ms,
+          result: class
+        ],
+        fn {_key, value} -> is_nil(value) end
+      )
+
+    Logger.info(
+      "mcp tool call tool=#{ctx.tool} result=#{class} duration_ms=#{duration_ms}",
+      metadata
+    )
+
+    :telemetry.execute([:helmsman, :mcp, :tool_call], %{duration: duration}, %{
+      tool: ctx.tool,
+      result: class
+    })
+  end
+
+  defp identity_name(%Actor{name: name}), do: name
+  defp identity_name(_actor), do: nil
 
   defp execute(:read, module, ctx) do
     scope = %{ctx.scope | actor: Identity.current(ctx.scope, ctx.session)}
-    module.call(ctx.args, %{ctx | scope: scope})
+    {module.call(ctx.args, %{ctx | scope: scope}), scope.actor}
   end
 
   defp execute(:write, module, ctx) do
@@ -121,13 +168,13 @@ defmodule HelmsmanMCP.Pipeline do
     case Actors.with_writer(ctx.scope, opts, &module.call(args, %{ctx | scope: &1})) do
       {:ok, value, %{actor: actor, source: :auto}} ->
         Identity.put(ctx.session, actor, :auto)
-        committed(value)
+        {committed(value), actor}
 
-      {:ok, value, _writer} ->
-        committed(value)
+      {:ok, value, %{actor: actor}} ->
+        {committed(value), actor}
 
       {:error, _reason} = error ->
-        error
+        {error, nil}
     end
   end
 
@@ -140,12 +187,12 @@ defmodule HelmsmanMCP.Pipeline do
     {requested, Map.drop(args, @writer_keys)}
   end
 
-  defp to_text({:ok, value}, _ctx), do: {:ok, Jason.encode!(value)}
+  defp to_text({:ok, value}, _ctx), do: {:ok, {:ok, Jason.encode!(value)}}
 
   defp to_text({:error, reason}, ctx) do
     case ErrorText.format(reason, ctx) do
-      {:ok, text} -> {:error, text}
-      :error -> internal_error(ctx, "unexpected error: " <> inspect(reason))
+      {:ok, text} -> {:error, {:error, text}}
+      :error -> {:internal, internal_error(ctx, "unexpected error: " <> inspect(reason))}
     end
   end
 

@@ -9,6 +9,8 @@ defmodule HelmsmanWeb.DaemonChannel do
 
   @impl true
   def join("daemon:" <> id, payload, socket) do
+    Logger.metadata(daemon_id: socket.assigns.daemon_id)
+
     with true <- id == to_string(socket.assigns.daemon_id),
          {:ok, report} <- decode_join(payload),
          true <- HelmsmanProtocol.compatible?(report.protocol),

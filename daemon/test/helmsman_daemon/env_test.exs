@@ -50,4 +50,31 @@ defmodule HelmsmanDaemon.EnvTest do
     assert System.get_env("HELMSMAN_HOME") == "/home/daemon"
     assert capture_io(:stderr, fn -> assert Env.scrub_process!() == [] end) == ""
   end
+
+  test "port helpers receive a scrubbed child environment" do
+    names = ~w(GIT_CONFIG_COUNT HELMSMAN_HOME __BURRITO_TEST RELEASE_ROOT)
+    previous = Map.new(names, &{&1, System.get_env(&1)})
+
+    on_exit(fn ->
+      Enum.each(previous, fn
+        {name, nil} -> System.delete_env(name)
+        {name, value} -> System.put_env(name, value)
+      end)
+    end)
+
+    System.put_env(Map.new(names, &{&1, "private-sentinel"}))
+    port = Env.port(System.find_executable("env"), [], [{:line, 4096}])
+    output = collect_port(port, "")
+    refute output =~ "private-sentinel"
+    assert output =~ "PATH="
+  end
+
+  defp collect_port(port, output) do
+    receive do
+      {^port, {:data, {:eol, line}}} -> collect_port(port, output <> line <> "\n")
+      {^port, {:exit_status, 0}} -> output
+    after
+      1_000 -> flunk("environment helper did not exit")
+    end
+  end
 end

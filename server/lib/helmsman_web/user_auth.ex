@@ -12,7 +12,9 @@ defmodule HelmsmanWeb.UserAuth do
 
   alias Helmsman.Accounts
   alias Helmsman.Accounts.Scope
+  alias Helmsman.Policy
   alias Helmsman.Workspaces
+  alias HelmsmanWeb.Plugs.TrustedProxies
 
   # Make the remember me cookie valid for 14 days. This should match
   # the session validity setting in UserToken.
@@ -63,7 +65,7 @@ defmodule HelmsmanWeb.UserAuth do
 
     conn
     |> renew_session(nil)
-    |> delete_resp_cookie(@remember_me_cookie, @remember_me_options)
+    |> delete_resp_cookie(@remember_me_cookie, remember_me_options())
     |> redirect(to: to)
   end
 
@@ -167,8 +169,11 @@ defmodule HelmsmanWeb.UserAuth do
   defp write_remember_me_cookie(conn, token) do
     conn
     |> put_session(:user_remember_me, true)
-    |> put_resp_cookie(@remember_me_cookie, token, @remember_me_options)
+    |> put_resp_cookie(@remember_me_cookie, token, remember_me_options())
   end
+
+  # `Secure` follows the public URL's scheme, a runtime setting.
+  defp remember_me_options, do: HelmsmanWeb.Endpoint.put_secure(@remember_me_options)
 
   defp put_token_in_session(conn, token) do
     conn
@@ -200,6 +205,12 @@ defmodule HelmsmanWeb.UserAuth do
       and assigns the current_scope to socket assigns based
       on user_token.
       Redirects to login page if there's no logged user.
+
+    * `:require_instance_admin` - Must run after `:require_authenticated`.
+      Raises `HelmsmanWeb.NotFoundError` (404) unless the user is an
+      instance administrator (the check of `/admin/github`:
+      `Helmsman.Policy`'s `:manage_github_app`), so the page does not
+      reveal itself to anyone else.
 
     * `:require_workspace` - Must run after `:require_authenticated`. Puts
       the workspace of the `slug` route parameter, the user's role and
@@ -244,6 +255,13 @@ defmodule HelmsmanWeb.UserAuth do
     end
   end
 
+  def on_mount(:require_instance_admin, _params, _session, socket) do
+    case Policy.authorize(socket.assigns.current_scope, :manage_github_app) do
+      :ok -> {:cont, socket}
+      {:error, _reason} -> raise HelmsmanWeb.NotFoundError
+    end
+  end
+
   def on_mount(:require_workspace, %{"slug" => slug}, _session, socket) do
     %Scope{user: user} = scope = socket.assigns.current_scope
 
@@ -285,12 +303,18 @@ defmodule HelmsmanWeb.UserAuth do
 
   @doc """
   Returns the client IP of a LiveView socket (from the `:peer_data` connect
-  info), or `nil` when it is not available.
+  info; a trusted proxy's `X-Forwarded-For` from `:x_headers`, as
+  `HelmsmanWeb.Plugs.TrustedProxies` does for requests), or `nil` when it
+  is not available.
   """
   def client_ip(socket) do
     case Phoenix.LiveView.get_connect_info(socket, :peer_data) do
-      %{address: address} -> address
-      _ -> nil
+      %{address: address} ->
+        headers = Phoenix.LiveView.get_connect_info(socket, :x_headers) || []
+        TrustedProxies.client_ip(address, headers)
+
+      _ ->
+        nil
     end
   end
 

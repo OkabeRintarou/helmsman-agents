@@ -1,0 +1,12 @@
+## Flags for the VM of the daemon binary: https://www.erlang.org/doc/man/erl.html
+## -mode/-name/-sname/-setcookie are configured via env vars, do not set them here
+
+## UTF-8 file names and terminal output even when the service manager or a
+## container sets no locale (launchd agents, `docker run`).
++fnu
+-kernel standard_io_encoding unicode
+
+## Ctrl-C ends the command (`daemon logs -f`, `login`, a foreground daemon)
+## instead of opening the emulator's break menu. Service managers stop the
+## daemon with SIGTERM, which stays a graceful shutdown.
++Bd

@@ -1,0 +1,52 @@
+#!/bin/sh
+# Fake macOS `security` for tests: records every argv line in
+# $FAKE_SECURITY_DIR/argv.log and keeps items as files. A file named
+# "locked" in that directory makes reads and deletes fail like a locked keychain.
+dir=${FAKE_SECURITY_DIR:?}
+printf '%s\n' "$*" >> "$dir/argv.log"
+mkdir -p "$dir/items"
+key() { printf '%s' "$1" | cksum | cut -d ' ' -f 1; }
+command=$1
+shift
+case $command in
+  -i)
+    line=$(cat)
+    case $line in add-generic-password*) ;; *) exit 1 ;; esac
+    account=$(printf '%s' "$line" | sed -n 's/.* -a "\([^"]*\)".*/\1/p')
+    token=$(printf '%s' "$line" | sed -n 's/.* -w "\([^"]*\)".*/\1/p')
+    item="$dir/items/$(key "$account")"
+    if [ -e "$item" ]; then
+      echo "security: SecKeychainItemCreateFromContent: The specified item already exists in the keychain." >&2
+    else
+      printf '%s' "$token" > "$item"
+    fi
+    ;;
+  find-generic-password | delete-generic-password)
+    account=
+    while [ $# -gt 0 ]; do
+      case $1 in
+        -a) account=$2; shift 2 ;;
+        -s) shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    if [ -e "$dir/locked" ]; then
+      echo "security: SecKeychainSearchCopyNext: User interaction is not allowed." >&2
+      exit 36
+    fi
+    item="$dir/items/$(key "$account")"
+    if [ ! -e "$item" ]; then
+      echo "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." >&2
+      exit 44
+    fi
+    if [ "$command" = find-generic-password ]; then
+      cat "$item"
+      echo
+    else
+      rm "$item"
+    fi
+    ;;
+  *)
+    exit 1
+    ;;
+esac

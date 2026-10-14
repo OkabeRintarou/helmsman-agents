@@ -56,6 +56,9 @@ config :helmsman, Oban, testing: :manual
 # connections); autopilot tests run `Helmsman.Autopilots.Workers.Sweep`.
 config :helmsman, :autopilots_boot_sweep, false
 
+# The metric pollers would query outside the sandbox; tests call them.
+config :helmsman, HelmsmanWeb.Telemetry, poll_database: false
+
 # GitHub calls go to Req.Test stubs; the App configuration is read on every
 # call (no cache), so tests can switch it.
 config :helmsman, Helmsman.GitHub.Client, req_options: [plug: {Req.Test, Helmsman.GitHub.Client}]

@@ -264,6 +264,20 @@ defmodule Helmsman.Daemons do
     offline(daemon.id, locked_ids -- ids)
   end
 
+  @doc """
+  The number of daemons online on the instance: not revoked and seen
+  within `online_threshold_seconds/0` (the metric `helmsman.daemons.online.count`).
+  """
+  @spec count_online() :: non_neg_integer()
+  def count_online do
+    cutoff = DateTime.add(now(), -@online_threshold_seconds)
+
+    Repo.aggregate(
+      from(d in Daemon, where: is_nil(d.revoked_at) and d.last_seen_at > ^cutoff),
+      :count
+    )
+  end
+
   # `online`: not revoked and seen within `online_threshold_seconds/0`.
   def list_own(scope) do
     cutoff = DateTime.add(now(), -@online_threshold_seconds)

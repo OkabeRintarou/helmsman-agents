@@ -1,7 +1,38 @@
 defmodule HelmsmanDaemon.CLI do
-  @moduledoc "Foreground daemon and local device management commands."
-  alias HelmsmanDaemon.{Config, Credentials, Detector, LocalRepos, Login, Paths}
-  @background "后台服务随后续版本提供"
+  @moduledoc """
+  Command line of the installed `helmsman` binary and of `mix helmsman`.
+
+  Exit codes: 0 success, 1 general error, 2 usage, 3 authentication failure /
+  daemon not running / service manager unavailable, 4 protocol incompatible,
+  5 no usable agent CLI.
+  """
+  alias HelmsmanDaemon.{
+    Config,
+    Credentials,
+    Detector,
+    EnvFile,
+    LocalRepos,
+    LogFile,
+    Login,
+    Paths,
+    Release,
+    Service
+  }
+
+  @usage [
+    "helmsman --version",
+    "helmsman login --server URL [--force]",
+    "helmsman logout",
+    "helmsman runtimes",
+    "helmsman daemon start [--foreground]",
+    "helmsman daemon stop",
+    "helmsman daemon restart",
+    "helmsman daemon status [--json]",
+    "helmsman daemon logs [-f] [-n N]",
+    "helmsman repos add PATH --name NAME --workspace SLUG...",
+    "helmsman repos remove NAME",
+    "helmsman repos list"
+  ]
 
   def main(args), do: System.stop(run(args))
 
@@ -11,13 +42,50 @@ defmodule HelmsmanDaemon.CLI do
              server: :string,
              force: :boolean,
              foreground: :boolean,
+             service: :boolean,
+             json: :boolean,
+             follow: :boolean,
+             lines: :integer,
+             version: :boolean,
              name: :string,
              workspace: :keep
-           ]
+           ],
+           aliases: [f: :follow, n: :lines]
          ) do
-      {flags, command, []} -> dispatch(command, flags, opts)
-      _ -> usage()
+      {[version: true], [], []} ->
+        IO.puts(
+          Release.version_line(Keyword.get_lazy(opts, :standalone?, &Release.standalone?/0))
+        )
+
+        0
+
+      {flags, command, []} ->
+        case HelmsmanDaemon.Exec.ensure_started() do
+          :ok ->
+            dispatch(command, flags, opts)
+
+          {:error, reason} ->
+            IO.puts("Could not start the process helper (erlexec): #{inspect(reason)}")
+            1
+        end
+
+      _ ->
+        usage()
     end
+  end
+
+  @doc "Usage text; every subcommand in the documentation must appear here."
+  def usage_text do
+    Enum.join(
+      ["Usage:" | Enum.map(@usage, &("  " <> &1))] ++
+        [
+          "",
+          "`daemon start` installs and starts the background service (systemd user",
+          "service or launchd agent); --foreground runs in this terminal or under",
+          "your own supervisor. The service runs `daemon start --foreground --service`."
+        ],
+      "\n"
+    )
   end
 
   defp dispatch(["runtimes"], [], _opts) do
@@ -25,7 +93,7 @@ defmodule HelmsmanDaemon.CLI do
       {:ok, _} ->
         print_clis()
 
-        case Credentials.read() do
+        case Credentials.metadata() do
           {:ok, credentials} -> Login.print_workspaces(credentials.workspaces)
           _ -> IO.puts("Not logged in")
         end
@@ -44,21 +112,37 @@ defmodule HelmsmanDaemon.CLI do
       else: usage()
   end
 
-  defp dispatch(["logout"], [], opts), do: Login.logout(opts)
-
-  defp dispatch(["daemon", "start"], flags, opts) do
-    if Keyword.keys(flags) -- [:foreground] == [] do
-      IO.puts(@background)
-      start(opts)
-    else
-      usage()
+  defp dispatch(["logout"], [], opts) do
+    case Service.stop_if_enabled(opts) do
+      :ok -> Login.logout(opts)
+      {:error, code} -> code
     end
   end
 
-  defp dispatch(["daemon", command], _flags, _opts)
-       when command in ~w(stop restart status logs) do
-    IO.puts(@background)
-    2
+  defp dispatch(["daemon", "start"], flags, opts) do
+    cond do
+      Keyword.keys(flags) -- [:foreground, :service] != [] -> usage()
+      flags[:service] && !flags[:foreground] -> usage()
+      flags[:foreground] -> foreground(flags[:service] || false, opts)
+      true -> Service.start(opts)
+    end
+  end
+
+  defp dispatch(["daemon", "stop"], [], opts), do: Service.stop(opts)
+  defp dispatch(["daemon", "restart"], [], opts), do: Service.restart(opts)
+
+  defp dispatch(["daemon", "status"], flags, opts) do
+    if Keyword.keys(flags) -- [:json] == [],
+      do: Service.status(Keyword.put(opts, :json, flags[:json] || false)),
+      else: usage()
+  end
+
+  defp dispatch(["daemon", "logs"], flags, opts) do
+    lines = Keyword.get(flags, :lines, 100)
+
+    if Keyword.keys(flags) -- [:follow, :lines] == [] and lines > 0,
+      do: Service.logs(lines, flags[:follow] || false, opts),
+      else: usage()
   end
 
   defp dispatch(["repos", "add", path], flags, opts) do
@@ -125,21 +209,17 @@ defmodule HelmsmanDaemon.CLI do
     end)
   end
 
-  defp start(opts) do
-    if Detector.available?(
-         Detector.scan(Keyword.get(opts, :adapters, HelmsmanDaemon.Adapter.registered()))
-       ) do
-      case HelmsmanDaemon.start_daemon(opts) do
-        {:ok, supervisor} ->
-          ref = Process.monitor(supervisor)
+  @doc """
+  Checks shared by foreground and background start: a usable agent CLI (exit 5)
+  and readable credentials (exit 1).
+  """
+  def preflight(opts) do
+    adapters = Keyword.get(opts, :adapters, HelmsmanDaemon.Adapter.registered())
 
-          receive do
-            {:DOWN, ^ref, _, _, _} -> 1
-          end
-
-        {:error, _} ->
-          IO.puts("Could not start daemon; check config and login")
-          1
+    if Detector.available?(Detector.scan(adapters)) do
+      case Credentials.read() do
+        {:ok, _} -> :ok
+        {:error, reason} -> credentials_failure(reason)
       end
     else
       IO.puts("Install a supported agent CLI before starting the daemon")
@@ -147,12 +227,42 @@ defmodule HelmsmanDaemon.CLI do
     end
   end
 
-  defp usage do
-    IO.puts(
-      "Usage: helmsman login --server URL [--force] | logout | runtimes | daemon start [--foreground]" <>
-        " | repos add PATH --name NAME --workspace SLUG... | repos remove NAME | repos list"
-    )
+  defp credentials_failure({:keychain, _}), do: fail(Credentials.locked_message())
+  defp credentials_failure(:invalid_config), do: fail("Invalid config.toml")
+  defp credentials_failure(_), do: fail("Not logged in; run `helmsman login --server URL` first")
 
+  defp fail(message) do
+    IO.puts(message)
+    1
+  end
+
+  defp foreground(service?, opts) do
+    if service? do
+      Paths.ensure!()
+      LogFile.setup(Keyword.get_lazy(opts, :platform, &HelmsmanDaemon.Platform.os/0))
+      EnvFile.load()
+    end
+
+    with :ok <- preflight(opts), do: run_daemon(opts)
+  end
+
+  defp run_daemon(opts) do
+    case HelmsmanDaemon.start_daemon(opts) do
+      {:ok, supervisor} ->
+        ref = Process.monitor(supervisor)
+
+        receive do
+          {:DOWN, ^ref, _, _, _} -> if HelmsmanDaemon.stopping?(), do: 0, else: 1
+        end
+
+      {:error, _} ->
+        IO.puts("Could not start daemon; check config and login")
+        1
+    end
+  end
+
+  defp usage do
+    IO.puts(usage_text())
     2
   end
 end

@@ -96,7 +96,8 @@ defmodule HelmsmanDaemon.LoginTest do
       conn |> Plug.Conn.put_status(426) |> Req.Test.json(%{})
     end)
 
-    capture_io(fn -> assert Login.login("https://example.test", opts) == 4 end)
+    output = capture_io(fn -> assert Login.login("https://example.test/", opts) == 4 end)
+    assert output =~ "curl -fsSL https://example.test/install.sh | sh"
   end
 
   test "offline logout always deletes credentials", %{opts: opts} do

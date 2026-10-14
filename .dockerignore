@@ -1,0 +1,27 @@
+# The build context is the repository root (Dockerfile): only VERSION, the
+# protocol and server projects, the documents the server embeds
+# and the daemon binaries go in.
+*
+!VERSION
+!docs/
+!protocol/
+!server/
+!daemon-dist/
+!dist/
+
+# Build output, dependencies and local files are rebuilt in the image.
+**/_build
+**/deps
+**/node_modules
+**/.elixir_ls
+**/.lexical
+**/cover
+**/erl_crash.dump
+**/priv/plts
+**/tmp
+protocol/test
+server/test
+server/priv/static/assets
+server/priv/static/cache_manifest.json
+server/priv/static/**/*.gz
+server/priv/static/**/*-????????????????????????????????.*

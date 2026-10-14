@@ -1,31 +1,58 @@
 # Helmsman daemon
 
 守护进程在本机执行 Agent CLI，通过 Phoenix Channel 领取运行、发送事件和结果。
-当前提供前台运行；真实 CLI 适配器从后续 `add-claude-adapter` 开始交付。
-生产配置暂未注册适配器，因此 `daemon start` 会提示安装并以 5 退出。
+安装、登录、后台服务、`daemon.env`、钥匙串与卸载的用户文档见
+[`docs/INSTALL.md`](../docs/INSTALL.md)。发布时打包成单文件二进制（Burrito），
+以 `helmsman` 命令运行；在源码树里用 `mix helmsman …` 运行同一套命令。
 
 从仓库根目录进入 `daemon/`，用项目的 Erlang / Elixir 版本运行：
 
 ```sh
 mise trust
 mise exec -- mix deps.get
+mise exec -- mix helmsman --version
 mise exec -- mix helmsman runtimes
 mise exec -- mix helmsman login --server https://helmsman.example
 mise exec -- mix helmsman logout
 mise exec -- mix helmsman daemon start --foreground
 ```
 
-登录会打印设备码和验证地址，按服务端间隔轮询；已登录时可用 `--force` 覆盖。
+命令（`helmsman` 换成 `mix helmsman` 即为源码树里的用法）：
+
+| 命令 | 作用 |
+|---|---|
+| `helmsman --version` | 版本、协议版本、目标平台；`mix` 方式下目标为 `dev` |
+| `helmsman login --server URL [--force]` | 设备码登录；已登录时加 `--force` 覆盖 |
+| `helmsman logout` | 先停止并停用后台服务，再吊销本机令牌、删除本地凭据（含钥匙串项） |
+| `helmsman runtimes` | 检测到的 CLI、版本与登录的工作区 |
+| `helmsman daemon start [--foreground]` | 缺省安装并启动后台服务（只有安装后的二进制能装；`mix` 方式下以 2 退出）；`--foreground` 在前台运行 |
+| `helmsman daemon stop` | 停止并取消自动运行 |
+| `helmsman daemon restart` | 用当前二进制与 `PATH` 重写服务定义后启用并重启 |
+| `helmsman daemon status [--json]` | 服务状态、连接、在跑的运行与磁盘占用；退出码 0 已连接、1 未连接、3 未运行 |
+| `helmsman daemon logs [-f] [-n N]` | 最近 N 行（缺省 100）服务日志：Linux journald、macOS `logs/daemon.log` |
+| `helmsman repos add PATH --name NAME --workspace SLUG...` | 登记本地仓库 |
+| `helmsman repos remove NAME` / `helmsman repos list` | 移除 / 列出本地仓库 |
+
+服务定义运行 `daemon start --foreground --service`：`--service` 读取 `daemon.env`，
+macOS 上把日志写到轮转的 `logs/daemon.log`。服务相关的系统命令（`systemctl`、
+`launchctl` 等）经可注入的执行器调用，测试里不会触碰真实的服务管理器。
+
+登录会打印设备码和验证地址，按服务端间隔轮询。
 注销时即使服务器不可达也会删除本地凭据，请在网页吊销机器。
-`daemon start` 与 `daemon start --foreground` 都在前台运行。
-`daemon stop/restart/status/logs` 暂以 2 退出并提示后台服务随后续版本提供。
-退出码：0 成功、1 一般错误、2 用法错误、3 认证失败、4 协议不兼容、5 无可用 CLI。
+已安装的服务管理器不可达、状态无法确认或服务停止失败时，注销会中止并保留凭据；
+恢复服务管理器或手动停用服务后再试。
+退出码：0 成功、1 一般错误、2 用法错误、3 认证失败 / 未运行 / 服务管理器不可用、4 协议不兼容、5 无可用 CLI。
 
 `HELMSMAN_HOME` 覆盖默认的 `~/.helmsman/`：
 
 ```text
-config.toml                 # server_url、max_concurrency (1–32，默认 4)、log_level
-credentials                 # JSON 设备令牌，0600，原子替换，禁止放进代码仓库
+config.toml                 # server_url、max_concurrency (1–32，默认 4)、log_level、[credentials] store
+credentials                 # JSON，0600，原子替换，禁止放进代码仓库
+credentials.lock            # 0600，跨 CLI 进程的凭据操作锁；保持文件，不含令牌
+status.json                 # 运行状态（0600，不含令牌）；daemon status 读它，正常退出时删除
+daemon.env                  # 可选，后台服务的 KEY=VALUE 环境变量（必须 0600）
+logs/                       # macOS 后台服务日志（daemon.log 10 MB × 5；launchd.log）
+service/                    # macOS 后台服务定义的正本
 machine_id                  # 持久的随机机器 ID
 state/<run_id>.json          # OS PID、PGID、已知组员身份；重启时先清理再连接
 state/.security_notice_shown
@@ -35,10 +62,26 @@ scratch/<workspace>/<task>/  # 无仓库任务复用的工作目录
 ```
 
 目录为 0700，凭据权限过宽时修正为 0600。配置缺失时采用默认值。
-凭据格式是 `{"server_url":"https://…","daemon_id":1,"token":"hmd_…","issued_at":"2026-10-12T00:00:00Z","workspaces":[{"id":1,"slug":"bos","name":"Bosun"}]}`。
+`[credentials] store` 为 `"file"`（Linux 唯一允许、缺省）或 `"keychain"`（macOS 缺省）。
+文件存放时凭据格式是 `{"server_url":"https://…","daemon_id":1,"token":"hmd_…","issued_at":"2026-10-12T00:00:00Z","workspaces":[{"id":1,"slug":"bos","name":"Bosun"}]}`。
+钥匙串存放时文件不含 `token`，改为 `"token_store":"keychain"`、`token_ref`（已提交的代次）、
+`pending`（正在写入的代次）与 `stale_refs`（待删除的代次）；每一代令牌是一个通用密码项
+（服务 `dev.helmsman.daemon`，账户 `<server_url> <daemon_id> <ref>`），用 `security -i`
+从标准输入写入，令牌不出现在进程参数里。写入、崩溃恢复与迁移的规则见
+`HelmsmanDaemon.Credentials` 的模块文档。
 连接令牌只放在请求头，运行环境中的 `HELMSMAN_RUN_TOKEN` 是单独的 `hmr_` 令牌。
 CLI 与守护进程使用同一个系统用户，能访问该用户的文件与凭据；建议用没有 GitHub 凭据的专用系统用户。
 有仓库的运行目前以 `workspace_prepare` 失败；git 工作区由后续变更提供。
+
+打包：每个目标在对应平台的机器上构建，Linux 在 `build/Dockerfile` 的 `debian:bullseye`
+容器里（glibc 2.31 基线，需要 docker），macOS 原生（`MACOSX_DEPLOYMENT_TARGET=13.0`）。
+OTP 由 `../scripts/build-erts.sh` 从源码构建（静态链接 OpenSSL），既用来跑 `mix release`
+也是二进制里的 ERTS（`mix release` 在别的 OTP 上会拒绝）；Elixir 与 zig 由
+`../scripts/build-tools.sh` 下载并按固定的 SHA-256 校验。缓存位置见 `build-daemon.sh` 开头。
+
+```sh
+../scripts/build-daemon.sh linux-x64 ../dist   # 产出 ../dist/helmsman-linux-x64 与 .sha256
+```
 
 服务器 `add-run-lifecycle` 的端到端测试可预先向临时目录写入上述凭据和配置，再启动测试环境：
 
@@ -56,29 +99,8 @@ Agent 的 `custom_args` 第一项选择 `test/support/fake_cli/scenarios/` 内�
 ```sh
 mise exec -- mix precommit
 mise exec -- mix dialyzer
+mise exec -- mix test --include macos   # 只在 macOS 上：临时钥匙串与日志文件的测试
 ```
-
-长期运行可手写 systemd user unit（保存到 `~/.config/systemd/user/helmsman.service`，将路径与用户名换成实际值）：
-
-```ini
-[Unit]
-Description=Helmsman agent daemon
-After=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/home/agent/helmsman-agents/daemon
-Environment=HELMSMAN_HOME=/home/agent/.helmsman
-ExecStart=/home/agent/.local/bin/mise exec -- mix helmsman daemon start --foreground
-Restart=on-failure
-RestartSec=5
-KillMode=control-group
-
-[Install]
-WantedBy=default.target
-```
-
-由机器主人运行 `systemctl --user daemon-reload`、`systemctl --user enable --now helmsman`。
 
 进程组成员身份每 10 秒持久化；CLI 退出后清理全部已知组员，完成后才上报结果。
 无法确认身份或清理超时时保留 state 记录并记录日志，供下次启动恢复；不会向身份不明的 PGID 发信号。

@@ -429,7 +429,18 @@ defmodule Helmsman.Runs.Claim do
     # (`add-dependency-dispatch` decision 6). After the commit, so that
     # claiming never waits on another transaction's job insert.
     Tx.after_commit(fn -> Dependencies.changed(run.task_id) end)
+    Tx.after_commit(fn -> claimed_event(run) end)
     %{state | slots: state.slots - 1, specs: [spec | state.specs]}
+  end
+
+  # The metric `helmsman.runs.claim.wait_ms`: from creation to claim. Only
+  # the duration, nothing about the workspace, task or agent.
+  defp claimed_event(%Run{claimed_at: claimed_at, inserted_at: inserted_at}) do
+    :telemetry.execute(
+      [:helmsman, :runs, :claim],
+      %{wait_ms: max(DateTime.diff(claimed_at, inserted_at, :millisecond), 0)},
+      %{}
+    )
   end
 
   # Fault injection for the concurrency tests: compiled in the test

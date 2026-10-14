@@ -11,7 +11,8 @@ defmodule HelmsmanDaemon.Connection do
     LocalMergeCheck,
     LocalRepos,
     Login,
-    Runs
+    Runs,
+    StatusFile
   }
 
   alias HelmsmanProtocol.ErrorReply
@@ -48,6 +49,8 @@ defmodule HelmsmanDaemon.Connection do
   def init(opts) do
     case credentials(opts) do
       {:ok, credentials} ->
+        StatusFile.identity(credentials.server_url, credentials.daemon_id)
+
         socket =
           new_socket()
           |> assign(
@@ -199,6 +202,7 @@ defmodule HelmsmanDaemon.Connection do
   def handle_join(_topic, payload, socket) do
     case Messages.decode_reply("join", payload) do
       {:ok, reply} ->
+        StatusFile.connected()
         terminate_ids(reply.terminate_run_ids)
         next = socket |> assign(:joined?, true) |> assign(:runtimes, reply.runtimes)
         Cleanup.joined(socket.assigns.protocol_version)
@@ -218,7 +222,8 @@ defmodule HelmsmanDaemon.Connection do
         fatal(
           socket,
           4,
-          "Protocol incompatible: server #{error.server_version}, minimum #{error.min_version}; #{error.upgrade_url}"
+          "Protocol incompatible: server #{error.server_version}, minimum #{error.min_version}; #{error.upgrade_url}\n" <>
+            Login.upgrade_message(socket.assigns.credentials.server_url)
         )
 
       _ ->
@@ -264,6 +269,7 @@ defmodule HelmsmanDaemon.Connection do
 
   defp requeue(socket) do
     Cleanup.disconnected()
+    StatusFile.disconnected()
 
     Enum.each(socket.assigns.cleanup_refs, fn {_, caller} ->
       GenServer.reply(caller, {:error, :disconnected})
@@ -385,6 +391,8 @@ defmodule HelmsmanDaemon.Connection do
 
   @impl true
   def handle_reply(ref, reply, socket) do
+    StatusFile.message_received()
+
     cond do
       Map.has_key?(socket.assigns.cleanup_refs, ref) -> cleanup_reply(ref, reply, socket)
       Map.has_key?(socket.assigns.pending, ref) -> report_reply(ref, reply, socket)
@@ -580,6 +588,7 @@ defmodule HelmsmanDaemon.Connection do
       |> Keyword.put(:server_url, socket.assigns.credentials.server_url)
 
     Enum.each(runs, &Runs.start_run(&1, opts))
+    if runs != [], do: StatusFile.changed()
     if runs == [], do: socket, else: maybe_claim(socket)
   end
 
@@ -635,6 +644,8 @@ defmodule HelmsmanDaemon.Connection do
 
   @impl true
   def handle_message(_topic, event, wire, socket) do
+    StatusFile.message_received()
+
     case Messages.decode(event, wire) do
       {:ok, %HelmsmanProtocol.Push.RunsAvailable{}} ->
         {:ok, maybe_claim(socket)}

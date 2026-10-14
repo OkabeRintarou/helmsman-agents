@@ -4,6 +4,71 @@ defmodule HelmsmanDaemon.Exec do
   require Logger
   alias HelmsmanDaemon.{Env, ProcGroup, RepoCache}
 
+  @doc """
+  Starts erlexec's port program. erlexec refuses to start without `SHELL`,
+  which service managers may not set; commands are launched from argv lists,
+  so `/bin/sh` is a safe default.
+  """
+  def ensure_started do
+    if System.get_env("SHELL") in [nil, ""], do: System.put_env("SHELL", "/bin/sh")
+
+    case Application.ensure_all_started(:erlexec, type: :permanent) do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Runs `argv` to completion, writing `opts[:stdin]` (then end of file) to its
+  standard input. Returns `{:ok, stdout}`, `{:error, exit_status, stderr}` or
+  `{:error, :timeout | :signal | :launch, stderr}`. The child gets the
+  scrubbed `Env.child/0` environment.
+  """
+  def capture(argv, opts \\ []) do
+    stdin = Keyword.get(opts, :stdin)
+    options = [:stdout, :stderr, :monitor] ++ if(stdin, do: [:stdin], else: [])
+
+    case :exec.run(argv, clear_environment(options)) do
+      {:ok, pid, os_pid} ->
+        if stdin do
+          :exec.send(pid, stdin)
+          :exec.send(pid, :eof)
+        end
+
+        deadline = System.monotonic_time(:millisecond) + Keyword.get(opts, :timeout, 30_000)
+        collect(pid, os_pid, "", "", deadline)
+
+      {:error, _} ->
+        {:error, :launch, ""}
+    end
+  end
+
+  defp collect(pid, os_pid, out, err, deadline) do
+    receive do
+      {:stdout, ^os_pid, data} ->
+        collect(pid, os_pid, out <> data, err, deadline)
+
+      {:stderr, ^os_pid, data} ->
+        collect(pid, os_pid, out, err <> data, deadline)
+
+      {:DOWN, _, :process, ^pid, :normal} ->
+        {:ok, out}
+
+      {:DOWN, _, :process, ^pid, {:exit_status, status}} ->
+        case :exec.status(status) do
+          {:status, code} -> {:error, code, err}
+          {:signal, _, _} -> {:error, :signal, err}
+        end
+
+      {:DOWN, _, :process, ^pid, _} ->
+        {:error, :launch, err}
+    after
+      max(deadline - System.monotonic_time(:millisecond), 0) ->
+        :exec.kill(pid, 9)
+        {:error, :timeout, err}
+    end
+  end
+
   @doc "Launch a CLI without repository locks."
   def run_cli(argv, options) do
     case :exec.run(argv, clear_environment(options)) do

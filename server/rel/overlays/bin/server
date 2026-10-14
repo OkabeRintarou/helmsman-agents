@@ -1,0 +1,13 @@
+#!/bin/sh
+# Without arguments: serves HTTP (PHX_SERVER=true). With arguments: runs the
+# release command, e.g. bin/server eval 'Helmsman.Release.reindex("acme")',
+# without starting the HTTP server.
+set -eu
+
+cd -P -- "$(dirname -- "$0")"
+
+if [ "$#" -eq 0 ]; then
+  PHX_SERVER=true exec ./helmsman start
+fi
+
+exec ./helmsman "$@"

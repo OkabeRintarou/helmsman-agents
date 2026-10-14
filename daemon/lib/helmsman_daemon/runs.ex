@@ -99,6 +99,7 @@ defmodule HelmsmanDaemon.Runs do
         })
       end
 
+      HelmsmanDaemon.StatusFile.changed()
       if Process.whereis(HelmsmanDaemon.Connection), do: HelmsmanDaemon.Connection.claim()
     end
 

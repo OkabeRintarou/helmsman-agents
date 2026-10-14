@@ -12,6 +12,24 @@ defmodule Helmsman.Accounts.UserToken do
   @change_email_validity_in_days 7
   @session_validity_in_days 14
 
+  @doc """
+  How long each kind of token stays valid, in seconds: `:session`,
+  `:login` (magic links) and `:change` (`change:…` email changes).
+  Expired rows are pruned (`Helmsman.Accounts.Workers.PruneUserTokens`).
+  """
+  @spec validity_seconds() :: %{
+          session: pos_integer(),
+          login: pos_integer(),
+          change: pos_integer()
+        }
+  def validity_seconds do
+    %{
+      session: @session_validity_in_days * 86_400,
+      login: @magic_link_validity_in_minutes * 60,
+      change: @change_email_validity_in_days * 86_400
+    }
+  end
+
   schema "users_tokens" do
     field :token, :binary
     field :context, :string

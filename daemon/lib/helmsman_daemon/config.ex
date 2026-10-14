@@ -3,36 +3,59 @@ defmodule HelmsmanDaemon.Config do
   use GenServer
   alias HelmsmanDaemon.Adapters.Codex.Home
   alias HelmsmanDaemon.Adapters.Cursor.Home, as: CursorHome
-  alias HelmsmanDaemon.{Env, Paths}
+  alias HelmsmanDaemon.{Env, Paths, Platform}
 
-  def load do
+  def load(opts \\ []) do
+    with {:ok, values} <- read(), do: validate(values, opts)
+  end
+
+  defp read do
     Paths.ensure!()
 
     case File.read(Path.join(Paths.home(), "config.toml")) do
-      {:ok, contents} ->
-        with {:ok, values} <- Toml.decode(contents), do: validate(values)
-
-      {:error, :enoent} ->
-        validate(%{})
-
-      error ->
-        error
+      {:ok, contents} -> Toml.decode(contents)
+      {:error, :enoent} -> {:ok, %{}}
+      error -> error
     end
   end
 
-  defp validate(values) do
+  @doc """
+  `[credentials] store`: `"keychain"` (macOS only, the macOS default) or `"file"`
+  (the default elsewhere). `opts[:platform]` overrides the detected platform.
+  """
+  def credentials_store(opts \\ []) do
+    case read() do
+      {:ok, values} -> store(values, Keyword.get_lazy(opts, :platform, &Platform.os/0))
+      _ -> {:error, :invalid_config}
+    end
+  end
+
+  defp store(values, platform) do
+    case Map.get(values, "credentials", %{}) do
+      %{"store" => "file"} -> {:ok, :file}
+      %{"store" => "keychain"} when platform == :macos -> {:ok, :keychain}
+      %{"store" => _} -> {:error, :invalid_config}
+      section when is_map(section) and platform == :macos -> {:ok, :keychain}
+      section when is_map(section) -> {:ok, :file}
+      _ -> {:error, :invalid_config}
+    end
+  end
+
+  defp validate(values, opts) do
     concurrency = Map.get(values, "max_concurrency", 4)
     level = Map.get(values, "log_level", "info")
 
     if is_integer(concurrency) and concurrency in 1..32 and level in ~w(debug info warning error) do
-      with {:ok, codex_home} <- codex_home(values) do
+      with {:ok, codex_home} <- codex_home(values),
+           {:ok, store} <- store(values, Keyword.get_lazy(opts, :platform, &Platform.os/0)) do
         {:ok,
          %{
            codex_home: codex_home,
            cursor: CursorHome.configured(Map.get(values, "cursor")),
            server_url: Map.get(values, "server_url"),
            max_concurrency: concurrency,
-           log_level: String.to_existing_atom(level)
+           log_level: String.to_existing_atom(level),
+           credentials_store: store
          }}
       end
     else

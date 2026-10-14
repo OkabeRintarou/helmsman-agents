@@ -4,22 +4,36 @@ defmodule HelmsmanWeb.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
+  # `:secure` is added per request (`session/2`): it follows the public
+  # URL's scheme, which is runtime configuration.
   @session_options [
     store: :cookie,
     key: "_helmsman_key",
     signing_salt: "UEooEoYk",
-    same_site: "Lax",
-    # Compile-time: config/prod.exs enables it for production builds.
-    secure: Application.compile_env(:helmsman, :secure_session_cookie, false)
+    same_site: "Lax"
   ]
+
+  # Answers /healthz and /readyz before anything else: no SSL redirect,
+  # request ID, telemetry, request log, session or router.
+  plug HelmsmanWeb.Plugs.Health
 
   socket "/daemon/socket", HelmsmanWeb.DaemonSocket,
     websocket: [connect_info: [:x_headers], check_origin: false],
     longpoll: false
 
+  # `:x_headers` lets `HelmsmanWeb.UserAuth.client_ip/1` honour a trusted
+  # proxy's X-Forwarded-For, as `HelmsmanWeb.Plugs.TrustedProxies` does.
   socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [:peer_data, session: @session_options]],
-    longpoll: [connect_info: [:peer_data, session: @session_options]]
+    websocket: [connect_info: [:peer_data, :x_headers, session: @session_options]],
+    longpoll: [connect_info: [:peer_data, :x_headers, session: @session_options]]
+
+  # Before static files, so they are redirected to HTTPS too: the request
+  # ID, the client address and scheme from a trusted reverse proxy's
+  # headers, then the HTTPS redirect when the public URL is https (runtime
+  # configuration).
+  plug Plug.RequestId
+  plug HelmsmanWeb.Plugs.TrustedProxies
+  plug HelmsmanWeb.Plugs.ForceSSL
 
   # Serve at "/" the static files from "priv/static" directory.
   #
@@ -42,8 +56,10 @@ defmodule HelmsmanWeb.Endpoint do
     plug Phoenix.Ecto.CheckRepoStatus, otp_app: :helmsman
   end
 
-  plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
+
+  # GET /install.sh and /downloads/daemon/*: public, no session.
+  plug HelmsmanWeb.Plugs.DaemonDownload
 
   # Needs the raw request body, so it runs before Plug.Parsers.
   plug HelmsmanWeb.GitHubWebhookPlug
@@ -62,6 +78,31 @@ defmodule HelmsmanWeb.Endpoint do
 
   plug Plug.MethodOverride
   plug Plug.Head
-  plug Plug.Session, @session_options
+  plug :session
   plug HelmsmanWeb.Router
+
+  defp session(conn, _opts) do
+    opts = Plug.Session.init(session_options())
+    Plug.Session.call(conn, opts)
+  end
+
+  @doc """
+  The session cookie options: `Secure` when the public URL is https
+  (`secure_cookies?/0`); otherwise Plug's default (`Secure` on an https
+  connection only).
+  """
+  @spec session_options() :: keyword()
+  def session_options, do: put_secure(@session_options)
+
+  @doc "Adds `secure: true` to cookie options when `secure_cookies?/0`."
+  @spec put_secure(keyword()) :: keyword()
+  def put_secure(opts),
+    do: if(secure_cookies?(), do: Keyword.put(opts, :secure, true), else: opts)
+
+  @doc """
+  Whether cookies are marked `Secure`: the public URL's scheme is https
+  (`config :helmsman, :secure_cookies`, set from PHX_URL_SCHEME).
+  """
+  @spec secure_cookies?() :: boolean()
+  def secure_cookies?, do: Application.get_env(:helmsman, :secure_cookies, false) == true
 end

@@ -418,6 +418,7 @@ defmodule HelmsmanDaemon.ConnectionTest do
     assert output =~ "server 2"
     assert output =~ "minimum 2"
     assert output =~ "https://example.test/upgrade"
+    assert output =~ "curl -fsSL http://localhost:49999/install.sh | sh"
     refute Process.whereis(Connection)
   end
 

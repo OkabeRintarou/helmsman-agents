@@ -1,10 +1,13 @@
 defmodule Helmsman.MixProject do
   use Mix.Project
 
+  # Shared by protocol, server and daemon; release tags are v<VERSION>.
+  @version "../VERSION" |> Path.expand(__DIR__) |> File.read!() |> String.trim()
+
   def project do
     [
       app: :helmsman,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
@@ -12,6 +15,7 @@ defmodule Helmsman.MixProject do
       deps: deps(),
       compilers: [:boundary, :phoenix_live_view] ++ Mix.compilers(),
       listeners: [Phoenix.CodeReloader],
+      releases: releases(),
       dialyzer: [
         plt_local_path: "priv/plts",
         plt_add_apps: [:mix] ++ if(Mix.env() == :test, do: [:ex_unit], else: [])
@@ -29,6 +33,18 @@ defmodule Helmsman.MixProject do
     [
       mod: {Helmsman.Application, []},
       extra_applications: [:logger, :runtime_tools]
+    ]
+  end
+
+  # The server release (`add-release-distribution` decision 2), built by the
+  # repository's Dockerfile; rel/overlays/bin has `start` (migrate, then
+  # serve), `server` and `migrate`.
+  defp releases do
+    [
+      helmsman: [
+        include_executables_for: [:unix],
+        applications: [runtime_tools: :permanent]
+      ]
     ]
   end
 
@@ -101,6 +117,8 @@ defmodule Helmsman.MixProject do
       {:open_api_spex, "~> 3.21"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
+      {:remote_ip, "~> 1.2"},
+      {:logger_json, "~> 7.0"},
       {:helmsman_protocol, path: "../protocol"},
       {:boundary, "~> 0.10", runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
@@ -130,11 +148,13 @@ defmodule Helmsman.MixProject do
         "compile",
         "tailwind helmsman",
         "esbuild helmsman",
+        "esbuild helmsman_theme",
         "esbuild helmsman_mermaid"
       ],
       "assets.deploy": [
         "tailwind helmsman --minify",
         "esbuild helmsman --minify",
+        "esbuild helmsman_theme",
         "esbuild helmsman_mermaid",
         "phx.digest"
       ],

@@ -104,6 +104,91 @@ jobs:
           MIX_ENV: test
         run: mix compile
       - run: ../scripts/hostile-git-env.sh mix precommit
+      # test_helper.exs excludes :macos (login-keychain tests with a temporary
+      # keychain); only the macOS runner includes them.
+      - name: macOS keychain tests
+        if: runner.os == 'macOS'
+        run: ../scripts/hostile-git-env.sh mix test --include macos --only macos
+
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell script tests
+        run: for test in scripts/test/*.test.sh; do sh "$test"; done
+      - name: ShellCheck
+        run: shellcheck --severity=warning scripts/*.sh scripts/test/*.sh
+
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      release: ${{ steps.filter.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Did release packaging change?
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: scripts/release-smoke-needed.sh "$BASE_SHA" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  # Builds the linux-x64 daemon binary and the image the way release.yml does,
+  # starts the image against PostgreSQL and checks /readyz, /install.sh and the
+  # daemon download. Runs when packaging changed, and on every push to main
+  # (server changes can break the image build too, e.g. a new embedded file).
+  release-smoke:
+    needs: changes
+    if: needs.changes.outputs.release == 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: helmsman_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the self-built OTP
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/helmsman-build/erts
+          key: daemon-erts-linux-x64-${{ hashFiles('.tool-versions', 'scripts/build-erts.sh', 'daemon/build/Dockerfile') }}
+      - name: Cache Elixir and zig
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/helmsman-build/tools
+          key: daemon-tools-linux-x64-${{ hashFiles('.tool-versions', 'scripts/build-tools.sh') }}
+      - name: Build helmsman-linux-x64
+        run: scripts/build-daemon.sh linux-x64 daemon-dist
+      - name: Smoke-test helmsman-linux-x64
+        env:
+          SMOKE_IMAGES: debian:bullseye ubuntu:24.04
+        run: scripts/smoke-daemon-binary.sh daemon-dist/helmsman-linux-x64 linux-x64
+      - name: Build the image
+        run: docker build --build-arg DAEMON_DIST=daemon-dist -t helmsman:smoke .
+      - name: Start the image
+        run: |
+          docker run -d --name helmsman-smoke --network host \
+            -e DATABASE_URL=ecto://postgres:postgres@127.0.0.1:5432/helmsman_smoke \
+            -e SECRET_KEY_BASE="$(openssl rand -base64 48)" \
+            -e HELMSMAN_VAULT_KEY="$(openssl rand -base64 32)" \
+            -e PHX_HOST=localhost -e PHX_URL_SCHEME=http -e PHX_URL_PORT=4000 \
+            -e HELMSMAN_MAILER_ADAPTER=log \
+            helmsman:smoke
+      - name: Check /readyz, /install.sh and the daemon download
+        run: scripts/smoke-release-server.sh http://127.0.0.1:4000 linux-x64 daemon-dist/helmsman-linux-x64
+      - name: Container logs
+        if: failure()
+        run: docker logs helmsman-smoke
 
   dialyzer:
     runs-on: ubuntu-24.04

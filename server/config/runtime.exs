@@ -67,10 +67,19 @@ if config_env() == :dev do
 end
 
 if config_env() == :prod do
-  config :helmsman, :data_dir, System.get_env("HELMSMAN_DATA_DIR", "/var/lib/helmsman")
+  # An empty variable (`NAME=` in a compose env file) counts as unset: a
+  # required one is missing, an optional one takes its default.
+  required_env = fn name ->
+    case System.get_env(name) do
+      "" -> nil
+      value -> value
+    end
+  end
+
+  env = fn name, default -> required_env.(name) || default end
 
   database_url =
-    System.get_env("DATABASE_URL") ||
+    required_env.("DATABASE_URL") ||
       raise """
       environment variable DATABASE_URL is missing.
       For example: ecto://USER:PASS@HOST/DATABASE
@@ -92,14 +101,14 @@ if config_env() == :prod do
   # to check this value into version control, so we use an environment
   # variable instead.
   secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
+    required_env.("SECRET_KEY_BASE") ||
       raise """
       environment variable SECRET_KEY_BASE is missing.
       You can generate one by calling: mix phx.gen.secret
       """
 
   vault_key =
-    case System.get_env("HELMSMAN_VAULT_KEY") do
+    case required_env.("HELMSMAN_VAULT_KEY") do
       nil ->
         raise """
         environment variable HELMSMAN_VAULT_KEY is missing.
@@ -121,14 +130,114 @@ if config_env() == :prod do
   config :helmsman, Helmsman.Vault,
     ciphers: [default: {Cloak.Ciphers.AES.GCM, tag: "AES.GCM.V1", key: vault_key}]
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host =
+    required_env.("PHX_HOST") ||
+      raise """
+      environment variable PHX_HOST is missing.
+      It is the host name users and daemons reach this instance at, for example: hm.example.com
+      """
 
-  config :helmsman, :public_url, "https://#{host}"
+  # The public URL (add-release-distribution decision 3): https on 443 unless
+  # set otherwise, e.g. PHX_URL_SCHEME=http and PHX_URL_PORT=4000 on a
+  # private network without TLS.
+  url_scheme =
+    case env.("PHX_URL_SCHEME", "https") do
+      scheme when scheme in ["https", "http"] ->
+        scheme
+
+      other ->
+        raise "environment variable PHX_URL_SCHEME has an invalid value: #{inspect(other)}. " <>
+                "Allowed values: https, http"
+    end
+
+  url_port =
+    case env.("PHX_URL_PORT", "") do
+      "" ->
+        URI.default_port(url_scheme)
+
+      value ->
+        case Integer.parse(value) do
+          {port, ""} when port in 1..65_535 ->
+            port
+
+          _ ->
+            raise "environment variable PHX_URL_PORT must be a port number, got: #{inspect(value)}"
+        end
+    end
+
+  public_url =
+    if url_port == URI.default_port(url_scheme),
+      do: "#{url_scheme}://#{host}",
+      else: "#{url_scheme}://#{host}:#{url_port}"
+
+  config :helmsman, :public_url, public_url
+
+  # Secure cookies, the HTTPS redirect and HSTS follow the public scheme.
+  config :helmsman,
+    secure_cookies: url_scheme == "https",
+    force_ssl: url_scheme == "https"
+
+  # Reverse proxies whose X-Forwarded-For / X-Forwarded-Proto are honoured
+  # (HelmsmanWeb.Plugs.TrustedProxies); none by default.
+  trusted_proxies =
+    "HELMSMAN_TRUSTED_PROXIES"
+    |> env.("")
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+
+  for cidr <- trusted_proxies do
+    {address, prefix} =
+      case String.split(cidr, "/", parts: 2) do
+        [address, prefix] -> {address, Integer.parse(prefix)}
+        [address] -> {address, nil}
+      end
+
+    valid? =
+      case {:inet.parse_strict_address(String.to_charlist(address)), prefix} do
+        {{:ok, _ip}, nil} -> true
+        {{:ok, ip}, {bits, ""}} when tuple_size(ip) == 4 -> bits in 0..32
+        {{:ok, ip}, {bits, ""}} when tuple_size(ip) == 8 -> bits in 0..128
+        _ -> false
+      end
+
+    valid? ||
+      raise "environment variable HELMSMAN_TRUSTED_PROXIES has an invalid entry: #{inspect(cidr)}. " <>
+              "Expected comma-separated IP addresses or CIDR ranges, e.g. 10.0.0.0/8,172.16.0.0/12"
+  end
+
+  config :helmsman, :trusted_proxies, trusted_proxies
+
+  # Export and import files (designs/11 §3).
+  config :helmsman, :data_dir, env.("HELMSMAN_DATA_DIR", "/var/lib/helmsman")
+
+  # Daemon binaries served by /downloads/daemon/* (decision 11): from this
+  # directory, else redirected to HELMSMAN_DAEMON_DOWNLOAD_URL/helmsman-<target>.
+  config :helmsman, :daemon_dist_dir, env.("HELMSMAN_DAEMON_DIST_DIR", nil)
+
+  daemon_download_url =
+    case env.("HELMSMAN_DAEMON_DOWNLOAD_URL", "") do
+      "" ->
+        nil
+
+      url ->
+        case URI.parse(url) do
+          %URI{scheme: scheme, host: host}
+          when scheme in ["https", "http"] and host not in [nil, ""] ->
+            String.trim_trailing(url, "/")
+
+          _ ->
+            raise "environment variable HELMSMAN_DAEMON_DOWNLOAD_URL must be an http(s) URL, " <>
+                    "got: #{inspect(url)}"
+        end
+    end
+
+  config :helmsman, :daemon_download_url, daemon_download_url
 
   config :helmsman, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :helmsman, HelmsmanWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+    url: [host: host, port: url_port, scheme: url_scheme],
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
@@ -246,4 +355,50 @@ if config_env() == :prod do
     end
 
   config :helmsman, :mailer_from, mailer_from
+
+  # ## Logging (decision 6)
+  #
+  # HELMSMAN_LOG_FORMAT: json (the default in a release) or text;
+  # HELMSMAN_LOG_LEVEL: debug, info (default), notice, warning or error.
+  # JSON lines keep only this metadata; never tokens, secrets or agent
+  # environments.
+  log_metadata = [
+    :request_id,
+    :workspace_id,
+    :token_id,
+    :api_actor,
+    :run_id,
+    :daemon_id,
+    :mcp_tool,
+    :actor,
+    :duration_ms,
+    :result
+  ]
+
+  log_level =
+    case env.("HELMSMAN_LOG_LEVEL", "info") do
+      level when level in ~w(debug info notice warning error) ->
+        String.to_atom(level)
+
+      other ->
+        raise "environment variable HELMSMAN_LOG_LEVEL has an invalid value: #{inspect(other)}. " <>
+                "Allowed values: debug, info, notice, warning, error"
+    end
+
+  config :logger, level: log_level
+
+  default_log_format = if System.get_env("RELEASE_NAME"), do: "json", else: "text"
+
+  case env.("HELMSMAN_LOG_FORMAT", default_log_format) do
+    "json" ->
+      config :logger, :default_handler,
+        formatter: LoggerJSON.Formatters.Basic.new(metadata: log_metadata)
+
+    "text" ->
+      config :logger, :default_formatter, metadata: log_metadata
+
+    other ->
+      raise "environment variable HELMSMAN_LOG_FORMAT has an invalid value: #{inspect(other)}. " <>
+              "Allowed values: json, text"
+  end
 end

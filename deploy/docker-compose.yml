@@ -1,0 +1,43 @@
+# Helmsman and PostgreSQL on one machine (docs/DEPLOY.md).
+#
+#   cp deploy/.env.example deploy/.env      # then fill it in
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Compose reads deploy/.env both for the ${...} values below and as the app's
+# environment. The app migrates the database on every start (bin/start) and
+# serves HTTP on port 4000, published on HELMSMAN_HTTP_PORT (default 4000);
+# put a TLS reverse proxy in front of it.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: helmsman
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: helmsman
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helmsman -d helmsman"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    image: ${HELMSMAN_IMAGE:?set HELMSMAN_IMAGE in deploy/.env}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: ecto://helmsman:${POSTGRES_PASSWORD}@postgres/helmsman
+    ports:
+      - "${HELMSMAN_HTTP_PORT:-4000}:4000"
+    volumes:
+      - helmsman-data:/var/lib/helmsman
+
+volumes:
+  pgdata:
+  helmsman-data:
