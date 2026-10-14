@@ -304,5 +304,32 @@ defmodule HelmsmanWeb.RunComponentsTest do
       run = %{id: 1, status: "failed", retry_run_id: nil, triggers: [auto]}
       refute RunComponents.retryable?(%Helmsman.Accounts.Scope{}, run)
     end
+
+    # add-run-model (web-runs「运行的模型」).
+    test "显示模型与图标" do
+      html = card(%{status: "running", model: "claude-sonnet-4-5"})
+      assert html =~ "data-run-model"
+      assert html =~ ~s(data-model-vendor="anthropic")
+      assert html =~ "claude-sonnet-4-5"
+
+      unknown = card(%{status: "running", model: "my-private-model"})
+      assert unknown =~ ~s(data-model-vendor="none")
+      assert unknown =~ "my-private-model"
+    end
+
+    test "账号的家族覆盖: an alias under a bound account" do
+      html =
+        card(%{
+          model: "glm-5.3",
+          provider_account: %{id: 1, name: "zai", cli: "claude", icon: "zhipu", host: nil}
+        })
+
+      assert html =~ ~s(data-model-vendor="zhipu")
+    end
+
+    test "没有模型" do
+      refute card(%{}) =~ "data-run-model"
+      refute card(%{model: nil}) =~ "data-run-model"
+    end
   end
 end

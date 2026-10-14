@@ -112,6 +112,9 @@ defmodule Helmsman.Runs.Run do
     # The provider account the claim used (`add-provider-accounts`
     # decision 12); nil once the account is deleted.
     belongs_to :provider_account, Helmsman.ProviderAccounts.ProviderAccount
+    # The model the claim sent (`add-run-model` decision 2); nil: the CLI's
+    # or the account's default.
+    field :model, :string
 
     # The squad whose leader the run works as (`add-squads` decision 2);
     # nil for every other run.

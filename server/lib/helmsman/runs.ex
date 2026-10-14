@@ -70,6 +70,7 @@ defmodule Helmsman.Runs do
           required(:daemon) => String.t() | nil,
           required(:provider_account_name) => String.t() | nil,
           required(:provider_account) => ProviderAccounts.summary() | nil,
+          required(:model) => String.t() | nil,
           required(:initiator) => %{id: pos_integer(), name: String.t() | nil},
           required(:retry_of_id) => pos_integer() | nil,
           required(:retry_run_id) => pos_integer() | nil,
@@ -978,7 +979,8 @@ defmodule Helmsman.Runs do
   nil once deleted, and `source`: "schedule" | "manual" | "webhook"),
   failure_reason, priority, attempt, daemon, provider_account_name (the
   account the claim used; nil: none or deleted), provider_account (its
-  summary, `Helmsman.ProviderAccounts.summaries/1`, or nil), initiator: %{id, name},
+  summary, `Helmsman.ProviderAccounts.summaries/1`, or nil), model (the
+  model the claim sent; nil: none or the default), initiator: %{id, name},
   retry_of_id, retry_run_id, events_seq, summary, usage,
   cancel_requested_by, claimed_at, started_at, finished_at, last_event_at,
   inserted_at, updated_at}`. Never the error text (`get/2`).
@@ -1036,6 +1038,7 @@ defmodule Helmsman.Runs do
         provider_account_name:
           run.provider_account_id && get_in(accounts, [run.provider_account_id, :name]),
         provider_account: run.provider_account_id && accounts[run.provider_account_id],
+        model: run.model,
         initiator: %{
           id: run.root_initiator_user_id,
           name: users[run.root_initiator_user_id]

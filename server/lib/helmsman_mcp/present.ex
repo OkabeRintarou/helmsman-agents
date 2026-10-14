@@ -206,6 +206,7 @@ defmodule HelmsmanMCP.Present do
         end),
       failure_reason: run.failure_reason,
       priority: run.priority,
+      model: run[:model],
       created_at: time(run.inserted_at),
       updated_at: time(run.updated_at)
     }

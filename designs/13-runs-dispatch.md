@@ -25,6 +25,7 @@
 | `summary` | Agent 最后一条输出（截断到 4 KB） |
 | `usage jsonb` | 输入 / 输出 / 缓存 token 数、费用估算（CLI 给了才有） |
 | `failure_reason` / `error` | 失败原因码（§5）与原始错误信息 |
+| `model` | 领取时下发给守护进程的模型名（Agent 当时配置的 `model`）；空 = CLI 或账号缺省、未领取。之后改 Agent 不影响（`add-run-model`） |
 | `claimed_at` `started_at` `finished_at` `last_event_at` | |
 
 **一条运行只会被领取一次。** 领取后出了任何问题（租约过期、机器离线），这一条就以失败结束，需要的话另建一条新运行（§5）。所以旧守护进程迟到的上报只会撞上一个已结束的运行，直接被拒绝，不需要额外的版本号。

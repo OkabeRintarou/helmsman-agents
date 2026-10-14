@@ -39,7 +39,8 @@ defmodule Helmsman.Runs.Claim do
        token → left queued;
     8. `claimed`, the daemon, `claimed_at`, the capabilities recomputed,
        the repository and task branch, the agent's provider account, a run
-       token and the run description (`Helmsman.Runs.Spec`).
+       token and the run description (`Helmsman.Runs.Spec`), and the model
+       it sends (`add-run-model` decision 2).
 
   A connection older than `HelmsmanProtocol.provider_account_version/0`
   leaves the runs of agents bound to a provider account queued
@@ -419,7 +420,8 @@ defmodule Helmsman.Runs.Claim do
           claimed_at: DateTime.utc_now(),
           capabilities:
             Runs.capabilities(locked.profile, locked.task, run.triggers, run.squad_id),
-          provider_account_id: locked.profile.provider_account_id
+          provider_account_id: locked.profile.provider_account_id,
+          model: locked.profile.model
         ] ++ changes
       )
 

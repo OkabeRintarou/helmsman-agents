@@ -8,7 +8,7 @@ defmodule HelmsmanWeb.RunLive.Show do
 
   import HelmsmanWeb.RunComponents
 
-  import HelmsmanWeb.ProviderAccountComponents, only: [account_summary: 1]
+  import HelmsmanWeb.ProviderAccountComponents, only: [account_summary: 1, account_icon: 1]
 
   alias HelmsmanWeb.{RunActions, RunData, RunLog, SquadComponents, Url}
 
@@ -149,6 +149,9 @@ defmodule HelmsmanWeb.RunLive.Show do
         data-provider-account
       >
         <.account_summary account={@run.provider_account} />
+      </.property_row>
+      <.property_row :if={@run[:model]} label={dgettext("ui", "模型")} data-model>
+        <.model_label model={@run.model} account_icon={account_icon(@run[:provider_account])} />
       </.property_row>
       <.property_row label="lane" value={@run.lane} />
       <.property_row label={dgettext("ui", "状态")} data-status>

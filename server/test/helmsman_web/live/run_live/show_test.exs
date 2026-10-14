@@ -122,6 +122,24 @@ defmodule HelmsmanWeb.RunLive.ShowTest do
     end
   end
 
+  describe "运行的模型 (add-run-model)" do
+    test "显示模型与图标: the model of the claim, not of a later change", ctx do
+      {:ok, _} = Helmsman.Agents.update(ctx.alice_scope, "keel/dev", %{model: "gpt-5"})
+      [_] = claim!(ctx.agent)
+      {:ok, _} = Helmsman.Agents.update(ctx.alice_scope, "keel/dev", %{model: "glm-5.3"})
+
+      {:ok, view, _html} = open(ctx, ctx.carol)
+      assert has_element?(view, "#run-properties [data-model]", "gpt-5")
+      assert has_element?(view, "#run-properties [data-model] [data-model-vendor=openai]")
+      refute has_element?(view, "#run-properties [data-model]", "glm-5.3")
+    end
+
+    test "没有模型: no row", ctx do
+      {:ok, view, _html} = open(ctx, ctx.carol)
+      refute has_element?(view, "#run-properties [data-model]")
+    end
+  end
+
   test "a run of another workspace is a 404", ctx do
     other = dispatch_fixture()
     foreign = run_fixture(other.agent)

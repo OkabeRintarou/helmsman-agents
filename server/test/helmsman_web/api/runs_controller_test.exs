@@ -123,7 +123,7 @@ defmodule HelmsmanWeb.API.RunsControllerTest do
 
   describe "GET /runs/:id and /runs/:id/events" do
     setup ctx do
-      run = failed(ctx, %{error: "boom", events_seq: 5})
+      run = failed(ctx, %{error: "boom", events_seq: 5, model: "claude-sonnet-4-5"})
       at = DateTime.utc_now()
 
       for seq <- 1..5 do
@@ -152,7 +152,9 @@ defmodule HelmsmanWeb.API.RunsControllerTest do
     test "a member sees the error text and the events", ctx do
       data = ctx.token |> api_get(w(ctx.slug, "/runs/#{ctx.run.id}")) |> body!(200)
       assert_schema(data["data"], "Run", ctx.spec)
-      assert %{"status" => "FAILED", "error" => "boom"} = data["data"]
+
+      assert %{"status" => "FAILED", "error" => "boom", "model" => "claude-sonnet-4-5"} =
+               data["data"]
 
       data = ctx.token |> api_get(w(ctx.slug, "/runs/#{ctx.run.id}/events")) |> body!(200)
       assert_schema(data["data"], "RunEvents", ctx.spec)

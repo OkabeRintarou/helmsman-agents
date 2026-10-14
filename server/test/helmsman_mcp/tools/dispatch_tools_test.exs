@@ -105,7 +105,13 @@ defmodule HelmsmanMCP.Tools.DispatchToolsTest do
     run = run_fixture(ctx.agent, %{task_id: ctx.task.id})
     id = run.id
 
-    assert {:ok, %{runs: [%{id: ^id, status: "QUEUED"}]}} =
+    assert {:ok, %{runs: [%{id: ^id, status: "QUEUED", model: nil}]}} =
+             call(ListRuns, ctx.alice_scope, %{"task_id" => ctx.task.ident})
+
+    # add-run-model: the model the claim recorded.
+    Repo.update_all(from(r in Run, where: r.id == ^id), set: [model: "gpt-5"])
+
+    assert {:ok, %{runs: [%{id: ^id, model: "gpt-5"}]}} =
              call(ListRuns, ctx.alice_scope, %{"task_id" => ctx.task.ident})
   end
 

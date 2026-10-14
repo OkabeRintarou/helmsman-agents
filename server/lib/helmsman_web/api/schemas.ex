@@ -494,6 +494,8 @@ defmodule HelmsmanWeb.API.Schemas.Run do
         },
         failure_reason: nullable(string()),
         priority: %Schema{type: :integer, nullable: true},
+        model:
+          nullable(string("The model the claim sent; null: not claimed or the CLI's default.")),
         squad: string(),
         error: nullable(string("The error text; only for members and above.")),
         created_at: time(),

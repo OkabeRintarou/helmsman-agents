@@ -7,6 +7,8 @@ defmodule HelmsmanWeb.RunComponents do
 
   require Logger
 
+  import HelmsmanWeb.ProviderAccountComponents, only: [account_icon: 1]
+
   alias HelmsmanWeb.Url
 
   ## Dispatch outcomes (D12)
@@ -373,7 +375,7 @@ defmodule HelmsmanWeb.RunComponents do
   def time_kind(_run), do: :finished
 
   @doc """
-  A run card (spec web-runs 运行卡片): status, agent, trigger summary with all triggers in
+  A run card (spec web-runs 运行卡片): status, agent, model (add-run-model), trigger summary with all triggers in
   a tooltip, attempt, time, usage, failure, authorizing user, retry links and actions.
 
   * `log` - patch path of 执行记录 (nil hides it)
@@ -421,6 +423,13 @@ defmodule HelmsmanWeb.RunComponents do
           <.actor_mark actor={Appearance.decorate(%{name: @run.agent, kind: :agent}, @appearance)} />
           <span class="truncate">{@run.agent}</span>
         </.link>
+        <span :if={@run[:model]} class="flex min-w-0 text-caption text-fg-muted" data-run-model>
+          <.model_label
+            id={"#{@id}-model"}
+            model={@run.model}
+            account_icon={account_icon(@run[:provider_account])}
+          />
+        </span>
         <.link
           :if={@run[:squad]}
           navigate={Url.squad_path(@slug, @run.squad.name)}

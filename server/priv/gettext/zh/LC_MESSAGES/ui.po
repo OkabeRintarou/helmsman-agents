@@ -2970,6 +2970,7 @@ msgstr ""
 #: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #, elixir-autogen, elixir-format
 msgid "模型"
