@@ -284,6 +284,115 @@ defmodule HelmsmanWeb.TaskLive.FeedbackTest do
     end
   end
 
+  describe "replying (add-feedback-replies)" do
+    defp add_reply(ctx, role, kind, content, reply_to) do
+      {:ok, entry} =
+        Feedback.add(ctx.scopes[role], "BOS-1", %{
+          kind: kind,
+          content: content,
+          reply_to: reply_to
+        })
+
+      %{id: "BOS-1##{entry.seq}", seq: entry.seq}
+    end
+
+    defp name(ctx, role), do: ctx.scopes[role].actor.name
+
+    test "回复 opens the editor on the record it replies to", ctx do
+      add(ctx, :agent, "comment", "已复现\n第二行")
+      {:ok, view, _html} = live(as(ctx, :bob), ctx.path)
+
+      view |> element("#feedback-1-reply") |> render_click()
+      assert open?(view, @panel)
+      assert in_portal?(view, @panel, "#feedback-panel-title", "回复 BOS-1#1")
+      assert in_portal?(view, @panel, "#feedback-quote", "@keel/dev")
+      assert in_portal?(view, @panel, "#feedback-quote", "已复现")
+      assert portal_attr(view, @panel, ~s(input[name="feedback[kind]"][value=comment]), "checked")
+
+      submit(view, %{kind: "comment", content: "我也遇到了"})
+      refute open?(view, @panel)
+      assert has_element?(view, "#feedback-2[data-kind=comment]", "我也遇到了")
+      assert_push_event(view, "hm:scroll-to", %{id: "feedback-2"})
+    end
+
+    test "no 回复 for readers, nor on a superseded record", ctx do
+      %{id: id} = add(ctx, :alice, "comment", "原文")
+      revise(ctx, :alice, id, "新文")
+
+      {:ok, view, _html} = live(as(ctx, :viewer), ctx.path)
+      refute has_element?(view, "#feedback-2-reply")
+      render_click(view, "open_feedback", %{"mode" => "reply", "target" => "BOS-1#2"})
+      refute open?(view, @panel)
+
+      {:ok, view, _html} = live(as(ctx, :bob), ctx.path)
+      assert has_element?(view, "#feedback-2-reply")
+      refute has_element?(view, "#feedback-1-reply")
+      render_click(view, "open_feedback", %{"mode" => "reply", "target" => "BOS-1#1"})
+      refute open?(view, @panel)
+    end
+
+    test "a reply nests under its root and links to its target", ctx do
+      add(ctx, :alice, "comment", "已复现")
+      {:ok, view, _html} = live(as(ctx, :bob), ctx.path)
+
+      view |> element("#feedback-1-reply") |> render_click()
+      submit(view, %{kind: "comment", content: "我也遇到了"})
+      assert has_element?(view, "#feedback-thread-1-replies > li > #feedback-2")
+
+      assert has_element?(
+               view,
+               ~s(#feedback-2-reply-to[href="#feedback-1"]),
+               "回复 @#{name(ctx, :alice)} #1"
+             )
+
+      assert has_element?(view, "#feedback-2-reply-to [data-target-summary]", "已复现")
+
+      view |> element("#feedback-2-reply") |> render_click()
+      submit(view, %{kind: "comment", content: "第三条"})
+      assert has_element?(view, "#feedback-thread-1-replies > li > #feedback-3")
+
+      assert has_element?(
+               view,
+               ~s(#feedback-3-reply-to[href="#feedback-2"]),
+               "回复 @#{name(ctx, :bob)} #2"
+             )
+    end
+
+    test "a reply written elsewhere shows at once; a revised target shows its current version",
+         ctx do
+      %{id: root} = add(ctx, :alice, "comment", "原文")
+      {:ok, view, _html} = live(as(ctx, :bob), ctx.path)
+
+      Task.async(fn -> add_reply(ctx, :agent, "comment", "MCP 的回复", root) end)
+      |> Task.await()
+
+      assert has_element?(view, "#feedback-thread-1-replies #feedback-2", "MCP 的回复")
+
+      Task.async(fn -> revise(ctx, :alice, root, "修订后") end) |> Task.await()
+
+      assert has_element?(
+               view,
+               ~s(#feedback-2-reply-to[href="#feedback-3"]),
+               "回复 @#{name(ctx, :alice)} #3"
+             )
+
+      assert has_element?(view, "#feedback-2 [data-target-revised]", "已修订")
+      assert has_element?(view, "#feedback-2 [data-target-summary]", "修订后")
+    end
+
+    test "回答 replies to its question and reads as its answer", ctx do
+      %{seq: q} = add_elsewhere(ctx, :agent, "question", "A 还是 B？")
+      {:ok, view, _html} = live(as(ctx, :bob), ctx.path)
+
+      view |> element("#feedback-#{q}-answer") |> render_click()
+      submit(view, %{content: "B"})
+
+      assert has_element?(view, "#feedback-thread-#{q}-replies #feedback-2[data-kind=answer]")
+      assert has_element?(view, "#feedback-2-reply-to[data-answer]", "回答 @keel/dev ##{q} 的提问")
+      refute has_element?(view, "#task-open-question")
+    end
+  end
+
   describe "revising" do
     test "the author revises (作者修订)", ctx do
       add(ctx, :alice, "comment", "一")

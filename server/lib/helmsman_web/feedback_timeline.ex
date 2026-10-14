@@ -22,6 +22,28 @@ defmodule HelmsmanWeb.FeedbackTimeline do
     end)
   end
 
+  @doc """
+  The threads grouped one level deep (add-feedback-replies D5): roots in thread
+  order, each with `replies`, the threads whose `reply_root` is that root, also in
+  thread order. A reply whose root is missing shows as a root.
+  """
+  @spec tree([map()]) :: [%{current: map(), history: [map()], replies: [thread()]}]
+  def tree(feedback) do
+    threads = threads(feedback)
+    roots = MapSet.new(threads, & &1.current.thread_seq)
+
+    {replies, top} =
+      Enum.split_with(threads, fn thread ->
+        root = root_of(thread)
+        root != nil and root != thread.current.thread_seq and MapSet.member?(roots, root)
+      end)
+
+    replies = Enum.group_by(replies, &root_of/1)
+    Enum.map(top, &Map.put(&1, :replies, Map.get(replies, &1.current.thread_seq, [])))
+  end
+
+  defp root_of(%{current: current}), do: seq_of(current.reply_root)
+
   @doc "The last active question, or nil."
   @spec last_open_question([map()]) :: map() | nil
   def last_open_question(feedback) do

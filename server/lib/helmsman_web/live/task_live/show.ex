@@ -391,7 +391,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
   ## Feedback (design D5)
 
   def handle_event("open_feedback", %{"mode" => mode} = params, socket)
-      when mode in ~w(add answer revise) do
+      when mode in ~w(add answer reply revise) do
     case socket.assigns.can_feedback? && build_feedback_panel(socket, mode, params["target"]) do
       panel when is_map(panel) ->
         session = socket.assigns.feedback_session + 1
@@ -440,6 +440,11 @@ defmodule HelmsmanWeb.TaskLive.Show do
           %{allowed: true, run_id: run_id} when steer_on -> %{steer_run_id: run_id}
           _ -> %{}
         end
+
+      attrs =
+        if panel.mode in [:answer, :reply],
+          do: Map.put(attrs, :reply_to, panel.target),
+          else: attrs
 
       {:noreply,
        submit_feedback(socket, panel, Map.merge(attrs, %{kind: kind, content: content}))}
@@ -767,13 +772,21 @@ defmodule HelmsmanWeb.TaskLive.Show do
   defp build_feedback_panel(socket, "answer", target) do
     case find_feedback(socket, target) do
       %{kind: "question", status: "active"} = question ->
-        quote = %{
-          id: question.id,
-          seq: question.seq,
-          text: TaskComponents.excerpt(question.content, 140)
+        %{
+          new_feedback_panel(:answer, question.id, "answer", "")
+          | quote: feedback_quote(question)
         }
 
-        %{new_feedback_panel(:answer, question.id, "answer", "") | quote: quote}
+      _ ->
+        nil
+    end
+  end
+
+  # Any active record, revised meanwhile or not: the reply keeps the ID it was opened on.
+  defp build_feedback_panel(socket, "reply", target) do
+    case find_feedback(socket, target) do
+      %{status: "active"} = entry ->
+        %{new_feedback_panel(:reply, entry.id, "comment", "") | quote: feedback_quote(entry)}
 
       _ ->
         nil
@@ -787,6 +800,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
     else
       _ -> nil
     end
+  end
+
+  defp feedback_quote(entry) do
+    %{
+      id: entry.id,
+      seq: entry.seq,
+      author: entry.author && entry.author.name,
+      text: TaskComponents.excerpt(entry.content, 140)
+    }
   end
 
   defp new_feedback_panel(mode, target, kind, content) do
@@ -807,7 +829,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
   end
 
   # Steering (add-collaboration-ui D8): only records that are added, never revisions.
-  defp with_steer(%{mode: mode} = panel, socket) when mode in [:add, :answer] do
+  defp with_steer(%{mode: mode} = panel, socket) when mode in [:add, :answer, :reply] do
     steer =
       case Runs.steerable(socket.assigns.current_scope, socket.assigns.task.id) do
         {:ok, steer} -> steer
@@ -875,12 +897,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
           }
           |> Map.reject(fn {_field, text} -> is_nil(text) end)
 
-        top =
-          if Map.has_key?(messages, :steer_run_id),
-            do: dgettext("ui", "插话对象已失效，请取消勾选后重试")
-
         socket
-        |> update_feedback_panel(&%{&1 | errors: errors, top: top})
+        |> update_feedback_panel(&%{&1 | errors: errors, top: feedback_top_error(messages)})
         |> refresh_steer()
 
       {:error, {:superseded, latest}} ->
@@ -892,6 +910,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
         update_feedback_panel(socket, &%{&1 | top: feedback_error(reason), errors: %{}})
     end
   end
+
+  # Errors on fields the form has no input for.
+  defp feedback_top_error(%{reply_to: _}),
+    do: dgettext("ui", "回复对象已不存在，请关闭后重新选择")
+
+  defp feedback_top_error(%{steer_run_id: _}),
+    do: dgettext("ui", "插话对象已失效，请取消勾选后重试")
+
+  defp feedback_top_error(_messages), do: nil
 
   # What an @squad of the record started (add-squads-autopilots-ui D6); the other
   # triggers show on the record only.
@@ -1999,6 +2026,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       case panel.mode do
         :revise -> dgettext("ui", "修订 %{id}", id: panel.target)
         :answer -> dgettext("ui", "回答 %{id}", id: panel.target)
+        :reply -> dgettext("ui", "回复 %{id}", id: panel.target)
         :add -> dgettext("ui", "添加 Feedback")
       end
 
@@ -2027,9 +2055,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
         id="feedback-quote"
         class="mb-4 border-l-2 border-border-strong pl-3 text-body text-fg-muted"
       >
-        <a href={"#feedback-#{@panel.quote.seq}"} class="font-mono text-label hover:text-brand-fg">
-          {@panel.quote.id}
-        </a>
+        <span class="flex flex-wrap items-baseline gap-x-1.5">
+          <span :if={@panel.quote.author} class="text-label">@{@panel.quote.author}</span>
+          <a
+            href={"#feedback-#{@panel.quote.seq}"}
+            class="font-mono text-label hover:text-brand-fg"
+          >
+            {@panel.quote.id}
+          </a>
+        </span>
         <p class="mt-0.5 break-words">{@panel.quote.text}</p>
       </blockquote>
       <.form

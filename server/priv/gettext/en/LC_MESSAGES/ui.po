@@ -9786,3 +9786,39 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "（根目录本身）"
 msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{id} 的回复"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "回复"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "回复 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "回复 @%{name} #%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "回复对象已不存在，请关闭后重新选择"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "回答 @%{name} #%{n} 的提问"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "（已修订）"
+msgstr ""

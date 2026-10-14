@@ -10,6 +10,7 @@ defmodule HelmsmanWeb.FeedbackTimelineTest do
       id: "BOS-12##{seq}",
       seq: seq,
       thread_seq: thread,
+      reply_root: nil,
       kind: kind,
       status: status,
       superseded_by: by && "BOS-12##{by}"
@@ -43,6 +44,50 @@ defmodule HelmsmanWeb.FeedbackTimelineTest do
 
   test "no feedback, no threads" do
     assert FeedbackTimeline.threads([]) == []
+  end
+
+  describe "tree/1 (add-feedback-replies D5)" do
+    defp reply(view, root), do: Map.put(view, :reply_root, root && "BOS-12##{root}")
+
+    defp shape(tree) do
+      Enum.map(tree, fn root ->
+        {root.current.seq, Enum.map(root.replies, & &1.current.seq)}
+      end)
+    end
+
+    test "replies, and replies to replies, sit under their root in thread order" do
+      feedback = [
+        view(1, 1, "comment"),
+        view(2, 2, "question"),
+        reply(view(3, 3, "comment"), 1),
+        reply(view(4, 4, "answer"), 2),
+        reply(view(5, 5, "comment"), 1),
+        view(6, 6, "review")
+      ]
+
+      assert shape(FeedbackTimeline.tree(feedback)) == [{1, [3, 5]}, {2, [4]}, {6, []}]
+    end
+
+    test "a revised root and a revised reply keep their place" do
+      feedback = [
+        view(1, 1, "comment", "superseded", 3),
+        reply(view(2, 2, "comment", "superseded", 4), 1),
+        view(3, 1, "comment"),
+        reply(view(4, 2, "comment"), 1)
+      ]
+
+      assert [%{current: %{seq: 3}, history: [%{seq: 1}], replies: [reply]}] =
+               FeedbackTimeline.tree(feedback)
+
+      assert reply.current.seq == 4
+      assert Enum.map(reply.history, & &1.seq) == [2]
+    end
+
+    test "a reply whose root is missing shows as a root; no reply_root, no nesting" do
+      feedback = [reply(view(2, 2, "comment"), 1), view(3, 3, "comment")]
+      assert shape(FeedbackTimeline.tree(feedback)) == [{2, []}, {3, []}]
+      assert FeedbackTimeline.tree([]) == []
+    end
   end
 
   test "the last active question" do
