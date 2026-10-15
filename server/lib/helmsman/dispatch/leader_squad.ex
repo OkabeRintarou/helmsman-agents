@@ -17,6 +17,11 @@ defmodule Helmsman.Dispatch.LeaderSquad do
   The squad's rows must be locked before the task row: callers take the
   candidates of `guess/2` first and compare `candidate/2`, read under the
   task lock, with them (`Helmsman.Dispatch.Targets`, `Dispatch.run_agent/4`).
+  For a step, the epic's owner is guarded by the workspace graph lock
+  (reassigning or attaching a task takes it, `Helmsman.Tasks.update/4`),
+  taken before every other lock: callers take it when `on_epic?/2` says so,
+  and when `graph_needed?/1`, under the task lock, says so but they did not
+  they take the round again with it.
   """
 
   import Ecto.Query, warn: false
@@ -50,9 +55,30 @@ defmodule Helmsman.Dispatch.LeaderSquad do
     |> Enum.reject(&is_nil/1)
   end
 
+  @doc "Whether the task `ident` is a step, read without locking."
+  @spec on_epic?(pos_integer(), String.t() | nil) :: boolean()
+  def on_epic?(_workspace_id, ident) when ident in [nil, ""], do: false
+
+  def on_epic?(workspace_id, ident) do
+    Repo.exists?(
+      from(t in Task,
+        where: t.workspace_id == ^workspace_id and t.ident == ^ident and not is_nil(t.epic_id)
+      )
+    )
+  end
+
+  @doc """
+  Whether `candidate/2` on `task`, locked, needs the workspace graph lock
+  held: the task is a step.
+  """
+  @spec graph_needed?(Task.t() | nil) :: boolean()
+  def graph_needed?(nil), do: false
+  def graph_needed?(%Task{epic_id: epic_id}), do: not is_nil(epic_id)
+
   @doc """
   The identity of the squad `agent_id` leads that owns `task` (see the
-  module documentation), or nil. Read under the task lock.
+  module documentation), or nil. Read under the task lock and, when
+  `graph_needed?/1`, the workspace graph lock.
   """
   @spec candidate(Task.t() | nil, pos_integer()) :: pos_integer() | nil
   def candidate(nil, _agent_id), do: nil
@@ -75,6 +101,7 @@ defmodule Helmsman.Dispatch.LeaderSquad do
         )
       end
 
+    test_hook(:leader_candidate)
     Enum.find(owners, &(&1 in led))
   end
 
@@ -127,4 +154,17 @@ defmodule Helmsman.Dispatch.LeaderSquad do
 
   defp owner_ident(%Task{epic_id: epic_id}, _squad_actor_id),
     do: Repo.one(from(t in Task, where: t.id == ^epic_id, select: t.ident))
+
+  # Concurrency tests change rows between the candidate and the enqueue:
+  # compiled in the test environment only.
+  if Mix.env() == :test do
+    defp test_hook(point) do
+      case Process.get(:helmsman_test_hook) do
+        hook when is_function(hook, 1) -> hook.(point)
+        _ -> :ok
+      end
+    end
+  else
+    defp test_hook(_point), do: :ok
+  end
 end

@@ -93,6 +93,24 @@ defmodule Helmsman.Dispatch.Continuation do
     |> Enum.uniq()
   end
 
+  @doc """
+  The `graph:` option of `Helmsman.Dispatch.Targets.with_locked/5` for a
+  feedback write with `content` to the task `ident` made without the
+  workspace graph lock: a mentioned leader's squad may be the step's
+  epic's owner (`Helmsman.Dispatch.LeaderSquad`). `plan_of` takes the plan
+  out of the value the caller's `targets_fun` returns (nil: none).
+  """
+  @spec graph_option(pos_integer(), String.t(), String.t() | nil, (term() -> plan() | nil)) ::
+          Helmsman.Dispatch.Targets.graph_opt()
+  def graph_option(workspace_id, ident, content, plan_of) when is_function(plan_of, 1) do
+    {fn ->
+       Mentions.resolve(workspace_id, content) != [] and LeaderSquad.on_epic?(workspace_id, ident)
+     end, fn task, value -> LeaderSquad.graph_needed?(task) and mentions?(plan_of.(value)) end}
+  end
+
+  defp mentions?(%{feedback: %{items: items}}), do: Enum.any?(items, &(&1.kind == :mention))
+  defp mentions?(_plan), do: false
+
   defp last_question_author(task_id) do
     case last_question(task_id) do
       %Entry{author_id: id} -> id

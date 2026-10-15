@@ -13,6 +13,7 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.{Daemon, Runtime}
   alias Helmsman.Dispatch.{Dependencies, LeaderSquad}
+  alias Helmsman.Locks
   alias Helmsman.Policy
   alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
@@ -227,26 +228,33 @@ defmodule Helmsman.Dispatch do
 
   defp trim(_other), do: :invalid
 
-  # Lock order: actor, profile, task, runtime, run (designs/01 §4). An agent
-  # that may lead the squad owning the task (`improve-squad-leader-
-  # orchestration` decision 14) has the squad's rows locked first
+  # Lock order: graph lock, actor, profile, task, runtime, run (designs/01
+  # §4). An agent that may lead the squad owning the task (`improve-squad-
+  # leader-orchestration` decision 14) has the squad's rows locked first
   # (they include its own); the squad read under the task lock must be the
-  # one locked, else the round is taken again from a savepoint.
+  # one locked, else the round is taken again from a savepoint. On a step
+  # the graph lock guards the epic's owner (`LeaderSquad`): a step found
+  # under the task lock without it takes the round again with it.
   defp run_agent_locked(scope, agent_name, task_ident, instructions),
-    do: run_agent_round(scope, {agent_name, task_ident, instructions}, 1)
+    do: run_agent_round(scope, {agent_name, task_ident, instructions}, {1, false})
 
-  defp run_agent_round(_scope, _args, round) when round > @max_rounds, do: {:error, :busy}
+  defp run_agent_round(_scope, _args, {round, _graph?}) when round > @max_rounds,
+    do: {:error, :busy}
 
-  defp run_agent_round(scope, {agent_name, task_ident, instructions} = args, round) do
+  defp run_agent_round(scope, {agent_name, task_ident, instructions} = args, {round, graph?}) do
     Repo.query!("SAVEPOINT run_agent")
     guessed = guess_leader_squad(scope.workspace.id, agent_name, task_ident)
     test_hook({:run_agent, round})
+    graph? = graph? or LeaderSquad.on_epic?(scope.workspace.id, task_ident)
+    if graph?, do: :ok = Locks.graph!(scope.workspace.id)
+    test_hook({:run_agent_graph, round, graph?})
 
     with {:ok, _loaded} <- lock_squad(guessed),
          {:ok, agent, profile} <- lock_agent(scope.workspace.id, agent_name),
          {:ok, task} <- lock_task(scope, task_ident),
          :ok <- open_task(task) do
-      squad = LeaderSquad.candidate(task, agent.id)
+      needs_graph? = not graph? and LeaderSquad.graph_needed?(task)
+      squad = if needs_graph?, do: :retry, else: LeaderSquad.candidate(task, agent.id)
 
       if squad == guessed do
         Repo.query!("RELEASE SAVEPOINT run_agent")
@@ -263,7 +271,7 @@ defmodule Helmsman.Dispatch do
         {:ok, %{outcome: outcome, run: run}}
       else
         Repo.query!("ROLLBACK TO SAVEPOINT run_agent")
-        run_agent_round(scope, args, round + 1)
+        run_agent_round(scope, args, {round + 1, graph? or needs_graph?})
       end
     else
       {:error, _reason} = error ->

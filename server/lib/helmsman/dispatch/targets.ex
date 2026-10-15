@@ -25,6 +25,14 @@ defmodule Helmsman.Dispatch.Targets do
   too, then the `squads` rows `FOR SHARE` (by ID) before the profiles, and
   step 4 requires the leader and members read after the task lock.
 
+  With the option `graph: {guess_fun, needed_fun}` the workspace graph
+  lock is taken first in a round when `guess_fun.()` (read without locks)
+  says so or an earlier round needed it; `needed_fun.(task, value)`, under
+  the task lock, says whether the plan read state the graph lock guards
+  (a step's epic owner, `improve-squad-leader-orchestration` decision 14):
+  needed and not taken → the round is taken again with it. Callers already
+  holding the graph lock do not pass the option.
+
   Between the savepoint and the check there are only reads and locks: no
   insert, no `Helmsman.Tx.after_commit/1`, so rolling back to the
   savepoint leaves nothing behind. Works inside an outer transaction too.
@@ -34,6 +42,7 @@ defmodule Helmsman.Dispatch.Targets do
 
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
+  alias Helmsman.Locks
   alias Helmsman.Repo
   alias Helmsman.Squads.Dispatch, as: SquadDispatch
   alias Helmsman.Squads.Squad
@@ -43,29 +52,38 @@ defmodule Helmsman.Dispatch.Targets do
   @type guess_fun :: (-> [pos_integer()])
   @type lock_task_fun :: (-> {:ok, term()} | {:error, term()})
   @type targets_fun :: (term() -> {[pos_integer()], term()})
+  @type graph_opt :: {(-> boolean()), (term(), term() -> boolean())}
 
   @doc """
   See the module documentation. Returns `{:ok, task, value}` (`task` from
   `lock_task_fun`, `value` from `targets_fun`), the error of
   `lock_task_fun`, or `{:error, :busy}`. Must run in a transaction.
   """
-  @spec with_locked(pos_integer(), guess_fun(), lock_task_fun(), targets_fun()) ::
+  @spec with_locked(pos_integer(), guess_fun(), lock_task_fun(), targets_fun(), [
+          {:graph, graph_opt()}
+        ]) ::
           {:ok, term(), term()} | {:error, term()}
-  def with_locked(workspace_id, guess_fun, lock_task_fun, targets_fun)
+  def with_locked(workspace_id, guess_fun, lock_task_fun, targets_fun, opts \\ [])
       when is_function(guess_fun, 0) and is_function(lock_task_fun, 0) and
              is_function(targets_fun, 1) do
     unless Repo.in_transaction?(),
-      do: raise("Helmsman.Dispatch.Targets.with_locked/4 must run in a transaction")
+      do: raise("Helmsman.Dispatch.Targets.with_locked/5 must run in a transaction")
 
-    attempt(workspace_id, {guess_fun, lock_task_fun, targets_fun}, [], 1)
+    graph = Keyword.get(opts, :graph, {fn -> false end, fn _task, _value -> false end})
+    attempt(workspace_id, {guess_fun, lock_task_fun, targets_fun, graph}, {[], false}, 1)
   end
 
   defp attempt(_workspace_id, _funs, _known, round) when round > @max_rounds,
     do: {:error, :busy}
 
-  defp attempt(workspace_id, {guess_fun, lock_task_fun, targets_fun} = funs, known, round) do
+  defp attempt(workspace_id, funs, {known, graph?}, round) do
+    {guess_fun, lock_task_fun, targets_fun, {graph_guess, graph_needed}} = funs
     Repo.query!("SAVEPOINT dispatch_targets")
     candidates = Enum.uniq(known ++ guess_fun.())
+    test_hook({:dispatch_targets_guessed, round})
+    graph? = graph? or graph_guess.()
+    if graph?, do: :ok = Locks.graph!(workspace_id)
+    test_hook({:dispatch_targets_graph, round, graph?})
     locked = lock_agents(workspace_id, candidates)
     test_hook({:dispatch_targets, round})
 
@@ -73,13 +91,15 @@ defmodule Helmsman.Dispatch.Targets do
       {:ok, task} ->
         {targets, value} = targets_fun.(task)
         targets = Enum.uniq(targets ++ SquadDispatch.expand(targets))
+        needs_graph? = not graph? and graph_needed.(task, value)
 
-        if Enum.all?(targets, &MapSet.member?(locked, &1)) do
+        if not needs_graph? and Enum.all?(targets, &MapSet.member?(locked, &1)) do
           Repo.query!("RELEASE SAVEPOINT dispatch_targets")
           {:ok, task, value}
         else
           Repo.query!("ROLLBACK TO SAVEPOINT dispatch_targets")
-          attempt(workspace_id, funs, Enum.uniq(candidates ++ targets), round + 1)
+          known = {Enum.uniq(candidates ++ targets), graph? or needs_graph?}
+          attempt(workspace_id, funs, known, round + 1)
         end
 
       {:error, _reason} = error ->

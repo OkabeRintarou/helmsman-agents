@@ -137,6 +137,7 @@ defmodule Helmsman.Feedback do
   end
 
   # Lock order: maintenance lock, membership row (write_transaction),
+  # graph lock when a mentioned leader's squad may own the step's epic,
   # trigger targets (with the steered run's agent), task row
   # (`Helmsman.Dispatch.Targets`).
   defp add_locked(scope, ident, input, steer_run_id) do
@@ -150,7 +151,8 @@ defmodule Helmsman.Feedback do
                  Steering.guess(workspace_id, steer_run_id)
              end,
              fn -> lock_task(workspace_id, ident) end,
-             &plan_add(scope, &1, input, steer_run_id)
+             &plan_add(scope, &1, input, steer_run_id),
+             graph: Continuation.graph_option(workspace_id, ident, input.content, &elem(&1, 0))
            ),
          :ok <- Policy.authorize(scope, :write_task, task),
          {:ok, input} <- resolved,
@@ -317,7 +319,8 @@ defmodule Helmsman.Feedback do
     end
   end
 
-  # Lock order: trigger targets, the task row, then the record.
+  # Lock order: graph lock (as in `add_locked/4`), trigger targets, the
+  # task row, then the record.
   defp revise_locked(scope, ident, seq, input) do
     workspace_id = scope.workspace.id
 
@@ -326,7 +329,8 @@ defmodule Helmsman.Feedback do
              workspace_id,
              fn -> Continuation.guess(workspace_id, ident, input.content) end,
              fn -> lock_task(workspace_id, ident) end,
-             &Continuation.plan_feedback(scope, &1, input, entry_at(&1, seq))
+             &Continuation.plan_feedback(scope, &1, input, entry_at(&1, seq)),
+             graph: Continuation.graph_option(workspace_id, ident, input.content, & &1)
            ),
          :ok <- Policy.authorize(scope, :write_task, task),
          {:ok, old} <- lock_entry(task, seq),
