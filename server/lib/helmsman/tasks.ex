@@ -111,6 +111,16 @@ defmodule Helmsman.Tasks do
   (`Helmsman.Tasks.Epics.recompute/3`). An unknown epic, a task that is
   not an epic or an epic given for an epic is a changeset error on `epic`.
 
+  `depends_on` is a list of task IDs (any case, any project of the
+  workspace; `nil` or `[]` for none): the new task waits for them
+  (`Helmsman.Links.add_dependencies/3`). The links are written before the
+  task is dispatched, so a task assigned to a managed agent whose
+  prerequisites are not satisfied yet gets a deferred run that starts when
+  they are (designs/13 §2.4). Like `epic` it takes the workspace graph
+  lock first. An unknown or malformed ID, or the new task's own epic (it
+  would wait for itself) is a changeset error on `depends_on`; a run may
+  depend its new task on any task of the workspace.
+
   Assigned to a managed agent, the task is dispatched in the same
   transaction (`Helmsman.Dispatch.on_assignee_change/4`) unless `start` is
   `false` (`true`, `false` or `nil`; anything else is a changeset error on
@@ -126,7 +136,8 @@ defmodule Helmsman.Tasks do
       when is_binary(project_key) and is_map(attrs) do
     Workspaces.write_transaction(scope, :create_task, fn scope ->
       epic_input = fetch_epic(attrs)
-      :ok = lock_graph_for_epic(scope.workspace.id, epic_input)
+      depends_on = fetch_depends_on(attrs)
+      :ok = lock_graph_for_create(scope.workspace.id, epic_input, depends_on)
       assignee = lock_assignee(scope.workspace.id, attrs)
       test_hook(:assignee_locked)
 
@@ -145,12 +156,14 @@ defmodule Helmsman.Tasks do
           resolve_epic(scope.workspace.id, epic_input, Changeset.get_field(changeset, :kind))
         )
 
+      {prerequisites, changeset} = put_depends_on(changeset, scope.workspace.id, depends_on)
+
       with :ok <- not_busy(assignee),
            {:ok, project} <- fetch_project(scope, project_key),
            :ok <- validate(changeset),
            {:ok, seq} <- allocate_seq(project) do
         test_hook(:seq_allocated)
-        insert_task(scope, changeset, project, seq, start?)
+        insert_task(scope, changeset, project, seq, {start?, prerequisites})
       end
     end)
   end
@@ -183,7 +196,7 @@ defmodule Helmsman.Tasks do
     end
   end
 
-  defp insert_task(scope, changeset, project, seq, start?) do
+  defp insert_task(scope, changeset, project, seq, {start?, prerequisites}) do
     ident = Ident.build(project.key, seq)
 
     changeset =
@@ -202,6 +215,7 @@ defmodule Helmsman.Tasks do
       })
 
       :ok = recompute_epics(scope, nil, task.epic_id)
+      :ok = Links.add_dependencies(scope, task, prerequisites)
 
       requested_grant(scope, task)
       {task, dispatch} = dispatch(scope, task, nil, start?)
@@ -740,10 +754,70 @@ defmodule Helmsman.Tasks do
     end
   end
 
-  # Taken whenever `epic` is given, before anything is known about a
-  # change: never after a task row lock (designs/01 §4).
-  defp lock_graph_for_epic(_workspace_id, :keep), do: :ok
-  defp lock_graph_for_epic(workspace_id, _epic_input), do: Locks.graph!(workspace_id)
+  # Taken whenever `epic` or `depends_on` is given, before anything is
+  # known about a change: never after a task row lock (designs/01 §4).
+  defp lock_graph_for_create(workspace_id, epic_input, depends_on) do
+    if epic_input == :keep and depends_on == {:ok, []},
+      do: :ok,
+      else: Locks.graph!(workspace_id)
+  end
+
+  # `depends_on`: a list of task IDs (any case); nil or a missing key for
+  # none. The IDs are deduplicated.
+  defp fetch_depends_on(attrs) do
+    case fetch_attr(attrs, :depends_on) do
+      :error -> {:ok, []}
+      {:ok, nil} -> {:ok, []}
+      {:ok, ids} when is_list(ids) -> parse_depends_on(ids)
+      {:ok, _other} -> {:invalid, "is invalid"}
+    end
+  end
+
+  defp parse_depends_on(ids) do
+    parsed = Enum.map(ids, &parse_depends_on_id/1)
+
+    if :error in parsed,
+      do: {:invalid, "has an invalid task ID"},
+      else: {:ok, parsed |> Enum.map(&elem(&1, 1)) |> Enum.uniq()}
+  end
+
+  defp parse_depends_on_id(id) when is_binary(id) do
+    case Ident.parse(String.trim(id)) do
+      {:ok, ident, _key, _seq} -> {:ok, ident}
+      {:error, :not_found} -> :error
+    end
+  end
+
+  defp parse_depends_on_id(_id), do: :error
+
+  # Resolves the prerequisites of a new task, after its epic is known: the
+  # tasks and the changeset (an error on `depends_on` when one is unknown
+  # or the task's own epic). Tasks are never deleted and the graph lock is
+  # held, so the rows need no lock of their own.
+  defp put_depends_on(changeset, _workspace_id, {:ok, []}), do: {[], changeset}
+
+  defp put_depends_on(changeset, _workspace_id, {:invalid, message}),
+    do: {[], Changeset.add_error(changeset, :depends_on, message)}
+
+  defp put_depends_on(changeset, workspace_id, {:ok, idents}) do
+    found =
+      from(t in Task, where: t.workspace_id == ^workspace_id and t.ident in ^idents)
+      |> Repo.all()
+      |> Map.new(&{&1.ident, &1})
+
+    epic_id = Changeset.get_field(changeset, :epic_id)
+
+    cond do
+      missing = Enum.find(idents, &(not is_map_key(found, &1))) ->
+        {[], Changeset.add_error(changeset, :depends_on, "#{missing} not found")}
+
+      epic_id && Enum.any?(found, fn {_ident, task} -> task.id == epic_id end) ->
+        {[], Changeset.add_error(changeset, :depends_on, "cannot include the task's own epic")}
+
+      true ->
+        {Enum.map(idents, &Map.fetch!(found, &1)), changeset}
+    end
+  end
 
   # An edit also takes it whenever `assignee` is given, before the
   # assignee's actor row: dispatching the new assignee reads the task's

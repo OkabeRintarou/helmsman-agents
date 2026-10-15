@@ -151,6 +151,31 @@ defmodule Helmsman.Links do
   @spec remove(Scope.t(), String.t(), String.t(), term()) :: {:ok, map()} | {:error, error()}
   def remove(scope, from, to, type), do: write(scope, :remove, from, to, type)
 
+  @doc """
+  Makes the task `task`, just created by `Helmsman.Tasks.create/3`, depend
+  on `prerequisites` (`depends_on`, the links `task → each`).
+
+  The caller holds the workspace graph lock inside the write transaction
+  and has checked that every prerequisite is a task of the workspace other
+  than `task` and its epic. The new task has no dependents yet, so no
+  cycle can form, and a run's reach rule (`:link_tasks`) does not apply:
+  the link only makes the creator's own new task wait. After the commit
+  `{:links_changed, ident}` goes to the topic of each prerequisite.
+  """
+  @spec add_dependencies(Scope.t(), Task.t(), [Task.t()]) :: :ok
+  def add_dependencies(%Scope{actor: %Actor{id: actor_id}}, %Task{} = task, prerequisites) do
+    for %Task{} = prerequisite <- prerequisites do
+      insert(task, prerequisite, :depends_on, actor_id)
+
+      Events.after_commit(
+        Events.topic(:task, prerequisite.id),
+        {:links_changed, prerequisite.ident}
+      )
+    end
+
+    :ok
+  end
+
   defp write(%Scope{actor: nil}, _op, _from, _to, _type), do: {:error, :no_actor}
 
   defp write(%Scope{workspace: %Workspace{}} = scope, op, from, to, type) do

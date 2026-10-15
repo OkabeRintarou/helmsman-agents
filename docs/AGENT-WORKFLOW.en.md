@@ -197,8 +197,12 @@ If you lead a squad in this run (your prompt has a squad section):
   agent. The member works on the same task, branch and pull request, but
   only after your run ends: after delegating, finish your run; do not wait;
 - parts that can be delivered on their own become subtasks (`create_task`
-  with a member as assignee); prefer `delegate` for code changes, which land
-  in one pull request;
+  with a member as assignee, `epic` set to this task, and `depends_on` listing
+  the IDs of the tasks one waits for). Create them all at once: a subtask
+  whose prerequisites are not done yet is deferred and starts by itself when
+  they are. Do not create one with `start=false` to start it later: a run can
+  only change its own task, so you could not; prefer `delegate` for code
+  changes, which land in one pull request;
 - you are woken when a delegated run ends (with the member's final output),
   when a subtask you created is done or rejected, and when its assignee asks
   a question;
