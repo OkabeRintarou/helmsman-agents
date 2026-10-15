@@ -576,11 +576,18 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
     if detail.status == "in_progress" and socket.assigns.current_scope.actor.kind == :human do
       case idle_hint(socket.assigns) do
-        %{kind: "agent", name: name} ->
+        %{kind: "agent", name: name, can_run?: true} ->
           put_flash(
             socket,
             :info,
             dgettext("ui", "已改为进行中。改状态不会启动 %{name}，需要时点「让 %{name} 开工」。", name: name)
+          )
+
+        %{kind: "agent", name: name, can_run?: false} ->
+          put_flash(
+            socket,
+            :info,
+            dgettext("ui", "已改为进行中。改状态不会启动 %{name}。", name: name)
           )
 
         %{kind: "squad", name: name} ->

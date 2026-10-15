@@ -11603,3 +11603,8 @@ msgstr "进行中，但没有运行在处理：改状态不会启动 Agent。"
 #, elixir-autogen, elixir-format
 msgid "重新指派给小队，或在 Feedback 里 @%{squad} 启动 leader"
 msgstr "重新指派给小队，或在 Feedback 里 @%{squad} 启动 leader"
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已改为进行中。改状态不会启动 %{name}。"
+msgstr "已改为进行中。改状态不会启动 %{name}。"

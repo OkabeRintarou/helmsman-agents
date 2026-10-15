@@ -212,6 +212,29 @@ defmodule HelmsmanWeb.TaskLive.IdleHintTest do
     assert runs_of(ctx.task.id) == []
   end
 
+  test "owner-only member transition flash does not suggest an unavailable launch button", ctx do
+    {:ok, _} = Agents.update(ctx.alice_scope, "keel/dev", %{access: "owner_only"})
+    {user, _} = member_scope_fixture(ctx.workspace, :member)
+    Repo.update_all(from(t in Tasks.Task, where: t.id == ^ctx.task.id), set: [status: :new])
+    {:ok, view, _} = open(ctx, user)
+    view |> element("#transition-in_progress") |> render_click()
+    assert has_element?(view, "#flash-info", "已改为进行中。改状态不会启动 keel/dev。")
+    refute has_element?(view, "#flash-info", "需要时点")
+    refute has_element?(view, "#start-idle-agent")
+    assert runs_of(ctx.task.id) == []
+  end
+
+  test "disabled agent transition flash does not suggest an unavailable launch button", ctx do
+    {:ok, _} = Agents.disable(ctx.alice_scope, "keel/dev")
+    Repo.update_all(from(t in Tasks.Task, where: t.id == ^ctx.task.id), set: [status: :new])
+    {:ok, view, _} = open(ctx)
+    view |> element("#transition-in_progress") |> render_click()
+    assert has_element?(view, "#flash-info", "已改为进行中。改状态不会启动 keel/dev。")
+    refute has_element?(view, "#flash-info", "需要时点")
+    refute has_element?(view, "#start-idle-agent")
+    assert runs_of(ctx.task.id) == []
+  end
+
   test "transition with a pending run has no idle flash", ctx do
     Repo.update_all(from(t in Tasks.Task, where: t.id == ^ctx.task.id), set: [status: :new])
     run_fixture(ctx.agent, %{task_id: ctx.task.id})
