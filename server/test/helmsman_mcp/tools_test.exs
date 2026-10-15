@@ -30,7 +30,9 @@ defmodule HelmsmanMCP.ToolsTest do
                  update_project list_tasks search_tasks query_tasks list_filters save_filter delete_filter get_task create_task update_task list_my_tasks
                  transition_task link_tasks unlink_tasks add_feedback update_feedback
                  list_feedback list_agents run_agent list_runs cancel_run get_design propose_agent
-               withdraw_agent delegate propose_squad))
+               withdraw_agent delegate propose_squad get_spec diff_spec list_spec_reviews
+               submit_spec_version submit_spec_review reply_spec_issue rule_spec_issue
+               finalize_spec update_spec cancel_spec_review request_spec_review))
 
     assert names == Enum.uniq(names)
 
@@ -58,8 +60,12 @@ defmodule HelmsmanMCP.ToolsTest do
     write_tools = Enum.filter(Tools.all(), &(&1.mode() == :write))
 
     assert write_tools |> Enum.map(& &1.name()) |> Enum.sort() ==
-             ~w(add_feedback cancel_run create_project create_task delegate link_tasks run_agent
-                transition_task unlink_tasks update_feedback update_project update_task)
+             Enum.sort(
+               ~w(add_feedback cancel_run create_project create_task delegate link_tasks run_agent
+                  transition_task unlink_tasks update_feedback update_project update_task
+                  cancel_spec_review finalize_spec reply_spec_issue request_spec_review
+                  rule_spec_issue submit_spec_review submit_spec_version update_spec)
+             )
   end
 
   test "every schema converts to JSON Schema" do

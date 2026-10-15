@@ -40,7 +40,7 @@ defmodule HelmsmanMCP.Prompts do
       {:ok,
        Enum.join(
          [
-           TaskMarkdown.render(Tasks.detail(task)),
+           TaskMarkdown.render(Tasks.detail(task), TaskMarkdown.spec(scope, task)),
            Resources.workflow(),
            instructions(task.ident)
          ],

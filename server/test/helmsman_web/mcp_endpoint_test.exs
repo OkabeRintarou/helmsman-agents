@@ -162,7 +162,7 @@ defmodule HelmsmanWeb.MCPEndpointTest do
     conn = rpc(token, sid, "tools/list")
     assert conn.status == 200
     tools = Jason.decode!(conn.resp_body)["result"]["tools"]
-    assert length(tools) == 27
+    assert length(tools) == 38
 
     # The draft tools are listed only for design runs (add-agent-conversation).
     assert Enum.map(tools, & &1["name"]) |> Enum.sort() ==

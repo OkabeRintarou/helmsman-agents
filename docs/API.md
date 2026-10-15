@@ -51,6 +51,7 @@ Authorization: Bearer hm_...
 | GET | `/imports/:id` | 本工作区导入审计，admin 以上 | read |
 | GET | `/me` | 当前用户、角色、身份与 Token | read |
 | GET | `/me/tasks` | `list_my_tasks` | read |
+| GET | `/me/specs` | 待我处理的规格（待批准、请我评审） | read |
 | GET | `/actors` | `list_actors` | read |
 | GET | `/agents` | `list_agents`（含小队） | read |
 | GET | `/avatars/:key` | 头像图片（`list_actors` 等返回的 `avatar_url`；带 `ETag`，`If-None-Match` 命中时 304） | read 或 mcp |
@@ -70,6 +71,21 @@ Authorization: Bearer hm_...
 | POST | `/tasks/:id/links` | `link_tasks`（`from` 为 `:id`） | write |
 | DELETE | `/tasks/:id/links/:type/:to` | `unlink_tasks` | write |
 | GET | `/tasks/:id/runs` | `list_runs` | read |
+| GET | `/tasks/:id/spec` | `get_spec`（`version`、`files[]`） | read |
+| PATCH | `/tasks/:id/spec` | `update_spec`（建立空规格时 201） | write |
+| GET | `/tasks/:id/spec/diff` | `diff_spec`（`from`、`to`） | read |
+| GET | `/tasks/:id/spec/events` | 规格的审计事件 | read |
+| GET | `/tasks/:id/spec/export` | OpenSpec 目录压缩包附件（`version`、`format=tar.gz\|zip`、`reviews`） | read |
+| POST | `/tasks/:id/spec/import` | 上传 OpenSpec 目录压缩包作为新版本（201；见下） | write |
+| POST | `/tasks/:id/spec/versions` | `submit_spec_version`（201；`dry_run` 时 200） | write |
+| GET | `/tasks/:id/spec/reviews` | `list_spec_reviews` | read |
+| POST | `/tasks/:id/spec/reviews` | `submit_spec_review`（201） | write |
+| POST | `/tasks/:id/spec/issues/:issue/notes` | `reply_spec_issue`（201） | write |
+| POST | `/tasks/:id/spec/issues/:issue/ruling` | `rule_spec_issue`（201） | write |
+| POST | `/tasks/:id/spec/review-requests` | `request_spec_review`（201） | write |
+| DELETE | `/tasks/:id/spec/review-requests/:reviewer` | `cancel_spec_review`（名字里的 `/` 写成 `%2F`） | write |
+| POST | `/tasks/:id/spec/finalize` | `finalize_spec`（人：定稿 / 批准；Agent：提议） | write |
+| POST | `/tasks/:id/spec/reject` | 退回提议（只限人；体 `reason`、`wake`） | write |
 | GET | `/search` | `search_tasks` | read |
 | GET | `/query` | `query_tasks`（`bql`；`currentUser()` 是当前身份） | read |
 | GET | `/filters` | `list_filters` | read |
@@ -154,6 +170,27 @@ BQL 的语法与字段见 `docs/BQL.md`。
 | 503 | `storage_unavailable` | 备份目录不可写 |
 
 格式与 merge/replace 规则见 [EXPORT-FORMAT.md](EXPORT-FORMAT.md)。
+
+## 规格
+
+任务的规格（OpenSpec change：`proposal.md`、`design.md`、`tasks.md`、`specs/<capability>/spec.md`）。有对应 MCP 工具的端点与工具同参数、同规则、同结果。经 REST 写入的身份缺省是人（不带 `X-Helmsman-Actor` 且 Token 没有默认 Agent 时），所以：`POST /spec/finalize` 由人调用时直接定稿或批准提议（`wake` 缺省 true，唤醒执行方）；以 Agent 身份调用只会提议定稿（`pending_approval`）。`POST /spec/reject` 只限人，Agent 身份返回 403 `forbidden`。运行令牌（`hmr_`）不能调用任何 REST 端点（401）。
+
+`GET /spec/export` 返回 `application/gzip` 或 `application/zip` 附件 `<change_id>-v<n>.tar.gz` / `.zip`：顶层目录为 `change_id`，内含 `.openspec.yaml`、该版本的文件，`reviews=true` 时还有 `reviews/spec-review-<n>.md`。解压到仓库的 `openspec/changes/` 下可直接 `openspec validate <change_id> --strict`。同一版本两次导出字节相同。
+
+`POST /spec/import?base_version=<最新版本号>&note=...` 的请求体为 `application/gzip`（tar.gz）或 `application/zip`，不经 JSON 解析器：认证、scope、工作区、身份、参数与权限都在读取请求体之前检查。请求体超过 2 MB 返回 413，其他媒体类型返回 415；压缩包至多 200 个条目、解压后至多 1 MB，只能有普通文件与目录（链接、设备、绝对路径或含 `..` 的路径 → 422 `invalid_archive`）。去掉共同的目录前缀（如 `openspec/changes/<id>/`）后，允许的路径作为新版本的**全部**文件提交（压缩包里没有的文件在新版本里也没有）；`.openspec.yaml` 与 `reviews/` 下的文件忽略，其他路径在结果的 `warnings` 里列出。规格还没有版本时，前缀的最后一段若是合法且未被占用的 `change_id` 就用它。不加修改地导出再导入返回 409 `no_changes`。`dry_run=true` 只检查并返回与 `base_version` 的对比（200）。
+
+| 状态 | `error` | 说明 / `detail` |
+|---|---|---|
+| 400 | `invalid_params` | 参数不合法：`fields` |
+| 403 | `not_coordinator` | 只有协调者（小队 leader 以小队身份的运行、或任务的 Agent 执行方）或人可以做：`task`、`assignee`、`kind` |
+| 404 | `spec_not_found` / `issue_not_found` / `request_not_found` / `version_not_found` | 任务没有规格 / 问题 / 待完成请求 / 版本不存在 |
+| 409 | `stale_version` | 不是基于最新版本：`latest` |
+| 409 | `spec_closed` / `not_closed` | 规格已定稿或已放弃（先重新打开）/ 只有定稿或放弃的规格能重新打开：`status` |
+| 409 | `no_changes` / `no_version` / `no_proposal` / `pending_approval` | 与基础版本相同 / 还没有版本 / 没有待批准的提议 / 等待人批准 |
+| 409 | `spec_invalid` | 版本未通过结构校验：`errors` |
+| 409 | `unresolved_issues` / `reviews_pending` / `review_pending` | 有未解决的 P1/P2：`issues` / 有待完成的评审：`reviewers` / 该评审人已有待完成的请求 |
+| 409 | `own_version` / `issue_resolved` | 不能评审自己写的版本 / 问题已有结论 |
+| 422 | `invalid_files` / `invalid_issues` / `invalid_reviewer` / `invalid_archive` | 文件、问题、评审人、压缩包不合法：`errors` / `reviewer` / `reason` |
 
 ## 限流
 

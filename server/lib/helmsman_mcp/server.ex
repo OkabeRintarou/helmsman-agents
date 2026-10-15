@@ -114,12 +114,33 @@ defmodule HelmsmanMCP.Server do
       :all ->
         all
 
-      caps ->
+      caller ->
+        caps =
+          case caller do
+            {:run, caps} -> caps
+            :session -> []
+          end
+
         all
         |> Enum.reject(&(Map.has_key?(required, &1.name) and required[&1.name] not in caps))
+        |> run_tools(caller)
         |> squad_tools(frame.context)
     end
   end
+
+  # `add-spec-workflow` decision 20: a run lists the spec writes only with
+  # `write_task` and never `request_spec_review`.
+  defp run_tools(tools, {:run, caps}) do
+    needed = Tools.run_capabilities()
+    session_only = Tools.session_only_names()
+
+    Enum.reject(tools, fn tool ->
+      tool.name in session_only or
+        (Map.has_key?(needed, tool.name) and needed[tool.name] not in caps)
+    end)
+  end
+
+  defp run_tools(tools, :session), do: tools
 
   # `add-squads` decision 12: `propose_squad` only in squad conversations.
   defp squad_tools(tools, context) do
@@ -147,8 +168,8 @@ defmodule HelmsmanMCP.Server do
 
   defp run_capabilities(context) do
     case request_scope(context) do
-      {:ok, %Scope{via: :run, run: run}} -> run.capabilities
-      _other -> []
+      {:ok, %Scope{via: :run, run: run}} -> {:run, run.capabilities}
+      _other -> :session
     end
   end
 

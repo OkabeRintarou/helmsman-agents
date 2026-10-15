@@ -14,7 +14,16 @@ defmodule HelmsmanWeb.API.BodyParser do
   @impl true
   def init(opts), do: Plug.Parsers.init(opts)
 
+  # `HelmsmanWeb.API.SpecController.import/2` reads its archive body itself,
+  # after authentication and authorization (`add-spec-workflow` decision 21).
   @impl true
+  def call(
+        %Plug.Conn{method: "POST", path_info: ["api", "v1", "w", _, "tasks", _, "spec", "import"]} =
+          conn,
+        _opts
+      ),
+      do: conn
+
   def call(conn, opts) do
     Plug.Parsers.call(conn, opts)
   rescue

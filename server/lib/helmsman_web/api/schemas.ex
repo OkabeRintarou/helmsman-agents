@@ -306,7 +306,8 @@ defmodule HelmsmanWeb.API.Schemas.TaskDetail do
           children: %Schema{type: :array, nullable: true, items: Schemas.TaskSummary},
           epic_title: nullable(string()),
           links: %Schema{type: :array, items: @link},
-          dispatch: Schemas.Dispatch
+          dispatch: Schemas.Dispatch,
+          spec: Schemas.SpecBrief
         }),
       required: Schemas.Helpers.summary_required() ++ [:history, :feedback, :links]
     },

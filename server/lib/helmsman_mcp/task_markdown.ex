@@ -7,14 +7,18 @@ defmodule HelmsmanMCP.TaskMarkdown do
   """
 
   alias Helmsman.Feedback.Replies
-  alias HelmsmanMCP.Present
+  alias Helmsman.TaskSpecs
+  alias HelmsmanMCP.{Present, SpecPresent}
 
-  @doc "Renders a task detail (`Helmsman.Tasks.detail/1`)."
-  @spec render(map()) :: String.t()
-  def render(%{} = detail) do
+  @doc """
+  Renders a task detail (`Helmsman.Tasks.detail/1`), with a line for its
+  spec (`spec/2`) when it has one.
+  """
+  @spec render(map(), map() | nil) :: String.t()
+  def render(%{} = detail, spec \\ nil) do
     [
       "# #{detail.id}: #{detail.title}\n",
-      fields(detail),
+      fields(detail) <> spec_line(spec),
       section("Description", blank(detail.description, "(none)")),
       section("History", Enum.map_join(detail.history, "\n", &event/1)),
       section("Feedback", feedback(detail.feedback))
@@ -33,6 +37,26 @@ defmodule HelmsmanMCP.TaskMarkdown do
       {"Version (lock_version)", detail.lock_version}
     ]
     |> Enum.map_join(fn {label, value} -> "- #{label}: #{value}\n" end)
+  end
+
+  @doc "The spec summary of `task` for `render/2` (`SpecPresent.brief/1`), or nil."
+  @spec spec(Helmsman.Accounts.Scope.t(), map()) :: map() | nil
+  def spec(scope, task) do
+    case TaskSpecs.summary(scope, task.ident) do
+      {:ok, summary} -> SpecPresent.brief(summary)
+      {:error, _reason} -> nil
+    end
+  end
+
+  # add-spec-workflow spec-tools 「任务视图的规格摘要」.
+  defp spec_line(nil), do: ""
+
+  defp spec_line(spec) do
+    final = if spec.final_version, do: "v#{spec.final_version}", else: "none"
+
+    "- Spec: #{spec.change_id}, #{spec.status}, latest v#{spec.latest_version}, final " <>
+      "#{final}, #{spec.unresolved_issues} unresolved issues, #{spec.pending_reviews} " <>
+      "pending reviews (get_spec)\n"
   end
 
   defp section(title, body), do: "## #{title}\n\n#{body}\n"

@@ -131,4 +131,98 @@ defmodule HelmsmanWeb.API.MCPEquivalenceTest do
     ids = %{"BOS-1" => "ONE", "BOS-2" => "ONE", "BOS-3" => "TWO", "BOS-4" => "TWO"}
     assert normalize(from_rest, ids) == normalize(from_mcp, ids)
   end
+
+  # add-spec-workflow 3.3: the spec endpoints return the spec tools' results.
+  describe "specs" do
+    setup do
+      files = for {p, c} <- Helmsman.TaskSpecsFixtures.spec_files(), do: %{path: p, content: c}
+      %{files: files, spec_ids: %{"BOS-1" => "ONE", "BOS-2" => "ONE"}}
+    end
+
+    # The two tasks' specs differ only in their task and change_id.
+    defp same_spec(value, ids),
+      do:
+        value
+        |> Jason.encode!()
+        |> String.replace("add-two", "add-one")
+        |> Jason.decode!()
+        |> normalize(ids)
+
+    test "update_spec, submit_spec_version, get_spec and diff_spec", ctx do
+      from_mcp = mcp(ctx, "update_spec", %{"task_id" => "BOS-1", "change_id" => "add-one"})
+
+      from_rest =
+        :patch
+        |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec"), %{change_id: "add-two"})
+        |> rest(201)
+
+      assert same_spec(from_rest, ctx.spec_ids) == same_spec(from_mcp, ctx.spec_ids)
+
+      args = %{"base_version" => 0, "files" => ctx.files, "note" => "First"}
+      from_mcp = mcp(ctx, "submit_spec_version", Map.put(args, "task_id", "BOS-1"))
+
+      from_rest =
+        :post
+        |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec/versions"), args)
+        |> rest(201)
+
+      assert %{"version" => 1} = from_rest
+      assert same_spec(from_rest, ctx.spec_ids) == same_spec(from_mcp, ctx.spec_ids)
+
+      from_mcp = mcp(ctx, "get_spec", %{"task_id" => "BOS-1", "files" => ["tasks.md"]})
+
+      from_rest =
+        rest(api_get(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec?files[]=tasks.md")), 200)
+
+      assert same_spec(from_rest, ctx.spec_ids) == same_spec(from_mcp, ctx.spec_ids)
+
+      from_mcp = mcp(ctx, "diff_spec", %{"task_id" => "BOS-1", "from" => 0})
+      from_rest = rest(api_get(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec/diff?from=0")), 200)
+      assert from_rest == from_mcp
+    end
+
+    test "submit_spec_review, reply_spec_issue and list_spec_reviews", ctx do
+      for ident <- ["BOS-1", "BOS-2"],
+          do: Helmsman.TaskSpecsFixtures.spec_fixture(ctx.scope, ident, change_id: nil)
+
+      review = %{
+        "version" => 1,
+        "verdict" => "fail",
+        "summary" => "Unclear.",
+        "issues" => [
+          %{"severity" => "P2", "file" => "proposal.md", "line" => 1, "body" => "Why?"}
+        ]
+      }
+
+      from_mcp = mcp(ctx, "submit_spec_review", Map.put(review, "task_id", "BOS-1"))
+
+      from_rest =
+        :post
+        |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec/reviews"), review)
+        |> rest(201)
+
+      assert %{"review" => 1, "issues" => ["R1.1"]} = from_rest
+      assert from_rest == from_mcp
+
+      reply = %{"body" => "Taken back.", "resolution" => "withdrawn"}
+
+      from_mcp =
+        mcp(ctx, "reply_spec_issue", Map.merge(reply, %{"task_id" => "BOS-1", "issue" => "R1.1"}))
+
+      from_rest =
+        :post
+        |> api_send(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec/issues/R1.1/notes"), reply)
+        |> rest(201)
+
+      assert from_rest == from_mcp
+
+      from_mcp = mcp(ctx, "list_spec_reviews", %{"task_id" => "BOS-1", "version" => 1})
+
+      from_rest =
+        rest(api_get(ctx.token, w(ctx.slug, "/tasks/BOS-2/spec/reviews?version=1")), 200)
+
+      assert [%{"issues" => [%{"resolution" => "withdrawn"}]}] = from_rest["reviews"]
+      assert normalize(from_rest, ctx.spec_ids) == normalize(from_mcp, ctx.spec_ids)
+    end
+  end
 end

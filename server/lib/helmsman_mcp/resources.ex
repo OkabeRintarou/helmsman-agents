@@ -105,7 +105,8 @@ defmodule HelmsmanMCP.Resources do
   end
 
   def read(@tasks_prefix <> id, %Context{scope: scope}) do
-    with {:ok, task} <- Tasks.get(scope, id), do: {:ok, TaskMarkdown.render(Tasks.detail(task))}
+    with {:ok, task} <- Tasks.get(scope, id),
+         do: {:ok, TaskMarkdown.render(Tasks.detail(task), TaskMarkdown.spec(scope, task))}
   end
 
   def read(_uri, _ctx), do: {:error, :not_found}

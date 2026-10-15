@@ -103,6 +103,14 @@ defmodule HelmsmanMCP.ErrorText do
   def format({:not_in_draft, name}, _ctx),
     do: {:ok, "#{name} is not in the draft; get_design lists its agents."}
 
+  # spec-tools 「请求评审工具」.
+  def format(:forbidden, %Context{tool: "request_spec_review", scope: %{via: :run}}) do
+    {:ok,
+     "A run cannot request spec reviews. As the squad leader, use delegate(task_id, to, " <>
+       "instructions, spec: \"review\"); otherwise mention the reviewer (@name) in a " <>
+       "feedback comment and ask the coordinator."}
+  end
+
   def format(:forbidden, %Context{scope: %{via: :run, run: run}}) do
     caps = Enum.join(run.capabilities, ", ")
 

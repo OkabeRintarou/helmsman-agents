@@ -19,6 +19,7 @@ defmodule HelmsmanMCP do
       Context,
       Rejected,
       Present,
+      SpecPresent,
       Args
     ]
 end

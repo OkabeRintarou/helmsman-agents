@@ -48,7 +48,7 @@ defmodule HelmsmanMCP.SpecErrorText do
   def format({:spec, :no_version}, ctx) do
     {:ok,
      "The spec of #{task(ctx)} has no version yet. Submit one with submit_spec_version " <>
-       "(or delegate(…, spec: \"draft\")) first."}
+       "(or delegate(..., spec: \"draft\")) first."}
   end
 
   def format({:spec, :pending_approval}, ctx) do
@@ -137,6 +137,12 @@ defmodule HelmsmanMCP.SpecErrorText do
          %{index: nil, message: m} -> m
          %{index: i, message: m} -> "issue #{i}: #{m}"
        end) <> "."}
+  end
+
+  def format({:spec, :invalid_archive, message}, _ctx) do
+    {:ok,
+     "Invalid archive: #{message}. Upload a tar.gz or zip of an OpenSpec change directory " <>
+       "(at most 2 MB, 200 entries and 1 MB of files; regular files only)."}
   end
 
   def format({:spec, :invalid_params, %{field: field, message: message}}, _ctx),

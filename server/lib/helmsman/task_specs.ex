@@ -26,7 +26,8 @@ defmodule Helmsman.TaskSpecs do
       `{:spec, :invalid_reviewer, name}`, `{:spec, :own_version, name}`,
       `{:spec, :review_pending, %{reviewer, request, requested_by}}`;
     * `{:spec, :issue_not_found, ref}`,
-      `{:spec, :issue_resolved, ref, resolution}`.
+      `{:spec, :issue_resolved, ref, resolution}`;
+    * `{:spec, :invalid_archive, message}` (`import_archive/4`).
   """
 
   import Ecto.Query, warn: false
@@ -38,6 +39,7 @@ defmodule Helmsman.TaskSpecs do
   alias Helmsman.Tasks.Task
 
   alias Helmsman.TaskSpecs.{
+    Archive,
     Blob,
     Coordinator,
     Dispatch,
@@ -70,6 +72,24 @@ defmodule Helmsman.TaskSpecs do
   defdelegate permissions(scope, ident), to: Read
   defdelegate attention(scope), to: Read
   defdelegate prompt_context(run, task), to: Read
+
+  ## OpenSpec directories (Helmsman.TaskSpecs.Archive, decision 18)
+
+  @doc """
+  A version as an OpenSpec change directory archive (`opts`: `version`,
+  `format` `"tar.gz"` / `"zip"`, `reviews`): `{:ok, %{filename,
+  content_type, body}}`.
+  """
+  defdelegate export_archive(scope, ident, opts \\ []), to: Archive, as: :export
+
+  @doc """
+  Submits an OpenSpec change directory archive as a new version (`opts`:
+  `base_version`, `note`, `dry_run`); see `Helmsman.TaskSpecs.Archive`.
+  """
+  defdelegate import_archive(scope, ident, binary, opts), to: Archive, as: :import
+
+  @doc "The largest archive `import_archive/4` accepts, in bytes."
+  defdelegate archive_max_bytes, to: Archive, as: :max_bytes
 
   ## Reviews (Helmsman.TaskSpecs.Reviews)
 
@@ -218,6 +238,7 @@ defmodule Helmsman.TaskSpecs do
       note: param(attrs, :note) || "",
       remove: param(attrs, :remove) || [],
       change_id: param(attrs, :change_id),
+      hint: param(attrs, :change_id_hint),
       dry_run: param(attrs, :dry_run) in [true, "true"]
     }
 
@@ -269,12 +290,30 @@ defmodule Helmsman.TaskSpecs do
         for {path, content} <- Enum.sort(files), do: %{path: path, bytes: byte_size(content)}
 
       result = %{version: nil, files: listing, validation: validation}
-      if input.dry_run, do: {:ok, result}, else: write(scope, task, spec, input, files, result)
+
+      if input.dry_run,
+        do: {:ok, dry_run_result(result, task, spec, input)},
+        else: write(scope, task, spec, input, files, result)
     end
   end
 
+  # With a `change_id_hint` (an imported directory's name), a dry run
+  # also tells the `change_id` the first version would use.
+  defp dry_run_result(result, _task, _spec, %{hint: nil}), do: result
+
+  defp dry_run_result(result, task, spec, input) do
+    change_id =
+      case spec do
+        %Spec{latest_version: 0, change_id: current} -> usable_hint(task, input.hint) || current
+        %Spec{} -> nil
+        nil -> input.change_id || usable_hint(task, input.hint) || String.downcase(task.ident)
+      end
+
+    Map.put(result, :change_id, change_id)
+  end
+
   defp write(scope, task, spec, input, files, result) do
-    with {:ok, ctx} <- spec_context(scope, task, spec, input.change_id) do
+    with {:ok, ctx} <- version_context(scope, task, spec, input) do
       number = ctx.spec.latest_version + 1
       write_version(scope, ctx.spec, number, files, input.note, result.validation)
       ctx |> after_version(scope, number) |> Store.persist()
@@ -296,6 +335,31 @@ defmodule Helmsman.TaskSpecs do
     case Files.merge(base, input.files, input.remove) do
       {:ok, files} -> {:ok, files}
       {:error, problems} -> {:error, {:spec, :invalid_files, problems}}
+    end
+  end
+
+  # `change_id_hint` (`import_archive/4`): the `change_id` while the spec
+  # has no version, unless it is malformed or taken.
+  defp version_context(scope, task, nil, input),
+    do: spec_context(scope, task, nil, input.change_id || usable_hint(task, input.hint))
+
+  defp version_context(scope, task, %Spec{latest_version: 0} = spec, %{hint: hint})
+       when is_binary(hint) do
+    case usable_hint(task, hint) do
+      nil -> spec_context(scope, task, spec, nil)
+      change_id -> change_id_context(scope, task, spec, change_id)
+    end
+  end
+
+  defp version_context(scope, task, spec, input),
+    do: spec_context(scope, task, spec, input.change_id)
+
+  defp usable_hint(_task, nil), do: nil
+
+  defp usable_hint(task, hint) do
+    case check_change_id(task, hint) do
+      {:ok, change_id} -> change_id
+      {:error, _changeset} -> nil
     end
   end
 

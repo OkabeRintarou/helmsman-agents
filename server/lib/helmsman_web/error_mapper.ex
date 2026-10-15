@@ -211,7 +211,49 @@ defmodule HelmsmanWeb.ErrorMapper do
   defp map({code, detail}) when code in [:diverged, :actor_kind_conflict] and is_map(detail),
     do: {409, Atom.to_string(code), detail}
 
+  defp map({:spec, reason, _} = error) when is_atom(reason), do: spec(error)
+  defp map({:spec, reason} = error) when is_atom(reason), do: spec(error)
+
+  defp map({:spec, :issue_resolved, ref, resolution}),
+    do: {409, "issue_resolved", %{issue: ref, resolution: json_reason(resolution)}}
+
   defp map(_reason), do: :error
+
+  # Task specs (`add-spec-workflow` decision 21, rest-api 「规格端点」).
+  defp spec({:spec, :not_found, ident}), do: {404, "spec_not_found", %{id: ident}}
+  defp spec({:spec, :issue_not_found, ref}), do: {404, "issue_not_found", %{issue: ref}}
+  defp spec({:spec, :request_not_found, ref}), do: {404, "request_not_found", %{request: ref}}
+  defp spec({:spec, :version_not_found, n}), do: {404, "version_not_found", %{version: n}}
+  defp spec({:spec, :stale_version, latest}), do: {409, "stale_version", %{latest: latest}}
+  defp spec({:spec, :closed, status}), do: {409, "spec_closed", %{status: json_reason(status)}}
+  defp spec({:spec, :not_closed, status}), do: {409, "not_closed", %{status: json_reason(status)}}
+
+  defp spec({:spec, reason})
+       when reason in [:no_changes, :no_version, :no_proposal, :pending_approval],
+       do: {409, Atom.to_string(reason), %{}}
+
+  defp spec({:spec, :invalid, errors}), do: {409, "spec_invalid", %{errors: errors}}
+  defp spec({:spec, :unresolved_issues, refs}), do: {409, "unresolved_issues", %{issues: refs}}
+  defp spec({:spec, :reviews_pending, names}), do: {409, "reviews_pending", %{reviewers: names}}
+  defp spec({:spec, :own_version, name}), do: {409, "own_version", %{reviewer: name}}
+
+  defp spec({:spec, :review_pending, detail}),
+    do: {409, "review_pending", Map.take(detail, [:reviewer, :request, :requested_by, :version])}
+
+  defp spec({:spec, :not_coordinator, detail}),
+    do:
+      {403, "not_coordinator",
+       %{task: detail[:task], assignee: detail[:assignee], kind: json_reason(detail[:kind])}}
+
+  defp spec({:spec, :invalid_files, problems}), do: {422, "invalid_files", %{errors: problems}}
+  defp spec({:spec, :invalid_issues, problems}), do: {422, "invalid_issues", %{errors: problems}}
+  defp spec({:spec, :invalid_reviewer, name}), do: {422, "invalid_reviewer", %{reviewer: name}}
+  defp spec({:spec, :invalid_archive, message}), do: {422, "invalid_archive", %{reason: message}}
+
+  defp spec({:spec, :invalid_params, %{field: field, message: message}}),
+    do: {400, "invalid_params", %{fields: %{field => [message]}}}
+
+  defp spec(_reason), do: :error
 
   ## Details
 
@@ -328,7 +370,30 @@ defmodule HelmsmanWeb.ErrorMapper do
     "replace_blocked" => "Active runs or open pull requests prevent replacement.",
     "confirmation_required" => "Confirm replacement with the workspace slug.",
     "too_large" => "The snapshot exceeds the configured import size limit.",
-    "storage_unavailable" => "Backup storage is unavailable."
+    "storage_unavailable" => "Backup storage is unavailable.",
+    "spec_not_found" => "The task has no spec yet.",
+    "issue_not_found" => "No such issue in the spec's reviews.",
+    "request_not_found" => "No such pending review request.",
+    "version_not_found" => "No such version of the spec.",
+    "stale_version" => "The spec has a newer version; see detail.latest.",
+    "spec_closed" => "The spec is finalized or abandoned; reopen it first.",
+    "not_closed" => "Only a finalized or abandoned spec can be reopened.",
+    "no_changes" => "The version has the same files as its base.",
+    "no_version" => "The spec has no version yet.",
+    "no_proposal" => "The spec has no proposal waiting for approval.",
+    "pending_approval" => "The spec is waiting for a person's approval.",
+    "spec_invalid" => "The version does not pass validation; see detail.errors.",
+    "unresolved_issues" => "P1/P2 issues are still open or disputed; see detail.issues.",
+    "reviews_pending" => "Review requests on the version are still pending.",
+    "review_pending" => "The reviewer already has a pending request.",
+    "own_version" => "An author cannot review their own version.",
+    "issue_resolved" => "The issue is already resolved.",
+    "not_coordinator" => "Only the spec's coordinator or a person can do this.",
+    "invalid_files" => "Invalid spec files; see detail.errors.",
+    "invalid_issues" => "Invalid review issues; see detail.errors.",
+    "invalid_reviewer" => "The reviewer cannot review specs.",
+    "invalid_archive" =>
+      "The archive is not a valid OpenSpec change directory; see detail.reason."
   }
 
   @doc "The English message of an error `code`."

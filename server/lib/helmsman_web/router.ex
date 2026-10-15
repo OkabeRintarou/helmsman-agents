@@ -45,6 +45,12 @@ defmodule HelmsmanWeb.Router do
     plug HelmsmanWeb.API.WorkspaceSlug
   end
 
+  pipeline :api_spec_import do
+    plug HelmsmanWeb.API.Accepts, ["json"]
+    plug HelmsmanWeb.Plugs.BearerAuth, scope: ["api:write"], via: :api
+    plug HelmsmanWeb.API.WorkspaceSlug
+  end
+
   pipeline :api_write do
     plug HelmsmanWeb.Plugs.BearerAuth, scope: ["api:write"], via: :api
     plug HelmsmanWeb.API.WorkspaceSlug
@@ -124,6 +130,7 @@ defmodule HelmsmanWeb.Router do
 
     get "/me", MeController, :show
     get "/me/tasks", MeController, :tasks
+    get "/me/specs", SpecController, :attention
     get "/actors", ActorsController, :index
     get "/agents", ActorsController, :agents
     get "/projects", ProjectsController, :index
@@ -133,6 +140,10 @@ defmodule HelmsmanWeb.Router do
     get "/tasks/:id/feedback", FeedbackController, :index
     get "/tasks/:id/feedback/:seq", FeedbackController, :show
     get "/tasks/:id/runs", TasksController, :runs
+    get "/tasks/:id/spec", SpecController, :show
+    get "/tasks/:id/spec/diff", SpecController, :diff
+    get "/tasks/:id/spec/reviews", SpecController, :reviews
+    get "/tasks/:id/spec/events", SpecController, :events
     get "/search", SearchController, :index
     get "/runs/:id", RunsController, :show
     get "/runs/:id/events", RunsController, :events
@@ -155,6 +166,15 @@ defmodule HelmsmanWeb.Router do
     pipe_through :api_read
 
     get "/exports/:id/download", BackupController, :download
+    get "/tasks/:id/spec/export", SpecController, :export
+  end
+
+  # `add-spec-workflow` decision 21: a tar.gz or zip body, read by the
+  # action after the checks (`HelmsmanWeb.API.BodyParser` leaves it).
+  scope "/api/v1/w/:slug", HelmsmanWeb.API do
+    pipe_through :api_spec_import
+
+    post "/tasks/:id/spec/import", SpecController, :import
   end
 
   scope "/api/v1/w/:slug", HelmsmanWeb.API do
@@ -168,6 +188,15 @@ defmodule HelmsmanWeb.Router do
     post "/tasks/:id/feedback", FeedbackController, :create
     patch "/tasks/:id/feedback/:seq", FeedbackController, :update
     post "/tasks/:id/links", LinksController, :create
+    patch "/tasks/:id/spec", SpecController, :update
+    post "/tasks/:id/spec/versions", SpecController, :create_version
+    post "/tasks/:id/spec/reviews", SpecController, :create_review
+    post "/tasks/:id/spec/issues/:issue/notes", SpecController, :reply
+    post "/tasks/:id/spec/issues/:issue/ruling", SpecController, :rule
+    post "/tasks/:id/spec/review-requests", SpecController, :request_reviews
+    delete "/tasks/:id/spec/review-requests/:reviewer", SpecController, :cancel_request
+    post "/tasks/:id/spec/finalize", SpecController, :finalize
+    post "/tasks/:id/spec/reject", SpecController, :reject
     delete "/tasks/:id/links/:type/:to", LinksController, :delete
     post "/runs", RunsController, :create
     post "/runs/:id/cancel", RunsController, :cancel
