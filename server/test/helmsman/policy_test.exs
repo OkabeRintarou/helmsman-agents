@@ -209,4 +209,81 @@ defmodule Helmsman.PolicyTest do
     {scope, _} = run_scope_fixture(run)
     for action <- actions, do: assert(Policy.authorize(scope, action) == {:error, :forbidden})
   end
+
+  describe "spec actions (add-spec-workflow 1.5, decision 14)" do
+    @roles [:owner, :admin, :member, :viewer]
+    @coordinators [:human, {:leader, :squad}, {:assignee_agent, :agent}, :none]
+
+    # A person on the web, an agent identity (an `hm_` credential) and a
+    # run token (read, write_task) of an agent, all of user 10.
+    defp spec_scope(role, :human),
+      do: %Scope{
+        user: %Helmsman.Accounts.User{id: 10},
+        workspace: %Helmsman.Workspaces.Workspace{id: 1},
+        role: role,
+        actor: %Helmsman.Actors.Actor{id: 100, workspace_id: 1, kind: :human, user_id: 10},
+        via: :web
+      }
+
+    defp spec_scope(role, :agent),
+      do: %{
+        spec_scope(role, :human)
+        | actor: %Helmsman.Actors.Actor{id: 200, workspace_id: 1, kind: :agent, owner_id: 10},
+          via: :mcp
+      }
+
+    defp spec_scope(role, :run),
+      do: %{
+        spec_scope(role, :agent)
+        | via: :run,
+          run: %Run{id: 900, task_id: 500, capabilities: ["read", "write_task"]}
+      }
+
+    defp result(true), do: :ok
+    defp result(false), do: {:error, :forbidden}
+
+    test "the full matrix: person / agent / run token × the four roles" do
+      for role <- @roles, kind <- [:human, :agent, :run] do
+        scope = spec_scope(role, kind)
+        member? = role != :viewer
+        admin? = role in [:owner, :admin]
+        label = "#{role} #{kind}"
+
+        assert Policy.authorize(scope, :view_spec) == :ok, label
+        assert Policy.authorize(scope, :write_spec) == result(member?), label
+
+        for coordinator <- @coordinators do
+          assert Policy.authorize(scope, :coordinate_spec, coordinator) ==
+                   result(member? and coordinator != :none),
+                 "#{label} #{inspect(coordinator)}"
+
+          assert Policy.authorize(scope, :rule_spec_issue, coordinator) ==
+                   result(
+                     member? and (coordinator == :human or match?({:leader, _}, coordinator))
+                   ),
+                 "#{label} #{inspect(coordinator)}"
+        end
+
+        # People only, even an agent of an owner.
+        assert Policy.authorize(scope, :approve_spec) == result(kind == :human and member?), label
+
+        for action <- [:update_project_spec_finalize, :set_leader_spec_finalize] do
+          assert Policy.authorize(scope, action) == result(kind == :human and admin?), label
+          assert action in Policy.management_actions()
+        end
+      end
+    end
+
+    test "a run writes only its own task's spec" do
+      scope = spec_scope(:owner, :run)
+      assert Policy.authorize(scope, :write_task, %Helmsman.Tasks.Task{id: 500}) == :ok
+
+      assert Policy.authorize(scope, :write_task, %Helmsman.Tasks.Task{id: 501}) ==
+               {:error, :forbidden}
+
+      read_only = %{scope | run: %{scope.run | capabilities: ["read"]}}
+      assert Policy.authorize(read_only, :view_spec) == :ok
+      assert Policy.authorize(read_only, :write_spec) == {:error, :forbidden}
+    end
+  end
 end

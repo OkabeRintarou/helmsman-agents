@@ -57,7 +57,7 @@ defmodule HelmsmanMCP.WorkflowDocTest do
     en = doc("AGENT-WORKFLOW.en.md")
     zh = doc("AGENT-WORKFLOW.md")
 
-    assert sections(en) == Enum.map(1..10, &to_string/1)
+    assert sections(en) == Enum.map(1..11, &to_string/1)
     assert sections(zh) == sections(en)
     assert transitions(zh) == transitions(en)
   end

@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "specs/settings/spec.md",
+      "line": 3,
+      "rule": "requirement_text_missing"
+    }
+  ]
+}

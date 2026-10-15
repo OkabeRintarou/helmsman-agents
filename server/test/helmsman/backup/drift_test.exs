@@ -52,7 +52,13 @@ defmodule Helmsman.Backup.DriftTest do
 
     allowed =
       MapSet.new(
-        Claims.agent_only() ++ [{"squad_members", "actor_id"}, {"actor_claims", "actor_id"}]
+        Claims.agent_only() ++
+          [
+            {"squad_members", "actor_id"},
+            {"actor_claims", "actor_id"},
+            # The pending-request index: `Claims.merge_review_requests/3`.
+            {"task_spec_review_requests", "reviewer_id"}
+          ]
       )
 
     assert MapSet.subset?(actual, allowed)

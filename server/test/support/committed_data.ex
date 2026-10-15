@@ -44,6 +44,10 @@ defmodule Helmsman.CommittedData do
         )
       end
 
+      # Task specs (add-spec-workflow) refer to actors and runs; every
+      # child table goes with them.
+      Repo.query!("DELETE FROM task_specs WHERE workspace_id = ANY($1)", [workspace_ids])
+
       # Autopilots (add-autopilots) refer to agents, projects, tasks and
       # runs; their records go with them.
       Repo.query!("DELETE FROM autopilots WHERE workspace_id = ANY($1)", [workspace_ids])

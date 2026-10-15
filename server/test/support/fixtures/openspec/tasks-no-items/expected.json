@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "tasks.md",
+      "line": null,
+      "rule": "tasks_no_items"
+    }
+  ]
+}

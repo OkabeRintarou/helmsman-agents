@@ -64,7 +64,8 @@ defmodule Helmsman.Runs.Spec do
         repo: repo,
         squad: run.squad_id && Squads.load(run.squad_id),
         autopilot: Autopilots.prompt_context(run),
-        delegations: delegations(run)
+        delegations: delegations(run),
+        spec: Helmsman.TaskSpecs.prompt_context(run, task)
       }
 
       RunSpec.new(%{

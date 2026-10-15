@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "specs",
+      "line": null,
+      "rule": "no_deltas"
+    }
+  ]
+}

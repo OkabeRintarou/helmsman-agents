@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "proposal.md",
+      "line": 1,
+      "rule": "proposal_sections"
+    }
+  ]
+}

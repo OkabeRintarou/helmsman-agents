@@ -31,13 +31,22 @@ defmodule Helmsman.Backup.Import.Replace do
     {"run_steers", "feedback_id"},
     {"runs", "task_id"},
     {"run_events", "run_id"},
-    {"run_tokens", "run_id"}
+    {"run_tokens", "run_id"},
+    # `add-spec-workflow`: a task's spec goes with it (its children cascade).
+    {"task_specs", "task_id"}
   ]
   def deleted_columns, do: @deleted_columns
 
   @database_null_columns [
     {"agent_designs", "current_run_id"},
-    {"agent_design_messages", "run_id"}
+    {"agent_design_messages", "run_id"},
+    # `add-spec-workflow` decision 2: the runs a spec record came from.
+    {"task_specs", "proposal_run_id"},
+    {"task_spec_versions", "source_run_id"},
+    {"task_spec_review_requests", "request_run_id"},
+    {"task_spec_reviews", "source_run_id"},
+    {"task_spec_issue_notes", "source_run_id"},
+    {"task_spec_events", "source_run_id"}
   ]
   def database_null_columns, do: @database_null_columns
   def deletion_tables, do: @deletion_tables
@@ -71,7 +80,7 @@ defmodule Helmsman.Backup.Import.Replace do
       )
 
       for table <-
-            ~w(task_links task_events task_grants task_pull_requests task_local_branches feedback) do
+            ~w(task_specs task_links task_events task_grants task_pull_requests task_local_branches feedback) do
         Repo.query!("DELETE FROM #{table} WHERE workspace_id=$1", [wid])
       end
 

@@ -20,7 +20,8 @@ defmodule Helmsman.Runs.Triggers do
   for (`add-squads` decision 10), nil when it does not depend on the
   assignee:
 
-    * `assign`, `reopen`, `resubmit`, `delegate_done`: the squad in a run
+    * `assign`, `reopen`, `resubmit`, `delegate_done`, `spec_reviewed`,
+      `spec_decided` (`add-spec-workflow` decision 11): the squad in a run
       as a squad leader, otherwise the run's agent;
     * `delegated`: the squad of the entry (`"squad_id"`);
     * `answer`: the entry's `"bound_assignee_id"`; an older entry with only
@@ -34,7 +35,14 @@ defmodule Helmsman.Runs.Triggers do
           optional(any()) => any()
         }) :: bound()
   def bound_assignee(%{"kind" => kind}, %{squad_id: squad_id, agent_id: agent_id})
-      when kind in ["assign", "reopen", "resubmit", "delegate_done"] do
+      when kind in [
+             "assign",
+             "reopen",
+             "resubmit",
+             "delegate_done",
+             "spec_reviewed",
+             "spec_decided"
+           ] do
     if squad_id, do: {:squad, squad_id}, else: {:actor, agent_id}
   end
 

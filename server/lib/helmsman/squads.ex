@@ -321,6 +321,7 @@ defmodule Helmsman.Squads do
       with :ok <- authorize_leader(scope, refs.leader),
            {:ok, attrs} <-
              validate(attrs, refs, %{leader_id: nil, name_taken: new_name_taken?(ws, attrs)}),
+           :ok <- authorize_spec_finalize(scope, %Squad{}, attrs),
            {:ok, actor} <- insert_actor(ws, attrs.name) do
         squad =
           Repo.insert!(%Squad{
@@ -328,7 +329,8 @@ defmodule Helmsman.Squads do
             actor_id: actor.id,
             leader_agent_id: attrs.leader_id,
             description: attrs.description || "",
-            instructions: attrs.instructions || ""
+            instructions: attrs.instructions || "",
+            spec_finalize: spec_finalize(attrs.spec_finalize)
           })
 
         put_members(squad, attrs.members_resolved || [])
@@ -382,6 +384,7 @@ defmodule Helmsman.Squads do
              name_taken: renamed_taken?(ws, squad_actor, attrs),
              member_ids: member_ids(squad)
            }),
+         :ok <- authorize_spec_finalize(scope, squad, attrs),
          {:ok, _actor} <- rename(squad_actor, attrs.name) do
       cancelled = apply_update(squad, attrs, current_leader)
       notify(squad)
@@ -469,7 +472,8 @@ defmodule Helmsman.Squads do
   `delegate(task_id, to, instructions)` of a run as a squad leader
   (decision 8): `Helmsman.Squads.Delegate.delegate/4`.
   """
-  defdelegate delegate(scope, task_ident, to, instructions), to: Helmsman.Squads.Delegate
+  defdelegate delegate(scope, task_ident, to, instructions, spec \\ nil),
+    to: Helmsman.Squads.Delegate
 
   ## Write helpers
 
@@ -483,7 +487,8 @@ defmodule Helmsman.Squads do
       instructions: attrs["instructions"],
       leader: attrs["leader"],
       members: attrs["members"],
-      lock_version: attrs["lock_version"]
+      lock_version: attrs["lock_version"],
+      spec_finalize: attrs["spec_finalize"]
     }
   end
 
@@ -647,12 +652,33 @@ defmodule Helmsman.Squads do
         kept_errors(members, leader_id, current_leader_id, refs, ctx) ++
         validate_text(attrs, "description", @description_bytes) ++
         validate_text(attrs, "instructions", @instructions_bytes) ++
-        leader_errors ++ member_errors
+        spec_finalize_errors(attrs) ++ leader_errors ++ member_errors
 
     case errors do
       [] -> {:ok, Map.merge(attrs, %{leader_id: leader_id, members_resolved: members})}
       errors -> {:error, error_changeset(errors)}
     end
+  end
+
+  # `add-spec-workflow` decision 7: nil (inherit the project), `approval`
+  # or `leader`.
+  defp spec_finalize_errors(attrs) do
+    if given?(attrs, "spec_finalize") and spec_finalize(attrs.spec_finalize) == :invalid,
+      do: [{:spec_finalize, "must be empty, approval or leader"}],
+      else: []
+  end
+
+  defp spec_finalize(value) when value in [nil, ""], do: nil
+  defp spec_finalize(value) when value in [:approval, "approval"], do: :approval
+  defp spec_finalize(value) when value in [:leader, "leader"], do: :leader
+  defp spec_finalize(_value), do: :invalid
+
+  # Setting `leader` is for admins; an unchanged value is ignored (decision 7).
+  defp authorize_spec_finalize(scope, squad, attrs) do
+    if given?(attrs, "spec_finalize") and spec_finalize(attrs.spec_finalize) == :leader and
+         squad.spec_finalize != :leader,
+       do: Policy.authorize(scope, :set_leader_spec_finalize),
+       else: :ok
   end
 
   defp name_errors(attrs, creating?, taken?) do
@@ -807,7 +833,8 @@ defmodule Helmsman.Squads do
       instructions: :string,
       leader: :string,
       members: {:array, :map},
-      lock_version: :integer
+      lock_version: :integer,
+      spec_finalize: :string
     }
 
     Enum.reduce(errors, Changeset.change({%{}, types}), fn {field, message}, cs ->
@@ -824,6 +851,11 @@ defmodule Helmsman.Squads do
         leader_agent_id: attrs.leader_id
       ]
       |> Enum.reject(fn {_k, v} -> v == false end)
+      |> Kernel.++(
+        if given?(attrs, "spec_finalize"),
+          do: [spec_finalize: spec_finalize(attrs.spec_finalize)],
+          else: []
+      )
 
     squad
     |> Changeset.change(changes)
@@ -1001,6 +1033,8 @@ defmodule Helmsman.Squads do
       name: actor.name,
       description: squad.description,
       instructions: squad.instructions,
+      # nil: the project's mode applies (`add-spec-workflow` decision 7).
+      spec_finalize: squad.spec_finalize,
       disabled: not is_nil(actor.disabled_at),
       lock_version: squad.lock_version,
       leader: %{

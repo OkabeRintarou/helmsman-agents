@@ -76,6 +76,10 @@ defmodule Helmsman.Runs.SideEffects do
   Each in its own transaction, in the order of task writes (maintenance
   lock, the squad's rows, the task row). A trigger that is not dispatched
   is only logged.
+
+  The run's review requests are settled first, in a transaction of their
+  own that commits before any wake-up (`add-spec-workflow` decision 10):
+  the woken leader sees them settled.
   """
   @spec delegate_done(pos_integer()) :: :ok
   def delegate_done(run_id) do
@@ -84,6 +88,8 @@ defmodule Helmsman.Runs.SideEffects do
         :ok
 
       run ->
+        :ok = Helmsman.TaskSpecs.settle_run(run_id)
+
         run.triggers
         |> Enum.filter(&(&1["kind"] == "delegated"))
         |> Enum.map(&{&1["squad_id"], &1["leader_run_id"]})

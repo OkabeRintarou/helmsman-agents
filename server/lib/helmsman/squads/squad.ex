@@ -20,6 +20,8 @@ defmodule Helmsman.Squads.Squad do
     belongs_to :leader_agent, Actor
     field :description, :string, default: ""
     field :instructions, :string, default: ""
+    # `add-spec-workflow` decision 7: nil inherits the project's value.
+    field :spec_finalize, Ecto.Enum, values: [:approval, :leader]
     field :lock_version, :integer, default: 1
     has_many :members, Member, preload_order: [asc: :position]
 

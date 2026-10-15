@@ -25,6 +25,13 @@ defmodule Helmsman.Runs.Prompt do
   how to lead them. Its assignment and mention lines name the squad. The
   prompt of any other run is unchanged.
 
+  Specs (`add-spec-workflow` decision 12, `spec` in the context): a task
+  with a spec, or whose epic has a final one, gets one spec line right
+  after why the run was started (a resumed session too); a leader run gets
+  a `## Specs` section after the squad's; the triggers of the spec
+  workflow have their own lines. The prompt of a run on a task without a
+  spec is unchanged, but for the leader's one-sentence section.
+
   A run-only autopilot run (`add-autopilots` decision 11, `autopilot` in
   the context) has no task: after who it is, which autopilot started it
   and how, the frozen instructions, a manual note, a webhook payload (at
@@ -56,7 +63,8 @@ defmodule Helmsman.Runs.Prompt do
           optional(:delegations) => %{
             summaries: %{pos_integer() => String.t() | nil},
             squads: %{pos_integer() => String.t()}
-          }
+          },
+          optional(:spec) => map() | nil
         }
 
   @max_quote_bytes 8192
@@ -75,11 +83,15 @@ defmodule Helmsman.Runs.Prompt do
   """
   @spec build(Run.t(), ctx()) :: String.t()
   def build(%Run{} = run, %{resume?: true, task: %Task{}} = ctx) do
-    body = Enum.join([why(run, ctx)] ++ repo_lines(run, ctx[:repo]) ++ [get_task(ctx.task)], "\n")
+    body =
+      Enum.join(
+        [why(run, ctx)] ++ spec_lines(ctx) ++ repo_lines(run, ctx[:repo]) ++ [get_task(ctx.task)],
+        "\n"
+      )
 
     case ctx[:squad] do
       nil -> body
-      squad -> squad_section(squad, false) <> "\n\n---\n" <> body
+      squad -> squad_section(squad, false) <> specs_section(ctx) <> "\n\n---\n" <> body
     end
   end
 
@@ -101,6 +113,7 @@ defmodule Helmsman.Runs.Prompt do
           this_run(ctx.task),
           why(run, ctx)
         ] ++
+          spec_lines(ctx) ++
           working_directory(run, ctx.task, ctx[:repo]) ++
           if(ctx.task, do: [get_task(ctx.task)], else: []),
         "\n"
@@ -112,7 +125,9 @@ defmodule Helmsman.Runs.Prompt do
         _ -> [ctx.profile.instructions]
       end
 
-    head = head ++ if(ctx[:squad], do: [squad_section(ctx.squad, true)], else: [])
+    head =
+      head ++
+        if(ctx[:squad], do: [squad_section(ctx.squad, true) <> specs_section(ctx)], else: [])
 
     case head do
       [] -> body
@@ -455,11 +470,63 @@ defmodule Helmsman.Runs.Prompt do
   defp trigger_line(%{"kind" => "delegated"} = trigger, _run, ctx) do
     squad = get_in(ctx, [:delegations, :squads, trigger["squad_id"]]) || "your squad"
 
+    join(
+      [
+        "- #{by(trigger, ctx)}, leading the squad #{squad}, delegated #{ident(ctx)} to you:",
+        blockquote(trigger["instructions"] || ""),
+        "Do this in this run and end it with a short summary of what you did: the leader " <>
+          "reads it. Do not move #{ident(ctx)} to done unless asked to, and do not verify it."
+      ] ++ spec_job(trigger, ctx)
+    )
+  end
+
+  # `add-spec-workflow` decision 12: a review a person (or an `hm_`
+  # credential) asked for.
+  defp trigger_line(%{"kind" => "spec_review"} = trigger, _run, ctx) do
+    join(
+      [
+        "- #{by(trigger, ctx)} asked you to review version #{trigger["spec_version"]} of the " <>
+          "spec of #{ident(ctx)}. " <> review_steps(trigger, ctx)
+      ] ++ instructions_quote(trigger, ctx)
+    )
+  end
+
+  defp trigger_line(%{"kind" => "spec_reviewed"} = trigger, _run, ctx) do
+    counts = trigger["counts"] || %{}
+    total = Enum.sum(Map.values(counts))
+
+    breakdown =
+      ~w(P1 P2 P3)
+      |> Enum.filter(&(Map.get(counts, &1, 0) > 0))
+      |> Enum.map_join(", ", &"#{counts[&1]} #{&1}")
+
+    issues =
+      case total do
+        0 -> "no issues"
+        1 -> "1 issue (#{breakdown})"
+        n -> "#{n} issues (#{breakdown})"
+      end
+
+    "- #{by(trigger, ctx)} reviewed version #{trigger["version"]} of the spec of " <>
+      "#{ident(ctx)}: #{trigger["verdict"]}, #{issues}. Read them with " <>
+      "list_spec_reviews(\"#{ident(ctx)}\")."
+  end
+
+  defp trigger_line(%{"kind" => "spec_decided", "decision" => "approved"} = trigger, _run, ctx) do
+    "- #{by(trigger, ctx)} approved the spec of #{ident(ctx)}: version #{trigger["version"]} " <>
+      "is final. Continue with the implementation according to it."
+  end
+
+  defp trigger_line(%{"kind" => "spec_decided", "decision" => "finalized"} = trigger, _run, ctx) do
+    "- #{by(trigger, ctx)} finalized the spec of #{ident(ctx)} at version " <>
+      "#{trigger["version"]}. Continue with the implementation according to it."
+  end
+
+  defp trigger_line(%{"kind" => "spec_decided"} = trigger, _run, ctx) do
     join([
-      "- #{by(trigger, ctx)}, leading the squad #{squad}, delegated #{ident(ctx)} to you:",
-      blockquote(trigger["instructions"] || ""),
-      "Do this in this run and end it with a short summary of what you did: the leader " <>
-        "reads it. Do not move #{ident(ctx)} to done unless asked to, and do not verify it."
+      "- #{by(trigger, ctx)} sent the spec of #{ident(ctx)} back:",
+      blockquote(trigger["reason"] || ""),
+      "Revise it before proposing again."
     ])
   end
 
@@ -499,6 +566,151 @@ defmodule Helmsman.Runs.Prompt do
     do: "- #{by(trigger, ctx)} started you (#{kind})."
 
   defp ident(ctx), do: ctx.task && ctx.task.ident
+
+  ## Specs (`add-spec-workflow` decision 12)
+
+  defp spec_job(%{"spec_role" => "draft"}, _ctx) do
+    [
+      "Your job: draft the spec in the OpenSpec structure (proposal.md, design.md, tasks.md, " <>
+        ~s[specs/<capability>/spec.md with "### Requirement:" and "#### Scenario:"), ] <>
+        "submit it with submit_spec_version (use dry_run to check it first). Do not change " <>
+        "code or the task status. End your run with a short summary."
+    ]
+  end
+
+  defp spec_job(%{"spec_role" => "review"} = trigger, ctx) do
+    [
+      "Your job: review version #{trigger["spec_version"]} of the spec of #{ident(ctx)}. " <>
+        review_steps(trigger, ctx)
+    ]
+  end
+
+  defp spec_job(%{"spec_role" => "revise"}, _ctx) do
+    [
+      "Your job: revise the spec after review. Reply to every unresolved issue with " <>
+        "reply_spec_issue (accepted, or disputed with your reasons), then submit a new " <>
+        "version with submit_spec_version. Do not change code."
+    ]
+  end
+
+  defp spec_job(_trigger, _ctx), do: []
+
+  defp review_steps(trigger, ctx) do
+    ident = ident(ctx)
+    version = trigger["spec_version"]
+
+    diff =
+      case get_in(ctx, [:spec, :diff_base, version]) do
+        base when is_integer(base) -> " and diff_spec(\"#{ident}\", #{base}, #{version})"
+        _none -> ""
+      end
+
+    "Read it with get_spec(\"#{ident}\")#{diff}, then submit your review with " <>
+      "submit_spec_review (verdict pass, fail or comment; issues with severity P1/P2/P3 and a " <>
+      "location). Do not change the spec, the code or the task status."
+  end
+
+  defp instructions_quote(%{"instructions" => text} = trigger, ctx)
+       when is_binary(text) and text != "",
+       do: ["Instructions from #{by(trigger, ctx)}:", blockquote(text)]
+
+  defp instructions_quote(_trigger, _ctx), do: []
+
+  # The spec line after why the run was started (at most 512 bytes).
+  defp spec_lines(%{spec: %{task: ident} = spec}) do
+    case {spec.spec, spec.epic} do
+      {nil, %{ident: epic, final_version: v}} ->
+        ["The epic #{epic} has a final spec (version #{v}). Read it with get_spec(\"#{epic}\")."]
+
+      {nil, nil} ->
+        []
+
+      {s, _epic} ->
+        [spec_line(ident, s)]
+    end
+  end
+
+  defp spec_lines(_ctx), do: []
+
+  @doc false
+  def spec_line(ident, %{latest_version: 0} = s) do
+    "Spec: #{ident} needs a spec (change #{s.change_id}, no version yet). See " <>
+      "get_spec(\"#{ident}\") and the Specs section of helmsman://workflow."
+  end
+
+  def spec_line(ident, %{status: :finalized} = s) do
+    "The spec of #{ident} is final (version #{s.final_version}). Read it with " <>
+      "get_spec(\"#{ident}\") and implement according to it."
+  end
+
+  def spec_line(ident, %{status: :abandoned}),
+    do: "Spec: the spec of #{ident} was abandoned; do not rely on it."
+
+  def spec_line(ident, s) do
+    status =
+      case s.status do
+        :draft -> "draft"
+        :in_review -> "review"
+        :pending_approval -> "pending approval"
+      end
+
+    line =
+      "Spec: #{ident} has a spec in #{status} (change #{s.change_id}, latest version " <>
+        "#{s.latest_version}, #{if s.valid, do: "valid", else: "not valid yet"}, " <>
+        "#{s.unresolved} unresolved P1/P2 issue(s), #{s.pending} pending review(s)). Read it " <>
+        "with get_spec(\"#{ident}\") and list_spec_reviews(\"#{ident}\")."
+
+    if s.status == :pending_approval,
+      do: line <> " Version #{s.proposal_version} is waiting for a person's approval.",
+      else: line
+  end
+
+  # The leader's `## Specs` section (at most 2 KB), after the squad's.
+  defp specs_section(%{spec: %{task: ident} = spec}) do
+    "\n\n## Specs\n" <> Enum.join(specs_body(ident, spec), "\n")
+  end
+
+  defp specs_section(_ctx), do: ""
+
+  defp specs_body(ident, %{spec: %{status: status} = s, mode: mode})
+       when status in [:draft, :in_review, :pending_approval] do
+    mode_line =
+      case mode do
+        :leader ->
+          "This task's finalize mode is leader: finalize_spec makes it final directly; you " <>
+            "are responsible for that decision."
+
+        :approval ->
+          "This task's finalize mode is approval: a person must approve it after you call " <>
+            "finalize_spec."
+      end
+
+    [
+      "#{ident} has a spec that is not final (#{if s.latest_version == 0, do: "no version yet", else: "latest version #{s.latest_version}"}): lead the spec workflow first.",
+      "- Draft: delegate(task_id, to, instructions, spec: \"draft\").",
+      "- Review: delegate(..., spec: \"review\"); several reviewers, people in the squad too.",
+      "- Revise: delegate(..., spec: \"revise\") to the author after the reviews.",
+      "- Settle disagreements with rule_spec_issue (upheld or dismissed) and write your reasons.",
+      "- When the latest version is valid, no P1/P2 issue is open or disputed and no review is " <>
+        "pending, call finalize_spec with a summary of the reviews. " <> mode_line,
+      "- A review that does not come can be cancelled with cancel_spec_review.",
+      "Do not schedule implementation before the spec is final."
+    ]
+  end
+
+  defp specs_body(ident, %{spec: %{status: :finalized, final_version: v}}) do
+    [
+      "The spec of #{ident} is final (version #{v}): delegate or split the implementation " <>
+        "according to it."
+    ]
+  end
+
+  defp specs_body(_ident, _spec) do
+    [
+      "If this task needs a spec first, create one with submit_spec_version or " <>
+        "delegate(…, spec: \"draft\")."
+    ]
+  end
 
   defp feedback_id(id, ctx) do
     case Map.get(ctx[:feedback] || %{}, id) do

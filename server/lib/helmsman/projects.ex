@@ -89,12 +89,20 @@ defmodule Helmsman.Projects do
   ## Changing
 
   @doc """
-  Changes a project's name and description (`:update_project`). A `key` in
-  `attrs` is ignored: keys never change.
+  Changes a project's name, description and spec finalize mode
+  (`:update_project`, admin and above). A `key` in `attrs` is ignored:
+  keys never change. The spec finalize mode (`add-spec-workflow` decision
+  7) is for people only: an agent identity giving `spec_finalize` gets
+  `:forbidden`.
   """
   @spec update(Scope.t(), String.t(), map()) :: {:ok, Project.t()} | {:error, error()}
   def update(%Scope{workspace: %Workspace{}} = scope, key, attrs) when is_binary(key) do
-    Workspaces.write_transaction(scope, :update_project, fn scope ->
+    action =
+      if Map.has_key?(attrs, :spec_finalize) or Map.has_key?(attrs, "spec_finalize"),
+        do: :update_project_spec_finalize,
+        else: :update_project
+
+    Workspaces.write_transaction(scope, action, fn scope ->
       with {:ok, project} <- lock_project(scope, key) do
         project |> Project.update_changeset(attrs) |> save()
       end

@@ -212,7 +212,67 @@ say, then end your run with a short summary of what you did (the leader
 reads it). Do not move the task to `DONE` unless the leader asked you to,
 and do not verify it.
 
-## 10. Using this from another repository
+## 10. Specs
+
+A task can have a spec: a change in the OpenSpec structure that is written,
+reviewed and finalized in Helmsman before the implementation starts. Your
+prompt has a `Spec:` line when the task (or its epic) has one; read it with
+`get_spec`, its reviews with `list_spec_reviews`, and compare versions with
+`diff_spec`.
+
+**Structure and validation.** A version is a complete set of files:
+`proposal.md` (with non-empty `## Why` and `## What Changes`), `tasks.md`
+(with at least one `- [ ]` item), optional `design.md`, and
+`specs/<capability>/spec.md` deltas. Each delta file has
+`## ADDED Requirements` (or `MODIFIED`, `REMOVED`, `RENAMED`); each added or
+modified `### Requirement: <name>` has text containing `SHALL` or `MUST`
+(upper case, as a word) before its first `#### Scenario:` (exactly four `#`)
+and at least one scenario. Names are unique per section and not in two of
+ADDED / MODIFIED / REMOVED. Headings inside code fences do not count. These
+are the checks of `openspec validate --strict`; a draft may fail them, a
+final spec may not.
+
+**Submitting.** `submit_spec_version` with `base_version` (the latest
+version, 0 for none), only the files you change and the paths to `remove`;
+the other files carry over. A stale `base_version` is refused: read the
+changes with `diff_spec` and resubmit. Use `dry_run` to check the merged
+files and the validation first. A new version cancels the pending reviews
+of older ones and withdraws a pending proposal.
+
+**Statuses.** `draft` → `in_review` (a review is pending on the latest
+version) → `pending_approval` (finalizing was proposed) → `finalized`;
+`abandoned`; a person or the coordinator can reopen a final or abandoned
+spec. Finalizing needs: the latest version passes validation, no `P1` or
+`P2` issue is `open` or `disputed`, and no review is pending on the latest
+version. `P3` issues never block.
+
+**Roles.**
+
+- Drafting (delegated with `spec: "draft"`): write the files, check them
+  with `dry_run`, submit with `submit_spec_version`. Do not change code or
+  the task status; end with a short summary.
+- Reviewing (delegated with `spec: "review"`, or asked by a person): read
+  the version (and the diff with the previous reviewed one), then
+  `submit_spec_review` with a verdict `pass`, `fail` or `comment`, a summary
+  and issues: `P1` must change, `P2` should change, `P3` is a suggestion,
+  each with a location (file and line) when it has one. Do not change the
+  spec, the code or the task status.
+- Revising (delegated with `spec: "revise"`): answer every unresolved issue
+  with `reply_spec_issue`: `accepted` (say in which version) or `disputed`
+  with your reasons; then submit a new version.
+- Leading (a squad leader with a spec that is not final): have it drafted,
+  reviewed (several reviewers, people in the squad too) and revised with
+  `delegate`; settle disputed issues with `rule_spec_issue` (`upheld` or
+  `dismissed`, with your reasons); cancel a review that does not come with
+  `cancel_spec_review`; when the gate holds, call `finalize_spec` with a
+  summary of the reviews. Depending on the finalize mode a person approves
+  it, or it becomes final at once.
+
+Do not start the implementation before the spec is final. Once it is final,
+it is the basis of the implementation: follow it, and when you find it
+wrong, say so in a `question` instead of deviating silently.
+
+## 11. Using this from another repository
 
 Add one line to the repository's `CLAUDE.md` (or the equivalent file of
 your agent):

@@ -23,6 +23,11 @@ defmodule Helmsman.Runs.Revalidation do
        run as a squad leader checks the leader only). A run without any
        such trigger is checked with its `root_initiator_user_id`.
 
+  Between 2 and 3, a trigger with a review request (`"spec_request"`,
+  `add-spec-workflow` decision 10) whose request is no longer
+  `requested` (`spec_requests: %{number => status}`, read by the caller)
+  is dropped; nothing else left is `{:obsolete, :spec_settled}`.
+
   When the earliest trigger is dropped, the next one's source and chain
   are used (`derive/2`). Nothing left but neutral markers: the step that
   dropped the last ones decides — authorization `:unauthorized`, the
@@ -60,7 +65,8 @@ defmodule Helmsman.Runs.Revalidation do
           required(:runtime) => Runtime.t() | nil,
           optional(:steers) => Steering.facts(),
           optional(:design) => :current | :ended | nil,
-          optional(:autopilot) => :current | :ended | nil
+          optional(:autopilot) => :current | :ended | nil,
+          optional(:spec_requests) => %{pos_integer() => atom()}
         }
   @type obsolete_why ::
           :agent_disabled
@@ -74,6 +80,7 @@ defmodule Helmsman.Runs.Revalidation do
           | :squad_disabled
           | :not_leader
           | :autopilot_ended
+          | :spec_settled
   @type changes :: %{
           triggers: [map()],
           root_initiator_user_id: pos_integer(),
@@ -105,7 +112,8 @@ defmodule Helmsman.Runs.Revalidation do
 
   defp check_valid(run, locked) do
     with nil <- obsolete(run, locked),
-         {:ok, kept} <- drop_unbound(run, locked) do
+         {:ok, kept} <- drop_unbound(run, locked),
+         {:ok, kept} <- drop_settled_specs(kept, locked) do
       authorize_kept(run, kept, locked)
     else
       {:obsolete, why} -> {:obsolete, why}
@@ -139,6 +147,22 @@ defmodule Helmsman.Runs.Revalidation do
     had? = Enum.any?(run.triggers, &(not Triggers.neutral?(&1)))
 
     if had? and not left?, do: {:obsolete, :reassigned}, else: {:ok, kept}
+  end
+
+  # The triggers whose review request was settled meanwhile.
+  defp drop_settled_specs(kept, locked) do
+    states = Map.get(locked, :spec_requests, %{})
+
+    left =
+      Enum.reject(kept, fn trigger ->
+        n = trigger["spec_request"]
+        is_integer(n) and Map.get(states, n, :requested) != :requested
+      end)
+
+    if Enum.any?(kept, &(not Triggers.neutral?(&1))) and
+         not Enum.any?(left, &(not Triggers.neutral?(&1))),
+       do: :spec_settled,
+       else: {:ok, left}
   end
 
   defp bound_valid?(trigger, run, task, squads) do

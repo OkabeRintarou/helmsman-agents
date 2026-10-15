@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "specs/settings/spec.md",
+      "line": null,
+      "rule": "no_delta_sections"
+    }
+  ]
+}

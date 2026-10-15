@@ -476,6 +476,41 @@ defmodule Helmsman.PolicyMatrixTest do
                   end
 
               {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
+            end,
+            # specs (add-spec-workflow decision 14; run tokens in
+            # policy_test.exs): reads for all; writes member and above;
+            # coordinating with a coordinator; ruling a person or a leader;
+            # approving people only; the finalize modes admins (people)
+            for role <- @roles,
+                kind <- [:human, :agent],
+                {action, resource} <- [
+                  {:view_spec, nil},
+                  {:write_spec, nil},
+                  {:coordinate_spec, :human},
+                  {:coordinate_spec, {:assignee_agent, nil}},
+                  {:coordinate_spec, :none},
+                  {:rule_spec_issue, :human},
+                  {:rule_spec_issue, {:leader, nil}},
+                  {:rule_spec_issue, {:assignee_agent, nil}},
+                  {:approve_spec, nil},
+                  {:update_project_spec_finalize, nil},
+                  {:set_leader_spec_finalize, nil}
+                ] do
+              member? = role != :viewer
+
+              allowed =
+                case {action, resource} do
+                  {:view_spec, _} -> true
+                  {:write_spec, _} -> member?
+                  {:coordinate_spec, :none} -> false
+                  {:coordinate_spec, _} -> member?
+                  {:rule_spec_issue, {:assignee_agent, _}} -> false
+                  {:rule_spec_issue, _} -> member?
+                  {:approve_spec, _} -> kind == :human and member?
+                  _finalize_mode -> kind == :human and role in [:owner, :admin]
+                end
+
+              {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
             end
           ]
           |> List.flatten()

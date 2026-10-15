@@ -185,7 +185,8 @@ defmodule Helmsman.Runs.Lifecycle do
           runtime: runtime,
           steers: Steering.facts(run.triggers),
           design: AgentDesigns.turn_state(run),
-          autopilot: Helmsman.Autopilots.record_state(run)
+          autopilot: Helmsman.Autopilots.record_state(run),
+          spec_requests: Helmsman.TaskSpecs.request_states(run)
         }
 
         decide_starting(run, locked, ctx.user_id)

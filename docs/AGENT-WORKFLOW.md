@@ -177,7 +177,48 @@ Feedback 是任务下的 Markdown 记录，ID 形如 `BOS-12#3`。共四种：
 你作为成员被委派时：按 leader 的指示做，结束时写一段简短的总结（leader 会看到）。除非
 leader 要求，不要把任务迁移到 `DONE`，也不要验收它。
 
-## 10. 在其他仓库里引用
+## 10. 规格
+
+任务可以有一份规格：OpenSpec 结构的变更，在动手实现之前于 Helmsman 里起草、评审并定稿。
+任务（或它的 Epic）有规格时，提示词里有一行 `Spec:`；用 `get_spec` 读它，用
+`list_spec_reviews` 读评审，用 `diff_spec` 对比版本。
+
+**结构与校验。** 每个版本是一组完整的文件：`proposal.md`（`## Why` 与 `## What Changes`
+都有内容）、`tasks.md`（至少一个 `- [ ]` 项）、可选的 `design.md`，以及
+`specs/<capability>/spec.md` 增量。每个增量文件有 `## ADDED Requirements`（或 `MODIFIED`、
+`REMOVED`、`RENAMED`）；新增或修改的每个 `### Requirement: <名字>` 在第一个
+`#### Scenario:`（恰好四个 `#`）之前要有含 `SHALL` 或 `MUST`（大写、独立成词）的正文，并且
+至少有一个场景。同一小节里需求名不重复，也不能同时出现在 ADDED / MODIFIED / REMOVED 中的两处。
+代码块里的标题不算。这就是 `openspec validate --strict` 的检查；草稿可以不通过，定稿不行。
+
+**提交。** `submit_spec_version` 带 `base_version`（最新版本号，没有版本时为 0），只给改动的
+文件和要删除的路径（`remove`），其余文件沿用。`base_version` 过期会被拒绝：用 `diff_spec`
+看改动后重新提交。可以先用 `dry_run` 检查合并后的文件与校验结果。新版本会作废旧版本上待完成
+的评审，并撤回待批准的提议。
+
+**状态。** `draft` → `in_review`（最新版本上有待完成的评审）→ `pending_approval`（已提出
+定稿）→ `finalized`；`abandoned`；人或协调者可以重新打开已定稿或已放弃的规格。定稿要求：最新
+版本通过校验、没有处于 `open` 或 `disputed` 的 `P1` / `P2` 问题、最新版本上没有待完成的评审。
+`P3` 问题不挡定稿。
+
+**角色。**
+
+- 起草（以 `spec: "draft"` 被委派）：写好文件，用 `dry_run` 自检，再用 `submit_spec_version`
+  提交。不改代码、不改任务状态；结束时写简短总结。
+- 评审（以 `spec: "review"` 被委派，或被人请求）：读该版本（以及与上一个有评审的版本的差异），
+  然后 `submit_spec_review`：结论 `pass`、`fail` 或 `comment`，摘要，以及问题——`P1` 必须改、
+  `P2` 应该改、`P3` 是建议，有位置时写明文件与行。不改规格、代码和任务状态。
+- 修订（以 `spec: "revise"` 被委派）：用 `reply_spec_issue` 逐条回复未解决的问题：
+  `accepted`（注明在哪个版本改）或 `disputed`（写明理由）；然后提交新版本。
+- 带领（小队 leader，规格尚未定稿）：用 `delegate` 安排起草、评审（可以多位，小队里的人也行）
+  与修订；用 `rule_spec_issue` 裁定有异议的问题（`upheld` 或 `dismissed`，写明理由）；迟迟不来
+  的评审用 `cancel_spec_review` 取消；门槛满足后用 `finalize_spec` 附评审汇总提出定稿。视定稿
+  方式，由人批准，或直接定稿。
+
+规格定稿之前不要开始实现。定稿之后它就是实现的依据：照它做；发现它有错时写一条 `question`，
+不要悄悄偏离。
+
+## 11. 在其他仓库里引用
 
 在仓库的 `CLAUDE.md`（或你所用 Agent 的同类文件）里加一行：
 

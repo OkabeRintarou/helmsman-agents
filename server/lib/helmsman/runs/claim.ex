@@ -190,7 +190,8 @@ defmodule Helmsman.Runs.Claim do
         Map.merge(locked, %{
           steers: Steering.facts(run.triggers),
           design: AgentDesigns.turn_state(run),
-          autopilot: Helmsman.Autopilots.record_state(run)
+          autopilot: Helmsman.Autopilots.record_state(run),
+          spec_requests: Helmsman.TaskSpecs.request_states(run)
         })
 
       decide(run, locked, state)
