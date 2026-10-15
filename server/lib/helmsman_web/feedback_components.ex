@@ -194,7 +194,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
       can_feedback?={@can_feedback?}
       fresh?={@thread.current.seq > @fresh_after}
       label?={Map.get(@thread, :label?, false)}
-      nested?={Map.get(@thread, :depth, 0) > 0}
+      nested?={nested?(@thread)}
       target_kind={target_kind(@thread.current, @kinds)}
       agents={@agents}
       appearance={@appearance}
@@ -204,7 +204,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
       :if={@thread.history != []}
       id={"feedback-thread-#{@thread.current.thread_seq}-history"}
       phx-mounted={JS.ignore_attributes(["open"])}
-      class="group mt-1 ml-4"
+      class={["group mt-1", if(nested?(@thread), do: "sm:ml-4", else: "ml-4")]}
     >
       <summary class="cursor-pointer py-1 text-caption text-fg-muted hover:text-fg">
         {dgettext("ui", "早期版本（%{n}）", n: length(@thread.history))}
@@ -218,6 +218,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
           revisable?={false}
           can_feedback?={false}
           fresh?={false}
+          nested?={nested?(@thread)}
           target_kind={target_kind(entry, @kinds)}
           agents={@agents}
           appearance={@appearance}
@@ -227,6 +228,10 @@ defmodule HelmsmanWeb.FeedbackComponents do
     </details>
     """
   end
+
+  # On narrow screens a depth-3 card keeps >= 300px of text at 390px (D3/D5):
+  # nested cards use px-2 and nested earlier versions drop their indent.
+  defp nested?(thread), do: Map.get(thread, :depth, 0) > 0
 
   defp target_kind(entry, kinds) do
     case entry[:target] do
@@ -281,7 +286,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
       phx-mounted={@fresh? && JS.transition("animate-row-flash", time: 600)}
       class={[
         "scroll-mt-16 min-w-0 rounded-box border border-border py-2",
-        if(@nested?, do: "px-2.5 sm:px-3", else: "px-3"),
+        if(@nested?, do: "px-2 sm:px-3", else: "px-3"),
         if(@system? or !@active?, do: "bg-canvas", else: "bg-surface")
       ]}
     >

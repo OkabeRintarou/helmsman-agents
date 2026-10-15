@@ -106,6 +106,28 @@ defmodule HelmsmanWeb.FeedbackComponentsTest do
     refute LazyHTML.query(doc, "#feedback-thread-4-replies") |> Enum.any?()
   end
 
+  # 390px: page px-4 and three 13px levels leave 319px; 1px borders and px-2 leave 301px of text.
+  test "narrow screens: nested cards and their earlier versions keep >= 300px of text" do
+    feedback =
+      chain(3) ++
+        [
+          entry(4, reply_to: 3, status: "superseded", superseded_by: 5),
+          entry(5, thread: 4, reply_to: 3)
+        ]
+
+    doc = render_timeline(feedback)
+    class = fn sel -> doc |> LazyHTML.query(sel) |> LazyHTML.attribute("class") |> hd() end
+
+    for id <- ["#feedback-5", "#feedback-4"] do
+      assert class.(id) =~ ~r/(^| )px-2( |$)/ and class.(id) =~ "sm:px-3"
+    end
+
+    history = class.("#feedback-thread-4-history")
+    assert history =~ "sm:ml-4"
+    refute history =~ ~r/(^| )ml-4/
+    assert class.("#feedback-1") =~ ~r/(^| )px-3( |$)/
+  end
+
   test "超过 3 层: only the flattened replies say whom they reply to" do
     doc = render_timeline(chain(6))
 
