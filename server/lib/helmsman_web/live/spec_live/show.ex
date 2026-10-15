@@ -57,6 +57,7 @@ defmodule HelmsmanWeb.SpecLive.Show do
         file: nil,
         content: nil,
         source_limit: nil,
+        source_key: nil,
         marker_cache: nil,
         markers: %{},
         file_counts: %{},
@@ -156,22 +157,48 @@ defmodule HelmsmanWeb.SpecLive.Show do
     file = if wanted in paths, do: wanted, else: default_file(paths)
     %{current_scope: scope, ident: ident} = socket.assigns
 
-    content =
-      case file && SpecData.get(scope, ident, version: version.number, files: [file]) do
-        {:ok, %{version: %{files: files}}} ->
-          Enum.find_value(files, &(&1.path == file && &1.content))
-
-        _ ->
-          nil
-      end
-
-    lines = if content, do: length(String.split(content, "\n")), else: 0
-    limit = if lines > @big_file, do: socket.assigns.source_limit || @chunk
+    content = file_content(scope, ident, version.number, file)
+    key = {version.number, file}
+    limit = source_limit(socket, key, content)
 
     socket
-    |> assign(version: version, file: file, content: content, source_limit: limit)
+    |> assign(
+      version: version,
+      file: file,
+      content: content,
+      source_limit: limit,
+      source_key: key
+    )
     |> load_markers()
   end
+
+  defp file_content(_scope, _ident, _number, nil), do: nil
+
+  defp file_content(scope, ident, number, file) do
+    case SpecData.get(scope, ident, version: number, files: [file]) do
+      {:ok, %{version: %{files: files}}} ->
+        Enum.find_value(files, &(&1.path == file && &1.content))
+
+      _ ->
+        nil
+    end
+  end
+
+  # A big file is shown in parts; the part always reaches the line of `?line=`
+  # (code-review-1 P2-2) and starts over for another version or file.
+  defp source_limit(_socket, _key, nil), do: nil
+
+  defp source_limit(socket, key, content) do
+    lines = length(String.split(content, "\n"))
+
+    if lines > @big_file do
+      kept = if socket.assigns.source_key == key, do: socket.assigns.source_limit
+      target = min(int(socket.assigns.params["line"]) || 0, lines)
+      max(kept || @chunk, chunks(target))
+    end
+  end
+
+  defp chunks(line), do: div(line + @chunk - 1, @chunk) * @chunk
 
   defp default_file([]), do: nil
 
@@ -381,7 +408,9 @@ defmodule HelmsmanWeb.SpecLive.Show do
   defp allowed?(panel, p, f, _socket) when panel in ~w(review request),
     do: p.write and f.open and f.versions
 
-  defp allowed?("note", _p, _f, socket), do: note_issue(socket) != nil
+  # Every note needs `write` on an open spec (code-review-1 P2-3); the kinds offered
+  # are narrowed further by `note_kinds/3`.
+  defp allowed?("note", p, f, socket), do: p.write and f.open and note_issue(socket) != nil
   defp allowed?("finalize", p, f, _socket), do: p.approve and f.versions
   defp allowed?("reject", p, _f, _socket), do: p.reject
   defp allowed?("abandon", p, _f, _socket), do: p.abandon
@@ -467,16 +496,13 @@ defmodule HelmsmanWeb.SpecLive.Show do
     mine? = review.reviewer_user_id == scope.user.id
     open? = unresolved?(issue)
 
-    [{"comment", dgettext("ui", "评论")}] ++
-      if(open? and p.write and not mine?,
-        do: [{"accepted", dgettext("ui", "接受")}, {"disputed", dgettext("ui", "有异议")}],
-        else: []
-      ) ++
-      if(open? and p.write and mine?, do: [{"withdrawn", dgettext("ui", "撤回")}], else: []) ++
-      if(open? and p.rule,
-        do: [{"upheld", dgettext("ui", "裁定：维持")}, {"dismissed", dgettext("ui", "裁定：驳回")}],
-        else: []
-      )
+    []
+    |> add_action(p.write, {"comment", dgettext("ui", "评论")})
+    |> add_action(open? and p.write and not mine?, {"accepted", dgettext("ui", "接受")})
+    |> add_action(open? and p.write and not mine?, {"disputed", dgettext("ui", "有异议")})
+    |> add_action(open? and p.write and mine?, {"withdrawn", dgettext("ui", "撤回")})
+    |> add_action(open? and p.rule, {"upheld", dgettext("ui", "裁定：维持")})
+    |> add_action(open? and p.rule, {"dismissed", dgettext("ui", "裁定：驳回")})
   end
 
   defp new_reason_panel(_socket, panel),
@@ -500,7 +526,26 @@ defmodule HelmsmanWeb.SpecLive.Show do
 
   ## Events
 
+  # A submit pushed without its panel open (an outdated page, a forged event) does
+  # nothing: the panel decides who may write (code-review-1 P2-3).
+  @panel_events %{
+    "ver_submit" => :version_form,
+    "rev_submit" => :review_form,
+    "note_submit" => :note_panel,
+    "request_submit" => :request_panel,
+    "finalize_submit" => :finalize_panel,
+    "reason_submit" => :reason_panel,
+    "change_id_submit" => :change_id_panel,
+    "import_submit" => :import_panel
+  }
+
   @impl true
+  def handle_event(event, _params, %{assigns: assigns} = socket)
+      when is_map_key(@panel_events, event) and
+             is_nil(:erlang.map_get(:erlang.map_get(event, @panel_events), assigns)) do
+    {:noreply, socket}
+  end
+
   def handle_event("spec_start", _params, socket) do
     case SpecData.update(socket.assigns.current_scope, socket.assigns.ident, %{}) do
       {:ok, _} -> {:noreply, load(socket)}

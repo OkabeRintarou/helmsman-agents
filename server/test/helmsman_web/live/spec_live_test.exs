@@ -238,6 +238,29 @@ defmodule HelmsmanWeb.SpecLiveTest do
       refute has_element?(view, "#L2001")
       view |> element("#spec-source-more") |> render_click()
       assert has_element?(view, "#L4000")
+
+      # Another file starts over.
+      render_patch(view, ctx.path <> "?file=proposal.md&view=source")
+      render_patch(view, ctx.path <> "?file=design.md&view=source")
+      refute has_element?(view, "#L2001")
+    end
+
+    test "a line past the first part of a big file is shown and targeted", ctx do
+      files = Map.put(spec_files(), "design.md", Enum.map_join(1..6000, "\n", &"line #{&1}"))
+      submit(ctx.alice_scope, ctx, 0, files)
+      review(ctx, 1, "comment", [%{severity: "P2", file: "design.md", line: 4500, body: "x"}])
+
+      {:ok, view, _html} = open(ctx, :alice, "?file=design.md&line=4500")
+      assert has_element?(view, "#L4500.hm-spec-line-target")
+      assert has_element?(view, "#spec-source[data-line='4500']")
+      # Parts of 2000 lines: 4500 needs three, i.e. the whole 6000.
+      assert has_element?(view, "#L6000")
+      refute has_element?(view, "#spec-source-more")
+
+      # The same from the issue's location in the reviews tab.
+      {:ok, reviews, _html} = open(ctx, :alice, "?tab=reviews")
+      reviews |> element("#issue-R1-1 [data-location]") |> render_click()
+      assert has_element?(reviews, "#L4500.hm-spec-line-target")
     end
 
     test "the rendered view uses the Markdown renderer", ctx do
@@ -422,6 +445,28 @@ defmodule HelmsmanWeb.SpecLiveTest do
 
       {:ok, panel, _html} = open(ctx, :vic, "?panel=version")
       refute open?(panel, "spec-version-panel")
+
+      # A note panel by URL, and a forged submit (code-review-1 P2-3).
+      {:ok, note, _html} = open(ctx, :vic, "?tab=reviews&panel=note&issue=R1.1&kind=comment")
+      refute open?(note, "spec-note-panel")
+      render_submit(note, "note_submit", %{"note" => %{"kind" => "comment", "body" => "x"}})
+      assert Process.alive?(note.pid)
+
+      assert {:ok, %{reviews: [%{issues: [%{notes: []}]}]}} =
+               TaskSpecs.reviews(ctx.alice_scope, ctx.ident)
+    end
+
+    test "no note panel on a closed spec", ctx do
+      versions(ctx, 1)
+      review(ctx, 1, "comment", [%{severity: "P3", body: "x"}])
+      {:ok, _} = TaskSpecs.finalize(ctx.alice_scope, ctx.ident, %{version: 1, wake: false})
+
+      {:ok, view, _html} = open(ctx, :bob, "?tab=reviews&panel=note&issue=R1.1&kind=comment")
+      refute open?(view, "spec-note-panel")
+      refute has_element?(view, "[id^=issue-r1-1-]")
+
+      {:ok, open_spec, _html} = open(ctx, :alice, "?tab=reviews")
+      refute has_element?(open_spec, "[id^=issue-r1-1-]")
     end
 
     test "only the issue's reviewer may withdraw it", ctx do

@@ -129,6 +129,46 @@ defmodule HelmsmanWeb.SpecReviewFormTest do
       assert html =~ "web-team 的 leader（keel/lead）"
     end
 
+    test "an issue without a file or line, and one with a file but no line", ctx do
+      submit(ctx.alice_scope, ctx, 0, long_spec("v1"))
+      {:ok, view, _html} = open(ctx, :bob, "?panel=review")
+
+      render_change(view, "rev_change", %{"review" => %{"verdict" => "comment"}})
+      render_click(view, "rev_add_issue", %{})
+      render_click(view, "rev_add_issue", %{})
+
+      # The browser sends empty strings for the untouched fields.
+      empty = %{
+        "severity" => "P3",
+        "file" => "",
+        "line" => "",
+        "anchor" => "",
+        "suggestion" => ""
+      }
+
+      fill_issue(view, 0, Map.put(empty, "body", "一般问题"))
+      fill_issue(view, 1, Map.merge(empty, %{"file" => "proposal.md", "body" => "整份文件"}))
+
+      render_submit(view, "rev_submit", %{
+        "review" => %{
+          "verdict" => "comment",
+          "summary" => "",
+          "issues" => %{
+            "0" => Map.put(empty, "body", "一般问题"),
+            "1" => Map.merge(empty, %{"file" => "proposal.md", "body" => "整份文件"})
+          }
+        }
+      })
+
+      assert render(view) =~ "已提交 R1"
+
+      assert {:ok, %{reviews: [%{issues: [first, second]}]}} =
+               TaskSpecs.reviews(ctx.alice_scope, ctx.ident)
+
+      assert {first.file, first.line} == {nil, nil}
+      assert {second.file, second.line} == {"proposal.md", nil}
+    end
+
     test "the author of the latest version may not review it", ctx do
       submit(ctx.alice_scope, ctx, 0, long_spec("v1"))
       {:ok, view, _html} = open(ctx, :alice, "?panel=review")
@@ -164,6 +204,16 @@ defmodule HelmsmanWeb.SpecReviewFormTest do
         )
 
       assert form.errors == %{{1, :issue} => "line is past the end"}
+
+      assert SpecReviewForm.attrs(%{
+               form
+               | issues: [
+                   %{severity: "P1", file: nil, line: "", anchor: "", body: "x", suggestion: ""}
+                 ]
+             }).issues
+             |> hd()
+             |> Map.get(:line) == nil
+
       assert form.error =~ "#2 line is past the end"
     end
 

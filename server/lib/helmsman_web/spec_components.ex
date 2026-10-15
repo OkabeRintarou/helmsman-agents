@@ -362,9 +362,11 @@ defmodule HelmsmanWeb.SpecComponents do
         scroll() {
           const line = this.el.dataset.line
           if (!line || line === this.done) return
-          this.done = line
           const row = document.getElementById(`L${line}`)
-          if (row) row.scrollIntoView({block: "center"})
+          // Done only once the row is there: a later part may bring it.
+          if (!row) return
+          this.done = line
+          row.scrollIntoView({block: "center"})
         }
       }
     </script>

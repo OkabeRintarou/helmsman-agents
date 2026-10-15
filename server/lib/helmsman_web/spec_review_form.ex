@@ -158,7 +158,7 @@ defmodule HelmsmanWeb.SpecReviewForm do
           %{
             severity: i.severity,
             file: i.file,
-            line: i.line && i.line != "" && String.to_integer(i.line),
+            line: line_number(i.line),
             anchor: if(i.anchor == "", do: nil, else: i.anchor),
             body: i.body,
             suggestion: if(i.suggestion == "", do: nil, else: i.suggestion)
@@ -166,6 +166,10 @@ defmodule HelmsmanWeb.SpecReviewForm do
         end)
     }
   end
+
+  # An empty line is no line (nil, never `false`); the field was checked by `errors/1`.
+  defp line_number(line) when line in [nil, ""], do: nil
+  defp line_number(line), do: String.to_integer(to_string(line))
 
   def put_error(form, {:spec, :stale_version, latest}), do: %{form | stale: latest, error: nil}
 
