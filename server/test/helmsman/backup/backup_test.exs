@@ -34,6 +34,35 @@ defmodule Helmsman.BackupTest do
     assert Format.encode(Jason.decode!(encoded)) == encoded
   end
 
+  # add-local-repo-web-registration 3.5: the web registration record is
+  # machine-side data, never exported (D10).
+  test "the export leaves out local repository changes", ctx do
+    {daemon, _token} =
+      Helmsman.AgentsFixtures.daemon_fixture(ctx.owner, %{workspace_ids: [ctx.workspace.id]})
+
+    Repo.insert!(%Helmsman.LocalRepositories.Change{
+      daemon_id: daemon.id,
+      user_id: ctx.owner.id,
+      workspace_id: ctx.workspace.id,
+      action: "register",
+      name: "exported-name-probe",
+      root: "~/root-probe",
+      path: "path-probe",
+      workspace_ids: [ctx.workspace.id],
+      request_id: "export-request-id-probe-0001",
+      inserted_at: DateTime.utc_now()
+    })
+
+    {:ok, _stats} = Backup.export_to_file(ctx.workspace, ctx.path)
+    {:ok, data} = Read.file(ctx.path)
+    json = Format.encode(data)
+
+    for probe <- ~w(local_repository_changes exported-name-probe root-probe path-probe
+                    export-request-id-probe-0001) do
+      refute json =~ probe
+    end
+  end
+
   test "merge of the same snapshot leaves domain rows unchanged", ctx do
     {:ok, _} = Backup.export_to_file(ctx.workspace, ctx.path)
     before = Repo.get!(Tasks.Task, ctx.task.id)

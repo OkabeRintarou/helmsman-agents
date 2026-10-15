@@ -21,6 +21,7 @@ defmodule Helmsman do
       Daemons.DaemonWorkspace,
       Runtimes,
       LocalRepositories,
+      LocalRepositories.WebRegistration,
       ProviderAccounts,
       ProviderAccounts.ProviderAccount,
       Runs,
