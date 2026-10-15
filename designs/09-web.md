@@ -12,7 +12,7 @@
 | `/` | — | 跳到最近访问的工作区；没有就进 `/workspaces/new` |
 | `/w/:slug` | `DashboardLive` | 指派给我（含我名下 Agent）的任务、待回答的提问、正在跑的运行、最近合并、在线的机器；待处理的规格（待你批准、请你评审，都为空时不显示，`add-spec-workflow-ui` D16） |
 | `/w/:slug/projects` | `ProjectLive.Index` | 项目卡片 |
-| `/w/:slug/p/:key` | `TaskLive.Index` | 任务列表：状态多选、标签、执行方、搜索框，全部同步到 URL query |
+| `/w/:slug/p/:key` | `TaskLive.Index` | 任务列表与看板（§3a）：状态多选、标签、执行方、搜索框，全部同步到 URL query；`view=list\|board` 选视图，没有时用本人在本工作区的视图偏好（缺省列表） |
 | `/w/:slug/t/:ident` | `TaskLive.Show` | 任务详情 |
 | `/w/:slug/t/:ident/spec` | `SpecLive.Show` | 任务的规格（17）：版本、渲染 / 源码、对比、评审与讨论、批准 / 退回、导出导入；导出下载是控制器路由 `GET /w/:slug/t/:ident/spec/export?version=&format=&reviews=`（`SpecExportController`，浏览器会话，附件）；`add-spec-workflow-ui` |
 | `/w/:slug/query` | `QueryLive` | BQL 编辑、结果表、保存筛选器 |
@@ -64,6 +64,18 @@
 - **规格卡片**（17）：状态、`change_id`、最新版本（校验是否通过）、定稿版本、待完成的评审、未解决的 P1 / P2；没有规格时「开始规格」；待批准时对人显示「批准」「退回」；链到规格页。
 - 字段编辑带 `lock_version`；收到 `{:error, :stale}` 时提示「已被 X 修改」并重新加载，保留用户输入的草稿。
 
+## 3a. 任务看板
+
+`/w/:slug/p/:key?view=board`，与列表同一个 LiveView（`TaskLive.Index`，看板逻辑在 `TaskLive.Board` / `BoardComponents`）；页头「列表 / 看板」切换只改 URL 并保存偏好，打开带 `view` 的链接不改偏好（`add-task-board-view` 决策 2、3）。
+
+- **列**：每个状态一列，固定顺序 新建 → 进行中 → 已完成 → 已验收 → 已拒绝 → 已撤销；列头为状态名与当前筛选下的总数（`Tasks.count_by_status/3`，变化后节流 1 秒重算）。URL 有状态筛选时列 = 筛选中的状态；否则 = 全部 − 本人隐藏的列（偏好 `task_view_prefs.hidden_columns`，缺省隐藏「已拒绝」「已撤销」，至少留一列），被隐藏的列在「已隐藏 N 列」里恢复。空列照常显示，作为放下目标。
+- **卡片**：优先级、ID、标题（两行）、执行方头像、标签（≤ 3 + 「+N」）、Epic「完成 / 总数」进度、被阻塞、待回答、运行状态（运行中 > 排队中 > 等前置任务 > 上次运行失败，`ReadModels.task_run_states/2`）；整张卡片链接到详情页。
+- **分页**：每列 25 张、按 `updated_at DESC, id DESC`，列底「加载更多」按列续接；隐藏列只计数不读卡片。
+- **迁移**：拖拽（hook `BoardDrag`，HTML5 DnD，只在精细指针启用）与每张卡片的「移动到…」菜单（键盘、触屏）发同一个 `move` 事件。可放下的列由 `StateMachine.allowed/1` 决定（NEW → 进行中还要求未被阻塞），其余列不可放下。「开始」「恢复」直接迁移；完成 / 验收的证据面板与打回 / 重开 / 拒绝 / 重新提交 / 撤销的原因面板在看板上打开，与详情页是同一个 LiveComponent（`TaskLive.TransitionPanel`）。客户端不移动 DOM：卡片只在迁移成功后由 streams 换列；失败按 web-task-transitions「迁移失败的提示」。成功后 live region 播报「<ID> 已移到<列名>」。没有迁移权限时不可拖动、没有菜单。
+- **新建**：「新建」列头「+」打开新建任务面板（`?panel=new`）。
+- **窄屏**（< 640px）：列在横向吸附的容器里（每列约 85vw），顶部状态标签跳到对应列，页面本身不横向滚动；不启用拖拽，用菜单。
+- **不做（后续）**：泳道、按执行方 / 项目分组、列内手动排序、虚拟滚动、批量操作、「运行中」快速筛选、跨项目的 Epic 看板。
+
 ## 4. Markdown 与 Mermaid
 
 - 渲染：服务端 `MDEx.to_html!/2`，开 GFM 扩展（表格、任务列表、删除线、自动链接、脚注），启用 ammonia 净化（Agent 写的内容不可信）。代码高亮用 MDEx 内置的 lumis。
@@ -76,7 +88,7 @@
 
 | 主题 | 谁订阅 | 收到后 |
 |---|---|---|
-| `project:<id>` | `TaskLive.Index` | 用 `stream_insert` 更新那一行；不在当前筛选条件里的行移除 |
+| `project:<id>` | `TaskLive.Index`（列表与看板） | 用 `stream_insert` 更新那一行；不在当前筛选条件里的行移除；看板上换列时从原列删除、插到新列顶部，进入隐藏列的移除，列头计数节流重算 |
 | `task:<id>` | `TaskLive.Show` | 重新加载详情；用户正在编辑的字段不覆盖，只提示「有更新」 |
 | `workspace:<id>` | 外壳（`Shell.on_mount`，每个 `/w/:slug` 页面一份），页面不得再自行订阅 | 外壳处理工作区改名 / 改 slug；其余消息（项目增减、成员变化、待回答数量等）交给页面的 `handle_info/2`，如 `DashboardLive`、侧栏、设置页 |
 | `workspace:<id>:squads` | 外壳（与 `workspace:<id>` 同一处订阅），页面不得再自行订阅 | `{:squad, id}` → 外壳重读外观表（身份标记），再转发给页面；小队页按原有子句处理（`add-actor-avatars` D7） |
@@ -97,4 +109,4 @@
 
 - `Phoenix.LiveViewTest`：每个页面的渲染、表单校验、迁移按钮按权限显示。
 - 实时：一个测试里开两个 LiveView（或一个 LiveView + 直接调领域函数模拟 Agent），断言另一端收到更新；执行记录用假守护进程推事件验证。
-- JS hook 只有这几个：Mermaid、编辑器（含 @ 补全）、执行记录滚动，以及外壳用的 `Hotkeys`、`Copy`、`LocalTime`（`add-web-ui-foundation` DR-4）；每个约 100 行以内，只属于单个组件的用 colocated hook。外壳与通用 hook 不引入 npm 包；**Mermaid 是唯一例外**：使用 npm 包 `mermaid`（在 `assets/package.json` 固定版本），由构建打包进本站静态资源并按需懒加载——不进主 bundle、不走 CDN，符合 11 §3 只放行自身的 CSP；具体打包方式由 Feedback 界面变更决定。手工验收即可。
+- JS hook 只有这几个：Mermaid、编辑器（含 @ 补全）、执行记录滚动、看板拖拽（`BoardDrag`，HTML5 DnD，`add-task-board-view` 决策 9），以及外壳用的 `Hotkeys`、`Copy`、`LocalTime`（`add-web-ui-foundation` DR-4）；每个约 100 行以内，只属于单个组件的用 colocated hook。外壳与通用 hook 不引入 npm 包；**Mermaid 是唯一例外**：使用 npm 包 `mermaid`（在 `assets/package.json` 固定版本），由构建打包进本站静态资源并按需懒加载——不进主 bundle、不走 CDN，符合 11 §3 只放行自身的 CSP；具体打包方式由 Feedback 界面变更决定。手工验收即可。
