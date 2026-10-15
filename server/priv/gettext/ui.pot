@@ -11271,3 +11271,8 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "（空）"
 msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 请求"
+msgstr ""

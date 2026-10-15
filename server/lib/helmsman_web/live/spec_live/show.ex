@@ -1209,7 +1209,13 @@ defmodule HelmsmanWeb.SpecLive.Show do
           <:crumb navigate={"/w/#{@slug}/t/#{@ident}"}>{@ident} {@task.title}</:crumb>
           <:actions>
             <.spec_status_badge :if={@spec} status={@spec.status} id="spec-status" />
-            <code :if={@spec} id="spec-change-id" class="font-mono text-caption text-fg-muted">{@spec.change_id}</code>
+            <code
+              :if={@spec}
+              id="spec-change-id"
+              class="font-mono text-caption text-fg-muted max-sm:hidden"
+            >
+              {@spec.change_id}
+            </code>
             <.button
               :if={@spec && @perms.write}
               id="spec-new-version"
@@ -1217,7 +1223,7 @@ defmodule HelmsmanWeb.SpecLive.Show do
               icon="lucide-file-pen"
               patch={Url.put_params(@uri, %{panel: "version"})}
             >
-              {dgettext("ui", "提交新版本")}
+              <span class="max-sm:sr-only">{dgettext("ui", "提交新版本")}</span>
             </.button>
             <.button
               :if={
@@ -1229,7 +1235,7 @@ defmodule HelmsmanWeb.SpecLive.Show do
               icon="lucide-message-square-plus"
               patch={Url.put_params(@uri, %{panel: "review"})}
             >
-              {dgettext("ui", "写评审")}
+              <span class="max-sm:sr-only">{dgettext("ui", "写评审")}</span>
             </.button>
             <.button
               :if={@spec && @perms.approve}
@@ -1239,7 +1245,9 @@ defmodule HelmsmanWeb.SpecLive.Show do
               icon="lucide-badge-check"
               patch={Url.put_params(@uri, %{panel: "finalize"})}
             >
-              {if @spec.proposal, do: dgettext("ui", "批准"), else: dgettext("ui", "定稿")}
+              <span class="max-sm:sr-only">{if @spec.proposal,
+                do: dgettext("ui", "批准"),
+                else: dgettext("ui", "定稿")}</span>
             </.button>
             <.dropdown
               :if={@items != []}
@@ -1913,7 +1921,9 @@ defmodule HelmsmanWeb.SpecLive.Show do
       <p :if={@pending == []} class="text-caption text-fg-subtle">—</p>
       <div :for={r <- @pending} id={"spec-pending-#{r.n}"} class="flex items-center gap-2 text-body">
         <span class="text-fg">{r.reviewer}</span>
-        <span class="flex-1 truncate text-caption text-fg-muted">{r.requested_by}</span>
+        <span class="flex-1 truncate text-caption text-fg-muted" data-requested-by>
+          {dgettext("ui", "%{name} 请求", name: r.requested_by)}
+        </span>
         <.button
           :if={@perms.request_review or @perms.abandon}
           id={"spec-pending-#{r.n}-cancel"}
