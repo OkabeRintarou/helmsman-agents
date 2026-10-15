@@ -79,6 +79,7 @@ end
 | `submit_spec_version` `submit_spec_review` `reply_spec_issue` `rule_spec_issue` `finalize_spec` `update_spec` `cancel_spec_review` | 规格的写入，能写该任务者（运行令牌限本任务）；裁定与提出定稿只限协调者（17 §4）；`delegate` 另有 `spec: draft \| review \| revise`（`add-spec-workflow`） |
 | `request_spec_review(task_id, reviewers, instructions?)` | 只对非运行令牌列出；托管 Agent 评审人得到 `spec_review` 运行（13 §2.1） |
 | `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` `propose_squad(…)` | 只对设计运行（能力 `design`）、按所属对话的种类列出（12 §6）：创建 Agent 对话为前三个；创建小队对话另有 `propose_squad`（16 §1.4）；修改 Agent 对话只有 `get_design` 与 `propose_agent`（名字固定为目标、不能改名）；修改小队对话四个都有，`propose_agent` / `withdraw_agent` 只作用于草稿里的新 Agent、`propose_squad` 不能改小队名（`add-edit-design-conversations`）。只写对话的草稿，不能创建或修改 Agent / 小队；不属于该种类的工具返回 `forbidden` 并说明对话种类 |
+| `propose_task(ref, …)` `withdraw_task(ref)` | 只对任务起草对话（种类 `tasks`）的设计运行列出：按草稿内引用 `ref` 新增 / 修改（打补丁）或移除一个草稿任务，字段 `project` `kind` `title` `description` `priority` `labels` `assignee` `epic` `depends_on` `start`；提出时按建任务的规则校验，另查引用、成环、上限 25；执行方不能被触发时是警告。只写草稿，不能建任务（12 §6.2，`add-task-drafting-conversation`） |
 
 所有写工具都接受可选的 `actor` / `author` 参数（03 §4 第 1 条），正常不需要；运行令牌下被忽略。
 

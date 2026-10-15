@@ -47,6 +47,7 @@
 | 函数 | 说明 |
 |---|---|
 | `create(scope, project_key, attrs)` | 同一事务：分配序号（01 §4）、插任务、插创建事件（`from = nil, to = new`）、写检索列、按指派触发运行（13 §2） |
+| `create_batch(scope, items, opts)` | 一个事务建至多 25 个任务（任务起草对话的确认，12 §6.2）：每项带 `ref`，`epic` / `depends_on` 可引用同组的 `ref` 或已有任务 ID；先校验全部、按 `ref` 汇总错误，整组成功或整组不建；同组 Epic 与被依赖者先建；派发规则同 `create`；锁序见 01 §4 |
 | `get(scope, ident)` | 详情，预加载历史、Feedback、关联、运行、PR |
 | `list(scope, project_key, opts)` | `status` / `label` / `kind` / `epic` / `assignee` / `q` / `limit` / `offset` |
 | `update(scope, ident, attrs, lock_version \\ nil)` | 改标题 / 正文 / 优先级 / 标签 / 指派 / Epic；**忽略** `status`；给了版本且不对返回 `{:error, :stale}`；指派变化时同一事务里触发运行 |

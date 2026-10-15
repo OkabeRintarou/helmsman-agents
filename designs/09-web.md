@@ -19,6 +19,7 @@
 | `/w/:slug/agents`、`/w/:slug/agents/:name` | `AgentLive.Index` / `.Show` | Agent 列表、配置、运行与用量（12 §5） |
 | `/w/:slug/agent-design` | `AgentDesignLive` | 对话创建 Agent（12 §6）：对话 + 实时草稿、确认创建；只有本人能看；不放在 `/agents/*name` 下以免与 Agent 名冲突；`add-agent-conversation-ui` |
 | `/w/:slug/agent-design/edit?target=<名字>` | `AgentDesignLive`（`:edit`） | 对话修改已有 Agent 或小队（12 §6.1、16 §1.4）：以当前配置为基线，草稿逐字段对比（长文本行级差异）、冲突标记、「应用 N 项修改」；已有目标不同的修改对话时显示它并说明；入口在 Agent 与小队详情页页头；`add-edit-design-conversations` |
+| `/w/:slug/task-design?project=<Key>` | `AgentDesignLive`（`:tasks`） | 和 AI 一起写任务（12 §6.2）：对话 + 任务草稿（Epic 下缩进步骤、依赖、警告）、「创建 N 个任务」；草稿只有一个面板能表达的任务时可「填入新建面板」；入口在新建任务面板顶部；`add-task-drafting-conversation` |
 | `/w/:slug/runs/:id` | `RunLive.Show` | 单次运行的完整执行记录（任务页里的弹窗也能看，这里便于分享链接） |
 | `/w/:slug/squads` | `SquadLive.Index` | 小队（16 §3） |
 | `/w/:slug/squads/*name` | `SquadLive.Show` | 小队详情：说明、成员、你能否触发（挡住的成员）；通配段同 Agent 详情页（名字可含 `/`），也是 `actor_chip` 里小队的落点；`add-squads-autopilots-ui` D1 |
