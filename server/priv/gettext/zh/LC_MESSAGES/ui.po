@@ -11573,3 +11573,33 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "保持指定成员"
 msgstr ""
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已改为进行中。改状态不会启动 %{name}。重新指派给小队，或在 Feedback 里 @%{name} 启动 leader。"
+msgstr "已改为进行中。改状态不会启动 %{name}。重新指派给小队，或在 Feedback 里 @%{name} 启动 leader。"
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已改为进行中。改状态不会启动 %{name}，需要时点「让 %{name} 开工」。"
+msgstr "已改为进行中。改状态不会启动 %{name}，需要时点「让 %{name} 开工」。"
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "正在启动…"
+msgstr "正在启动…"
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "让 %{name} 开工"
+msgstr "让 %{name} 开工"
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "进行中，但没有运行在处理：改状态不会启动 Agent。"
+msgstr "进行中，但没有运行在处理：改状态不会启动 Agent。"
+
+#: lib/helmsman_web/live/task_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "重新指派给小队，或在 Feedback 里 @%{squad} 启动 leader"
+msgstr "重新指派给小队，或在 Feedback 里 @%{squad} 启动 leader"

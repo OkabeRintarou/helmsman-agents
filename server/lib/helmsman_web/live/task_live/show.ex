@@ -17,7 +17,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   require Logger
 
-  alias Helmsman.{Events, Feedback, Policy, Runs, Tasks}
+  alias Helmsman.{Dispatch, Events, Feedback, Policy, Runs, Tasks}
   alias Helmsman.Tasks.StateMachine
 
   alias HelmsmanWeb.{
@@ -310,6 +310,25 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   ## Transitions
 
+  def handle_event("start_idle_agent", _params, socket) do
+    socket = socket |> refresh() |> TaskRuns.load()
+    socket = assign(socket, :availability, availability(socket.assigns.current_scope))
+
+    case idle_hint(socket.assigns) do
+      %{kind: "agent", name: name, can_run?: true} ->
+        case Dispatch.run_agent(socket.assigns.current_scope, name, socket.assigns.task.id, nil) do
+          {:ok, %{outcome: outcome}} ->
+            {:noreply, socket |> put_dispatch_flash([outcome]) |> TaskRuns.load()}
+
+          {:error, reason} ->
+            {:noreply, put_flash(socket, :error, RunActions.error_text(reason))}
+        end
+
+      _ ->
+        {:noreply, put_flash(socket, :error, dgettext("ui", "没有权限执行此操作"))}
+    end
+  end
+
   # Buttons carry the status they were rendered for (`from`): "开始" and "打回" both
   # target in_progress, so a click made on an outdated page must not run whatever
   # transition the target means in the task's current status.
@@ -325,7 +344,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
       button ->
         case transition(socket, from, to, %{}) do
           {:ok, detail} ->
-            {:noreply, put_task(socket, detail)}
+            {:noreply, put_transition_task(socket, detail)}
 
           {:error, reason} ->
             {_where, text} = TransitionErrors.message(reason, button.label)
@@ -492,7 +511,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
   def handle_info({:squad, _id}, socket), do: {:noreply, refresh(socket)}
 
   def handle_info(message, socket) when message in [{:agents_changed}, {:runtimes_changed}],
-    do: {:noreply, assign(socket, :availability, availability(socket.assigns.current_scope))}
+    do:
+      {:noreply,
+       assign(socket,
+         agents: TaskData.agent_info(socket.assigns.current_scope),
+         availability: availability(socket.assigns.current_scope)
+       )}
 
   def handle_info({:local_branch_changed, _ident}, socket),
     do: {:noreply, TaskLocalBranch.reload(socket)}
@@ -510,6 +534,71 @@ defmodule HelmsmanWeb.TaskLive.Show do
     do: {:noreply, TaskPullRequest.handle_async(name, result, socket, &refresh/1)}
 
   ## Helpers
+
+  defp idle_hint(%{task: task, task_runs: runs, agents: agents} = assigns) do
+    assignee = task.assignee
+
+    if task.status == "in_progress" and task.kind != "epic" and not task.open_question and
+         runs.active == [] and runs.pending == [] and idle_assignee?(assignee, agents) do
+      %{
+        name: assignee.name,
+        kind: assignee.kind,
+        can_run?: idle_agent_allowed?(assigns, assignee)
+      }
+    end
+  end
+
+  defp idle_assignee?(%{kind: "squad"}, _agents), do: true
+
+  defp idle_assignee?(%{kind: "agent", name: name}, agents),
+    do: get_in(agents, [name, :managed?]) == true
+
+  defp idle_assignee?(_assignee, _agents), do: false
+
+  defp idle_agent_allowed?(assigns, %{kind: "agent", name: name}) do
+    Policy.authorize(assigns.current_scope, :run_agent) == :ok and
+      case assigns.availability[name] do
+        %{result: :ok} ->
+          true
+
+        %{result: {:skipped, reason}} ->
+          reason in [:no_runtime, :runtime_disabled, :daemon_outdated]
+
+        _ ->
+          false
+      end
+  end
+
+  defp idle_agent_allowed?(_assigns, _assignee), do: false
+
+  defp put_transition_task(socket, detail) do
+    socket = socket |> put_task(detail) |> TaskRuns.load()
+
+    if detail.status == "in_progress" and socket.assigns.current_scope.actor.kind == :human do
+      case idle_hint(socket.assigns) do
+        %{kind: "agent", name: name} ->
+          put_flash(
+            socket,
+            :info,
+            dgettext("ui", "已改为进行中。改状态不会启动 %{name}，需要时点「让 %{name} 开工」。", name: name)
+          )
+
+        %{kind: "squad", name: name} ->
+          put_flash(
+            socket,
+            :info,
+            dgettext("ui", "已改为进行中。改状态不会启动 %{name}。重新指派给小队，或在 Feedback 里 @%{name} 启动 leader。",
+              name: name
+            )
+          )
+
+        _ ->
+          socket
+      end
+    else
+      socket
+    end
+  end
 
   defp save(socket, field, attrs, version) do
     %{current_scope: scope, task: task} = socket.assigns
@@ -953,6 +1042,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
         mentionable: mentionable,
         primary: primary,
         secondary: secondary,
+        idle_hint: idle_hint(assigns),
         working: TaskRuns.working_agents(assigns.task_runs),
         assignees: assignee_options(assigns.assignable, assigns.task.assignee),
         availability: assigns.availability,
@@ -1158,6 +1248,28 @@ defmodule HelmsmanWeb.TaskLive.Show do
             slug={@slug}
             ident={@task.id}
           />
+          <div
+            :if={@idle_hint}
+            id="task-idle-hint"
+            role="status"
+            class="rounded-field border border-warning tint-warning p-3 text-body text-warning-fg"
+          >
+            <p>{dgettext("ui", "进行中，但没有运行在处理：改状态不会启动 Agent。")}</p>
+            <p :if={@idle_hint.kind == "squad"} class="mt-2 break-words">
+              {dgettext("ui", "重新指派给小队，或在 Feedback 里 @%{squad} 启动 leader", squad: @idle_hint.name)}
+            </p>
+            <.button
+              :if={@idle_hint.can_run?}
+              id="start-idle-agent"
+              variant="secondary"
+              size="sm"
+              class="mt-2"
+              phx-click="start_idle_agent"
+              phx-disable-with={dgettext("ui", "正在启动…")}
+            >
+              {dgettext("ui", "让 %{name} 开工", name: @idle_hint.name)}
+            </.button>
+          </div>
           <TaskRuns.section
             state={@task_runs}
             stream={@streams.task_runs}
