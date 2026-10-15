@@ -78,7 +78,7 @@ end
 | `get_spec(task_id, version?, files?)` `diff_spec(task_id, from, to?)` `list_spec_reviews(task_id, version?, unresolved_only?)` | 规格的读取（17），所有调用者 |
 | `submit_spec_version` `submit_spec_review` `reply_spec_issue` `rule_spec_issue` `finalize_spec` `update_spec` `cancel_spec_review` | 规格的写入，能写该任务者（运行令牌限本任务）；裁定与提出定稿只限协调者（17 §4）；`delegate` 另有 `spec: draft \| review \| revise`（`add-spec-workflow`） |
 | `request_spec_review(task_id, reviewers, instructions?)` | 只对非运行令牌列出；托管 Agent 评审人得到 `spec_review` 运行（13 §2.1） |
-| `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` | 只对设计运行（能力 `design`）列出：读写创建对话的草稿，不能创建 Agent（12 §6，`add-agent-conversation`）；小队对话的设计运行另有 `propose_squad`（只在 `squad` 对话里列出，16 §1.4） |
+| `get_design()` `propose_agent(name, …)` `withdraw_agent(name)` `propose_squad(…)` | 只对设计运行（能力 `design`）、按所属对话的种类列出（12 §6）：创建 Agent 对话为前三个；创建小队对话另有 `propose_squad`（16 §1.4）；修改 Agent 对话只有 `get_design` 与 `propose_agent`（名字固定为目标、不能改名）；修改小队对话四个都有，`propose_agent` / `withdraw_agent` 只作用于草稿里的新 Agent、`propose_squad` 不能改小队名（`add-edit-design-conversations`）。只写对话的草稿，不能创建或修改 Agent / 小队；不属于该种类的工具返回 `forbidden` 并说明对话种类 |
 
 所有写工具都接受可选的 `actor` / `author` 参数（03 §4 第 1 条），正常不需要；运行令牌下被忽略。
 

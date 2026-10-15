@@ -47,7 +47,7 @@
 | **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行；可带规格角色 `draft` / `review` / `revise`（17 §5，`review` 同时建评审请求） | work | 按 leader 的指示做；不看依赖 |
 | **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent`；对小队 leader 的升级规则同提及 | work | 按附带的说明做 |
 | **自动化** `autopilot` | 仅运行模式的自动化被触发（定时 / 手动 / webhook，16 §2）；建任务模式不用它——建出的任务指派给目标，就是普通的 `assign` | work（无任务） | 按自动化的说明做，最后输出即结果；不合并、不自动重试也不能人工重试，优先级 1；授权来源是这次触发的授权来源（16 §2.5），链为空（`add-autopilots` 决策 11） |
-| **创建对话** `design` | 用户在创建对话里发了一条消息（12 §6） | work（无任务） | 按对话修改草稿并回复；不合并、不自动重试、租约过期不重排，优先级 3（`add-agent-conversation`） |
+| **设计对话** `design` | 用户在设计对话（创建 / 修改 Agent 与小队等，12 §6）里发了一条消息 | work（无任务） | 按对话修改草稿并回复；不合并、不自动重试、租约过期不重排，优先级 3（`add-agent-conversation`） |
 | **插话兜底** `steer` | 人写 Feedback 时插话正在运行的托管 Agent（§8），且这条 Feedback 没有为该 Agent 排上别的触发 | 与被插话的运行相同 | 处理这条 Feedback；被插话的运行成功结束且有回执时，领取前移除（`add-run-steering` 决策 5、7） |
 | **请求评审** `spec_review` | 人（网页 / REST）或外接 Agent 协调者请托管 Agent 评审任务规格的最新版本（17 §5）；leader 运行里请评审用委派（`spec: "review"`） | reply | 评审该版本并 `submit_spec_review`；评审请求已结束（新版本、取消）时领取前丢弃（`add-spec-workflow` 决策 10） |
 
@@ -97,7 +97,7 @@
 | `create_tasks` | 以小队 leader 身份的运行、Agent 配置里勾选了的；仅运行模式的自动化运行只看自动化配置里的勾选（不看 Agent 配置） | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
 | `delegate` | 以小队 leader 身份的运行（不能由 Agent 配置授予） | 16 §1.2 |
 | `orchestrate` | 以小队身份、有编排根的运行（不能由 Agent 配置授予；入队与领取时计算） | 只对编排范围内的其它任务：改执行方（空或小队成员）与开工（`update_task` 只给 `assignee` / `start`、`start_task`）、两端都在范围内的 `depends_on`；不能迁移它们、写它们的 Feedback 或改其它字段（16 §1.2，`improve-squad-leader-orchestration` 决策 3–5） |
-| `design` | 设计运行（只有它，再加 `read`；不能由 Agent 配置授予） | 读写所在创建对话的草稿（12 §6）；只在这条运行仍是对话的当前轮时有效 |
+| `design` | 设计运行（只有它，再加 `read`；不能由 Agent 配置授予） | 读写所在设计对话的草稿（12 §6，工具按对话种类，08 §3）；只在这条运行仍是对话的当前轮时有效 |
 
 其余（改别的任务、触发 `run_agent`、停止运行、建项目、任何管理动作）一律不允许，返回 `forbidden` 并说明缺哪个能力。这样一次被提示词注入的运行，影响面限制在它自己的任务上；小队 leader 的运行另外限制在它的编排范围内，且每次编排写入都在目标任务上留下系统备注。
 
