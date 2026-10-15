@@ -4,7 +4,7 @@
 
 ## 1. 定位
 
-Feedback 是任务下**不可变、只追加**的 Markdown 记录，用于人与 Agent 之间的往返。不是聊天：没有线程回复，**没有删除**（Agent 可能已经读过并引用了它）。
+Feedback 是任务下**不可变、只追加**的 Markdown 记录，用于人与 Agent 之间的往返。可以回复某一条（§2a），但不是聊天：**没有删除**（Agent 可能已经读过并引用了它）。
 
 | kind | 用途 |
 |---|---|
@@ -24,6 +24,13 @@ ID 形如 `BOS-12#3`（任务 ident + `#` + 任务内序号）。
 - `feedback_count` 只算有效（active）记录，列表、详情、BQL 口径一致。（bosun 的 JSON 只算有效记录，BQL 却连作废的一起算，这里统一了。）
 - 作废记录的 `search` 列置空，不会被搜到。
 
+## 2a. 回复
+
+- 写入时可以带 `reply_to`（同任务里任意一条记录的 ID，含早期版本）：记下 `reply_to_seq`（实际被回复的那条记录）与 `reply_root_seq`（顶层根线索的 `thread_seq`：目标已有根就继承，否则取目标的 `thread_seq`）。修订继承这两个字段，不能改回复目标；不存在、跨任务的目标是字段错误（`add-feedback-replies` 决策 1–2）。读取时每条带 `reply_to`、`reply_root` 与 `target`（目标线索当前版本的 ID、序号、作者、首行摘要，以及原目标记录的状态，已修订时界面标「已修订」）。
+- **回复树**（`add-nested-feedback-replies`）：父线索 = `reply_to_seq` 那条记录所在的线索，所以回复早期版本也挂在该线索下。回复目标在线索内恒定、目标序号小于回复的序号，沿父链 `thread_seq` 严格递减——无环，多层嵌套不需要新数据。根与兄弟按 `thread_seq` 排（修订不改变位置）。界面缩进最多 3 层，更深的压平在第 3 层；只有显示位置不是实际目标时才标「回复 @作者 #n」与目标摘要；回复可收起 / 展开（09 §3）。
+- **回复时预填 @**：人在网页上点「回复」时，内容预填 `@<被回复记录的作者> `（作者是自己或系统身份时不填），可改可删，提交后按 §3a 照常解析与派发。服务端**不**为回复自动加不在内容里的提及：提及以内容为唯一来源，修订「只算新增」才成立；人也能选择只记一笔、不叫醒 Agent；Agent 之间的回复也不会因此互相唤醒。
+- 不改 MCP / REST / 提示词：Agent 按 ID 读写，`TaskMarkdown` 与触发引用显示「回复 #n @作者」。
+
 ## 3. 待回答
 
 `open_question = true` 当且仅当：在有效的 `question` / `answer` 记录中，按 `thread_seq` 排最后的是 `question`。
@@ -42,6 +49,7 @@ ID 形如 `BOS-12#3`（任务 ident + `#` + 任务内序号）。
 - 内容里的 `@名字`（不在代码块、行内代码、链接文本里）解析为本工作区的 actor；解析在写入时做一次，结果存进 `feedback.mentions bigint[]`，界面渲染成 `ActorChip`。
 - @托管 Agent 或 @小队 → 触发运行（13 §2.1「提及」）；@人 只是标注（以后接收件箱）。外接 Agent 被 @ 不会被唤醒——它不在 Helmsman 的控制之下。
 - 修订时只对**新增**的提及触发，原来就有的不重复触发。
+- 一条记录对同一个目标只触发一次：同时是对它的「回答」或「回调提出方」又 @了它时，只保留前者（优先级 回答 > 回调提出方 > 提及），提及记为 `skipped / covered`、卡片上说明「已由这条记录的回答唤醒」——避免同一个 Agent 被 `work` 与 `reply` 两条运行各叫醒一次（`add-nested-feedback-replies`）。
 - 系统身份 `helmsman` 写的 Feedback 与兜底回帖不触发。每条记录引起的触发结果（Agent、种类、结果、原因、运行）保存在 `feedback.dispatch` 上，读取时随记录返回（`add-continuation-triggers` 决策 10）。
 - 触发者无权触发被 @ 的 Agent 或小队时（12 §2.1、16 §1.1；触发者是作者本人，托管 Agent 在运行中写的则是那次运行的授权来源，13 §2.2），Feedback 照常保存，提及显示为灰色并说明原因。
 
@@ -66,6 +74,6 @@ ID 形如 `BOS-12#3`（任务 ident + `#` + 任务内序号）。
 
 ## 5. 接口
 
-- MCP：`add_feedback(task_id, content, kind?, author?)` · `update_feedback(feedback_id, content, kind?, author?)`（返回新记录）· `list_feedback(task_id)`；`get_task` 内嵌全部 Feedback。
+- MCP：`add_feedback(task_id, content, kind?, author?, reply_to?)` · `update_feedback(feedback_id, content, kind?, author?)`（返回新记录）· `list_feedback(task_id)`；`get_task` 内嵌全部 Feedback。
 - REST：`GET/POST /api/v1/w/:slug/tasks/:id/feedback`；`PATCH /api/v1/w/:slug/feedback/:feedback_id` → 201 新记录；403 非作者；409 已作废。
 - 界面：见 09 §3。
