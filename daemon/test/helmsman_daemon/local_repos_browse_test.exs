@@ -159,7 +159,8 @@ defmodule HelmsmanDaemon.LocalReposBrowseTest do
   test "names that are not UTF-8 or contain control characters are skipped", %{code: code} do
     repo!(Path.join(code, "app"))
     bad = Path.join(code, <<"bad", 0xFF>>)
-    File.mkdir_p!(Path.join(bad, ".git"))
+    # macOS (APFS) refuses a name that is not UTF-8: there is nothing to skip there.
+    _ = File.mkdir_p(Path.join(bad, ".git"))
     File.mkdir_p!(Path.join(code, "ctl\x01/.git"))
     assert paths(browse()) == ["app"]
   end
