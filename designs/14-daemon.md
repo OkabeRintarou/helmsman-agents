@@ -87,6 +87,7 @@
 | `cleanup_check` | 协议 4（`add-pr-reconcile-merge`；版本累积：2 供应商账号、3 本地仓库、4 清理、5 供应商账号请求头、6 仓库的只读检出 `repo.mode = snapshot`（`add-autopilots`）、7 网页登记本地仓库（`add-local-repo-web-registration`））：1–500 个 `{workspace_id, ident}`。回复每项 `deletable`、`base_branch`、`pushed_heads`（§7 第 4 步） |
 | `repo_status` | 协议 3：本地仓库模式下，`join` / `sync` 回复给出要检查的分支，守护进程 fetch 用户仓库后上报每个分支的提交是否已进入基础分支（15 §8） |
 | `repo_browse_result` | 协议 7：对 `repo_browse` 的回送，`request_id`、根目录标签、候选仓库（相对路径、建议名字、已登记的名字，≤ 200）、`truncated` 或错误码（15 §8） |
+| `mcp_check_result` | 本机变量与 MCP 检查的协议版本（`improve-agent-mcp-config`）：对 `mcp_check` 的回送，`check_id`、每个服务器的 `command_found`（yes \| no \| n/a）、`missing_env`（变量名）、`dropped`（如 `unsupported_type`）；不含任何值 |
 | `repo_change_result` | 协议 7：对 `repo_register` / `repo_remove` 的回送，`request_id`、动作、名字、错误码（空 = 成功）；成功时先发 `sync` 再发它 |
 | `pushed` | `run_id, branch, base_sha, head_sha, commits, rescue_branch?` |
 | `finished` | `run_id, status, failure_reason?, error?, session_id, summary, usage` |
@@ -102,6 +103,7 @@
 | `config_changed` | 运行时开关等变了，守护进程发一次 `sync`（Agent 配置不需要拉取：每次领取时都在运行描述里） |
 | `revoked` | 令牌被吊销，守护进程停止并删除本地令牌 |
 | `repo_browse` / `repo_register` / `repo_remove` | 协议 7：机器主人在网页上列出允许根目录下的仓库 / 登记 / 移除本地仓库，带 `request_id`；守护进程在连接进程之外串行执行、从头校验，用上面两条结果消息回送（15 §8） |
+| `mcp_check` | 同上版本：所属用户在 Agent 页点「本机检查」，带 `check_id` 与每个服务器的类型、命令、引用的变量名（不含参数、地址、值）；守护进程在 CLI 的环境里查命令与变量，不启动服务器、不联网（12 §2.3） |
 
 **运行描述**（`claim` 的回复，结构定义在 `protocol/`）：
 
@@ -144,6 +146,7 @@
 
 - 上表参数按本机现有版本核对过帮助信息（claude、codex-cli 0.161、Copilot CLI 1.0.95、cursor-agent 2026.04）。各 CLI 演进很快：每个适配器开工时先做一次实测，确认输出事件格式、MCP 注入、会话恢复、私有配置目录下的登录真的可用，再定稿适配器（Claude、Codex 的实测与决策见 `add-claude-adapter`、`add-codex-adapter`）。
   已知风险：`codex app-server` 在 0.162 里仍标为实验性，选它是因为结构化错误码、`turn/interrupt`、`turn/steer`（`add-codex-adapter` 决策 1），备选是 `codex exec --json`（不支持插话）；私有配置目录若同时保存会话（Codex 即如此），就必须持久而不是随运行删除，否则无法恢复会话——Copilot / Cursor 实测时同样确认；Copilot 已实测（`add-copilot-adapter`：私有持久的 `COPILOT_HOME` + `gh` 登录，不复制用户文件）；Cursor 也已实测（`add-cursor-adapter`：用户级配置只能靠换 `HOME` 隔离，Agent 的 shell 因此看到私有 HOME；它的 shell 工具在独立会话里运行，停止时要跟踪脱离进程组的后代，§6）。做不到隔离的 CLI，适配器就不启用（fail closed），而不是退回到加载用户全部 MCP。
+- **额外 MCP 中的本机变量**（`improve-agent-mcp-config`）：各适配器生成 MCP 配置之前，先用 CLI 子进程将得到的环境（清理后的继承环境 + Agent 的 `env`，不含 `HELMSMAN_*`）替换 `extra_mcp_servers` 里的 `${env:NAME}`，再做各自的转换（Codex 丢弃 `sse` 等）；变量缺失的服务器不下发并给警告（只含变量名）；替换后的值只进运行私有目录 0600 的文件或 Codex 的 `thread/start` 请求，不进日志与事件。没有引用的配置与以前逐字节相同。
 - `custom_args` 追加在固定参数之后；协议相关的参数（`-p`、`--output-format`、`--input-format`、`--permission-mode`、`--resume`、`--mcp-config` 等）被剔除，并在运行事件里记一条警告。
 - Claude Code 拒绝在 root 下用 `bypassPermissions`：守护进程以 root 运行时启动直接失败，提示换用普通用户（与 §9 的安全建议一致）。
 - **供应商账号**（12 §2.2，`add-provider-accounts`）：RunSpec 带 `agent.provider_account` 时才生效，否则启动方式与上表逐字节相同。

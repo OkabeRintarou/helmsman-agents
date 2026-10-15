@@ -8,6 +8,7 @@
 |---|---|---|
 | `/users/*` | phx.gen.auth 生成 | 登录、注册、设置 |
 | `/users/settings/provider-accounts` | `UserLive.ProviderAccounts` | 个人的供应商账号（12 §2.2）：列表、新建 / 编辑右侧面板（密钥只写、不回填）、删除确认（仍被使用时列出 Agent）；`add-provider-accounts-ui` |
+| `/users/settings/mcp-servers` | `UserLive.McpServers` | 我的 MCP 服务器（12 §2.3）：个人定义的列表（类型、打码摘要、被几个 Agent 使用）、新建 / 编辑右侧面板（与 Agent 的 MCP 编辑器相同：表单 / JSON、本机变量 / 固定值、模板、导入）、删除确认（仍被使用时列出 Agent）；`improve-agent-mcp-config` |
 | `/invite/:token` | `InvitationLive` | 接受邀请 |
 | `/` | — | 跳到最近访问的工作区；没有就进 `/workspaces/new` |
 | `/w/:slug` | `DashboardLive` | 指派给我（含我名下 Agent）的任务、待回答的提问、正在跑的运行、最近合并、在线的机器；待处理的规格（待你批准、请你评审，都为空时不显示，`add-spec-workflow-ui` D16） |

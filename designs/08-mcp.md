@@ -70,7 +70,7 @@ end
 | 工具 | 说明 |
 |---|---|
 | `list_my_tasks(status?)` | 当前 actor 作为执行方的任务，外接 Agent 开工时最常用 |
-| `list_agents()` | 本工作区的 Agent 与小队：名字、托管 / 外接、CLI、描述、当前是否忙；小队另有 leader 与成员（名字、种类、擅长什么）（`add-squads`） |
+| `list_agents()` | 本工作区的 Agent 与小队：名字、托管 / 外接、CLI、描述、当前是否忙（额外 MCP 服务器只给名字与来源「个人定义」，不给值，`improve-agent-mcp-config`）；小队另有 leader 与成员（名字、种类、擅长什么）（`add-squads`） |
 | `run_agent(agent, task_id?, instructions?)` | 手动触发一个托管 Agent（13 §2.1「手动」）；受 12 §2.1 约束 |
 | `list_runs(task_id)` `cancel_run(run_id)` | 查看 / 停止运行 |
 | `delegate(task_id, to, instructions)` | 只对小队 leader 的运行（能力 `delegate`）列出：把本次运行的任务（执行方是这个小队）委派给小队里的托管成员；无权触发该成员时返回 `cannot_invoke`（16 §1.2） |
