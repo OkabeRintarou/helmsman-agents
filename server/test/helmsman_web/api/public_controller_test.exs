@@ -21,6 +21,9 @@ defmodule HelmsmanWeb.API.PublicControllerTest do
   test "lang=zh is the Chinese workflow", %{conn: conn} do
     conn = get(conn, "/api/v1/workflow.md?lang=zh")
     assert response(conn, 200) == @zh
+    # improve-squad-leader-orchestration 4.4.
+    assert @zh =~ "start_task"
+    assert @zh =~ "停滞"
     assert ["text/markdown" <> _] = get_resp_header(conn, "content-type")
   end
 

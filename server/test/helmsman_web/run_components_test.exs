@@ -199,6 +199,13 @@ defmodule HelmsmanWeb.RunComponentsTest do
     end
   end
 
+  # improve-squad-leader-orchestration 4.5 (decision 19).
+  test "the stall wake-up is the system's: its name without an actor" do
+    stalled = %{kind: "epic_stalled", by: %{name: "helmsman", kind: "system"}}
+    assert RunComponents.trigger_kind(stalled) == "Epic 停滞"
+    assert RunComponents.trigger_label(stalled) == "Epic 停滞"
+  end
+
   # add-collaboration-ui D11
   test "the steering and requester trigger names" do
     assert RunComponents.trigger_kind(%{kind: "steer"}) == "插话"

@@ -119,6 +119,15 @@ defmodule HelmsmanWeb.Telemetry do
         unit: {:native, :millisecond},
         tags: [:tool, :result],
         description: "MCP tool calls by tool and result"
+      ),
+      # `improve-squad-leader-orchestration` decision 17.
+      counter("helmsman.orchestration.write.count",
+        tags: [:action, :result],
+        description: "Orchestration writes of squad leaders by action and result"
+      ),
+      counter("helmsman.epic_watch.check.count",
+        tags: [:result],
+        description: "Stall checks of squads' epics by result"
       )
     ]
   end

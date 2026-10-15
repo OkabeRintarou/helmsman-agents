@@ -164,7 +164,20 @@ defmodule Helmsman.DomainErrorReasons do
       {"spec invalid issues", {:spec, :invalid_issues, [%{index: 1, message: "bad severity"}]}},
       {"spec invalid params", {:spec, :invalid_params, %{field: :note, message: "is too long"}}},
       {"spec invalid archive", {:spec, :invalid_archive, "the archive has no spec file"}},
-      {"spec review from a run", :forbidden, "request_spec_review"}
+      {"spec review from a run", :forbidden, "request_spec_review"},
+      # Orchestration (improve-squad-leader-orchestration decision 16).
+      {"orchestration outside", {:orchestration, :outside, "ACC-21", "ACC-10"}},
+      {"orchestration outside, no root", {:orchestration, :outside, "ACC-21", nil}},
+      {"orchestration root", {:orchestration, :root, "ACC-10"}},
+      {"orchestration fields", {:orchestration, :fields, ["assignee", "start"]}},
+      {"orchestration outside assignee", {:orchestration, :outside_assignee, "ACC-14", "carol"}},
+      {"orchestration not member", {:orchestration, :not_member, "carol/dev", "nes-emulator"}},
+      {"orchestration no assignee", {:orchestration, :no_assignee, "ACC-13"}},
+      {"orchestration person assignee", {:orchestration, :person_assignee, "ACC-15", "bob"}},
+      {"orchestration not managed", {:orchestration, :not_managed, "ACC-15", "bob/cli"}},
+      {"orchestration link type", {:orchestration, :link_type}},
+      {"orchestration not leader", {:orchestration, :not_leader, "nes-emulator"}},
+      {"orchestration squad disabled", {:orchestration, :squad_disabled, "nes-emulator"}}
     ]
   end
 end

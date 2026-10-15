@@ -248,6 +248,31 @@ defmodule HelmsmanWeb.API.Schemas.TaskDetail do
 
   alias HelmsmanWeb.API.Schemas
 
+  # `improve-squad-leader-orchestration` decision 13: what an epic's step
+  # waits for.
+  @step %Schema{
+    type: :object,
+    description:
+      "A step of the epic: its summary, what it waits for and whether you may orchestrate it.",
+    properties:
+      Map.merge(Schemas.Helpers.summary_properties(), %{
+        waiting_for:
+          nullable(%Schema{
+            type: :string,
+            enum:
+              ~w(merge verification requester answer run prerequisites assignment assignee start),
+            description: "What the step waits for; null: nothing."
+          }),
+        blocked_by: %Schema{type: :array, items: string(), description: "Unmet prerequisites."},
+        orchestrable:
+          nullable(%Schema{
+            type: :boolean,
+            description: "For a run token: whether the run may orchestrate the step; else null."
+          })
+      }),
+    required: Schemas.Helpers.summary_required()
+  }
+
   @history %Schema{
     type: :object,
     properties: %{
@@ -303,7 +328,7 @@ defmodule HelmsmanWeb.API.Schemas.TaskDetail do
           description: nullable(string()),
           history: %Schema{type: :array, items: @history},
           feedback: %Schema{type: :array, items: Schemas.Feedback},
-          children: %Schema{type: :array, nullable: true, items: Schemas.TaskSummary},
+          children: %Schema{type: :array, nullable: true, items: @step},
           epic_title: nullable(string()),
           links: %Schema{type: :array, items: @link},
           dispatch: Schemas.Dispatch,

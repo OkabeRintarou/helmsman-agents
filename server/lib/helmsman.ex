@@ -53,6 +53,7 @@ defmodule Helmsman do
       Tasks,
       Tasks.Task,
       Tasks.Ident,
+      Tasks.StepViews,
       Tasks.StateMachine,
       Feedback,
       Feedback.Entry,

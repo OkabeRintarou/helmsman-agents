@@ -6,7 +6,8 @@ defmodule HelmsmanMCP.Tools.UnlinkTasks do
     description:
       "Remove the link from -> to of type depends_on (from waits for to) or replaces (from " <>
         "took over to). No status changes: a replaced task stays CANCELLED. Removing a link " <>
-        "that does not exist succeeds. Returns from.",
+        "that does not exist succeeds. Returns from. A run orchestrating its squad's work may " <>
+        "also remove depends_on links between the tasks it orchestrates.",
     schema: %{
       from: {:required, :string, description: "Task ID of the linking task (e.g. WEB-2)."},
       to: {:required, :string, description: "Task ID of the linked task (e.g. BOS-1)."},

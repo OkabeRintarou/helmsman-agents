@@ -35,6 +35,7 @@ defmodule HelmsmanMCP.Tools do
     RunAgent,
     SaveFilter,
     SearchTasks,
+    StartTask,
     SubmitSpecReview,
     SubmitSpecVersion,
     TransitionTask,
@@ -85,6 +86,7 @@ defmodule HelmsmanMCP.Tools do
     ListAgents,
     RunAgent,
     Delegate,
+    StartTask,
     ListRuns,
     CancelRun,
     GetDesign,
@@ -128,18 +130,23 @@ defmodule HelmsmanMCP.Tools do
   @spec session_only_names() :: [String.t()]
   def session_only_names, do: Enum.map(@session_only_tools, & &1.name())
 
+  # Listed only for runs with an orchestration root
+  # (`improve-squad-leader-orchestration` decision 5).
+  @orchestrate_tools [StartTask]
+
   @doc "The names of the tools listed only for design runs."
   @spec design_tool_names() :: [String.t()]
   def design_tool_names, do: Enum.map(@design_tools, & &1.name())
 
   @doc """
   The run capability each restricted tool needs to be listed: the draft
-  tools `design`, `delegate` its own.
+  tools `design`, `delegate` its own, `start_task` `orchestrate`.
   """
   @spec required_capabilities() :: %{String.t() => String.t()}
   def required_capabilities do
     Map.new(@design_tools, &{&1.name(), "design"})
     |> Map.merge(Map.new(@delegate_tools, &{&1.name(), "delegate"}))
+    |> Map.merge(Map.new(@orchestrate_tools, &{&1.name(), "orchestrate"}))
   end
 
   @doc "Finds a tool module by name."

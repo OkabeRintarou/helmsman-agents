@@ -6,7 +6,10 @@ defmodule HelmsmanMCP.Tools.UpdateTask do
     description:
       "Edit a task's title, description, priority, labels, assignee or epic. The status cannot " <>
         "be changed here: use transition_task. With lock_version, the edit fails if " <>
-        "someone changed the task since you read it; without it, the latest version is edited.",
+        "someone changed the task since you read it; without it, the latest version is edited. " <>
+        "A run orchestrating its squad's work may only change assignee and start of the " <>
+        "tasks in its Orchestration section; an unchanged assignee is not started again: " <>
+        "use start_task.",
     schema: %{
       task_id: {:required, :string, description: "Task ID (e.g. BOS-12)."},
       title: {:string, description: "New title."},

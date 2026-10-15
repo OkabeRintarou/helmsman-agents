@@ -12,7 +12,7 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.{AgentProfile, TriggerRule}
   alias Helmsman.Daemons.{Daemon, Runtime}
-  alias Helmsman.Dispatch.Dependencies
+  alias Helmsman.Dispatch.{Dependencies, LeaderSquad}
   alias Helmsman.Policy
   alias Helmsman.ProviderAccounts.ProviderAccount
   alias Helmsman.Repo
@@ -26,6 +26,7 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Workspaces.Membership
 
   @max_instructions_bytes 8192
+  @max_rounds 3
   @open_statuses [:new, :in_progress]
 
   ## Assignment
@@ -226,20 +227,85 @@ defmodule Helmsman.Dispatch do
 
   defp trim(_other), do: :invalid
 
-  # Lock order: actor, profile, task, runtime, run (designs/01 §4).
-  defp run_agent_locked(scope, agent_name, task_ident, instructions) do
-    with {:ok, agent, profile} <- lock_agent(scope.workspace.id, agent_name),
+  # Lock order: actor, profile, task, runtime, run (designs/01 §4). An agent
+  # that may lead the squad owning the task (`improve-squad-leader-
+  # orchestration` decision 14) has the squad's rows locked first
+  # (they include its own); the squad read under the task lock must be the
+  # one locked, else the round is taken again from a savepoint.
+  defp run_agent_locked(scope, agent_name, task_ident, instructions),
+    do: run_agent_round(scope, {agent_name, task_ident, instructions}, 1)
+
+  defp run_agent_round(_scope, _args, round) when round > @max_rounds, do: {:error, :busy}
+
+  defp run_agent_round(scope, {agent_name, task_ident, instructions} = args, round) do
+    Repo.query!("SAVEPOINT run_agent")
+    guessed = guess_leader_squad(scope.workspace.id, agent_name, task_ident)
+    test_hook({:run_agent, round})
+
+    with {:ok, _loaded} <- lock_squad(guessed),
+         {:ok, agent, profile} <- lock_agent(scope.workspace.id, agent_name),
          {:ok, task} <- lock_task(scope, task_ident),
          :ok <- open_task(task) do
-      {:ok, outcome} =
-        Runs.enqueue(
-          Origin.from_scope(scope),
-          %{agent: agent, profile: profile, task: task, lane: :work},
-          %{kind: :manual, instructions: instructions}
-        )
+      squad = LeaderSquad.candidate(task, agent.id)
 
-      run = outcome.run_id && Runs.summary(Repo.get!(Runs.Run, outcome.run_id))
-      {:ok, %{outcome: outcome, run: run}}
+      if squad == guessed do
+        Repo.query!("RELEASE SAVEPOINT run_agent")
+
+        outcome =
+          LeaderSquad.enqueue(
+            Origin.from_scope(scope),
+            %{agent: agent, profile: profile, task: task, lane: :work},
+            squad,
+            %{kind: :manual, instructions: instructions}
+          )
+
+        run = outcome.run_id && Runs.summary(Repo.get!(Runs.Run, outcome.run_id))
+        {:ok, %{outcome: outcome, run: run}}
+      else
+        Repo.query!("ROLLBACK TO SAVEPOINT run_agent")
+        run_agent_round(scope, args, round + 1)
+      end
+    else
+      {:error, _reason} = error ->
+        Repo.query!("RELEASE SAVEPOINT run_agent")
+        error
+    end
+  end
+
+  # The squad the named agent leads that owns the task, read without locks.
+  defp guess_leader_squad(_workspace_id, _agent_name, task_ident) when task_ident in [nil, ""],
+    do: nil
+
+  defp guess_leader_squad(workspace_id, agent_name, task_ident) do
+    owners = LeaderSquad.guess(workspace_id, task_ident)
+
+    led =
+      if owners == [] do
+        []
+      else
+        Repo.all(
+          from(s in Squads.Squad,
+            join: l in Actor,
+            on: l.id == s.leader_agent_id,
+            join: a in Actor,
+            on: a.id == s.actor_id,
+            where:
+              s.actor_id in ^owners and l.workspace_id == ^workspace_id and l.name == ^agent_name and
+                is_nil(a.disabled_at),
+            select: s.actor_id
+          )
+        )
+      end
+
+    Enum.find(owners, &(&1 in led))
+  end
+
+  defp lock_squad(nil), do: {:ok, nil}
+
+  defp lock_squad(actor_id) do
+    case SquadDispatch.lock_rows(actor_id) do
+      nil -> {:ok, nil}
+      result -> result
     end
   end
 
@@ -379,5 +445,18 @@ defmodule Helmsman.Dispatch do
       status: runtime.status,
       disabled: not is_nil(runtime.disabled_at)
     }
+  end
+
+  # Concurrency tests change the task's owner between the guess and the
+  # task lock: compiled in the test environment only.
+  if Mix.env() == :test do
+    defp test_hook(point) do
+      case Process.get(:helmsman_test_hook) do
+        hook when is_function(hook, 1) -> hook.(point)
+        _ -> :ok
+      end
+    end
+  else
+    defp test_hook(_point), do: :ok
   end
 end

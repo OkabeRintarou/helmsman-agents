@@ -217,6 +217,17 @@ defmodule HelmsmanWeb.ErrorMapper do
   defp map({:spec, :issue_resolved, ref, resolution}),
     do: {409, "issue_resolved", %{issue: ref, resolution: json_reason(resolution)}}
 
+  # `improve-squad-leader-orchestration` decision 16: run tokens never call
+  # REST, but every domain reason has a response.
+  defp map({:orchestration, reason, ident, other})
+       when reason in [:outside, :outside_assignee, :person_assignee, :not_managed, :not_member],
+       do: orchestration(reason, %{task: ident, other: other})
+
+  defp map({:orchestration, reason, value}) when is_atom(reason),
+    do: orchestration(reason, %{value: json_reason(value)})
+
+  defp map({:orchestration, :link_type}), do: orchestration(:link_type, %{})
+
   defp map(_reason), do: :error
 
   # Task specs (`add-spec-workflow` decision 21, rest-api 「规格端点」).
@@ -254,6 +265,18 @@ defmodule HelmsmanWeb.ErrorMapper do
     do: {400, "invalid_params", %{fields: %{field => [message]}}}
 
   defp spec(_reason), do: :error
+
+  @orchestration_conflicts [:no_assignee, :person_assignee, :not_member, :not_managed]
+
+  defp orchestration(reason, detail) do
+    detail = detail |> Map.reject(fn {_k, v} -> is_nil(v) end) |> Map.put(:reason, reason)
+
+    if reason in @orchestration_conflicts,
+      do: {409, "orchestration_conflict", json_detail(detail)},
+      else: {403, "forbidden", json_detail(detail)}
+  end
+
+  defp json_detail(detail), do: Map.new(detail, fn {k, v} -> {k, json_reason(v)} end)
 
   ## Details
 
@@ -393,7 +416,9 @@ defmodule HelmsmanWeb.ErrorMapper do
     "invalid_issues" => "Invalid review issues; see detail.errors.",
     "invalid_reviewer" => "The reviewer cannot review specs.",
     "invalid_archive" =>
-      "The archive is not a valid OpenSpec change directory; see detail.reason."
+      "The archive is not a valid OpenSpec change directory; see detail.reason.",
+    "orchestration_conflict" =>
+      "The orchestration write conflicts with the task's assignee; see detail.reason."
   }
 
   @doc "The English message of an error `code`."

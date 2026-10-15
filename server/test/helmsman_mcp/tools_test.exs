@@ -32,7 +32,7 @@ defmodule HelmsmanMCP.ToolsTest do
                  list_feedback list_agents run_agent list_runs cancel_run get_design propose_agent
                withdraw_agent delegate propose_squad get_spec diff_spec list_spec_reviews
                submit_spec_version submit_spec_review reply_spec_issue rule_spec_issue
-               finalize_spec update_spec cancel_spec_review request_spec_review))
+               finalize_spec update_spec cancel_spec_review request_spec_review start_task))
 
     assert names == Enum.uniq(names)
 
@@ -64,7 +64,7 @@ defmodule HelmsmanMCP.ToolsTest do
                ~w(add_feedback cancel_run create_project create_task delegate link_tasks run_agent
                   transition_task unlink_tasks update_feedback update_project update_task
                   cancel_spec_review finalize_spec reply_spec_issue request_spec_review
-                  rule_spec_issue submit_spec_review submit_spec_version update_spec)
+                  rule_spec_issue start_task submit_spec_review submit_spec_version update_spec)
              )
   end
 

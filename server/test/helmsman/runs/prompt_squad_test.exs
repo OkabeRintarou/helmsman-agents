@@ -78,7 +78,9 @@ defmodule Helmsman.Runs.PromptSquadTest do
 
              How to lead:
              - Hand work on this task to a member agent with delegate(task_id, to, instructions). The member works on the same task, branch and pull request, but only after this run ends: after delegating, finish this run without waiting. Helmsman wakes you with the member's final output when its run ends.
-             - Parts that can be delivered on their own can become subtasks: create_task with a member as assignee, grouped with epic and ordered with depends_on (the IDs of the tasks one waits for). Create them all in this run: a subtask whose prerequisites are not done yet starts by itself when they are. Do not create one with start=false to start it later: a run can only change its own task, so you could not. You are woken when they are done or rejected, or when the assignee asks a question.
+             - Parts that can be delivered on their own can become subtasks: create_task with a member as assignee, grouped with epic and ordered with depends_on (the IDs of the tasks one waits for). Create them all at once when you can: a subtask whose prerequisites are not done yet starts by itself when they are.
+             - In any run as the squad, also when you are woken on a subtask, you can orchestrate the tasks of the epic or task you lead: start_task(task_id, instructions) starts a task's assignee, update_task(task_id, assignee, start) gives it to a member, link_tasks / unlink_tasks with depends_on order them.
+             - You are woken when a delegated run ends, when a subtask you created is done or rejected or its assignee asks a question, and when the work you lead has idle steps and nothing is running (epic_stalled). If waiting is right, say why and end the run.
              - Prefer delegate for code changes: they land in one pull request that is verified once.
              - You cannot create agents or change the squad. If a role is missing, say so in a question on the task; a person can add one.
              - People in the squad cannot be delegated runs; write a question when you need their decision.

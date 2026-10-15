@@ -31,7 +31,8 @@ defmodule Helmsman.Runs.Spec do
   alias Helmsman.Runs
   alias Helmsman.Runs.{GitRepo, LocalRepo, Prompt, Run}
   alias Helmsman.Squads
-  alias Helmsman.Tasks.Task
+  alias Helmsman.Squads.Orchestration
+  alias Helmsman.Tasks.{Epics, Task}
   alias Helmsman.Workspaces.Workspace
   alias HelmsmanProtocol.RunSpec
 
@@ -66,7 +67,8 @@ defmodule Helmsman.Runs.Spec do
         squad: run.squad_id && Squads.load(run.squad_id),
         autopilot: Autopilots.prompt_context(run),
         delegations: delegations(run),
-        spec: Helmsman.TaskSpecs.prompt_context(run, task)
+        spec: Helmsman.TaskSpecs.prompt_context(run, task),
+        orchestration: orchestration(run, task)
       }
 
       RunSpec.new(%{
@@ -301,7 +303,70 @@ defmodule Helmsman.Runs.Spec do
       )
       |> Map.new()
 
-    %{summaries: runs, squads: squads}
+    %{summaries: runs, squads: squads, orchestrators: orchestrators(run)}
+  end
+
+  # The squad names of the runs that started this one by orchestration
+  # (`improve-squad-leader-orchestration` decision 15).
+  defp orchestrators(run) do
+    ids = for %{"orchestrated" => true, "orchestrator_run_id" => id} <- run.triggers, do: id
+
+    if ids == [] do
+      %{}
+    else
+      Repo.all(
+        from(r in Run,
+          join: s in Squads.Squad,
+          on: s.id == r.squad_id,
+          join: a in Actor,
+          on: a.id == s.actor_id,
+          where: r.id in ^ids,
+          select: {r.id, a.name}
+        )
+      )
+      |> Map.new()
+    end
+  end
+
+  # The leader's orchestration section (`improve-squad-leader-orchestration`
+  # decision 15): the root and the tasks of its scope with what each waits
+  # for (`Helmsman.Tasks.Epics.step_states/2` for an epic's steps), or nil.
+  defp orchestration(%Run{squad_id: nil}, _task), do: nil
+  defp orchestration(_run, nil), do: nil
+
+  defp orchestration(%Run{squad_id: squad_id}, %Task{} = task) do
+    case Orchestration.root(task, squad_id) do
+      nil -> nil
+      root -> %{root: root, rows: orchestration_rows(root, squad_id)}
+    end
+  end
+
+  defp orchestration_rows(root, squad_id) do
+    ids = root |> Orchestration.scope_ids(squad_id) |> MapSet.delete(root.id)
+    steps = if root.kind == :epic, do: Epics.step_states(root), else: []
+    steps = Enum.filter(steps, &MapSet.member?(ids, &1.task.id))
+    rest = ids |> MapSet.difference(MapSet.new(steps, & &1.task.id)) |> Enum.sort()
+    # The subtasks the squad created for the root (`root_task_id`).
+    states = steps ++ Epics.task_states(rest)
+    assignees = states |> Enum.map(& &1.task.assignee_id) |> Enum.reject(&is_nil/1)
+
+    actors =
+      Repo.all(from(a in Actor, where: a.id in ^assignees, select: {a.id, {a.name, a.kind}}))
+      |> Map.new()
+
+    Enum.map(states, fn state ->
+      {name, kind} = Map.get(actors, state.task.assignee_id, {nil, nil})
+
+      %{
+        ident: state.task.ident,
+        status: state.task.status,
+        title: state.task.title,
+        assignee: name,
+        assignee_kind: state.assignee_kind || kind,
+        waiting_for: state.waiting_for,
+        blocked_by: state.blocked_by
+      }
+    end)
   end
 
   defp retried(run) do

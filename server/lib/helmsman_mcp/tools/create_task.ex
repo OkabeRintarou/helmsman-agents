@@ -7,7 +7,8 @@ defmodule HelmsmanMCP.Tools.CreateTask do
       "Create a task in a project. It starts as NEW, created by your identity. Returns " <>
         "the task with its ID. kind: \"epic\" creates an epic (a goal whose steps are " <>
         "tasks); epic puts the new task under an epic as one of its steps; depends_on makes it " <>
-        "wait for other tasks.",
+        "wait for other tasks. A squad leader's run can later orchestrate the tasks it " <>
+        "creates for the work it leads (start_task, update_task, link_tasks).",
     schema: %{
       project_key: {:required, :string, description: "Project key (e.g. BOS)."},
       title: {:required, :string, description: "Title, 1-200 characters."},
@@ -18,7 +19,7 @@ defmodule HelmsmanMCP.Tools.CreateTask do
         {:boolean,
          description:
            "With an assignee that is a managed agent: false records the assignment " <>
-             "without starting the agent (default true)."},
+             "without starting the agent (default true); start_task starts it later."},
       assignee: {:string, description: "Identity name to assign the task to."},
       kind:
         {:string,

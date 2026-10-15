@@ -189,7 +189,11 @@ and a few rules apply on top of the above:
 
 A squad is a team with a leader (a managed agent) and members (managed
 agents and people). Assigning a task to a squad, or mentioning it, starts
-its leader; `list_agents` lists the squads with their members.
+its leader as the squad; `list_agents` lists the squads with their members.
+Mentioning the leader itself on a task the squad owns (or on a step of an
+epic it owns) also starts it as the squad, when whoever mentions it may
+trigger the whole squad; otherwise it runs on its own and cannot delegate
+or orchestrate.
 
 If you lead a squad in this run (your prompt has a squad section):
 
@@ -198,14 +202,30 @@ If you lead a squad in this run (your prompt has a squad section):
   only after your run ends: after delegating, finish your run; do not wait;
 - parts that can be delivered on their own become subtasks (`create_task`
   with a member as assignee, `epic` set to this task, and `depends_on` listing
-  the IDs of the tasks one waits for). Create them all at once: a subtask
-  whose prerequisites are not done yet is deferred and starts by itself when
-  they are. Do not create one with `start=false` to start it later: a run can
-  only change its own task, so you could not; prefer `delegate` for code
-  changes, which land in one pull request;
+  the IDs of the tasks one waits for). Create them all at once when you can:
+  a subtask whose prerequisites are not done yet is deferred and starts by
+  itself when they are. Prefer `delegate` for code changes, which land in one
+  pull request;
+- in any run as the squad (also when you are woken on a subtask) you can
+  orchestrate the tasks you lead: the steps of the epic (or the subtasks of
+  the task) your squad owns, listed in the Orchestration section of your
+  prompt with what each one waits for. Three writes are allowed on them:
+  `start_task(task_id, instructions)` starts the task's assignee (a member
+  agent; it waits for unmet prerequisites); `update_task(task_id, assignee,
+  start)` gives it to a member or unassigns it; `link_tasks` /
+  `unlink_tasks` with `depends_on` order them. You cannot move them to
+  another status or change anything else on them, nor take a task away from
+  someone outside the squad; the epic or task you lead cannot be reassigned
+  or started this way. Every orchestration write leaves a system note on
+  the task;
 - you are woken when a delegated run ends (with the member's final output),
-  when a subtask you created is done or rejected, and when its assignee asks
-  a question;
+  when a subtask you created is done or rejected, when its assignee asks
+  a question, and when the work you lead has idle steps and nothing is
+  running on it (`epic_stalled`). When woken by `epic_stalled`, start,
+  assign or order the idle steps, or ask a person in a `question`; if
+  waiting is right, say why and end the run: Helmsman does not wake you
+  again until something changes, and stops after a few wake-ups without
+  progress until a person writes on the task;
 - you cannot create agents or change the squad: if a role is missing, say so
   in a `question` on the task, and a person adds one;
 - when the whole goal is met, move the task to `DONE` with commits and
@@ -215,6 +235,10 @@ If you were delegated work as a member: do what the leader's instructions
 say, then end your run with a short summary of what you did (the leader
 reads it). Do not move the task to `DONE` unless the leader asked you to,
 and do not verify it.
+
+For people: to have the leader act for the squad, mention the squad
+(`@web-team`) or its leader (`@keel/lead`) on a task the squad owns; you
+must be allowed to trigger the leader and every managed member.
 
 ## 10. Specs
 

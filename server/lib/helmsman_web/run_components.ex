@@ -197,6 +197,7 @@ defmodule HelmsmanWeb.RunComponents do
   defp kind_name("delegate"), do: dgettext("ui", "委派")
   defp kind_name("delegated"), do: dgettext("ui", "委派")
   defp kind_name("delegate_done"), do: dgettext("ui", "委派完成")
+  defp kind_name("epic_stalled"), do: dgettext("ui", "Epic 停滞")
   defp kind_name("autopilot"), do: dgettext("ui", "自动化")
   defp kind_name("design"), do: dgettext("ui", "创建对话")
   defp kind_name(_), do: dgettext("ui", "其他触发")
@@ -219,6 +220,10 @@ defmodule HelmsmanWeb.RunComponents do
       _ -> trigger_kind(trigger)
     end
   end
+
+  # The stall wake-up is the system's: no actor (improve-squad-leader-orchestration D19).
+  def trigger_label(%{kind: kind} = trigger) when kind in ["epic_stalled", :epic_stalled],
+    do: trigger_kind(trigger)
 
   def trigger_label(%{kind: kind} = trigger) when kind in ["autopilot", :autopilot] do
     source = autopilot_source(trigger[:source])

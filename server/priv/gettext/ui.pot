@@ -9919,3 +9919,8 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "（该列已隐藏）"
 msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "Epic 停滞"
+msgstr ""

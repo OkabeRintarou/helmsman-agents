@@ -7,7 +7,9 @@ defmodule HelmsmanMCP.Tools.LinkTasks do
       "Link two tasks of the workspace (any projects). type depends_on: from waits for to " <>
         "(from is blocked and cannot start until to is finished). type replaces: from takes " <>
         "over to (to is cancelled if it is still NEW or IN_PROGRESS, and cannot be reopened " <>
-        "while the link exists). Adding an existing link changes nothing. Returns from.",
+        "while the link exists). Adding an existing link changes nothing. Returns from. A run " <>
+        "may link its own task; a run orchestrating its squad's work may also add depends_on " <>
+        "links between the tasks it orchestrates.",
     schema: %{
       from: {:required, :string, description: "Task ID of the linking task (e.g. WEB-2)."},
       to: {:required, :string, description: "Task ID of the linked task (e.g. BOS-1)."},

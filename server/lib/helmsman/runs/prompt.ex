@@ -98,8 +98,14 @@ defmodule Helmsman.Runs.Prompt do
       )
 
     case ctx[:squad] do
-      nil -> body
-      squad -> squad_section(squad, false) <> specs_section(ctx) <> "\n\n---\n" <> body
+      nil ->
+        body
+
+      squad ->
+        squad_section(squad, false) <>
+          specs_section(ctx) <>
+          orchestration_part(ctx) <>
+          "\n\n---\n" <> body
     end
   end
 
@@ -135,7 +141,10 @@ defmodule Helmsman.Runs.Prompt do
 
     head =
       head ++
-        if(ctx[:squad], do: [squad_section(ctx.squad, true) <> specs_section(ctx)], else: [])
+        if(ctx[:squad],
+          do: [squad_section(ctx.squad, true) <> specs_section(ctx) <> orchestration_part(ctx)],
+          else: []
+        )
 
     case head do
       [] -> body
@@ -232,10 +241,15 @@ defmodule Helmsman.Runs.Prompt do
         "member's final output when its run ends.",
       "- Parts that can be delivered on their own can become subtasks: create_task with a " <>
         "member as assignee, grouped with epic and ordered with depends_on (the IDs of the " <>
-        "tasks one waits for). Create them all in this run: a subtask whose prerequisites are " <>
-        "not done yet starts by itself when they are. Do not create one with start=false to " <>
-        "start it later: a run can only change its own task, so you could not. You are woken " <>
-        "when they are done or rejected, or when the assignee asks a question.",
+        "tasks one waits for). Create them all at once when you can: a subtask whose " <>
+        "prerequisites are not done yet starts by itself when they are.",
+      "- In any run as the squad, also when you are woken on a subtask, you can orchestrate " <>
+        "the tasks of the epic or task you lead: start_task(task_id, instructions) starts a " <>
+        "task's assignee, update_task(task_id, assignee, start) gives it to a member, " <>
+        "link_tasks / unlink_tasks with depends_on order them.",
+      "- You are woken when a delegated run ends, when a subtask you created is done or " <>
+        "rejected or its assignee asks a question, and when the work you lead has idle steps " <>
+        "and nothing is running (epic_stalled). If waiting is right, say why and end the run.",
       "- Prefer delegate for code changes: they land in one pull request that is verified once.",
       "- You cannot create agents or change the squad. If a role is missing, say so in a " <>
         "question on the task; a person can add one.",
@@ -249,6 +263,9 @@ defmodule Helmsman.Runs.Prompt do
   defp identity(ctx) do
     scope_line =
       case {ctx.task, ctx[:autopilot]} do
+        {%Task{ident: ident}, _} when is_map(ctx.orchestration) ->
+          orchestration_identity(ident, ctx)
+
         {%Task{ident: ident}, _} ->
           "You may only change #{ident}."
 
@@ -347,6 +364,25 @@ defmodule Helmsman.Runs.Prompt do
   defp line_key(%{"kind" => "delegate_done", "delegated_run_id" => id}), do: {:delegate_done, id}
   defp line_key(trigger), do: {:trigger, make_ref(), trigger}
 
+  # `improve-squad-leader-orchestration` decision 15: a start by a leader.
+  defp trigger_line(%{"kind" => "assign", "orchestrated" => true} = trigger, _run, ctx) do
+    squad =
+      case get_in(ctx, [:delegations, :orchestrators, trigger["orchestrator_run_id"]]) do
+        nil -> "its squad"
+        name -> "the squad #{name}"
+      end
+
+    line = "- #{by(trigger, ctx)}, leading #{squad}, started you on #{ident(ctx)}."
+
+    case trigger["instructions"] do
+      text when is_binary(text) and text != "" ->
+        Enum.join([line, "Instructions from #{by(trigger, ctx)}:", blockquote(text)], "\n")
+
+      _none ->
+        line
+    end
+  end
+
   defp trigger_line(%{"kind" => "assign"} = trigger, _run, %{squad: %{actor: squad}} = ctx),
     do: "- #{by(trigger, ctx)} assigned #{ident(ctx)} to your squad #{squad.name}."
 
@@ -354,7 +390,17 @@ defmodule Helmsman.Runs.Prompt do
     do: "- #{by(trigger, ctx)} assigned #{ctx.task && ctx.task.ident} to you."
 
   defp trigger_line(%{"kind" => "manual"} = trigger, _run, ctx) do
-    line = "- #{by(trigger, ctx)} started you manually."
+    line =
+      case {trigger["as_leader"], ctx[:squad]} do
+        {true, %{actor: squad}} ->
+          "- #{by(trigger, ctx)} started you as the leader of your squad #{squad.name} on " <>
+            "#{ident(ctx)}."
+
+        _plain ->
+          ["- #{by(trigger, ctx)} started you manually.", squad_refused(trigger, ctx)]
+          |> Enum.reject(&is_nil/1)
+          |> join()
+      end
 
     case trigger["instructions"] do
       text when is_binary(text) and text != "" ->
@@ -469,15 +515,19 @@ defmodule Helmsman.Runs.Prompt do
 
   defp trigger_line(%{"kind" => "mention"} = trigger, _run, ctx) do
     whom =
-      case ctx[:squad] do
-        %{actor: squad} -> "your squad #{squad.name}"
-        nil -> "you"
+      case {trigger["as_leader"], ctx[:squad]} do
+        {true, %{actor: squad}} -> "you, as the leader of your squad #{squad.name},"
+        {_, %{actor: squad}} -> "your squad #{squad.name}"
+        {_, nil} -> "you"
       end
 
-    join([
+    [
       quoted("- #{by(trigger, ctx)} mentioned #{whom} in", trigger["feedback_id"], ctx),
+      squad_refused(trigger, ctx),
       "Reply with add_feedback. You were asked to reply, not to take over #{ident(ctx)}."
-    ])
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> join()
   end
 
   # `add-squads` decision 8: a member's run.
@@ -597,7 +647,116 @@ defmodule Helmsman.Runs.Prompt do
   defp trigger_line(%{"kind" => kind} = trigger, _run, ctx),
     do: "- #{by(trigger, ctx)} started you (#{kind})."
 
+  # `improve-squad-leader-orchestration` decision 15: a mention or manual
+  # run of a leader that could not run as its squad.
+  defp squad_refused(%{"squad_refused" => [_ | _] = names, "refused_squad" => squad} = t, ctx) do
+    "You lead the squad #{squad}, which owns #{t["squad_owner"] || ident(ctx)}, but " <>
+      "#{by(t, ctx)} may not trigger all of its members (#{Enum.join(names, ", ")}), so this " <>
+      "run is not as the squad: you cannot delegate or orchestrate. Ask someone who may " <>
+      "trigger the squad to mention @#{squad}."
+  end
+
+  defp squad_refused(_trigger, _ctx), do: nil
+
   defp ident(ctx), do: ctx.task && ctx.task.ident
+
+  ## Orchestration (`improve-squad-leader-orchestration` decision 15)
+
+  @max_orchestration_lines 50
+  @max_orchestration_line_bytes 300
+  @max_orchestration_bytes 16 * 1024
+  @max_title_bytes 80
+
+  defp orchestration_identity(ident, %{orchestration: %{root: root}, squad: %{actor: squad}}) do
+    which = if root.ident == ident, do: "#{root.ident} (this task)", else: root.ident
+
+    "You may change #{ident}. As the leader of #{squad.name} you may also orchestrate the " <>
+      "tasks of #{which} listed in the Orchestration section: assign them to members " <>
+      "(update_task with assignee and start), start their assignee (start_task) and order " <>
+      "them (link_tasks / unlink_tasks with depends_on). You cannot move them to another " <>
+      "status or change anything else on them."
+  end
+
+  defp orchestration_identity(ident, _ctx), do: "You may only change #{ident}."
+
+  defp orchestration_part(%{orchestration: %{root: root, rows: rows}}),
+    do: "\n\n" <> orchestration_section(root, rows)
+
+  defp orchestration_part(_ctx), do: ""
+
+  @doc """
+  The leader's orchestration section: the root and one line per task of
+  its scope (`rows`: `ident`, `status`, `title`, `assignee`,
+  `assignee_kind`, `waiting_for`, `blocked_by`), at most
+  #{@max_orchestration_lines} lines of at most #{@max_orchestration_line_bytes}
+  bytes and #{@max_orchestration_bytes} bytes in all.
+  """
+  @spec orchestration_section(Task.t(), [map()]) :: String.t()
+  def orchestration_section(%Task{} = root, rows) do
+    head = [
+      "## Orchestration: #{root.ident} #{short(root.title, @max_title_bytes)}",
+      "Tasks you can orchestrate (status, assignee, what it waits for):"
+    ]
+
+    shown = Enum.take(rows, @max_orchestration_lines)
+
+    lines =
+      if rows == [],
+        do: ["(none yet)"],
+        else: Enum.map(shown, &short(orchestration_line(&1), @max_orchestration_line_bytes))
+
+    more =
+      case length(rows) - length(shown) do
+        0 -> []
+        n -> [~s[(#{n} more; get_task("#{root.ident}") lists all)]]
+      end
+
+    bound(Enum.join(head ++ lines ++ more, "\n"), @max_orchestration_bytes)
+  end
+
+  defp orchestration_line(row) do
+    status = row.status |> Atom.to_string() |> String.upcase()
+
+    who =
+      if row.assignee,
+        do: "#{row.assignee} (#{kind_label(row.assignee_kind)})",
+        else: "unassigned"
+
+    "- #{row.ident} [#{status}] #{short(row.title, @max_title_bytes)} — #{who}" <>
+      waiting_part(row)
+  end
+
+  defp waiting_part(%{waiting_for: nil}), do: ""
+
+  defp waiting_part(%{waiting_for: :start}),
+    do: "; waiting for: start (no run; start_task can start it)"
+
+  defp waiting_part(%{waiting_for: :prerequisites, blocked_by: [_ | _] = ids}),
+    do: "; waiting for: prerequisites (#{Enum.join(ids, ", ")})"
+
+  defp waiting_part(%{waiting_for: reason}), do: "; waiting for: #{reason}"
+
+  defp kind_label(:human), do: "person"
+  defp kind_label(:external), do: "external agent"
+  defp kind_label(:squad), do: "squad"
+  defp kind_label(_agent), do: "agent"
+
+  # At most `max` bytes, cut between code points ("…", 3 bytes, included).
+  defp short(nil, _max), do: ""
+  defp short(text, max) when byte_size(text) <= max, do: text
+  defp short(text, max), do: elem(DesignPrompt.prefix(text, max - 3), 0) <> "…"
+
+  # The whole section within `max` bytes, cut at a line.
+  defp bound(text, max) when byte_size(text) <= max, do: text
+
+  defp bound(text, max) do
+    text
+    |> String.split("\n")
+    |> Enum.reduce_while("", fn line, acc ->
+      next = if acc == "", do: line, else: acc <> "\n" <> line
+      if byte_size(next) <= max, do: {:cont, next}, else: {:halt, acc}
+    end)
+  end
 
   ## Specs (`add-spec-workflow` decision 12)
 

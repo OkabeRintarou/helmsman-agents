@@ -26,6 +26,12 @@ defmodule Helmsman.Dispatch.Continuation do
   as a squad, and the callback of a task created in one, run as that squad
   again. Anyone on the assignee side of a squad's task (the leader, a
   member) who writes a question calls back its requester.
+
+  A mentioned agent that leads the squad owning the task (or its epic)
+  runs as that squad when the writer may trigger it
+  (`improve-squad-leader-orchestration` decision 14,
+  `Helmsman.Dispatch.LeaderSquad`): the plan records the squad
+  (`squad_actor_id`), whose rows are then among the targets to lock.
   """
 
   import Ecto.Query, warn: false
@@ -33,7 +39,7 @@ defmodule Helmsman.Dispatch.Continuation do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Actors.Actor
   alias Helmsman.Agents.AgentProfile
-  alias Helmsman.Dispatch.Mentions
+  alias Helmsman.Dispatch.{LeaderSquad, Mentions}
   alias Helmsman.Feedback.{Entry, Replies}
   alias Helmsman.Repo
   alias Helmsman.Runs
@@ -48,6 +54,7 @@ defmodule Helmsman.Dispatch.Continuation do
   @type item :: %{
           required(:kind) => :reopen | :resubmit | :requested | :answer | :mention,
           required(:agent_id) => pos_integer(),
+          optional(:squad_actor_id) => pos_integer() | nil,
           optional(:extra) => map(),
           optional(:question) => Entry.t(),
           optional(:steer_run_id) => pos_integer()
@@ -61,7 +68,8 @@ defmodule Helmsman.Dispatch.Continuation do
   The candidate targets of a write to the task `ident` with feedback
   `content` (nil: none), read without locks: the task's assignee and
   creator, the author of its last open question and the mentioned
-  identities.
+  identities, and the squads a mentioned leader may run as (the
+  task's or its epic's assignee).
   """
   @spec guess(pos_integer(), String.t(), String.t() | nil) :: [pos_integer()]
   def guess(workspace_id, ident, content) do
@@ -79,7 +87,8 @@ defmodule Helmsman.Dispatch.Continuation do
         task -> [task.assignee_id, task.created_by_id, last_question_author(task.id)]
       end
 
-    (from_task ++ Mentions.resolve(workspace_id, content))
+    (from_task ++
+       Mentions.resolve(workspace_id, content) ++ LeaderSquad.guess(workspace_id, ident))
     |> Enum.reject(&is_nil/1)
     |> Enum.uniq()
   end
@@ -221,9 +230,18 @@ defmodule Helmsman.Dispatch.Continuation do
       mentions
       |> Mentions.targets(old, by, MapSet.new(Map.keys(agents)))
       |> Enum.reject(&(agents[&1] == by))
-      |> Enum.map(&%{kind: :mention, agent_id: &1, extra: %{}})
+      |> Enum.map(&mention_item(task, &1, agents))
 
     %{mentions: mentions, items: keep(requested ++ answer, agents, by) ++ mention}
+  end
+
+  # A mentioned squad stands for itself; a mentioned agent may lead the
+  # squad that owns the task.
+  defp mention_item(task, id, agents) do
+    squad =
+      if Map.has_key?(agents, id) and is_nil(agents[id]), do: LeaderSquad.candidate(task, id)
+
+    %{kind: :mention, agent_id: id, squad_actor_id: squad, extra: %{}}
   end
 
   # The assignee writes a question (new, or a revision into one).
@@ -254,10 +272,15 @@ defmodule Helmsman.Dispatch.Continuation do
   defp assignee_side?(assignee, by),
     do: by in Squads.assignee_side(%Task{assignee_id: assignee})
 
-  defp targets(transition, nil), do: transition |> Enum.map(& &1.agent_id) |> Enum.uniq()
+  defp targets(transition, nil), do: item_targets(transition)
+  defp targets(transition, feedback), do: item_targets(transition ++ feedback.items)
 
-  defp targets(transition, feedback),
-    do: (transition ++ feedback.items) |> Enum.map(& &1.agent_id) |> Enum.uniq()
+  defp item_targets(items),
+    do:
+      items
+      |> Enum.flat_map(&[&1.agent_id, &1[:squad_actor_id]])
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
   # Agents (external ones too: they are locked, but get no result) and
   # squads, as `%{id => leader_id | nil}`.
@@ -394,13 +417,20 @@ defmodule Helmsman.Dispatch.Continuation do
           }
 
           target = %{agent: agent, profile: profile, task: task, lane: lane}
-          enqueue_as(origin, target, squad_id, trigger)
+          enqueue_item(item, origin, target, squad_id, trigger)
         end
 
       {:skip, reason} ->
         Outcome.skipped(agent, item.kind, reason)
     end
   end
+
+  # A mentioned leader may run as the squad that owns the task (decision 14).
+  defp enqueue_item(%{kind: :mention} = item, origin, target, _squad_id, trigger),
+    do: LeaderSquad.enqueue(origin, target, item[:squad_actor_id], trigger)
+
+  defp enqueue_item(_item, origin, target, squad_id, trigger),
+    do: enqueue_as(origin, target, squad_id, trigger)
 
   defp enqueue_as(origin, target, nil, trigger) do
     {:ok, outcome} = Runs.enqueue(origin, target, trigger)

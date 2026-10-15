@@ -5,13 +5,17 @@ defmodule HelmsmanMCP.ErrorText do
   clauses here.
   """
 
-  alias HelmsmanMCP.Context
+  alias HelmsmanMCP.{Context, OrchestrationErrorText}
 
   @doc """
   Returns the text of a domain error, or `:error` for a reason without a
   clause (the pipeline then answers with `internal/1`).
   """
   @spec format(term(), Context.t()) :: {:ok, String.t()} | :error
+  # `improve-squad-leader-orchestration` decision 16.
+  def format(reason, ctx) when is_tuple(reason) and elem(reason, 0) == :orchestration,
+    do: OrchestrationErrorText.format(reason, ctx)
+
   # `add-spec-workflow` decision 20.
   def format(reason, ctx) when is_tuple(reason) and elem(reason, 0) == :spec,
     do: HelmsmanMCP.SpecErrorText.format(reason, ctx)
@@ -120,8 +124,17 @@ defmodule HelmsmanMCP.ErrorText do
         _none -> ""
       end
 
+    # `improve-squad-leader-orchestration` decision 16.
+    orchestrate =
+      if "orchestrate" in run.capabilities,
+        do:
+          " As the squad's leader it may also orchestrate the tasks of the Orchestration " <>
+            "section of its prompt: start_task, update_task with assignee and start, and " <>
+            "link_tasks / unlink_tasks with depends_on; not move them or change anything else.",
+        else: ""
+
     {:ok,
-     "This run can only read the workspace#{change} (capabilities: #{caps}). " <>
+     "This run can only read the workspace#{change} (capabilities: #{caps}).#{orchestrate} " <>
        "Ask a human to do anything else."}
   end
 

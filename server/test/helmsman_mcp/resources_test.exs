@@ -51,6 +51,9 @@ defmodule HelmsmanMCP.ResourcesTest do
       assert text =~ "## 9. Squads"
       assert text =~ "delegate(task_id, to, instructions)"
       assert text =~ "after delegating, finish your run"
+      # improve-squad-leader-orchestration 4.4.
+      assert text =~ "start_task"
+      assert text =~ "epic_stalled"
     end
 
     # add-spec-workflow 2.5: the specs section (decision 23).

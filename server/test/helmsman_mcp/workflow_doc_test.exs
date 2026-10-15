@@ -16,7 +16,12 @@ defmodule HelmsmanMCP.WorkflowDocTest do
     end
   end
 
-  defp status(name), do: name |> String.downcase() |> String.to_existing_atom()
+  # Looked up among the statuses rather than as an existing atom, which
+  # depends on whether another test loaded the task module first.
+  defp status(name) do
+    name = String.downcase(name)
+    Enum.find(Task.statuses(), name, &(Atom.to_string(&1) == name))
+  end
 
   # Names called in inline code (`name(...)`), fenced blocks left out.
   defp called_names(text) do
@@ -60,5 +65,16 @@ defmodule HelmsmanMCP.WorkflowDocTest do
     assert sections(en) == Enum.map(1..11, &to_string/1)
     assert sections(zh) == sections(en)
     assert transitions(zh) == transitions(en)
+  end
+
+  # improve-squad-leader-orchestration 4.4 (decision 18).
+  test "both versions explain orchestration and the stall wake-up" do
+    for name <- ["AGENT-WORKFLOW.en.md", "AGENT-WORKFLOW.md"] do
+      text = doc(name)
+      assert text =~ "start_task(task_id, instructions)", name
+      assert text =~ "epic_stalled", name
+    end
+
+    assert doc("AGENT-WORKFLOW.md") =~ "停滞"
   end
 end
