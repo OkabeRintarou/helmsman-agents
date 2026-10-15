@@ -118,42 +118,67 @@ defmodule Helmsman.Backup.Import.Specs do
        Enum.sort_by(data["spec_review_requests"], & &1["n"])
        |> Enum.map(&Map.take(&1, ~w(task n version reviewer requested_by at note)))},
       {"spec_reviews", reviews},
-      {"spec_issue_notes",
-       Enum.sort_by(data["spec_issue_notes"], &{&1["review"], &1["issue"], &1["n"]})},
       {"spec_events", Enum.sort_by(data["spec_events"], & &1["n"])}
     ]
   end
 
+  # Notes are numbered per issue: each issue's discussion is its own
+  # sequence, so a note added to an earlier issue is no fork.
+  defp note_directions(local, incoming) do
+    group = &Enum.group_by(&1["spec_issue_notes"], fn n -> {n["review"], n["issue"]} end)
+    {local, incoming} = {group.(local), group.(incoming)}
+
+    (Map.keys(local) ++ Map.keys(incoming))
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.map(fn {review, issue} = key ->
+      notes = &(&1 |> Map.get(key, []) |> Enum.sort_by(fn n -> n["n"] end))
+
+      direction(
+        {{"spec_issue_notes", notes.(local)}, {"spec_issue_notes", notes.(incoming)}},
+        %{issue: "R#{review}.#{issue}"}
+      )
+    end)
+  end
+
   defp compare(local, incoming) do
-    directions = Enum.zip(sequences(local), sequences(incoming)) |> Enum.map(&direction/1)
+    directions =
+      Enum.zip(sequences(local), sequences(incoming))
+      |> Enum.map(&direction/1)
+      |> Kernel.++(note_directions(local, incoming))
 
     cond do
-      Enum.all?(directions, fn {_, d, _} -> d == :equal end) ->
+      Enum.all?(directions, fn {_, d, _, _} -> d == :equal end) ->
         :unchanged
 
-      Enum.all?(directions, fn {_, d, _} -> d in [:equal, :forward] end) ->
+      Enum.all?(directions, fn {_, d, _, _} -> d in [:equal, :forward] end) ->
         :fast_forwarded
 
-      Enum.all?(directions, fn {_, d, _} -> d in [:equal, :behind] end) ->
+      Enum.all?(directions, fn {_, d, _, _} -> d in [:equal, :behind] end) ->
         :local_newer
 
       true ->
-        {name, _, position} =
-          Enum.find(directions, fn {_, d, _} -> d == :fork end) ||
-            Enum.find(directions, fn {_, d, _} -> d != :equal end)
+        {name, _, position, extra} =
+          Enum.find(directions, fn {_, d, _, _} -> d == :fork end) ||
+            Enum.find(directions, fn {_, d, _, _} -> d != :equal end)
 
-        {:error, %{sequence: name, position: position, message: "spec histories diverged"}}
+        {:error,
+         Map.merge(extra, %{
+           sequence: name,
+           position: position,
+           message: "spec histories diverged"
+         })}
     end
   end
 
-  defp direction({{name, a}, {_, b}}) do
+  defp direction({{name, a}, {_, b}}, extra \\ %{}) do
     common = min(length(a), length(b))
 
     if Enum.take(a, common) == Enum.take(b, common) do
-      {name, size_direction(length(a), length(b)), common + 1}
+      {name, size_direction(length(a), length(b)), common + 1, extra}
     else
       index = Enum.zip(a, b) |> Enum.find_index(fn {x, y} -> x != y end)
-      {name, :fork, index + 1}
+      {name, :fork, index + 1, extra}
     end
   end
 

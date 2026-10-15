@@ -374,4 +374,157 @@ defmodule Helmsman.Backup.ImportSpecTest do
       refute Repo.exists?(from(s in Spec, where: s.workspace_id == ^ctx.target.id))
     end
   end
+
+  # code-review-4 P2-1: each issue's discussion is its own sequence.
+  test "notes appended to earlier issues fast-forward; a changed note diverges", ctx do
+    {:ok, _} =
+      TaskSpecs.submit_review(ctx.bob_scope, ctx.task.ident, %{
+        version: 1,
+        verdict: "comment",
+        summary: "Notes",
+        issues: [%{severity: "P3", body: "One"}, %{severity: "P3", body: "Two"}]
+      })
+
+    {qa, _run} = agent_run_scope(ctx.qa, ctx.task)
+
+    {:ok, _} =
+      TaskSpecs.submit_review(qa, ctx.task.ident, %{
+        version: 1,
+        verdict: "comment",
+        summary: "More",
+        issues: [%{severity: "P3", body: "Three"}]
+      })
+
+    note = fn ref, body ->
+      {:ok, _} = TaskSpecs.add_note(ctx.alice_scope, ctx.task.ident, ref, %{body: body})
+    end
+
+    for ref <- ["R1.1", "R1.2", "R2.1"], do: note.(ref, "Initial")
+    {old, _} = snapshot(ctx, 0)
+    {:ok, _} = Backup.import_file(ctx.scope, old)
+
+    # An earlier issue of the earlier review, and an earlier issue of the same review.
+    note.("R1.1", "Appended")
+    note.("R1.1", "Again")
+    note.("R1.2", "Later")
+    {new, data} = snapshot(ctx, 1)
+    assert {:ok, report} = Backup.import_file(ctx.scope, new)
+    assert report.counts["specs"].fast_forwarded == 1
+    assert report.counts["spec_issue_notes"].created == 3
+
+    local_notes =
+      Repo.all(
+        from(n in IssueNote,
+          join: i in Issue,
+          on: i.id == n.issue_id,
+          where: n.workspace_id == ^ctx.target.id,
+          order_by: [i.review_id, i.number, n.number],
+          select: {i.number, n.number, n.body}
+        )
+      )
+
+    assert local_notes == [
+             {1, 1, "Initial"},
+             {1, 2, "Appended"},
+             {1, 3, "Again"},
+             {2, 1, "Initial"},
+             {2, 2, "Later"},
+             {1, 1, "Initial"}
+           ]
+
+    assert Repo.one(
+             from(i in Issue,
+               where: i.workspace_id == ^ctx.target.id and i.number == 1 and i.body == "One",
+               select: i.note_seq
+             )
+           ) == 3
+
+    assert {:ok, report} = Backup.import_file(ctx.scope, old)
+    assert report.counts["specs"].local_newer == 1
+
+    changed =
+      Map.update!(data, "spec_issue_notes", fn notes ->
+        Enum.map(notes, fn n ->
+          if {n["review"], n["issue"], n["n"]} == {1, 1, 2},
+            do: Map.put(n, "body", "Rewritten"),
+            else: n
+        end)
+      end)
+
+    write(ctx, changed)
+    before = {local_spec(ctx), Repo.aggregate(IssueNote, :count)}
+
+    assert {:error, {:diverged, %{sequence: "spec_issue_notes", issue: "R1.1", position: 2}}} =
+             Backup.import_file(ctx.scope, List.last(ctx.paths))
+
+    assert {local_spec(ctx), Repo.aggregate(IssueNote, :count)} == before
+  end
+
+  # code-review-4 P2-2: an event's data.reviewer is the name at the time.
+  test "renamed reviewers: audit names stay, requests follow the identity", ctx do
+    bob = human_actor(ctx.workspace, ctx.bob).name
+    {:ok, _} = TaskSpecs.request_reviews(ctx.alice_scope, ctx.task.ident, [bob, "keel/review"])
+    {:ok, _} = Helmsman.Actors.rename_own(ctx.bob_scope, "reviewer-renamed")
+
+    # Agents cannot be renamed in the product today; an older name in the
+    # audit trail must still import.
+    Repo.update_all(
+      from(a in Helmsman.Actors.Actor,
+        where: a.workspace_id == ^ctx.workspace.id and a.name == "keel/review"
+      ),
+      set: [name: "keel/reviewer2"]
+    )
+
+    {path, data} = snapshot(ctx, 0)
+    assert {:ok, _} = Validate.validate(data)
+
+    audit = fn workspace_id ->
+      Repo.all(
+        from(e in Event,
+          where: e.workspace_id == ^workspace_id and e.action == "review_requested",
+          order_by: e.number,
+          select: e.data["reviewer"]
+        )
+      )
+    end
+
+    reviewers = fn workspace_id ->
+      Repo.all(
+        from(r in ReviewRequest,
+          join: a in Helmsman.Actors.Actor,
+          on: a.id == r.reviewer_id,
+          where: r.workspace_id == ^workspace_id,
+          order_by: r.number,
+          select: a.name
+        )
+      )
+    end
+
+    assert {:ok, _} = Backup.import_file(ctx.scope, path)
+    assert audit.(ctx.target.id) == [bob, "keel/review"]
+    assert reviewers.(ctx.target.id) == ["reviewer-renamed", "keel/reviewer2"]
+
+    other = workspace_fixture(ctx.alice)
+    other_scope = workspace_scope_fixture(ctx.alice, other)
+
+    assert {:ok, _} =
+             Backup.import_file(other_scope, path, rename: %{"reviewer-renamed" => "bob-two"})
+
+    assert audit.(other.id) == [bob, "keel/review"]
+    assert reviewers.(other.id) == ["bob-two", "keel/reviewer2"]
+
+    assert {:ok, _} =
+             Backup.import_file(ctx.scope, path, mode: :replace, confirm: ctx.target.slug)
+
+    assert audit.(ctx.target.id) == [bob, "keel/review"]
+
+    # A real identity reference that is missing is still rejected.
+    missing =
+      Map.update!(data, "spec_review_requests", fn [first | rest] ->
+        [Map.put(first, "reviewer", "missing/actor") | rest]
+      end)
+
+    assert {:error, {:invalid_import, errors}} = Validate.validate(missing)
+    assert Enum.any?(errors, &String.starts_with?(&1.path, "spec_review_requests[0]"))
+  end
 end

@@ -72,11 +72,15 @@ finalization. Issue resolution is derived from the last resolution-setting note.
 Mutable spec fields and request status/close_reason/review must agree with audit replay;
 otherwise validation reports `spec_state_mismatch`. `closed_at` is null for an active
 request and a UTC timestamp for a closed request. Run references never enter the snapshot.
-Event `data` uses string keys and portable local numbers and actor names.
+Event `data` uses string keys and portable local numbers (`request`, `review`).
+`data.reviewer` is the reviewer's name when the event happened: audit text, kept as
+written, not checked against `actors` and not changed by `rename` (the request's
+`reviewer` is the current identity).
 
 Spec merge runs independently of task merge. It compares immutable versions, requests
-(excluding status, close_reason, review and closed_at), reviews with their issues, notes,
-and audit events. All local sequences prefix the import: fast-forward; all import
+(excluding status, close_reason, review and closed_at), reviews with their issues, the
+notes of each issue (one sequence per issue: notes are numbered within their issue), and
+audit events. All local sequences prefix the import: fast-forward; all import
 sequences prefix local: local newer; equal: unchanged; any fork or crossed progress:
 `diverged` and complete rollback. Spec `updated_at` never selects a winner. A conflicting
 local change ID on another task produces `change_id_conflict`. Import replays state,

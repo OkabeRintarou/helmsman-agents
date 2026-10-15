@@ -263,7 +263,9 @@ defmodule Helmsman.Backup.Import.SpecValidate do
 
     errors = fields(d, types, "#{path}.data")
 
-    refs = Enum.flat_map(~w(request review reviewer), &event_reference(&1, r, path, targets))
+    # `data.reviewer` is the reviewer's name when the event happened (audit
+    # text, kept as written), not a reference to a current identity.
+    refs = Enum.flat_map(~w(request review), &event_reference(&1, r, path, targets))
 
     needs_version =
       r["action"] in ~w(version_submitted review_requested review_submitted finalize_proposed proposal_withdrawn approved finalized proposal_rejected)
@@ -309,13 +311,9 @@ defmodule Helmsman.Backup.Import.SpecValidate do
     value = r["data"][field]
 
     target =
-      %{"request" => "spec_review_requests", "review" => "spec_reviews", "reviewer" => "actors"}[
-        field
-      ]
+      %{"request" => "spec_review_requests", "review" => "spec_reviews"}[field]
 
-    id = if field == "reviewer", do: value, else: {r["task"], value}
-
-    if is_nil(value) or Map.has_key?(targets[target], id),
+    if is_nil(value) or Map.has_key?(targets[target], {r["task"], value}),
       do: [],
       else: [error("#{path}.data.#{field}", "unresolved reference")]
   end

@@ -95,13 +95,10 @@ defmodule Helmsman.Backup.Import.Actors do
         if Map.has_key?(row, field), do: Map.update!(row, field, name), else: row
       end)
 
-    row =
-      if row["proposal"],
-        do: Map.update!(row, "proposal", &Map.update!(&1, "by", name)),
-        else: row
-
-    if row["data"] && row["data"]["reviewer"],
-      do: Map.update!(row, "data", &Map.update!(&1, "reviewer", name)),
+    # An event's `data.reviewer` is audit text (the name at the time), left
+    # as written.
+    if row["proposal"],
+      do: Map.update!(row, "proposal", &Map.update!(&1, "by", name)),
       else: row
   end
 end
