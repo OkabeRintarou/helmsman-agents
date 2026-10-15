@@ -11,6 +11,7 @@ defmodule Helmsman.Daemons.Daemon do
     field :arch, :string
     field :version, :string
     field :protocol_version, :integer
+    field :repo_registration, :boolean, default: false
     field :max_concurrency, :integer, default: 4
     field :token_hash, :binary, redact: true
     field :token_issued_at, :utc_datetime

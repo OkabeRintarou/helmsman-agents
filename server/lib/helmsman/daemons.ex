@@ -364,6 +364,21 @@ defmodule Helmsman.Daemons do
       %{protocol: protocol} -> Map.put(attrs, :protocol_version, protocol)
       _sync -> attrs
     end
+    |> Map.put(:repo_registration, repo_registration(report))
+  end
+
+  # `add-local-repo-web-registration` D8: only a protocol 7+ join, or a
+  # sync on such a connection (the channel clears the field of older
+  # ones), can allow web registration. Every join / sync already ends in
+  # `changed/1`, which tells the runtimes page when the value changed.
+  defp repo_registration(report) do
+    case report do
+      %{protocol: protocol} when is_integer(protocol) ->
+        protocol >= HelmsmanProtocol.repo_registration_version()
+
+      _sync ->
+        true
+    end and report.repo_registration == true
   end
 
   # Served workspaces where the user (member rows locked) is still a member

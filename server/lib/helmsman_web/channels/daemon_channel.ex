@@ -4,8 +4,15 @@ defmodule HelmsmanWeb.DaemonChannel do
   messages of `add-run-lifecycle` (decision 18) go to `Helmsman.Runs`.
   """
   use HelmsmanWeb, :channel
+  require Logger
   alias Helmsman.{Daemons, LocalRepositories, Repo, Runs}
+  alias Helmsman.LocalRepositories.WebRegistration
   alias HelmsmanProtocol.{ErrorReply, Messages, Push, Reply}
+
+  # `add-local-repo-web-registration` D9: browse requests this connection
+  # sent, `{request_id, deadline}` oldest first.
+  @max_pending_browse 16
+  @browse_ttl_ms 30_000
 
   @impl true
   def join("daemon:" <> id, payload, socket) do
@@ -101,6 +108,8 @@ defmodule HelmsmanWeb.DaemonChannel do
   defp handle_report("sync", report, socket) do
     report =
       if local_repositories?(socket), do: report, else: %{report | local_repositories: nil}
+
+    report = if repo_registration?(socket), do: report, else: %{report | repo_registration: nil}
 
     case Daemons.register(socket.assigns.daemon_id, socket.assigns.auth_epoch, report) do
       {:ok, runtimes} ->
@@ -251,6 +260,41 @@ defmodule HelmsmanWeb.DaemonChannel do
     end
   end
 
+  # `add-local-repo-web-registration` D9; the messages exist from protocol 7.
+  # Only the connection that was sent the request may answer it, within
+  # its deadline; the result is otherwise dropped unseen.
+  defp handle_report("repo_browse_result", report, socket) do
+    if repo_registration?(socket) do
+      {matched, socket} = take_browse(socket, report.request_id)
+
+      cond do
+        not matched ->
+          Logger.debug("unmatched repo_browse_result #{report.request_id}")
+          respond("repo_browse_result", %Reply.Empty{}, socket)
+
+        connection_state(socket) != :valid ->
+          unauthorized_reply(socket)
+
+        true ->
+          :ok = WebRegistration.deliver(daemon_ctx(socket), report)
+          respond("repo_browse_result", %Reply.Empty{}, socket)
+      end
+    else
+      {:reply, {:error, error(:invalid_payload)}, socket}
+    end
+  end
+
+  defp handle_report("repo_change_result", report, socket) do
+    if repo_registration?(socket) do
+      case WebRegistration.deliver(daemon_ctx(socket), report) do
+        :ok -> respond("repo_change_result", %Reply.Empty{}, socket)
+        {:error, :not_found} -> unauthorized_reply(socket)
+      end
+    else
+      {:reply, {:error, error(:invalid_payload)}, socket}
+    end
+  end
+
   # `add-run-steering` decision 6.
   defp handle_report("steer_ack", report, socket) do
     case Runs.steer_ack(daemon_ctx(socket), report.run_id, report.feedback_id) do
@@ -271,6 +315,9 @@ defmodule HelmsmanWeb.DaemonChannel do
 
   defp local_repositories?(socket),
     do: socket.assigns.protocol >= HelmsmanProtocol.local_repositories_version()
+
+  defp repo_registration?(socket),
+    do: socket.assigns.protocol >= HelmsmanProtocol.repo_registration_version()
 
   # The join / sync reply's local repositories (protocol 3; older
   # connections get none, and the encoding leaves the field out).
@@ -320,12 +367,64 @@ defmodule HelmsmanWeb.DaemonChannel do
     {:noreply, socket}
   end
 
+  # `add-local-repo-web-registration` D9: only a connection whose
+  # authorization is current is sent a request; one that cannot encode it
+  # (an older protocol than recorded) answers `daemon_outdated` at once.
+  def handle_info({:local_repo_request, request}, socket) do
+    case connection_state(socket) do
+      :valid -> push_repo_request(request, socket)
+      _stale -> stop(socket)
+    end
+  end
+
   def handle_info({kind}, socket) when kind in [:daemon_revoked, :daemon_reauthorized] do
     case connection_state(socket) do
       :valid -> {:noreply, socket}
       _ -> stop(socket)
     end
   end
+
+  defp push_repo_request(request, socket) do
+    case Messages.encode(request, socket.assigns.protocol) do
+      {:ok, {name, payload}} ->
+        push(socket, name, payload)
+        {:noreply, track_browse(socket, request)}
+
+      {:error, {:not_in_version, _version}} ->
+        WebRegistration.undeliverable(request.request_id, socket.assigns.daemon_id)
+        {:noreply, socket}
+
+      # Validated before it was sent; the page times out.
+      {:error, _reason} ->
+        Logger.warning("repo request #{request.request_id} could not be encoded")
+        {:noreply, socket}
+    end
+  end
+
+  defp track_browse(socket, %Push.RepoBrowse{request_id: request_id}) do
+    now = System.monotonic_time(:millisecond)
+    deadline = now + Map.get(socket.assigns, :repo_browse_ttl_ms, @browse_ttl_ms)
+
+    pending =
+      socket
+      |> pending_browse(now)
+      |> Enum.concat([{request_id, deadline}])
+      |> Enum.take(-@max_pending_browse)
+
+    assign(socket, :pending_browse, pending)
+  end
+
+  defp track_browse(socket, _request), do: socket
+
+  # Removes the request; whether it was pending and not yet expired.
+  defp take_browse(socket, request_id) do
+    pending = pending_browse(socket, System.monotonic_time(:millisecond))
+    matched = List.keymember?(pending, request_id, 0)
+    {matched, assign(socket, :pending_browse, List.keydelete(pending, request_id, 0))}
+  end
+
+  defp pending_browse(socket, now),
+    do: socket.assigns |> Map.get(:pending_browse, []) |> Enum.filter(&(elem(&1, 1) > now))
 
   defp unauthorized_reply(socket) do
     if connection_state(socket) == :revoked, do: push_message(%Push.Revoked{}, socket)

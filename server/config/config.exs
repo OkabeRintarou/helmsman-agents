@@ -218,7 +218,9 @@ import_config "#{config_env()}.exs"
 # Never logged: credentials (tokens, secrets, passwords, API keys, the
 # Authorization header), provider headers and agent environment variables
 # (the agent form's `env_add` / `env_new`), write-only credentials in form
-# parameters. Matched as substrings of parameter names.
+# parameters, and what a daemon reports from its file system
+# (`add-local-repo-web-registration` D8: browse results and reported local
+# repositories). Matched as substrings of parameter names.
 config :phoenix, :filter_parameters, [
   "password",
   "secret",
@@ -227,5 +229,7 @@ config :phoenix, :filter_parameters, [
   "authorization",
   "headers",
   "env_add",
-  "env_new"
+  "env_new",
+  "roots",
+  "repositories"
 ]

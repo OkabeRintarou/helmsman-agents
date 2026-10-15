@@ -27,6 +27,7 @@ defmodule Helmsman.Events do
           | :workspace_autopilots,
           pos_integer()
         ) :: String.t()
+  @spec topic(:local_repo_request, String.t()) :: String.t()
   def topic(:workspace, id) when is_integer(id), do: "workspace:#{id}"
   def topic(:user, id) when is_integer(id), do: "user:#{id}"
   def topic(:project, id) when is_integer(id), do: "project:#{id}"
@@ -44,6 +45,10 @@ defmodule Helmsman.Events do
   def topic(:provider_accounts, user_id) when is_integer(user_id),
     do: "user:#{user_id}:provider_accounts"
 
+  # The result of one web request to a daemon (`add-local-repo-web-registration` D8).
+  def topic(:local_repo_request, request_id) when is_binary(request_id),
+    do: "local_repo_request:#{request_id}"
+
   @doc """
   Like `after_commit/2`, but `message` is broadcast on `topic` once per
   transaction for `key`: a later registration replaces the message.
@@ -55,6 +60,10 @@ defmodule Helmsman.Events do
   @doc "Subscribes the caller to `topic`."
   @spec subscribe(String.t()) :: :ok | {:error, term()}
   def subscribe(topic), do: Phoenix.PubSub.subscribe(@pubsub, topic)
+
+  @doc "Unsubscribes the caller from `topic`."
+  @spec unsubscribe(String.t()) :: :ok
+  def unsubscribe(topic), do: Phoenix.PubSub.unsubscribe(@pubsub, topic)
 
   @doc "Broadcasts `message` on `topic` after the current transaction commits."
   @spec after_commit(String.t(), term()) :: :ok
