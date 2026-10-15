@@ -52,7 +52,7 @@ draft / in_review ──提出定稿──▶ pending_approval ──人批准�
 | 起草 / 修订 | leader `delegate(task, to, instructions, spec: "draft" \| "revise")`：同 16 §1.2 的委派，提示词按角色说明做法 |
 | 请评审 | leader `delegate(…, spec: "review")`：为该成员建评审请求并排运行；对人类成员只建请求。人（网页 / REST）或外接 Agent 协调者 `request_spec_review`：托管 Agent 得到新发起的 `spec_review` 运行（`reply` lane） |
 | 唤醒 leader | 委派的运行结束 → `delegate_done`（16 §1.2）；人交了运行请求的评审 → `spec_reviewed`；人批准 / 退回 / 直接定稿（可选不唤醒）→ `spec_decided`。后两者继承「任务 × 执行方」的指派授权（同打回，13 §2.1） |
-| 结算 | 带评审请求的运行结束且不再重试时，没交评审的请求记为 `lapsed`：运行终态事务只插入 Job，结算在独立事务里按任务写的锁顺序进行，`delegate_done` 唤醒之前先结算 |
+| 结算 | 一个评审请求只属于一条触发（已有待完成的请求时委派评审返回 `review_pending`）；生命周期 = 所在运行 + 自动重试的接续，与 `delegate_done` 相同：不再重试时（含重试没排上队）没交评审的请求记为 `lapsed`。运行终态事务只插入 Job，结算在独立事务里按任务写的锁顺序进行，`delegate_done` 唤醒之前先结算 |
 
 ## 6. 运行上下文
 

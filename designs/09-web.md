@@ -10,11 +10,11 @@
 | `/users/settings/provider-accounts` | `UserLive.ProviderAccounts` | 个人的供应商账号（12 §2.2）：列表、新建 / 编辑右侧面板（密钥只写、不回填）、删除确认（仍被使用时列出 Agent）；`add-provider-accounts-ui` |
 | `/invite/:token` | `InvitationLive` | 接受邀请 |
 | `/` | — | 跳到最近访问的工作区；没有就进 `/workspaces/new` |
-| `/w/:slug` | `DashboardLive` | 指派给我（含我名下 Agent）的任务、待回答的提问、正在跑的运行、最近合并、在线的机器 |
+| `/w/:slug` | `DashboardLive` | 指派给我（含我名下 Agent）的任务、待回答的提问、正在跑的运行、最近合并、在线的机器；待处理的规格（待你批准、请你评审，都为空时不显示，`add-spec-workflow-ui` D16） |
 | `/w/:slug/projects` | `ProjectLive.Index` | 项目卡片 |
 | `/w/:slug/p/:key` | `TaskLive.Index` | 任务列表：状态多选、标签、执行方、搜索框，全部同步到 URL query |
 | `/w/:slug/t/:ident` | `TaskLive.Show` | 任务详情 |
-| `/w/:slug/t/:ident/spec` | `SpecLive.Show` | 任务的规格（17）：版本、渲染 / 源码、对比、评审与讨论、批准 / 退回、导出导入；`add-spec-workflow-ui` |
+| `/w/:slug/t/:ident/spec` | `SpecLive.Show` | 任务的规格（17）：版本、渲染 / 源码、对比、评审与讨论、批准 / 退回、导出导入；导出下载是控制器路由 `GET /w/:slug/t/:ident/spec/export?version=&format=&reviews=`（`SpecExportController`，浏览器会话，附件）；`add-spec-workflow-ui` |
 | `/w/:slug/query` | `QueryLive` | BQL 编辑、结果表、保存筛选器 |
 | `/w/:slug/agents`、`/w/:slug/agents/:name` | `AgentLive.Index` / `.Show` | Agent 列表、配置、运行与用量（12 §5） |
 | `/w/:slug/agent-design` | `AgentDesignLive` | 对话创建 Agent（12 §6）：对话 + 实时草稿、确认创建；只有本人能看；不放在 `/agents/*name` 下以免与 Agent 名冲突；`add-agent-conversation-ui` |
