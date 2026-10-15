@@ -79,16 +79,13 @@ defmodule HelmsmanWeb.SpecLive.Show do
       )
 
     socket =
-      if SpecData.archives?(),
-        do:
-          allow_upload(socket, :spec_archive,
-            accept: :any,
-            max_entries: 1,
-            max_file_size: 2_097_152,
-            auto_upload: true,
-            progress: &handle_progress/3
-          ),
-        else: socket
+      allow_upload(socket, :spec_archive,
+        accept: :any,
+        max_entries: 1,
+        max_file_size: SpecData.archive_max_bytes(),
+        auto_upload: true,
+        progress: &handle_progress/3
+      )
 
     {:ok, socket}
   end
@@ -416,8 +413,8 @@ defmodule HelmsmanWeb.SpecLive.Show do
   defp allowed?("abandon", p, _f, _socket), do: p.abandon
   defp allowed?("reopen", p, _f, _socket), do: p.reopen
   defp allowed?("change-id", p, f, _socket), do: f.spec and p.write
-  defp allowed?("export", _p, f, _socket), do: f.versions and SpecData.archives?()
-  defp allowed?("import", p, _f, _socket), do: p.write and SpecData.archives?()
+  defp allowed?("export", _p, f, _socket), do: f.versions
+  defp allowed?("import", p, _f, _socket), do: p.write
 
   defp new_version_form(socket) do
     %{spec: spec, current_scope: scope, ident: ident} = socket.assigns
@@ -1126,7 +1123,6 @@ defmodule HelmsmanWeb.SpecLive.Show do
 
   defp action_items(assigns) do
     %{spec: spec, perms: p, uri: uri} = assigns
-    archives? = SpecData.archives?()
     patch = &Url.put_params(uri, %{panel: &1})
 
     [
@@ -1137,14 +1133,14 @@ defmodule HelmsmanWeb.SpecLive.Show do
           icon: "lucide-pencil",
           patch: patch.("change-id")
         },
-      (spec.latest_version > 0 and archives?) &&
+      spec.latest_version > 0 &&
         %{
           id: "spec-action-export",
           label: dgettext("ui", "导出"),
           icon: "lucide-download",
           patch: patch.("export")
         },
-      (p.write and archives?) &&
+      p.write &&
         %{
           id: "spec-action-import",
           label: dgettext("ui", "导入 OpenSpec 目录"),
@@ -1297,7 +1293,6 @@ defmodule HelmsmanWeb.SpecLive.Show do
                   {dgettext("ui", "起草第一版")}
                 </.button>
                 <.button
-                  :if={SpecData.archives?()}
                   id="spec-empty-import"
                   patch={Url.put_params(@uri, %{panel: "import"})}
                 >

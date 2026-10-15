@@ -3,12 +3,6 @@ defmodule HelmsmanWeb.SpecData do
   The task-spec domain functions the web layer uses (add-spec-workflow-ui D13): thin
   wrappers of `Helmsman.TaskSpecs` with the shapes of `add-spec-workflow` design 界面契约
   and `reviews/domain-request-1.md` (R1–R7).
-
-  PLACEHOLDER(add-spec-workflow 3.x): the OpenSpec archive functions (`export_archive/3`,
-  `import_archive/4`) are in the domain's third group, not merged yet. They are called on
-  `Application.get_env(:helmsman, :spec_archives, Helmsman.TaskSpecs)` and fail with
-  `:unavailable` while that module does not export them; the tests configure
-  `HelmsmanWeb.SpecArchiveStub`.
   """
 
   alias Helmsman.TaskSpecs
@@ -46,26 +40,7 @@ defmodule HelmsmanWeb.SpecData do
   @doc "All buttons off (when the permissions could not be read)."
   def no_permissions, do: @no_permissions
 
-  @doc "Whether the archive functions are there (the 导出 / 导入 entries)."
-  def archives?, do: exported?(:export_archive, 3)
-
-  @doc "`{:ok, %{filename, content_type, body}}` (`version:`, `format:`, `reviews:`)."
-  def export_archive(scope, ident, opts), do: archive_call(:export_archive, [scope, ident, opts])
-
-  @doc "A new version from an archive (`base_version:`, `note:`, `dry_run:`), R5."
-  def import_archive(scope, ident, binary, opts),
-    do: archive_call(:import_archive, [scope, ident, binary, opts])
-
-  defp archive_call(fun, args) do
-    if exported?(fun, length(args)),
-      do: apply(archives(), fun, args),
-      else: {:error, :unavailable}
-  end
-
-  defp exported?(fun, arity) do
-    mod = archives()
-    Code.ensure_loaded?(mod) and function_exported?(mod, fun, arity)
-  end
-
-  defp archives, do: Application.get_env(:helmsman, :spec_archives, TaskSpecs)
+  defdelegate export_archive(scope, ident, opts), to: TaskSpecs
+  defdelegate import_archive(scope, ident, binary, opts), to: TaskSpecs
+  defdelegate archive_max_bytes, to: TaskSpecs
 end

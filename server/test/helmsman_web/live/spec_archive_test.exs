@@ -1,11 +1,10 @@
 defmodule HelmsmanWeb.SpecArchiveTest do
   @moduledoc """
   Spec web-specs 导出 OpenSpec 目录 and 导入 OpenSpec 目录 (add-spec-workflow-ui D11, tasks
-  3.4, 3.5): the export download and the import panel. The archive functions are the
-  domain's third group, not merged yet: `HelmsmanWeb.SpecArchiveStub` stands in through
-  the application environment (PLACEHOLDER(add-spec-workflow 3.x)), so not async.
+  3.4, 3.5, 6.3): the export download and the import panel, on the real
+  `Helmsman.TaskSpecs` archive functions.
   """
-  use HelmsmanWeb.ConnCase, async: false
+  use HelmsmanWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
   import Helmsman.AccountsFixtures
@@ -16,20 +15,10 @@ defmodule HelmsmanWeb.SpecArchiveTest do
   import HelmsmanWeb.SpecWebHelpers
 
   alias Helmsman.TaskSpecs
-  alias HelmsmanWeb.SpecArchiveStub
 
   @panel "spec-import-panel"
 
   setup %{conn: conn} do
-    previous = Application.get_env(:helmsman, :spec_archives)
-    Application.put_env(:helmsman, :spec_archives, SpecArchiveStub)
-
-    on_exit(fn ->
-      if previous,
-        do: Application.put_env(:helmsman, :spec_archives, previous),
-        else: Application.delete_env(:helmsman, :spec_archives)
-    end)
-
     ctx = spec_web_fixture()
     spec_fixture(ctx.alice_scope, ctx.ident, versions: 3, change_id: "add-settings-page")
     Map.put(ctx, :conn, conn)
@@ -90,7 +79,16 @@ defmodule HelmsmanWeb.SpecArchiveTest do
   end
 
   describe "导入 OpenSpec 目录" do
-    defp archive(entries), do: SpecArchiveStub.tar(entries)
+    # A tar.gz of `[{name, content}]`, through a temporary file (`:erl_tar` writes files).
+    defp archive(entries) do
+      path =
+        Path.join(System.tmp_dir!(), "spec-archive-#{System.unique_integer([:positive])}.tar.gz")
+
+      :ok = :erl_tar.create(String.to_charlist(path), entries, [:compressed])
+      body = File.read!(path)
+      File.rm!(path)
+      body
+    end
 
     defp upload(view, name, binary) do
       file =
