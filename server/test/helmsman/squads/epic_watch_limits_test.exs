@@ -10,8 +10,9 @@ defmodule Helmsman.Squads.EpicWatchLimitsTest do
   alias Helmsman.Actors.Actor
   alias Helmsman.{Feedback, Repo, Tasks}
   alias Helmsman.Feedback.Entry
-  alias Helmsman.Runs.Run
-  alias Helmsman.Squads.EpicWatch
+  alias Helmsman.Runs
+  alias Helmsman.Runs.{Retry, Run}
+  alias Helmsman.Squads.{EpicWatch, EpicWatchCheck}
   alias Helmsman.Squads.Workers.EpicWatch, as: Job
   alias Helmsman.Tasks.{Task, TaskEvent}
 
@@ -50,6 +51,11 @@ defmodule Helmsman.Squads.EpicWatchLimitsTest do
     Repo.query!(
       "UPDATE feedback SET inserted_at = inserted_at - #{shift} WHERE task_id = ANY($1)",
       [ids]
+    )
+
+    Repo.query!(
+      "UPDATE epic_watch_checks SET woken_at = woken_at - #{shift} WHERE epic_id = $1",
+      [ctx.epic.id]
     )
 
     for run <- Repo.all(from(r in Run, where: r.task_id == ^ctx.epic.id)) do
@@ -191,6 +197,79 @@ defmodule Helmsman.Squads.EpicWatchLimitsTest do
 
     age!(ctx, 20)
     assert check(ctx) == :woken
+  end
+
+  describe "the history is the wakes, not the runs' triggers" do
+    defp recorded(ctx), do: Repo.get_by!(EpicWatchCheck, epic_id: ctx.epic.id)
+
+    defp stalled_run(ctx),
+      do: Repo.one!(from(r in Run, where: r.task_id == ^ctx.epic.id and r.status == :queued))
+
+    test "a retry copying the trigger is not a second wake", ctx do
+      Application.put_env(:helmsman, EpicWatch, min_interval_minutes: 0, max_consecutive: 2)
+      assert check(ctx) == :woken
+      first = stalled_run(ctx)
+
+      Repo.update_all(from(r in Run, where: r.id == ^first.id),
+        set: [status: :failed, failure_reason: :provider_network]
+      )
+
+      assert {:ok, :retried} = Retry.perform(first.id)
+      retry = Repo.one!(from(r in Run, where: r.retry_of_id == ^first.id))
+      assert Enum.any?(retry.triggers, &(&1["kind"] == "epic_stalled"))
+      finish!()
+
+      failed_attempt!(ctx)
+      assert check(ctx) == :woken
+      assert recorded(ctx).wakes == 2
+      finish!()
+      failed_attempt!(ctx)
+      assert check(ctx) == :capped
+    end
+
+    test "a wake pruned at claim still counts and spaces the next", ctx do
+      import Helmsman.RunLifecycleFixtures
+
+      assert check(ctx) == :woken
+      stalled = stalled_run(ctx)
+
+      manual = %{
+        "kind" => "manual",
+        "at" => DateTime.to_iso8601(DateTime.utc_now()),
+        "by_actor_id" => ctx.lead.id,
+        "initiator_user_id" => ctx.alice.id,
+        "causal_agent_ids" => [ctx.lead.id]
+      }
+
+      source =
+        run_fixture(ctx.lead, %{
+          task_id: ctx.epic.id,
+          squad_id: ctx.squad.id,
+          status: :failed,
+          triggers: [manual],
+          capabilities: stalled.capabilities
+        })
+
+      assert {:ok, _} = Runs.retry(ctx.alice_scope, source.id)
+      step_run = run_fixture(ctx.fe, %{task_id: ctx.s1.id, status: :queued})
+      claim!(ctx.lead)
+      claimed = Repo.get!(Run, stalled.id)
+      assert claimed.status == :claimed
+      refute Enum.any?(claimed.triggers, &(&1["kind"] == "epic_stalled"))
+      Repo.update_all(from(r in Run, where: r.id == ^step_run.id), set: [status: :succeeded])
+      finish!()
+
+      assert check(ctx) == :too_soon
+      assert recorded(ctx).wakes == 1
+    end
+
+    test "checks one after another count one wake", ctx do
+      assert check(ctx) == :woken
+      assert check(ctx) in [:not_stalled, :same_signature]
+      finish!()
+      assert check(ctx) == :same_signature
+      assert %EpicWatchCheck{wakes: 1, result: "same_signature"} = recorded(ctx)
+    end
   end
 
   test "the signature: not the order of steps, but assignees and runs", ctx do

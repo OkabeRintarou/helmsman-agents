@@ -22,10 +22,13 @@ defmodule Helmsman.Squads.EpicWatch do
   Within a progress cycle — since the latest step done / verified /
   cancelled, or a person's transition or feedback on E or a step — a
   signature (E's status and the idle steps with their status, assignee and
-  latest run) equal to the cycle's latest `epic_stalled` trigger wakes
-  nobody (`same_signature`), and `max_consecutive` triggers in the cycle
-  cap it (`capped`, one note per cycle). Across cycles, wakes are at least
-  `min_interval_minutes` apart (`too_soon`, checked again then).
+  latest run) equal to the cycle's latest wake wakes nobody
+  (`same_signature`), and `max_consecutive` wakes in the cycle cap it
+  (`capped`, one note per cycle). Across cycles, wakes are at least
+  `min_interval_minutes` apart (`too_soon`, checked again then). The wakes
+  are recorded on E's `epic_watch_checks` row when queued or merged, not
+  read back from the runs' triggers: claiming prunes those and a retry
+  copies them.
   """
 
   import Ecto.Query, warn: false
@@ -332,29 +335,41 @@ defmodule Helmsman.Squads.EpicWatch do
 
   defp decide_stalled(epic, loaded, snapshot) do
     marker = progress_marker(epic)
-    triggers = stall_triggers(epic)
-    in_cycle = Enum.filter(triggers, &after?(&1.at, marker))
+    last = Repo.get_by(EpicWatchCheck, epic_id: epic.id) || %EpicWatchCheck{}
+    last_at = last.woken_at
+    in_cycle = in_cycle(last, marker)
     max = config(:max_consecutive)
     signature = signature(snapshot)
-    last = List.last(triggers)
     interval = config(:min_interval_minutes) * 60
 
     cond do
-      length(in_cycle) >= max ->
+      in_cycle >= max ->
         if max > 0, do: cap_note(epic, loaded, snapshot, marker)
         :capped
 
-      in_cycle != [] and List.last(in_cycle).signature == signature ->
+      in_cycle > 0 and last.wake_signature == signature ->
         :same_signature
 
-      last && DateTime.diff(DateTime.utc_now(), last.at) < interval ->
-        insert(epic.id, DateTime.add(last.at, interval, :second))
+      too_soon?(last_at, interval) ->
+        insert(epic.id, DateTime.add(last_at, interval, :second))
         :too_soon
 
       true ->
-        wake(epic, loaded, snapshot, signature)
+        with :woken <- wake(epic, loaded, snapshot, signature) do
+          record_wake!(epic, signature, in_cycle + 1)
+          :woken
+        end
     end
   end
+
+  # The wakes in a row since the last one, when that one is in this cycle.
+  defp in_cycle(%EpicWatchCheck{woken_at: nil}, _marker), do: 0
+
+  defp in_cycle(%EpicWatchCheck{woken_at: at, wakes: n}, marker),
+    do: if(after?(at, marker), do: n, else: 0)
+
+  defp too_soon?(nil, _interval), do: false
+  defp too_soon?(at, interval), do: DateTime.diff(DateTime.utc_now(), at) < interval
 
   defp after?(_at, nil), do: true
   defp after?(at, marker), do: DateTime.compare(at, marker) == :gt
@@ -398,20 +413,28 @@ defmodule Helmsman.Squads.EpicWatch do
   defp to_utc(%DateTime{} = at), do: at
   defp to_utc(%NaiveDateTime{} = at), do: DateTime.from_naive!(at, "Etc/UTC")
 
-  # The `epic_stalled` triggers ever queued on E, oldest first.
-  defp stall_triggers(epic) do
-    from(r in Run,
-      where: r.task_id == ^epic.id,
-      select: r.triggers
+  # The wake history (decision 12) is kept on E's check row, under E's row
+  # lock: a wake counts once however its trigger is later pruned at claim,
+  # merged or copied by a retry.
+  defp record_wake!(epic, signature, wakes) do
+    now = DateTime.utc_now()
+
+    Repo.insert_all(
+      EpicWatchCheck,
+      [
+        %{
+          workspace_id: epic.workspace_id,
+          epic_id: epic.id,
+          checked_at: now,
+          result: "woken",
+          woken_at: now,
+          wake_signature: signature,
+          wakes: wakes
+        }
+      ],
+      on_conflict: {:replace, [:woken_at, :wake_signature, :wakes]},
+      conflict_target: [:epic_id]
     )
-    |> Repo.all()
-    |> List.flatten()
-    |> Enum.filter(&(&1["kind"] == "epic_stalled"))
-    |> Enum.map(fn t ->
-      {:ok, at, _} = DateTime.from_iso8601(t["at"])
-      %{at: at, signature: t["signature"]}
-    end)
-    |> Enum.sort_by(& &1.at, DateTime)
   end
 
   defp wake(epic, loaded, snapshot, signature) do

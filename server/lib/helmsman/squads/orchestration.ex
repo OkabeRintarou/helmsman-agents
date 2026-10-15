@@ -167,9 +167,11 @@ defmodule Helmsman.Squads.Orchestration do
   squad (`Helmsman.Squads.Dispatch.lock_rows/1`: identity rows, the
   `squads` row, the profiles), so that the leader, the members and the
   scope stay as checked (decision 8). Only for an orchestrating run.
+  `extra`: other identities locked with them (and their profiles), such
+  as the current assignee of the task, whose state `check/3` reads.
   """
-  @spec lock!(Scope.t()) :: :ok | {:error, :busy}
-  def lock!(%Scope{run: %Run{squad_id: squad_id}} = scope) do
+  @spec lock!(Scope.t(), [pos_integer()]) :: :ok | {:error, :busy}
+  def lock!(%Scope{run: %Run{squad_id: squad_id}} = scope, extra \\ []) do
     Locks.graph!(scope.workspace.id)
 
     case Repo.one(from(s in Squad, where: s.id == ^squad_id, select: s.actor_id)) do
@@ -177,7 +179,7 @@ defmodule Helmsman.Squads.Orchestration do
         :ok
 
       actor_id ->
-        case SquadDispatch.lock_rows(actor_id) do
+        case SquadDispatch.lock_rows(actor_id, extra) do
           {:error, :busy} = busy -> busy
           _locked -> :ok
         end

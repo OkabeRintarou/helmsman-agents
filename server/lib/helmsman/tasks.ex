@@ -619,39 +619,87 @@ defmodule Helmsman.Tasks do
              (is_nil(lock_version) or is_integer(lock_version)) do
     Workspaces.write_transaction(scope, :update_task, fn scope ->
       with {:ok, ident, _key, _seq} <- Ident.parse(ident),
-           epic_input = fetch_epic(attrs),
-           :ok <- lock_orchestration(scope, ident),
-           :ok <- lock_graph_for_update(scope.workspace.id, epic_input, attrs),
-           assignee = lock_assignee(scope.workspace.id, attrs),
-           _ = test_hook(:assignee_locked),
-           :ok <- not_busy(assignee),
-           {:ok, task} <- lock_task(scope.workspace.id, ident),
-           {:ok, orchestration} <- authorize_edit(scope, task, attrs, assignee),
-           :ok <- check_version(task, lock_version) do
-        test_hook(:version_checked)
-        epic = lock_epics(task, epic_input)
-        {start?, start_error} = fetch_start(attrs)
-
-        task
-        |> Task.changeset(attrs)
-        |> check_kind_unchanged(attrs)
-        |> put_assignee(assignee)
-        |> put_start_error(start_error)
-        |> put_epic(epic)
-        |> save(scope, start?)
-        |> audit_orchestration(orchestration, task, start?)
-      end
+           do: update_parsed(scope, ident, attrs, lock_version)
     end)
   end
 
-  # `improve-squad-leader-orchestration` decision 8: an orchestrating run
-  # editing another task locks its squad's rows (and the graph) before the
-  # task row, so the scope it is checked against stays put.
-  defp lock_orchestration(scope, ident) do
-    if Orchestration.orchestrating?(scope) and not own_task?(scope, ident),
-      do: Orchestration.lock!(scope),
-      else: :ok
+  defp update_parsed(scope, ident, attrs, lock_version) do
+    if orchestrated_edit?(scope, ident),
+      do: orchestrated_update(scope, ident, attrs, lock_version, 1),
+      else: update_locked(scope, ident, attrs, lock_version, :none)
   end
+
+  # `improve-squad-leader-orchestration` decision 8: an orchestrating run
+  # editing another task locks its squad's rows, with the task's current
+  # assignee (a retired outside agent may be taken over: its state must
+  # hold), after the graph lock and before the task row. The assignee is
+  # read before the locks: when the task row shows another one, the round
+  # is rolled back to a savepoint and taken again.
+  @orchestration_rounds 3
+
+  defp orchestrated_update(_scope, _ident, _attrs, _lock_version, round)
+       when round > @orchestration_rounds,
+       do: {:error, :busy}
+
+  defp orchestrated_update(scope, ident, attrs, lock_version, round) do
+    Repo.query!("SAVEPOINT orchestrated_update")
+    :ok = Locks.graph!(scope.workspace.id)
+    guess = current_assignee(scope.workspace.id, ident)
+    test_hook({:orchestration_guess, round})
+
+    with :ok <- Orchestration.lock!(scope, List.wrap(guess)) do
+      case update_locked(scope, ident, attrs, lock_version, {:held, guess}) do
+        {:error, :assignee_moved} ->
+          Repo.query!("ROLLBACK TO SAVEPOINT orchestrated_update")
+          orchestrated_update(scope, ident, attrs, lock_version, round + 1)
+
+        result ->
+          result
+      end
+    end
+  end
+
+  defp current_assignee(workspace_id, ident),
+    do:
+      Repo.one(
+        from(t in Task,
+          where: t.workspace_id == ^workspace_id and t.ident == ^ident,
+          select: t.assignee_id
+        )
+      )
+
+  defp update_locked(scope, ident, attrs, lock_version, held) do
+    epic_input = fetch_epic(attrs)
+
+    with :ok <- lock_graph_for_update(scope.workspace.id, epic_input, attrs),
+         assignee = lock_assignee(scope.workspace.id, attrs),
+         _ = test_hook(:assignee_locked),
+         :ok <- not_busy(assignee),
+         {:ok, task} <- lock_task(scope.workspace.id, ident),
+         :ok <- assignee_held(held, task),
+         {:ok, orchestration} <- authorize_edit(scope, task, attrs, assignee),
+         :ok <- check_version(task, lock_version) do
+      test_hook(:version_checked)
+      epic = lock_epics(task, epic_input)
+      {start?, start_error} = fetch_start(attrs)
+
+      task
+      |> Task.changeset(attrs)
+      |> check_kind_unchanged(attrs)
+      |> put_assignee(assignee)
+      |> put_start_error(start_error)
+      |> put_epic(epic)
+      |> save(scope, start?)
+      |> audit_orchestration(orchestration, task, start?)
+    end
+  end
+
+  defp orchestrated_edit?(scope, ident),
+    do: Orchestration.orchestrating?(scope) and not own_task?(scope, ident)
+
+  defp assignee_held(:none, _task), do: :ok
+  defp assignee_held({:held, id}, %Task{assignee_id: id}), do: :ok
+  defp assignee_held({:held, _guess}, _task), do: {:error, :assignee_moved}
 
   defp own_task?(%Scope{run: %Run{task_id: task_id}}, ident) when is_integer(task_id),
     do: Repo.exists?(from(t in Task, where: t.id == ^task_id and t.ident == ^ident))

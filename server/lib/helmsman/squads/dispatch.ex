@@ -38,18 +38,22 @@ defmodule Helmsman.Squads.Dispatch do
   taken again, at most #{@max_rounds} rounds (then `{:error, :busy}`).
   Returns the squad's `t:Helmsman.Squads.loaded/0`, or nil when
   `actor_id` is not a squad. Must run in a transaction.
+
+  `extra`: other identities locked with them (with their profiles), e.g.
+  the current assignee of a task an orchestrating run edits.
   """
-  @spec lock_rows(pos_integer()) :: {:ok, Squads.loaded()} | {:error, :busy} | nil
-  def lock_rows(actor_id) when is_integer(actor_id) do
+  @spec lock_rows(pos_integer(), [pos_integer()]) ::
+          {:ok, Squads.loaded()} | {:error, :busy} | nil
+  def lock_rows(actor_id, extra \\ []) when is_integer(actor_id) and is_list(extra) do
     case Repo.get_by(Squad, actor_id: actor_id) do
       nil -> nil
-      %Squad{id: id} -> round(id, [], 1)
+      %Squad{id: id} -> round(id, extra, 1, extra)
     end
   end
 
-  defp round(_squad_id, _known, round) when round > @max_rounds, do: {:error, :busy}
+  defp round(_squad_id, _known, round, _extra) when round > @max_rounds, do: {:error, :busy}
 
-  defp round(squad_id, known, round) do
+  defp round(squad_id, known, round, extra) do
     Repo.query!("SAVEPOINT squad_rows")
     candidates = Enum.uniq(known ++ squad_actor_ids(squad_id))
     locked = lock_actors(candidates)
@@ -59,11 +63,11 @@ defmodule Helmsman.Squads.Dispatch do
 
     if Enum.all?(current, &MapSet.member?(locked, &1)) do
       Repo.query!("RELEASE SAVEPOINT squad_rows")
-      lock_profiles(current)
+      lock_profiles(Enum.uniq(current ++ extra))
       {:ok, Squads.load(squad_id)}
     else
       Repo.query!("ROLLBACK TO SAVEPOINT squad_rows")
-      round(squad_id, candidates ++ current, round + 1)
+      round(squad_id, candidates ++ current, round + 1, extra)
     end
   end
 

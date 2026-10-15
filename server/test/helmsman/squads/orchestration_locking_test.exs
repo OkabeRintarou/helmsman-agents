@@ -9,7 +9,7 @@ defmodule Helmsman.Squads.OrchestrationLockingTest do
   import Helmsman.OrchestrationFixtures
   import Helmsman.RunsFixtures
 
-  alias Helmsman.{CommittedData, LockHarness, Repo, Squads, Tasks}
+  alias Helmsman.{Agents, CommittedData, Feedback, LockHarness, Repo, Squads, Tasks}
   alias Helmsman.Runs.Run
   alias Helmsman.Tasks.Task, as: TaskRow
 
@@ -167,6 +167,82 @@ defmodule Helmsman.Squads.OrchestrationLockingTest do
       LockHarness.continue(b)
       assert {:error, {:orchestration, :outside, _, _}} = LockHarness.result(a)
       assert {:ok, _} = LockHarness.result(b)
+    end
+  end
+
+  describe "taking over from a retired outside agent" do
+    setup ctx do
+      unboxed(fn ->
+        for name <- ~w(keel/x1 keel/x2) do
+          {:ok, _} = Tasks.update(ctx.alice_scope, ctx.s3.ident, %{assignee: name, start: false})
+          {:ok, _} = Agents.disable(ctx.alice_scope, name)
+        end
+      end)
+
+      :ok
+    end
+
+    defp take_over(ctx),
+      do: fn -> Tasks.update(ctx.scope, ctx.s3.ident, %{assignee: "keel/qa", start: false}) end
+
+    defp enable(ctx), do: fn -> Agents.enable(ctx.alice_scope, "keel/x2") end
+
+    defp s3(ctx), do: unboxed(fn -> Repo.get!(TaskRow, ctx.s3.id) end)
+
+    defp notes(ctx),
+      do:
+        unboxed(fn ->
+          Repo.aggregate(from(f in Feedback.Entry, where: f.task_id == ^ctx.s3.id), :count)
+        end)
+
+    defp agent_id(ctx, name), do: unboxed(fn -> agent_actor(ctx.workspace, name).id end)
+
+    test "enabled first: the takeover waits, then is refused, nothing written", ctx do
+      before = notes(ctx)
+      b = LockHarness.start(enable(ctx), pause: :commit)
+      LockHarness.await_paused(b)
+      a = LockHarness.start(take_over(ctx))
+      LockHarness.await_blocked(a)
+      LockHarness.continue(b)
+
+      assert {:error, {:orchestration, :outside_assignee, _, "keel/x2"}} = LockHarness.result(a)
+      assert {:ok, _} = LockHarness.result(b)
+      assert s3(ctx).assignee_id == agent_id(ctx, "keel/x2")
+      assert notes(ctx) == before
+    end
+
+    test "the takeover first: enabling waits for it", ctx do
+      a = LockHarness.start(take_over(ctx), pause: :commit)
+      LockHarness.await_paused(a)
+      b = LockHarness.start(enable(ctx))
+      LockHarness.await_blocked(b)
+      LockHarness.continue(a)
+
+      assert {:ok, _} = LockHarness.result(a)
+      assert {:ok, _} = LockHarness.result(b)
+      assert s3(ctx).assignee_id == ctx.qa.id
+    end
+
+    test "reassigned between the guess and the task lock: taken again", ctx do
+      hook = fn
+        {:orchestration_guess, 1} -> reassign!(ctx, ctx.s3, "keel/x1")
+        _other -> :ok
+      end
+
+      assert {:ok, _} = unboxed(fn -> with_hook(hook, take_over(ctx)) end)
+      assert s3(ctx).assignee_id == ctx.qa.id
+    end
+
+    test "reassigned every round: busy after 3, nothing written", ctx do
+      names = %{1 => "keel/x1", 2 => "keel/x2", 3 => "keel/x1"}
+
+      hook = fn
+        {:orchestration_guess, n} -> reassign!(ctx, ctx.s3, names[n])
+        _other -> :ok
+      end
+
+      assert {:error, :busy} = unboxed(fn -> with_hook(hook, take_over(ctx)) end)
+      assert s3(ctx).assignee_id == agent_id(ctx, "keel/x1")
     end
   end
 end

@@ -27,6 +27,12 @@ defmodule Helmsman.Repo.Migrations.AddSquadOrchestration do
 
       add :checked_at, :utc_datetime_usec, null: false
       add :result, :text, null: false
+      # The last wake of the leader and how many wakes in a row (no progress
+      # between them) it ended: the watchdog's history, kept apart from the
+      # runs' triggers, which claiming prunes and retries copy.
+      add :woken_at, :utc_datetime_usec
+      add :wake_signature, :text
+      add :wakes, :integer, null: false, default: 0
     end
 
     create unique_index(:epic_watch_checks, [:epic_id])
