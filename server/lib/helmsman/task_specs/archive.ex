@@ -177,6 +177,9 @@ defmodule Helmsman.TaskSpecs.Archive do
             ctime: time,
             mode: 0o100644,
             links: 1,
+            major_device: 0,
+            minor_device: 0,
+            inode: 0,
             uid: 0,
             gid: 0
           })
