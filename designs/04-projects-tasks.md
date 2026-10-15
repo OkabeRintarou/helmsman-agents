@@ -40,7 +40,7 @@
   - `commits` = 所有历史条目里的提交 hash，去重后按时间排；
   - `progress` 只有 Epic 有；
   - `run` = 最近一次运行的 `{agent, status}`（13），`pr` = `{number, url, state, checks_state, merge_status}`（15 §3），没有则为 null。
-- **详情**：摘要 + `description history feedback links runs`；Epic 再加 `children`（步骤摘要），普通任务加 `epic_title`。
+- **详情**：摘要 + `description history feedback links runs`；Epic 再加 `children`（步骤摘要，每项另带 `waiting_for`——这个步骤在等谁：`merge` / `verification` / `requester` / `answer` / `run` / `prerequisites` / `assignment` / `assignee` / `start`，`start` = 托管执行方但没有任何运行、不会有人自动启动它；`blocked_by` 未满足的前置；运行令牌读取时 `orchestrable`，16 §1.2，`improve-squad-leader-orchestration` 决策 13），普通任务加 `epic_title`。与链项上的 `waiting_for`（07 §3，前置为什么还不满足）是两回事。
 
 ### 2.3 领域 API（`Helmsman.Tasks`）
 

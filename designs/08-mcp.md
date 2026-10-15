@@ -59,9 +59,9 @@ end
 |---|---|---|
 | 身份 | `identify(name, project?, worktree?)` `whoami()` `list_actors()` | 见 03 §4；为兼容 bosun 也接受 `kind` 参数，但只能是 `agent` |
 | 项目 | `list_projects(include_archived?)` `get_project(key)` `create_project(key, name, description?)` `update_project(key, …)` | 后两个需要 admin |
-| 任务 | `list_tasks(project_key, status?, label?, kind?, epic?, assignee?, query?, limit?, offset?)` `search_tasks(query, project_key?, limit?)` `get_task(task_id)` `create_task(project_key, title, description?, priority?, labels?, kind?, epic?, assignee?, start?, depends_on?)` `update_task(task_id, …)` | `search_tasks` 按相关度返回 `id title status project_key assignee`，有片段时带 `snippet`（命中词以 `**` 标出），命中来自 Feedback 时带 `feedback: {id, author, kind, snippet}`，精确的任务 ID 排第一；`limit` 缺省 20、最多 50；`list_tasks` 的 `query` 只筛选、不改排序（`add-fulltext-search`）；`create_task` 的 `depends_on` 是前置任务 ID 的列表（任意项目、不分大小写，找不到的 ID 报 `depends_on` 的参数错误），依赖在派发之前写好，所以指派给托管 Agent 而前置未满足的新任务直接得到 `deferred` 运行（13 §2.4）；运行没有 `link_tasks` 的权限去链接别的任务，建任务时给出是它排序的办法 |
+| 任务 | `list_tasks(project_key, status?, label?, kind?, epic?, assignee?, query?, limit?, offset?)` `search_tasks(query, project_key?, limit?)` `get_task(task_id)` `create_task(project_key, title, description?, priority?, labels?, kind?, epic?, assignee?, start?, depends_on?)` `update_task(task_id, …)` | `search_tasks` 按相关度返回 `id title status project_key assignee`，有片段时带 `snippet`（命中词以 `**` 标出），命中来自 Feedback 时带 `feedback: {id, author, kind, snippet}`，精确的任务 ID 排第一；`limit` 缺省 20、最多 50；`list_tasks` 的 `query` 只筛选、不改排序（`add-fulltext-search`）；`create_task` 的 `depends_on` 是前置任务 ID 的列表（任意项目、不分大小写，找不到的 ID 报 `depends_on` 的参数错误），依赖在派发之前写好，所以指派给托管 Agent 而前置未满足的新任务直接得到 `deferred` 运行（13 §2.4）；普通运行没有 `link_tasks` 的权限去链接别的任务，建任务时给出是它排序的办法；小队 leader 的运行之后还能在编排范围内补排顺序（16 §1.2）。`update_task` 对运行只许改本次运行的任务，带 `orchestrate` 能力时另可对编排范围内的任务只改 `assignee` / `start`（`improve-squad-leader-orchestration`）；Epic 的 `get_task` 的 `children` 每项带 `waiting_for`、`blocked_by` 与（运行令牌下）`orchestrable`（04 §2.2） |
 | 状态 | `transition_task(task_id, to, comment?, commits?, tests?, feedback?)` | `feedback = {kind, content}`：迁移原因，与迁移在同一事务里写入（06）；bosun 没有这个参数，不传时行为与 bosun 一致 |
-| 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | 返回 `from` 的详情；`type` 为 `depends_on`（from 等 to）或 `replaces`（from 接手 to，to 未结束时被撤销）；重复添加、删除不存在的都成功（`add-task-links`） |
+| 关联 | `link_tasks(from, to, type)` `unlink_tasks(from, to, type)` | 返回 `from` 的详情；`type` 为 `depends_on`（from 等 to）或 `replaces`（from 接手 to，to 未结束时被撤销）；重复添加、删除不存在的都成功（`add-task-links`）；运行令牌要求一端是本次运行的任务，带 `orchestrate` 时另可建 / 删两端都在编排范围内的 `depends_on` |
 | 反馈 | `add_feedback(task_id, content, kind?)` `update_feedback(feedback_id, content, kind?)` `list_feedback(task_id)` | |
 | 查询 | `query_tasks(bql?, filter_id?, limit?, offset?)` `list_filters()` `save_filter(name?, bql?, filter_id?, shared?, lock_version?)` `delete_filter(filter_id)` | `save_filter` 新建时 `name`、`bql` 必填，更新只改给出的字段；`currentUser()` 需要当前身份，没有时返回 `no_identity`；`query_tasks` 的 `bql` 与 `filter_id` 二选一，`limit` 缺省 50、最多 200；`save_filter` 带 `filter_id` 是更新，不带是新建（与 bosun 一致）；运行令牌只能查询与列出共享筛选器（`add-bql-filters`） |
 
@@ -74,6 +74,7 @@ end
 | `run_agent(agent, task_id?, instructions?)` | 手动触发一个托管 Agent（13 §2.1「手动」）；受 12 §2.1 约束 |
 | `list_runs(task_id)` `cancel_run(run_id)` | 查看 / 停止运行 |
 | `delegate(task_id, to, instructions)` | 只对小队 leader 的运行（能力 `delegate`）列出：把本次运行的任务（执行方是这个小队）委派给小队里的托管成员；无权触发该成员时返回 `cannot_invoke`（16 §1.2） |
+| `start_task(task_id, instructions?)` | 只对带 `orchestrate` 的运行列出：为编排范围内任务的当前执行方（小队里的托管成员）开工，等价于一次由编排发起的指派（受依赖约束，前置未满足为 `deferred`）；已有排队 / 延后 / 进行中的运行时返回 `already`；在目标任务上留系统备注（16 §1.2，`improve-squad-leader-orchestration` 决策 5、7） |
 | `get_spec(task_id, version?, files?)` `diff_spec(task_id, from, to?)` `list_spec_reviews(task_id, version?, unresolved_only?)` | 规格的读取（17），所有调用者 |
 | `submit_spec_version` `submit_spec_review` `reply_spec_issue` `rule_spec_issue` `finalize_spec` `update_spec` `cancel_spec_review` | 规格的写入，能写该任务者（运行令牌限本任务）；裁定与提出定稿只限协调者（17 §4）；`delegate` 另有 `spec: draft \| review \| revise`（`add-spec-workflow`） |
 | `request_spec_review(task_id, reviewers, instructions?)` | 只对非运行令牌列出；托管 Agent 评审人得到 `spec_review` 运行（13 §2.1） |
@@ -106,6 +107,7 @@ end
 | `:forbidden` | `Your role (viewer) cannot do this.` |
 | `{:cannot_invoke, agent}` | `You may not trigger keel/dev (its owner limits who can run it). Ask its owner, or pick another agent from list_agents.` |
 | `:run_ended` | `This run has ended; its token is no longer valid.` |
+| `{:orchestration, :outside, ident, root}` | `ACC-21 is not part of ACC-10, which you lead in this run. You may only orchestrate its steps and the tasks your squad created for it.`（其余编排错误——根本身、字段、执行方、关联类型——见 `improve-squad-leader-orchestration` 决策 16） |
 | `{:missing_capability, cap, task}` | `This run may only modify BOS-12. Creating tasks / touching BOS-15 needs the create_tasks capability; ask a human or write a question on BOS-12.` |
 | `{:run_active, run}` | `BOS-12 cannot be verified while keel/dev is still running on it (run 881). Wait until the run ends and its changes are pushed.` |
 | `{:cycle, path}` | `Cannot make BOS-1 depend on BOS-2: it would create the cycle BOS-1 → BOS-2 → BOS-3 → BOS-1.` |

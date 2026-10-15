@@ -43,9 +43,9 @@
 | 触发 | 条件 | lane | 运行要做什么 |
 |---|---|---|---|
 | **指派** `assign` | 任务的执行方被设为托管 Agent 或小队（建单时或修改时），任务在 NEW / IN_PROGRESS，且没有勾选「暂不开始」 | work | 完成这个任务 |
-| **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己） | reply | 回应这条 Feedback，**不改变**执行方 |
+| **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己）。被 @ 的 Agent 是某个未停用小队的 leader、任务（或其 Epic）的执行方是该小队、且触发者能触发该小队时，以小队身份运行（16 §1.2，`improve-squad-leader-orchestration` 决策 14） | reply | 回应这条 Feedback，**不改变**执行方 |
 | **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行；可带规格角色 `draft` / `review` / `revise`（17 §5，`review` 同时建评审请求） | work | 按 leader 的指示做；不看依赖 |
-| **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent` | work | 按附带的说明做 |
+| **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent`；对小队 leader 的升级规则同提及 | work | 按附带的说明做 |
 | **自动化** `autopilot` | 仅运行模式的自动化被触发（定时 / 手动 / webhook，16 §2）；建任务模式不用它——建出的任务指派给目标，就是普通的 `assign` | work（无任务） | 按自动化的说明做，最后输出即结果；不合并、不自动重试也不能人工重试，优先级 1；授权来源是这次触发的授权来源（16 §2.5），链为空（`add-autopilots` 决策 11） |
 | **创建对话** `design` | 用户在创建对话里发了一条消息（12 §6） | work（无任务） | 按对话修改草稿并回复；不合并、不自动重试、租约过期不重排，优先级 3（`add-agent-conversation`） |
 | **插话兜底** `steer` | 人写 Feedback 时插话正在运行的托管 Agent（§8），且这条 Feedback 没有为该 Agent 排上别的触发 | 与被插话的运行相同 | 处理这条 Feedback；被插话的运行成功结束且有回执时，领取前移除（`add-run-steering` 决策 5、7） |
@@ -61,6 +61,7 @@
 | **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源（建任务时记为 `task_grants` 的 `requested`） |
 | **依赖满足** `unblocked` | 见 §2.4 | work | 不新建运行：把因依赖延后的 `deferred` 运行改为 `queued`，在 `triggers` 末尾追加一条不带授权来源的中性标记（授权仍由原指派类触发承担，领取时照常复核） |
 | **委派完成** `delegate_done` | 委派出去的运行结束：成功，或失败且不会自动重试，或被停止而不是人请求的；任务仍在 NEW / IN_PROGRESS、执行方仍是该小队、小队未停用（`add-squads` 决策 9） | work（以小队身份，目标为当前 leader） | leader 决定下一步；授权与链继承发起委派的那次 leader 运行 |
+| **Epic 停滞** `epic_stalled` | 执行方是小队的 Epic 在 IN_PROGRESS、没有待回答、未被阻塞，Epic 与步骤上没有进行中的运行，且有闲置步骤（无人或托管执行方、没有任何运行、没有待回答）；由检查任务在运行终态、步骤迁移之后（宽限 120 秒）与依赖清扫时判定；按停滞签名去重、两次至少间隔 15 分钟、无步骤完成时最多连续 3 次（16 §1.2，`improve-squad-leader-orchestration` 决策 9–12） | work（任务为 Epic，以小队身份，目标为当前 leader） | 开工、改派或排序闲置步骤，或写 `question`；等待正确就说明并结束；授权与链继承「Epic × 小队」的指派授权 |
 | **评审完成** `spec_reviewed` | 人提交的评审完成了一个由运行建立的评审请求（例如 leader 请人类成员评审），任务在 NEW / IN_PROGRESS、执行方是托管 Agent 或小队（17 §5） | work（执行方是小队时以小队身份、目标为当前 leader） | 看评审、决定下一步；授权与链继承「任务 × 执行方」的指派授权（同打回） |
 | **定稿决定** `spec_decided` | 人定稿、批准或退回规格且选择唤醒（缺省唤醒），任务在 NEW / IN_PROGRESS、执行方是托管 Agent 或小队 | 同上 | 定稿 → 按规格继续实现；退回 → 修订；授权同上（`add-spec-workflow` 决策 11） |
 
@@ -95,9 +96,10 @@
 | `write_task` | 有任务的运行 | 只对**本次运行的任务**：写 / 修订 Feedback（含 @其他 Agent）、状态迁移、改字段、建 / 删以它为一端的链（不能用 `replaces` 撤销另一张未结束的任务，07 §5） |
 | `create_tasks` | 以小队 leader 身份的运行、Agent 配置里勾选了的；仅运行模式的自动化运行只看自动化配置里的勾选（不看 Agent 配置） | 建新任务（新任务的提出方是这个 Agent，§2.1「回调提出方」由此而来） |
 | `delegate` | 以小队 leader 身份的运行（不能由 Agent 配置授予） | 16 §1.2 |
+| `orchestrate` | 以小队身份、有编排根的运行（不能由 Agent 配置授予；入队与领取时计算） | 只对编排范围内的其它任务：改执行方（空或小队成员）与开工（`update_task` 只给 `assignee` / `start`、`start_task`）、两端都在范围内的 `depends_on`；不能迁移它们、写它们的 Feedback 或改其它字段（16 §1.2，`improve-squad-leader-orchestration` 决策 3–5） |
 | `design` | 设计运行（只有它，再加 `read`；不能由 Agent 配置授予） | 读写所在创建对话的草稿（12 §6）；只在这条运行仍是对话的当前轮时有效 |
 
-其余（改别的任务、触发 `run_agent`、停止运行、建项目、任何管理动作）一律不允许，返回 `forbidden` 并说明缺哪个能力。这样一次被提示词注入的运行，影响面限制在它自己的任务上。
+其余（改别的任务、触发 `run_agent`、停止运行、建项目、任何管理动作）一律不允许，返回 `forbidden` 并说明缺哪个能力。这样一次被提示词注入的运行，影响面限制在它自己的任务上；小队 leader 的运行另外限制在它的编排范围内，且每次编排写入都在目标任务上留下系统备注。
 
 ### 2.4 依赖未满足时
 
@@ -123,7 +125,7 @@
 - 合并时状态取更「急」的：`deferred` 的行并入一个立即可跑的触发（不受依赖约束，或受约束但依赖已满足）后变为 `queued`（例如被阻塞的指派又收到「手动运行」）；`queued` 的行不会因并入受约束的触发而降回 `deferred`，交给领取时的复查。
 - **同一任务同一时刻最多一个运行在执行**（不论哪个 Agent、哪条 lane）：它们共用一个代码分支（15 §2），并发会互相踩。不同任务之间完全并行。
 
-**领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、Agent 已归档、运行时已禁用；触发逐条处理——绑定执行方的触发（指派、打回、重新提交、委派完成，以小队身份的运行绑定该小队；委派绑定它的小队；回答绑定提问所在运行绑定的执行方）在执行方已换成别人时丢弃，再按 §2.2 复核授权并丢弃失效的，一条不剩才取消（`add-squads` 决策 10）。`spec_reviewed` / `spec_decided` 与指派一样绑定执行方；`spec_review` 与规格角色为 `review` 的委派在其评审请求已结束时丢弃（`add-spec-workflow` 决策 10、11）。
+**领取时重新校验**排队中的运行，已经失效的取消（原因 `obsolete`）：任务已 CANCELLED / VERIFIED（`reply` lane 除外）、Agent 已归档、运行时已禁用；触发逐条处理——绑定执行方的触发（指派、打回、重新提交、委派完成，以小队身份的运行绑定该小队；委派绑定它的小队；回答绑定提问所在运行绑定的执行方）在执行方已换成别人时丢弃，再按 §2.2 复核授权并丢弃失效的，一条不剩才取消（`add-squads` 决策 10）。`spec_reviewed` / `spec_decided` 与指派一样绑定执行方；`epic_stalled` 绑定小队，Epic 已不停滞（出现别的进行中运行、没有闲置步骤等）时丢弃；编排发起的 `assign` 与普通指派相同；`spec_review` 与规格角色为 `review` 的委派在其评审请求已结束时丢弃（`add-spec-workflow` 决策 10、11）。
 
 ## 4. 状态
 
@@ -206,6 +208,7 @@ SELECT r.* FROM runs r
 | NEW → IN_PROGRESS（§7） | `running` 之后 | `task_events` 部分唯一 `(source_run_id) WHERE auto AND from_status = 'new' AND to_status = 'in_progress'` |
 | 兜底回帖（§7） | `succeeded` 之后 | `feedback` 部分唯一 `(source_run_id) WHERE fallback` |
 | 唤醒 leader（`delegate_done`） | 委派运行进入终态的同一事务里插入（会自动重试的失败、人请求的停止除外；自动重试最终没排上队时由重试任务补插，`add-squads` 决策 9） | `(run_id, delegate_done)` |
+| Epic 停滞检查（`EpicWatch`） | 任务是 Epic 或其步骤的运行进入终态的同一事务里插入（只插入 Job，`scheduled_at` = 现在 + 宽限，新事件把它往后推）；步骤迁移与依赖清扫同样插入（`improve-squad-leader-orchestration` 决策 11） | Oban 唯一键（`epic_id`） |
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
 | 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
 | 插话结算（§8） | 运行以 `succeeded` 结束、且有已回执的插话 | Oban 唯一键（`steer_settle`） |
@@ -261,8 +264,9 @@ SELECT r.* FROM runs r
 
 - 各种触发行的英文定稿：指派、手动、重试见 `add-run-lifecycle` 决策 10；打回 / 重开（含 CI 失败、合并冲突）、重新提交、回答、回调提出方、提及见 `add-continuation-triggers` 决策 9。
 - 任务正文、历史、全部反馈**不**塞进提示词，让 Agent 自己用 `get_task` 取：提示词保持短小（Copilot CLI 的提示词走命令行参数），也避免把可能过期的快照当真。触发它的那条 Feedback 例外，原文直接放进去。
-- 恢复会话时省略 instructions 和通用部分，只发「触发原因」那一段。
+- 恢复会话时省略 instructions 和通用部分，只发「触发原因」那一段（leader 运行另带成员名单、带领方式与当前的编排一节）。
 - 没有关联仓库的项目：工作目录是一个空的临时目录，「代码」一段改为说明这一点。
+- **编排**（16 §1.2）：有编排根的 leader 运行，身份一行说明除本任务外还能编排哪个根的任务，小队一节之后另有 `## Orchestration` 一节：范围内每个任务的状态、执行方与在等什么（≤ 50 行、≤ 16 KB）；`epic_stalled`、编排开工、对 leader 本人的提及升级与被拒升级各有触发行。英文定稿见 `improve-squad-leader-orchestration` 决策 15。
 - **规格**（17 §6）：任务有规格时，触发原因之后加一行规格状态（≤ 512 字节，恢复会话也带），已定稿时写明按定稿版本实现；任务没有规格而 Epic 有已定稿的规格时指向 Epic 的规格；leader 运行在小队一节之后另有 `## Specs` 一节（≤ 2 KB）。英文定稿见 `add-spec-workflow` 决策 12。没有规格的任务提示词不变。
 
 ## 7. 任务状态联动与防循环
@@ -284,6 +288,7 @@ SELECT r.* FROM runs r
   - 延续：继承授权来源那次运行的链 + 目标 Agent。例如「回调提出方」继承提出方当初建任务那次运行的链，**不会**把执行方加进来——提出方 Agent 被唤醒去验收执行方的工作，本来就是独立的评审（15 §4.1）。
 - 链长超过 5，或者新发起的目标 Agent 已经在链上（A → B → A），不再触发，并在任务上留一条系统备注。
 - 同一任务每小时最多 20 次运行（可按工作区配置），超出的触发只记录不执行。
+- **Epic 停滞唤醒**是延续，不加长因果链，所以不受链长 / 链上重复的约束；限制它的是停滞签名去重（leader 上次没做任何改变就不再叫）、两次唤醒的最小间隔、自上次步骤完成或人介入以来的连续上限（到达后在 Epic 上写系统备注请人处理），以及本节的每任务频率上限。leader 被唤醒后做的改派 / 开工是 Agent 引起的新发起，照常按链检查。看门狗不解除、不取消、不绕过任何依赖延后的运行（§2.4）。
 - Agent 不会被自己写的 Feedback 触发。
 
 ## 8. 停止与插话
