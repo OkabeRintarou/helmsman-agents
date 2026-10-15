@@ -21,7 +21,7 @@ defmodule Helmsman.Backup.FormatTest do
       {"workspace", ~s({"name":"Synthetic","slug":"synthetic"})},
       {"actors", ~s({"disabled":false,"kind":"agent","name":"alice/dev","owner":"alice"})},
       {"projects",
-       ~s({"archived_at":null,"created_at":"2026-01-01T00:00:00.123456Z","description":"Synthetic","key":"BOS","name":"Project","task_seq":12,"updated_at":"2026-01-01T00:00:00.123456Z"})},
+       ~s({"archived_at":null,"created_at":"2026-01-01T00:00:00.123456Z","description":"Synthetic","key":"BOS","name":"Project","spec_finalize":"approval","task_seq":12,"updated_at":"2026-01-01T00:00:00.123456Z"})},
       {"tasks",
        ~s({"assignee":"alice/dev","created_at":"2026-01-01T00:00:00.123456Z","created_by":"alice","description":"Line 1\\n你好","epic":null,"id":"BOS-2","kind":"task","labels":["z","a"],"priority":"high","project":"BOS","seq":2,"status":"new","title":"Synthetic","updated_at":"2026-01-01T00:00:00.123456Z"})},
       {"task_events",

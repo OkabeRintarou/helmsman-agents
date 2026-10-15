@@ -1,12 +1,19 @@
 defmodule Helmsman.Backup.BosunTest do
   use ExUnit.Case, async: true
-  alias Helmsman.Backup.Bosun
+  alias Helmsman.Backup.{Bosun, Format}
   alias Helmsman.Backup.Import.Validate
   defp fixture, do: File.read!("test/fixtures/bosun/export-v2.json") |> Jason.decode!()
 
   test "synthetic v2 fixture converts archived projects, Epic, revisions, links, filters and user" do
     assert {:ok, data} = Bosun.convert(fixture(), "alice")
-    assert {:ok, ^data} = Validate.validate(data)
+    assert {:ok, normalized} = Validate.validate(data)
+    assert normalized["version"] == 1
+    assert hd(normalized["projects"])["spec_finalize"] == "approval"
+
+    assert Map.drop(normalized, Format.spec_collections())
+           |> Map.update!("projects", &Enum.map(&1, fn p -> Map.delete(p, "spec_finalize") end)) ==
+             data
+
     assert hd(data["projects"])["archived_at"] == data["exported_at"]
     assert Enum.at(data["tasks"], 1)["epic"] == "BOS-1"
     assert Enum.at(data["feedback"], 1)["thread"] == 1

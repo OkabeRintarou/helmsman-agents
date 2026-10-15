@@ -2,6 +2,7 @@ defmodule Helmsman.Backup.Import.Actors do
   @moduledoc "Maps portable identities without changing any existing identity."
   import Ecto.Query
   alias Helmsman.Actors.Actor
+  alias Helmsman.Backup.Format
   alias Helmsman.Repo
 
   def map(scope, data, rename) do
@@ -79,5 +80,28 @@ defmodule Helmsman.Backup.Import.Actors do
       end)
     )
     |> Map.update!("links", &Enum.map(&1, fn r -> Map.update!(r, "actor", name) end))
+    |> normalize_specs(name)
+  end
+
+  defp normalize_specs(data, name) do
+    Enum.reduce(Format.spec_collections(), data, fn collection, data ->
+      Map.update!(data, collection, &Enum.map(&1, fn row -> normalize_spec_row(row, name) end))
+    end)
+  end
+
+  defp normalize_spec_row(row, name) do
+    row =
+      Enum.reduce(~w(author actor reviewer requested_by created_by), row, fn field, row ->
+        if Map.has_key?(row, field), do: Map.update!(row, field, name), else: row
+      end)
+
+    row =
+      if row["proposal"],
+        do: Map.update!(row, "proposal", &Map.update!(&1, "by", name)),
+        else: row
+
+    if row["data"] && row["data"]["reviewer"],
+      do: Map.update!(row, "data", &Map.update!(&1, "reviewer", name)),
+      else: row
   end
 end

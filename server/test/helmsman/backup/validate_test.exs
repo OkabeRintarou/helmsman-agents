@@ -49,7 +49,7 @@ defmodule Helmsman.Backup.Import.ValidateTest do
 
   test "valid empty histories and unsupported version" do
     assert {:ok, _} = Validate.validate(snapshot())
-    assert {:error, :unsupported_format} = Validate.validate(Map.put(snapshot(), "version", 2))
+    assert {:error, :unsupported_format} = Validate.validate(Map.put(snapshot(), "version", 3))
   end
 
   test "field type, value, size, identity, key and uniqueness rules" do

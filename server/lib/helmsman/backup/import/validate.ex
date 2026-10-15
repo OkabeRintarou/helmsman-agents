@@ -2,6 +2,7 @@ defmodule Helmsman.Backup.Import.Validate do
   @moduledoc "Validates an entire portable snapshot before any database writes."
   alias Helmsman.Actors.Actor
   alias Helmsman.Backup.Format
+  alias Helmsman.Backup.Import.SpecValidate
   alias Helmsman.Tasks.Evidence
   alias Helmsman.Tasks.Task
 
@@ -17,6 +18,7 @@ defmodule Helmsman.Backup.Import.Validate do
       name: {:text, 80},
       description: {:bytes, 65_536},
       task_seq: :nonnegative,
+      spec_finalize: {:enum, ~w(approval leader)},
       archived_at: {:optional, :time},
       created_at: :time,
       updated_at: :time
@@ -80,7 +82,10 @@ defmodule Helmsman.Backup.Import.Validate do
 
   def validate(data, rename \\ %{})
 
-  def validate(%{"format" => "helmsman-export", "version" => 1} = data, rename) do
+  def validate(%{"format" => "helmsman-export", "version" => version} = data, rename)
+      when version in [1, 2] do
+    data = legacy_defaults(data)
+
     data =
       Map.update(data, "feedback", nil, fn
         rows when is_list(rows) ->
@@ -100,7 +105,10 @@ defmodule Helmsman.Backup.Import.Validate do
 
     errors =
       if basic == [],
-        do: references(data) ++ histories(data) ++ rename_errors(data, rename),
+        do:
+          references(data) ++
+            histories(data) ++
+            rename_errors(data, rename) ++ SpecValidate.validate(data),
         else: basic
 
     case Enum.take(errors, 100) do
@@ -111,8 +119,25 @@ defmodule Helmsman.Backup.Import.Validate do
 
   def validate(_, _), do: {:error, :unsupported_format}
 
+  defp legacy_defaults(%{"version" => 1} = data) do
+    data = Enum.reduce(Format.spec_collections(), data, &Map.put(&2, &1, []))
+
+    if is_list(data["projects"]),
+      do:
+        Map.update!(
+          data,
+          "projects",
+          &Enum.map(&1, fn r -> project_defaults(r) end)
+        ),
+      else: data
+  end
+
+  defp legacy_defaults(data), do: data
+  defp project_defaults(row) when is_map(row), do: Map.put_new(row, "spec_finalize", "approval")
+  defp project_defaults(row), do: row
+
   defp fields(data) do
-    Enum.flat_map(Format.collections(), fn name ->
+    Enum.flat_map(Format.collections(data["version"]), fn name ->
       if is_list(data[name]), do: [], else: [error(name, "must be an array")]
     end) ++
       check(data["exported_at"], :time, "exported_at") ++
@@ -175,7 +200,7 @@ defmodule Helmsman.Backup.Import.Validate do
   defp duplicate_key("links", row), do: {row["from"], row["to"], row["type"]}
   defp duplicate_key("saved_filters", row), do: {row["owner"], row["name"]}
 
-  defp check(value, type, path),
+  def check(value, type, path),
     do: if(valid?(value, type), do: [], else: [error(path, "invalid value for #{inspect(type)}")])
 
   defp valid?(nil, {:optional, _}), do: true

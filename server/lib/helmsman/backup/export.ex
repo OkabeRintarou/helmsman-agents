@@ -2,6 +2,7 @@ defmodule Helmsman.Backup.Export do
   @moduledoc "Streams a consistent read-only snapshot directly into a gzip artifact."
   import Ecto.Query
   alias Helmsman.Actors.Actor
+  alias Helmsman.Backup.Export.Specs
   alias Helmsman.Backup.Format
   alias Helmsman.Feedback.Entry
   alias Helmsman.Filters.SavedFilter
@@ -24,7 +25,7 @@ defmodule Helmsman.Backup.Export do
 
               header = %{
                 "format" => "helmsman-export",
-                "version" => 1,
+                "version" => 2,
                 "exported_at" => Format.time(DateTime.utc_now()),
                 "source" => %{
                   "host" =>
@@ -47,7 +48,7 @@ defmodule Helmsman.Backup.Export do
 
                     count =
                       query(key, workspace.id)
-                      |> Repo.stream(max_rows: 500)
+                      |> Repo.stream(max_rows: if(key == "spec_versions", do: 1, else: 500))
                       |> Enum.reduce(0, fn row, n ->
                         if n > 0, do: put(io, z, ",")
                         put(io, z, Format.encode_iodata(row))
@@ -136,6 +137,7 @@ defmodule Helmsman.Backup.Export do
         "name" => p.name,
         "description" => p.description,
         "task_seq" => p.task_seq,
+        "spec_finalize" => p.spec_finalize,
         "archived_at" =>
           fragment(
             ~s|to_char(? AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')|,
@@ -310,6 +312,8 @@ defmodule Helmsman.Backup.Export do
       select: %{"name" => f.name, "bql" => f.bql, "owner" => a.name}
     )
   end
+
+  def query(key, wid), do: Specs.query(key, wid)
 
   if Mix.env() == :test do
     defp test_hook(point) do

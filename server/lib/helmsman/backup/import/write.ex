@@ -2,7 +2,7 @@ defmodule Helmsman.Backup.Import.Write do
   @moduledoc "Maintenance-locked bulk writes with no task dispatch or per-record notifications."
   import Ecto.Query
   alias Helmsman.Backup.{Export, Format}
-  alias Helmsman.Backup.Import.{Actors, Merge, Replace, Validate}
+  alias Helmsman.Backup.Import.{Actors, Merge, Replace, Specs, Validate}
   alias Helmsman.Dispatch.Dependencies
   alias Helmsman.Feedback.Entry
   alias Helmsman.Filters.SavedFilter
@@ -21,7 +21,8 @@ defmodule Helmsman.Backup.Import.Write do
       report = %{
         counts:
           Map.new(
-            ~w(projects tasks task_events feedback links saved_filters),
+            ~w(projects tasks task_events feedback links saved_filters) ++
+              Format.spec_collections(),
             &{&1, %{created: 0, fast_forwarded: 0, unchanged: 0, local_newer: 0}}
           ),
         actors: actor_report,
@@ -48,7 +49,8 @@ defmodule Helmsman.Backup.Import.Write do
     with {:ok, changes, report} <- classify(data, local, report),
          {:ok, tasks, report} <- tasks(scope, changes, projects, actors, report),
          {:ok, report} <- histories(scope, data, changes, tasks, actors, report),
-         {:ok, report} <- links(scope, data, local, tasks, actors, report) do
+         {:ok, report} <- links(scope, data, local, tasks, actors, report),
+         {:ok, report} <- Specs.write(scope, data, tasks, actors, report) do
       report = filters(scope, data, report)
 
       local_tasks = Map.new(local["tasks"], &{&1["id"], &1})
@@ -96,7 +98,7 @@ defmodule Helmsman.Backup.Import.Write do
         is_nil(project) ->
           %{rows: [[id]]} =
             Repo.query!(
-              "INSERT INTO projects(workspace_id,key,name,description,task_seq,archived_at,inserted_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id",
+              "INSERT INTO projects(workspace_id,key,name,description,task_seq,archived_at,inserted_at,updated_at,spec_finalize) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id",
               [
                 scope.workspace.id,
                 row["key"],
@@ -105,7 +107,8 @@ defmodule Helmsman.Backup.Import.Write do
                 row["task_seq"],
                 naive(row["archived_at"]),
                 naive(row["created_at"]),
-                naive(row["updated_at"])
+                naive(row["updated_at"]),
+                row["spec_finalize"]
               ]
             )
 
@@ -114,14 +117,15 @@ defmodule Helmsman.Backup.Import.Write do
 
         opts[:mode] == :replace or row["updated_at"] > portable[row["key"]]["updated_at"] ->
           Repo.query!(
-            "UPDATE projects SET name=$2,description=$3,archived_at=$4,task_seq=greatest(task_seq,$5),updated_at=$6 WHERE id=$1",
+            "UPDATE projects SET name=$2,description=$3,archived_at=$4,task_seq=greatest(task_seq,$5),updated_at=$6,spec_finalize=$7 WHERE id=$1",
             [
               project.id,
               row["name"],
               row["description"],
               naive(row["archived_at"]),
               row["task_seq"],
-              naive(row["updated_at"])
+              naive(row["updated_at"]),
+              row["spec_finalize"]
             ]
           )
 

@@ -57,7 +57,7 @@ defmodule Helmsman.Backup.AvatarsTest do
     {:ok, _} = Backup.export_to_file(ctx.workspace, without)
     {:ok, a} = Read.file(with)
     {:ok, b} = Read.file(without)
-    assert a["version"] == 1
+    assert a["version"] == 2
 
     assert Format.encode(Map.delete(a, "exported_at")) ==
              Format.encode(Map.delete(b, "exported_at"))
