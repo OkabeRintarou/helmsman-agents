@@ -246,6 +246,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/squad_form.ex
@@ -356,6 +357,7 @@ msgstr ""
 #: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "失败"
 msgstr ""
@@ -764,6 +766,7 @@ msgstr ""
 
 #: lib/helmsman_web/components/status.ex
 #: lib/helmsman_web/github_components.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "等待中"
 msgstr ""
@@ -802,6 +805,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/command_palette.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "结果"
 msgstr ""
@@ -2321,6 +2325,8 @@ msgstr "确认修改"
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
@@ -2833,6 +2839,7 @@ msgstr ""
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/autopilot_live/index.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/query_components.ex
 #: lib/helmsman_web/squad_form.ex
@@ -2936,6 +2943,7 @@ msgstr ""
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
@@ -2963,6 +2971,7 @@ msgid "本工作区还没有运行时"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "机器"
 msgstr ""
@@ -4152,6 +4161,7 @@ msgstr ""
 #: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/data_settings_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "成功"
 msgstr ""
@@ -5210,11 +5220,6 @@ msgstr ""
 msgid "用于压缩合并、变基合并、cherry-pick 等检测不到的合并。将记为提交"
 msgstr ""
 
-#: lib/helmsman_web/live/settings_live/runtimes.ex
-#, elixir-autogen, elixir-format
-msgid "登记；路径只保存在机器上"
-msgstr ""
-
 #: lib/helmsman_web/project_github_form.ex
 #, elixir-autogen, elixir-format
 msgid "缺省：仓库当前检出的分支"
@@ -5236,6 +5241,7 @@ msgid "说明（可选）"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "路径"
 msgstr ""
@@ -7905,6 +7911,7 @@ msgid "时区"
 msgstr ""
 
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
 #, elixir-autogen, elixir-format
 msgid "时间"
 msgstr ""
@@ -9510,4 +9517,267 @@ msgstr ""
 #: lib/helmsman_web/avatar_editor.ex
 #, elixir-autogen, elixir-format
 msgid "首字母"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{machine} 正在处理另一个请求，稍后再试"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{machine} 没有允许网页登记的目录。在机器上运行 helmsman repos roots add <目录> 后再试，或直接用 helmsman repos add"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{machine} 没有在 15 秒内送回仓库列表"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{machine} 没有在 20 秒内回复。结果以机器上的配置为准，稍后看列表或下方的操作记录"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{machine} 的守护进程版本过旧，升级后才能在网页上登记；也可以在机器上运行 helmsman repos add"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{machine} 离线"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "1. 选择机器"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "2. 选择仓库"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "3. 填写登记信息"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "。机器报告："
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "不是可登记的 git 仓库"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "与在机器上执行以下命令相同："
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "也可以在允许网页登记的机器上直接点「登记本地仓库」"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "从 %{machine} 的配置中移除 %{name}？"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "仓库在守护进程的主目录里，不能登记"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "位置"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "允许的目录下没有找到 git 仓库"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "动作"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "只有这台机器的主人能在网页上登记或移除"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "名字只能用小写字母、数字、- 和 _，以字母或数字开头，最多 64 个字符"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "它在这些工作区都会变为不可用：%{workspaces}"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "已从 %{machine} 移除 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "已在 %{machine} 上登记 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "已登记为 %{name}"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "开放给"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "所选工作区不在这台机器的服务范围内"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "找不到这台机器，或它已不服务本工作区"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "按路径筛选"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "操作人"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上已找不到这个目录，请重新读取"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上已没有这个登记"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上的 config.toml 无法安全地自动修改，请在机器上手动编辑"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "机器上的仓库文件和其中的 hm/… 分支都不会改变"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "正在等待 %{machine} 确认…"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "正在读取 %{machine} 上的仓库…"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有匹配的仓库"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有收到回复"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "登记"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "登记本地仓库"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "登记；允许网页登记的机器也可以点「登记本地仓库」。路径只保存在机器上"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "目录"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "目录太多，只列出了一部分；可以缩小允许的目录，或在机器上用 helmsman repos add"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "绑定它的项目 %{keys} 保留绑定，但无法执行运行"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "网页操作记录"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#, elixir-autogen, elixir-format
+msgid "至少选择一个工作区"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "路径无效，请重新读取"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "这个仓库已经登记过"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "这个仓库经过符号链接，或它的 git 数据在允许的目录之外，不能从网页登记；可以在机器上用 helmsman repos add"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "这个目录已不在允许网页登记的范围内，请重新读取"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "这台机器上已有同名的本地仓库"
+msgstr ""
+
+#: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "重新读取"
+msgstr ""
+
+#: lib/helmsman_web/local_repo_registration_components.ex
+#, elixir-autogen, elixir-format
+msgid "（根目录本身）"
 msgstr ""

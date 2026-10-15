@@ -5,11 +5,21 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
   `?all=1` for admins), then the workspace's local repositories in the same scope
   (add-local-repositories-ui D4). Panels `?panel=rename:<id>` and `?panel=workspaces:<id>`.
 
+  Web registration (add-local-repo-web-registration D11, `HelmsmanWeb.LocalRepoRegistration`):
+  `?panel=register-local-repository` registers a repository on one of the user's own
+  machines (machine → candidate → name and workspaces), 移除 on the user's own rows asks
+  the machine to drop its entry, and 网页操作记录 lists the requests. Requests wait for
+  `{:local_repo_result, request_id, daemon_id, outcome}` (both ids checked) or
+  `{:local_repo_timeout, request_id}`; `{:local_repository_changes_changed}` reloads the
+  record. Root and path sent to the machine always come from the candidate kept here.
+
   `{:runtimes_changed}` / `{:daemons_changed}` / `{:local_repositories_changed}` /
-  `{:projects_changed}` (forwarded by the shell) reload the lists through
+  `{:projects_changed}` / `{:local_repository_changes_changed}` (forwarded by the shell)
+  reload the lists through
   `HelmsmanWeb.Throttle`; `:tick` every 30 seconds re-reads the machines so the online
   dots follow `last_seen_at` (not the local repositories: the server sets them offline
-  and notifies). Open panels keep their input across reloads.
+  and notifies) together with the machines' eligibility and the record. Open panels keep
+  their input across reloads.
   """
   use HelmsmanWeb, :live_view
 
@@ -17,9 +27,16 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
 
   alias Helmsman.{Daemons, LocalRepositories, Policy, Projects, Runtimes, Workspaces}
   alias HelmsmanWeb.{FormErrors, LocalRepositoryComponents, RunData, Throttle, Url}
+  alias HelmsmanWeb.LocalRepoRegistration, as: WebRegistration
+  alias HelmsmanWeb.LocalRepoRegistrationComponents, as: RegistrationComponents
 
   @tick_ms 30_000
   @member_roles [:owner, :admin, :member]
+  @register_panel "register-local-repository"
+  @name_format ~r/^[a-z0-9][a-z0-9_-]{0,63}$/
+  @not_configured "not configured on the machine"
+  @max_candidates 200
+  @reread_codes [:root_not_allowed, :missing, :already_registered]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -39,7 +56,11 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
          daemons: [],
          runtimes: [],
          local_repositories: [],
-         local_projects: %{}
+         local_projects: %{},
+         machines: [],
+         changes: [],
+         register: nil,
+         remove: nil
        )}
     else
       {:ok,
@@ -60,7 +81,8 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
         do: socket |> assign(:all?, all?) |> load(),
         else: socket
 
-    {:noreply, open_panel(socket, params["panel"])}
+    {:noreply,
+     socket |> open_panel(params["panel"]) |> open_register(params["panel"] == @register_panel)}
   end
 
   defp load(socket) do
@@ -75,6 +97,28 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
     socket
     |> assign(daemons: RunData.daemons(scope), runtimes: runtimes)
     |> load_local()
+    |> load_registration()
+  end
+
+  # D11: the user's own machines (the entry and the panel) and the record.
+  defp load_registration(socket) do
+    scope = socket.assigns.current_scope
+
+    machines =
+      case WebRegistration.machines(scope) do
+        {:ok, machines} -> machines
+        {:error, _} -> []
+      end
+
+    changes =
+      case WebRegistration.list_changes(scope, if(socket.assigns.all?, do: :all, else: :mine)) do
+        {:ok, changes} -> changes
+        {:error, _} -> []
+      end
+
+    socket
+    |> assign(machines: machines, changes: changes)
+    |> refresh_register()
   end
 
   # D4: mine = repositories of my machines; all (admins) = every repository.
@@ -146,6 +190,359 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
       error: nil
     }
   end
+
+  ## Web registration (D11)
+
+  # Opened once connected: the panel sends requests and waits for their results.
+  defp open_register(socket, true) do
+    cond do
+      !connected?(socket) -> socket
+      socket.assigns.register != nil -> socket
+      socket.assigns.machines == [] -> socket
+      true -> socket |> assign(:register, new_register()) |> refresh_register()
+    end
+  end
+
+  defp open_register(socket, false), do: close_register(socket)
+
+  defp close_register(%{assigns: %{register: nil}} = socket), do: socket
+
+  defp close_register(socket) do
+    forget_register(socket.assigns.register)
+    assign(socket, :register, nil)
+  end
+
+  defp forget_register(register) do
+    with {:waiting, id} <- register.browse, do: WebRegistration.forget(id)
+    if register.submit, do: WebRegistration.forget(register.submit)
+    :ok
+  end
+
+  defp new_register,
+    do: %{
+      daemon_id: nil,
+      browse: :idle,
+      roots: [],
+      candidates: [],
+      truncated: false,
+      filter: "",
+      selected: nil,
+      name: "",
+      workspace_ids: [],
+      invalid_workspaces: [],
+      errors: %{},
+      error: nil,
+      reread: false,
+      notice: nil,
+      submit: nil,
+      # The name and workspaces of the pending request; the form is locked meanwhile.
+      submitted: nil
+    }
+
+  # After the machines changed: keep the selection and the input while the machine is
+  # still listed; otherwise start over, auto-selecting the only eligible machine.
+  defp refresh_register(%{assigns: %{register: nil}} = socket), do: socket
+
+  defp refresh_register(socket) do
+    %{register: register, machines: machines} = socket.assigns
+
+    socket =
+      if register.daemon_id && !Enum.any?(machines, &(&1.daemon_id == register.daemon_id)) do
+        forget_register(register)
+        assign(socket, :register, new_register())
+      else
+        socket
+      end
+
+    case {socket.assigns.register.daemon_id, Enum.filter(machines, &(&1.eligibility == :ok))} do
+      {nil, [only]} -> select_machine(socket, only.daemon_id)
+      _ -> socket
+    end
+  end
+
+  defp eligible_machine(socket, daemon_id) do
+    Enum.find(socket.assigns.machines, &(&1.daemon_id == daemon_id and &1.eligibility == :ok))
+  end
+
+  defp machine_name(socket, daemon_id), do: machine_label(socket.assigns.machines, daemon_id)
+
+  defp select_machine(socket, daemon_id) do
+    case eligible_machine(socket, daemon_id) do
+      nil ->
+        socket
+
+      machine ->
+        forget_register(socket.assigns.register)
+
+        socket
+        |> assign(:register, %{new_register() | daemon_id: machine.daemon_id})
+        |> start_browse()
+    end
+  end
+
+  defp start_browse(socket) do
+    register = socket.assigns.register
+
+    browse =
+      case WebRegistration.browse(socket.assigns.current_scope, register.daemon_id) do
+        {:ok, request_id} ->
+          wait(request_id, WebRegistration.browse_timeout_ms())
+          {:waiting, request_id}
+
+        {:error, code} ->
+          {:failed, code, nil}
+      end
+
+    keep = Map.take(register, [:daemon_id, :name, :workspace_ids])
+    assign(socket, :register, new_register() |> Map.merge(keep) |> Map.put(:browse, browse))
+  end
+
+  defp wait(request_id, ms), do: Process.send_after(self(), {:local_repo_timeout, request_id}, ms)
+
+  defp update_register(socket, fun) do
+    case socket.assigns.register do
+      nil -> socket
+      register -> assign(socket, :register, fun.(register))
+    end
+  end
+
+  defp browse_result(socket, {:ok, %{roots: roots, repositories: repositories} = result}) do
+    candidates =
+      repositories
+      |> Enum.take(@max_candidates)
+      |> Enum.with_index(&Map.put(&1, :index, &2))
+
+    update_register(
+      socket,
+      &%{
+        &1
+        | browse: :ready,
+          roots: roots,
+          candidates: candidates,
+          truncated: Map.get(result, :truncated, false) == true
+      }
+    )
+  end
+
+  defp browse_result(socket, {:error, code, message}),
+    do: update_register(socket, &%{&1 | browse: {:failed, code, message}})
+
+  defp select_candidate(socket, index) do
+    %{register: register, current_scope: scope} = socket.assigns
+
+    with nil <- register.submit,
+         %{registered_as: nil} = candidate <- Enum.at(register.candidates, index),
+         %{} = machine <- eligible_machine(socket, register.daemon_id) do
+      current = scope.workspace.id
+      default = if Enum.any?(machine.workspaces, &(&1.id == current)), do: [current], else: []
+
+      assign(socket, :register, %{
+        register
+        | selected: candidate.index,
+          name: candidate.name || "",
+          workspace_ids: default,
+          invalid_workspaces: [],
+          errors: %{},
+          error: nil,
+          reread: false,
+          notice: nil
+      })
+    else
+      _ -> socket
+    end
+  end
+
+  defp register_input(socket, params) do
+    machine =
+      Enum.find(socket.assigns.machines, &(&1.daemon_id == socket.assigns.register.daemon_id))
+
+    allowed = if machine, do: Enum.map(machine.workspaces, & &1.id), else: []
+    ids = params |> selected_ids() |> Enum.filter(&(&1 in allowed)) |> Enum.uniq()
+    {Map.get(params, "name", socket.assigns.register.name), ids}
+  end
+
+  defp input_errors(name, ids, machine) do
+    %{}
+    |> then(
+      &if(Regex.match?(@name_format, name),
+        do: &1,
+        else: Map.put(&1, :name, code(:invalid_name, machine))
+      )
+    )
+    |> then(&if(ids == [], do: Map.put(&1, :workspaces, dgettext("ui", "至少选择一个工作区")), else: &1))
+  end
+
+  defp code(code, machine), do: RegistrationComponents.code_text(code, machine)
+
+  defp submit_register(socket, params) do
+    register = socket.assigns.register
+    {name, ids} = register_input(socket, params)
+    machine = machine_name(socket, register.daemon_id)
+    errors = input_errors(name, ids, machine)
+
+    register = %{
+      register
+      | name: name,
+        workspace_ids: ids,
+        errors: errors,
+        error: nil,
+        notice: nil
+    }
+
+    candidate = Enum.at(register.candidates, register.selected)
+
+    if errors == %{} do
+      # Root and path come from the kept candidate, never from the submitted form.
+      attrs = %{root: candidate.root, path: candidate.path, name: name, workspace_ids: ids}
+
+      socket.assigns.current_scope
+      |> WebRegistration.register(register.daemon_id, attrs)
+      |> case do
+        {:ok, request_id} ->
+          wait(request_id, WebRegistration.change_timeout_ms())
+
+          assign(socket, :register, %{
+            register
+            | submit: request_id,
+              submitted: %{name: name, workspace_ids: ids},
+              invalid_workspaces: [],
+              reread: false
+          })
+
+        {:error, reason} ->
+          assign(socket, :register, register_failed(register, reason, nil, machine))
+      end
+    else
+      assign(socket, :register, register)
+    end
+  end
+
+  defp register_failed(register, %Ecto.Changeset{} = changeset, _message, machine) do
+    errors = Keyword.keys(changeset.errors)
+
+    cond do
+      :name in errors ->
+        %{register | errors: %{name: code(:invalid_name, machine)}}
+
+      :workspace_ids in errors ->
+        %{register | errors: %{workspaces: code(:invalid_workspaces, machine)}}
+
+      true ->
+        %{register | error: {:invalid_path, nil}, reread: true}
+    end
+  end
+
+  defp register_failed(register, {:invalid_workspaces, ids}, _message, machine),
+    do: %{
+      register
+      | errors: %{workspaces: code(:invalid_workspaces, machine)},
+        invalid_workspaces: ids
+    }
+
+  defp register_failed(register, code, _message, machine)
+       when code in [:invalid_name, :name_taken],
+       do: %{register | errors: %{name: code(code, machine)}}
+
+  defp register_failed(register, :invalid_workspaces, _message, machine),
+    do: %{register | errors: %{workspaces: code(:invalid_workspaces, machine)}}
+
+  defp register_failed(register, code, message, _machine),
+    do: %{register | error: {code, message}, reread: code in @reread_codes}
+
+  defp change_result(socket, {:ok, result}) do
+    register = restore_submitted(socket.assigns.register)
+    machine = machine_name(socket, register.daemon_id)
+    name = (is_map(result) && Map.get(result, :name)) || register.name
+
+    socket
+    |> assign(:register, nil)
+    |> put_flash(
+      :info,
+      dgettext("ui", "已在 %{machine} 上登记 %{name}", machine: machine, name: name)
+    )
+    |> push_patch(to: Url.drop_params(socket.assigns.uri, ["panel"]))
+    |> load()
+  end
+
+  defp change_result(socket, {:error, code, message}) do
+    register = restore_submitted(socket.assigns.register)
+    machine = machine_name(socket, register.daemon_id)
+    assign(socket, :register, register_failed(register, code, message, machine))
+  end
+
+  # Ends the wait with the input the request was sent with, so results and errors
+  # describe that request.
+  defp restore_submitted(%{submitted: %{name: name, workspace_ids: ids}} = register),
+    do: %{register | name: name, workspace_ids: ids, submit: nil, submitted: nil}
+
+  defp restore_submitted(register), do: %{register | submit: nil, submitted: nil}
+
+  defp ask_remove(socket, id) do
+    scope = socket.assigns.current_scope
+
+    with %{} = repository <- find(socket.assigns.local_repositories, id),
+         true <- removable?(scope, repository),
+         %{} <- eligible_machine(socket, repository.daemon_id) do
+      workspaces =
+        case WebRegistration.remove_workspaces(scope, repository.id) do
+          {:ok, workspaces} -> workspaces
+          {:error, _} -> [Map.take(scope.workspace, [:id, :slug, :name])]
+        end
+
+      projects = Enum.map(socket.assigns.local_projects[repository.id] || [], & &1.key)
+
+      assign(socket, :remove, %{
+        id: repository.id,
+        name: repository.name,
+        daemon_id: repository.daemon_id,
+        machine: repository.daemon_name,
+        workspaces: workspaces,
+        projects: projects,
+        waiting: nil,
+        error: nil
+      })
+    else
+      _ -> socket
+    end
+  end
+
+  defp confirm_remove(%{assigns: %{remove: %{waiting: nil} = remove}} = socket) do
+    case WebRegistration.remove(socket.assigns.current_scope, remove.id) do
+      {:ok, request_id} ->
+        wait(request_id, WebRegistration.change_timeout_ms())
+        assign(socket, :remove, %{remove | waiting: request_id, error: nil})
+
+      {:error, code} when is_atom(code) ->
+        assign(socket, :remove, %{remove | error: {code, nil}})
+
+      {:error, _} ->
+        assign(socket, :remove, %{remove | error: {:failed, nil}})
+    end
+  end
+
+  defp confirm_remove(socket), do: socket
+
+  defp dismiss_remove(%{assigns: %{remove: nil}} = socket), do: socket
+
+  defp dismiss_remove(socket) do
+    if socket.assigns.remove.waiting, do: WebRegistration.forget(socket.assigns.remove.waiting)
+    assign(socket, :remove, nil)
+  end
+
+  defp remove_result(socket, {:ok, _result}) do
+    remove = socket.assigns.remove
+
+    socket
+    |> assign(:remove, nil)
+    |> put_flash(
+      :info,
+      dgettext("ui", "已从 %{machine} 移除 %{name}", machine: remove.machine, name: remove.name)
+    )
+    |> load()
+  end
+
+  defp remove_result(socket, {:error, code, message}),
+    do: assign(socket, :remove, %{socket.assigns.remove | waiting: nil, error: {code, message}})
 
   ## Events
 
@@ -221,6 +618,72 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
 
   def handle_event("dismiss", _params, socket), do: {:noreply, assign(socket, :confirm, nil)}
 
+  def handle_event("select_machine", %{"daemon_id" => id}, socket) do
+    case {socket.assigns.register, Integer.parse(to_string(id))} do
+      {%{submit: nil, daemon_id: current}, {id, ""}} when id != current ->
+        {:noreply, select_machine(socket, id)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("reread", _params, socket) do
+    case socket.assigns.register do
+      %{submit: nil, daemon_id: id} when is_integer(id) ->
+        if eligible_machine(socket, id),
+          do: {:noreply, start_browse(socket)},
+          else: {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("filter_candidates", params, socket) do
+    filter = params |> Map.get("filter", "") |> to_string() |> String.slice(0, 200)
+    {:noreply, update_register(socket, &%{&1 | filter: filter})}
+  end
+
+  def handle_event("select_candidate", %{"index" => index}, socket) do
+    case {socket.assigns.register, Integer.parse(to_string(index))} do
+      {%{}, {index, ""}} -> {:noreply, select_candidate(socket, index)}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  # Changes arriving while a request is pending (the form is locked) are ignored.
+  def handle_event("validate_register", %{"register" => params}, socket) when is_map(params) do
+    case socket.assigns.register do
+      %{selected: index, submit: nil} when is_integer(index) ->
+        {name, ids} = register_input(socket, params)
+        machine = machine_name(socket, socket.assigns.register.daemon_id)
+        errors = input_errors(name, ids, machine)
+
+        {:noreply,
+         update_register(socket, &%{&1 | name: name, workspace_ids: ids, errors: errors})}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("register", %{"register" => params}, socket) when is_map(params) do
+    case socket.assigns.register do
+      %{selected: index, submit: nil} when is_integer(index) ->
+        if eligible_machine(socket, socket.assigns.register.daemon_id),
+          do: {:noreply, submit_register(socket, params)},
+          else: {:noreply, socket}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("ask_remove", %{"id" => id}, socket), do: {:noreply, ask_remove(socket, id)}
+  def handle_event("remove_local", _params, socket), do: {:noreply, confirm_remove(socket)}
+  def handle_event("dismiss_remove", _params, socket), do: {:noreply, dismiss_remove(socket)}
+
   def handle_event(_event, _params, socket), do: {:noreply, socket}
 
   defp save_workspaces(socket, id, ids) do
@@ -271,16 +734,72 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
              {:runtimes_changed},
              {:daemons_changed},
              {:local_repositories_changed},
+             {:local_repository_changes_changed},
              {:projects_changed}
            ],
       do: {:noreply, Throttle.schedule(socket)}
 
+  # D8: only the request this page sent, answered by the machine it was sent to.
+  def handle_info({:local_repo_result, request_id, daemon_id, outcome}, socket) do
+    case pending(socket, request_id) do
+      {:browse, ^daemon_id} ->
+        WebRegistration.forget(request_id)
+        {:noreply, browse_result(socket, outcome)}
+
+      {:register, ^daemon_id} ->
+        WebRegistration.forget(request_id)
+        {:noreply, change_result(socket, outcome)}
+
+      {:remove, ^daemon_id} ->
+        WebRegistration.forget(request_id)
+        {:noreply, remove_result(socket, outcome)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_info({:local_repo_timeout, request_id}, socket) do
+    case pending(socket, request_id) do
+      {:browse, _} ->
+        WebRegistration.forget(request_id)
+        {:noreply, update_register(socket, &%{&1 | browse: :timeout})}
+
+      {:register, daemon_id} ->
+        WebRegistration.forget(request_id)
+        notice = code(:timeout, machine_name(socket, daemon_id))
+        {:noreply, update_register(socket, &%{restore_submitted(&1) | notice: notice})}
+
+      {:remove, _} ->
+        WebRegistration.forget(request_id)
+        {:noreply, update(socket, :remove, &%{&1 | waiting: nil, error: {:timeout, nil}})}
+
+      nil ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_info(:reload, socket), do: {:noreply, socket |> Throttle.done() |> load()}
 
-  def handle_info(:tick, socket),
-    do: {:noreply, assign(socket, :daemons, RunData.daemons(socket.assigns.current_scope))}
+  def handle_info(:tick, socket) do
+    {:noreply,
+     socket
+     |> assign(:daemons, RunData.daemons(socket.assigns.current_scope))
+     |> load_registration()}
+  end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  defp pending(socket, request_id) do
+    %{register: register, remove: remove} = socket.assigns
+
+    cond do
+      register && register.browse == {:waiting, request_id} -> {:browse, register.daemon_id}
+      register && register.submit == request_id -> {:register, register.daemon_id}
+      remove && remove.waiting == request_id -> {:remove, remove.daemon_id}
+      true -> nil
+    end
+  end
 
   defp failed(socket, reason) do
     socket |> assign(:confirm, nil) |> put_flash(:error, error_message(reason)) |> load()
@@ -345,9 +864,33 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
 
   defp panel_path(uri, kind, id), do: Url.put_params(uri, %{panel: "#{kind}:#{id}"})
 
-  defp repos_add_command(slug),
+  defp machine_label(machines, daemon_id) do
+    case Enum.find(machines, &(&1.daemon_id == daemon_id)) do
+      %{name: name} -> name
+      nil -> ""
+    end
+  end
+
+  defp register_label(%{submit: id} = register, machines) when is_binary(id),
     do:
-      "helmsman repos add <#{dgettext("ui", "路径")}> --name <#{dgettext("ui", "名字")}> --workspace #{slug}"
+      dgettext("ui", "正在等待 %{machine} 确认…", machine: machine_label(machines, register.daemon_id))
+
+  defp register_label(_register, _machines), do: dgettext("ui", "登记")
+
+  defp removable?(scope, repository),
+    do:
+      repository.owner.user_id == scope.user.id and
+        repository.unavailable_reason != @not_configured
+
+  defp remove_reason(machines, repository) do
+    case Enum.find(machines, &(&1.daemon_id == repository.daemon_id)) do
+      %{eligibility: :ok} -> nil
+      %{eligibility: code, name: name} -> RegistrationComponents.code_text(code, name)
+      nil -> RegistrationComponents.code_text(:not_found, repository.daemon_name)
+    end
+  end
+
+  defp repos_add_command(slug), do: RegistrationComponents.repos_add_command(slug)
 
   defp login_command, do: "helmsman login --server #{HelmsmanWeb.Endpoint.url()}"
 
@@ -577,13 +1120,25 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
         </section>
 
         <section :if={!@empty?} id="local-repositories-section" class="mt-8">
-          <div class="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 class="text-title font-semibold text-fg">{dgettext("ui", "本地仓库")}</h2>
-            <p class="text-caption text-fg-muted">
-              {dgettext("ui", "在机器上用")}
-              <code class="font-mono">helmsman repos</code>
-              {dgettext("ui", "登记；路径只保存在机器上")}
-            </p>
+          <div class="mb-2 flex items-start justify-between gap-3">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h2 class="text-title font-semibold text-fg">{dgettext("ui", "本地仓库")}</h2>
+              <p class="text-caption text-fg-muted">
+                {dgettext("ui", "在机器上用")}
+                <code class="font-mono">helmsman repos</code>
+                {dgettext("ui", "登记；允许网页登记的机器也可以点「登记本地仓库」。路径只保存在机器上")}
+              </p>
+            </div>
+            <.button
+              :if={@machines != []}
+              id="local-repository-register"
+              size="sm"
+              icon="lucide-plus"
+              class="flex-none"
+              patch={Url.put_params(@uri || "", %{panel: "register-local-repository"})}
+            >
+              {dgettext("ui", "登记本地仓库")}
+            </.button>
           </div>
           <div
             :if={@local_repositories == []}
@@ -601,6 +1156,9 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
               text={repos_add_command(@current_scope.workspace.slug)}
               class="max-w-2xl"
             />
+            <p :if={@machines != []} id="local-repositories-empty-web" class="text-body text-fg-muted">
+              {dgettext("ui", "也可以在允许网页登记的机器上直接点「登记本地仓库」")}
+            </p>
           </div>
           <div
             :if={@local_repositories != []}
@@ -623,6 +1181,7 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
                     {dgettext("ui", "状态")}
                   </th>
                   <th class="px-3 py-2 font-medium">{dgettext("ui", "项目")}</th>
+                  <th class="px-3 py-2"><span class="sr-only">{dgettext("ui", "操作")}</span></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-border">
@@ -690,10 +1249,27 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
                     </span>
                     <span :if={!@local_projects[l.id]} class="text-fg-subtle">—</span>
                   </td>
+                  <td class="px-3 py-2 text-right">
+                    <.button
+                      :if={removable?(@current_scope, l)}
+                      id={"local-repository-remove-#{l.id}"}
+                      size="xs"
+                      variant="ghost"
+                      phx-click="ask_remove"
+                      phx-value-id={l.id}
+                      disabled_reason={remove_reason(@machines, l)}
+                    >
+                      {dgettext("ui", "移除")}
+                    </.button>
+                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <RegistrationComponents.changes
+            changes={@changes}
+            slug={@current_scope.workspace.slug}
+          />
         </section>
       </div>
 
@@ -764,6 +1340,67 @@ defmodule HelmsmanWeb.SettingsLive.Runtimes do
           </div>
         </:footer>
       </.side_panel>
+
+      <.side_panel
+        id="local-repository-register-panel"
+        show={@register != nil}
+        title={dgettext("ui", "登记本地仓库")}
+        width={:wide}
+        dirty={@register != nil and @register.selected != nil}
+        patch_on_close={@close_path}
+      >
+        <:error :if={@register && @register.error}>
+          <span id="register-error" class="flex flex-col items-start gap-2">
+            <RegistrationComponents.code_message
+              id="register-error-text"
+              code={elem(@register.error, 0)}
+              machine={machine_label(@machines, @register.daemon_id)}
+              message={elem(@register.error, 1)}
+              slug={@current_scope.workspace.slug}
+            />
+            <.button
+              :if={@register.reread}
+              id="register-error-reread"
+              size="sm"
+              phx-click="reread"
+              icon="lucide-refresh-cw"
+            >
+              {dgettext("ui", "重新读取")}
+            </.button>
+          </span>
+        </:error>
+        <p
+          :if={@register && @register.notice}
+          id="register-notice"
+          role="status"
+          class="mb-4 rounded-field border border-warning tint-warning px-3 py-2 text-body text-warning-fg"
+        >
+          {@register.notice}
+        </p>
+        <RegistrationComponents.register_body
+          :if={@register}
+          register={@register}
+          machines={@machines}
+          slug={@current_scope.workspace.slug}
+        />
+        <:footer :let={cancel}>
+          <span />
+          <div class="flex items-center gap-2">
+            <.button phx-click={cancel}>{dgettext("ui", "取消")}</.button>
+            <.button
+              id="local-repository-register-submit"
+              type="submit"
+              form="local-repository-register-form"
+              variant="primary"
+              disabled={@register == nil or @register.selected == nil or @register.submit != nil}
+            >
+              {register_label(@register, @machines)}
+            </.button>
+          </div>
+        </:footer>
+      </.side_panel>
+
+      <RegistrationComponents.remove_dialog remove={@remove} slug={@current_scope.workspace.slug} />
 
       <.confirm_dialog
         id="runtimes-confirm"
