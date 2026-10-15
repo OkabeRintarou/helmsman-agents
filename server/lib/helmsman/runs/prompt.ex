@@ -69,10 +69,12 @@ defmodule Helmsman.Runs.Prompt do
           optional(:squad) => Squads.loaded() | nil,
           optional(:autopilot) => %{record: Record.t(), note_by: String.t() | nil} | nil,
           optional(:delegations) => %{
-            summaries: %{pos_integer() => String.t() | nil},
-            squads: %{pos_integer() => String.t()}
+            required(:summaries) => %{pos_integer() => String.t() | nil},
+            required(:squads) => %{pos_integer() => String.t()},
+            optional(:orchestrators) => %{pos_integer() => String.t()}
           },
-          optional(:spec) => map() | nil
+          optional(:spec) => map() | nil,
+          optional(:orchestration) => %{root: Task.t(), rows: [map()]} | nil
         }
 
   @max_quote_bytes 8192

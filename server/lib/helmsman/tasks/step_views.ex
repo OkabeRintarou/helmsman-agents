@@ -31,7 +31,7 @@ defmodule Helmsman.Tasks.StepViews do
        %{
          waiting_for: state.waiting_for,
          blocked_by: state.blocked_by,
-         orchestrable: targets && MapSet.member?(targets, state.task.id)
+         orchestrable: targets && state.task.id in targets
        }}
     end)
   end
@@ -42,8 +42,11 @@ defmodule Helmsman.Tasks.StepViews do
   # for other callers.
   defp targets(%Scope{via: :run, run: %Run{squad_id: squad_id, task: task}}) do
     case Orchestration.root(task, squad_id) do
-      nil -> MapSet.new()
-      root -> root |> Orchestration.scope_ids(squad_id) |> MapSet.delete(root.id)
+      nil ->
+        []
+
+      root ->
+        root |> Orchestration.scope_ids(squad_id) |> MapSet.to_list() |> List.delete(root.id)
     end
   end
 
