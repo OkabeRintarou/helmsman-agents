@@ -2,6 +2,8 @@ defmodule HelmsmanWeb.CollabComponentsTest do
   # add-collaboration-ui 1.1: the pure texts and helpers (D3, D4, D5, D9).
   use ExUnit.Case, async: true
 
+  require Phoenix.LiveViewTest
+
   alias HelmsmanWeb.CollabComponents, as: C
 
   defp link(type, direction, task, waiting_for \\ nil),
@@ -143,5 +145,89 @@ defmodule HelmsmanWeb.CollabComponentsTest do
     refute Map.has_key?(dev, :note)
     assert c == "@ 不会启动它：你无权触发 keel/c"
     assert cli == "外接 Agent，@ 不会唤醒它"
+  end
+
+  describe "被覆盖的提及 (add-nested-feedback-replies D12)" do
+    defp line(dispatch) do
+      Phoenix.LiveViewTest.render_component(&C.dispatch_line/1,
+        entry: %{dispatch: dispatch},
+        dom_id: "feedback-6",
+        uri: "/w/acme/t/BOS-12"
+      )
+      |> LazyHTML.from_fragment()
+    end
+
+    defp item(doc, i), do: LazyHTML.query(doc, "#feedback-6-dispatch-#{i}")
+
+    defp item(agent, trigger, result, reason \\ nil, run_id \\ nil),
+      do: %{
+        agent: agent,
+        trigger: trigger,
+        result: result,
+        reason: reason,
+        run_id: run_id,
+        squad: nil
+      }
+
+    test "回答覆盖提及" do
+      dispatch = [
+        item("keel/dev", "answer", "queued", nil, 41),
+        item("keel/dev", "mention", "skipped", "covered")
+      ]
+
+      doc = line(dispatch)
+      assert LazyHTML.text(item(doc, 0)) =~ "回答"
+
+      assert item(doc, 0) |> LazyHTML.query("a") |> LazyHTML.attribute("href") == [
+               "/w/acme/t/BOS-12?run=41"
+             ]
+
+      assert LazyHTML.text(item(doc, 1)) =~ "提及"
+      assert LazyHTML.text(item(doc, 1)) =~ "keel/dev：已由这条记录的回答唤醒"
+      assert LazyHTML.attribute(item(doc, 1), "data-covered") == ["true"]
+      assert LazyHTML.attribute(item(doc, 1), "data-skipped") == []
+      assert C.mention_notes(dispatch) == %{}
+    end
+
+    test "a callback covers the mention" do
+      dispatch = [
+        item("keel/dev", "requested", "merged", nil, 41),
+        item("keel/dev", "mention", "skipped", :covered)
+      ]
+
+      assert LazyHTML.text(item(line(dispatch), 1)) =~ "已由这条记录的回调唤醒"
+      assert C.mention_notes(dispatch) == %{}
+    end
+
+    test "回答被跳过、提及唤醒" do
+      dispatch = [
+        item("keel/dev", "answer", "skipped", "no_grant"),
+        item("keel/dev", "mention", "queued", nil, 42)
+      ]
+
+      doc = line(dispatch)
+      assert LazyHTML.attribute(item(doc, 0), "data-skipped") == ["true"]
+      refute LazyHTML.text(doc) =~ "已由"
+
+      assert item(doc, 1) |> LazyHTML.query("a") |> LazyHTML.attribute("href") == [
+               "/w/acme/t/BOS-12?run=42"
+             ]
+
+      assert C.mention_notes(dispatch) == %{}
+    end
+
+    test "都被跳过" do
+      dispatch = [
+        item("keel/dev", "answer", "skipped", "no_grant"),
+        item("keel/dev", "mention", "skipped", "unauthorized")
+      ]
+
+      doc = line(dispatch)
+      assert LazyHTML.attribute(item(doc, 0), "data-skipped") == ["true"]
+      assert LazyHTML.attribute(item(doc, 1), "data-skipped") == ["true"]
+      assert LazyHTML.text(item(doc, 1)) =~ "触发者无权触发它"
+      refute LazyHTML.text(doc) =~ "已由"
+      assert C.mention_notes(dispatch) == %{"keel/dev" => "触发者无权触发它"}
+    end
   end
 end

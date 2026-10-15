@@ -786,7 +786,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
   defp build_feedback_panel(socket, "reply", target) do
     case find_feedback(socket, target) do
       %{status: "active"} = entry ->
-        %{new_feedback_panel(:reply, entry.id, "comment", "") | quote: feedback_quote(entry)}
+        prefill = reply_prefill(entry.author, socket.assigns.current_scope)
+        %{new_feedback_panel(:reply, entry.id, "comment", prefill) | quote: feedback_quote(entry)}
 
       _ ->
         nil
@@ -801,6 +802,16 @@ defmodule HelmsmanWeb.TaskLive.Show do
       _ -> nil
     end
   end
+
+  # add-nested-feedback-replies D10: a reply starts with `@<author> `, except to the
+  # reader's own human identity, the system identity or an unknown author. Only
+  # visible text: it is parsed like any typed mention when submitted (D11).
+  defp reply_prefill(%{name: name, kind: kind}, scope)
+       when is_binary(name) and kind in ["human", "agent", "squad"] do
+    if (kind == "human" and scope.actor) && scope.actor.name == name, do: "", else: "@#{name} "
+  end
+
+  defp reply_prefill(_author, _scope), do: ""
 
   defp feedback_quote(entry) do
     %{
@@ -2033,7 +2044,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     assigns =
       assign(assigns,
         title: title,
-        dirty: String.trim(panel.content || "") != "",
+        dirty: String.trim(panel.content || "") not in ["", String.trim(panel.initial || "")],
         submit_label:
           if(panel.mode == :revise, do: dgettext("ui", "修订"), else: dgettext("ui", "提交"))
       )

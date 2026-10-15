@@ -315,6 +315,7 @@ defmodule HelmsmanWeb.CollabComponents do
   def mention_notes(dispatch) do
     for %{trigger: "mention", result: "skipped", agent: agent} = item <- dispatch || [],
         is_binary(agent),
+        not covered?(item),
         into: %{},
         do: {agent, dispatch_reason(agent, item.reason)}
   end
@@ -346,7 +347,10 @@ defmodule HelmsmanWeb.CollabComponents do
           is_binary(item.agent),
           do: item
 
-    assigns = assign(assigns, :items, items)
+    assigns =
+      assign(assigns,
+        items: Enum.map(items, &Map.put(&1, :covered_by, covered_by(&1, items)))
+      )
 
     ~H"""
     <ul
@@ -360,17 +364,23 @@ defmodule HelmsmanWeb.CollabComponents do
         id={"#{@dom_id}-dispatch-#{i}"}
         data-agent={item.agent}
         data-result={item.result}
-        data-skipped={item.result == "skipped" && "true"}
+        data-skipped={item.result == "skipped" && !item.covered_by && "true"}
+        data-covered={item.covered_by && "true"}
         class={[
           "inline-flex max-w-full items-center gap-1 rounded-badge border px-1.5 py-0.5 text-caption",
-          if(item.result == "skipped",
+          if(item.result == "skipped" and !item.covered_by,
             do: "border-dashed border-border text-fg-subtle",
             else: "border-border text-fg-muted"
           )
         ]}
       >
         <.icon
-          name={if(item.result == "skipped", do: "lucide-circle-slash", else: "lucide-bot")}
+          name={
+            if(item.result == "skipped" and !item.covered_by,
+              do: "lucide-circle-slash",
+              else: "lucide-bot"
+            )
+          }
           class="size-3 flex-none"
         />
         <span>{RunComponents.trigger_kind(%{kind: item.trigger})}</span>
@@ -383,7 +393,9 @@ defmodule HelmsmanWeb.CollabComponents do
           {item_name(item)}
         </.link>
         <span :if={!(@uri && item.run_id && item.result != "skipped")}>
-          <span class="font-medium">{item_name(item)}</span><span :if={item.result == "skipped"}>：{dispatch_reason(
+          <span class="font-medium">{item_name(item)}</span><span :if={item.covered_by}>：{covered_text(
+            item.covered_by
+          )}</span><span :if={item.result == "skipped" and !item.covered_by}>：{dispatch_reason(
             item.agent,
             item.reason
           )}</span>
@@ -393,6 +405,24 @@ defmodule HelmsmanWeb.CollabComponents do
     </ul>
     """
   end
+
+  # add-nested-feedback-replies D12: a mention skipped because the same record already
+  # woke its agent (an answer or a callback that was queued or merged).
+  defp covered?(%{result: "skipped", reason: reason}), do: reason in ["covered", :covered]
+  defp covered?(_item), do: false
+
+  # The trigger kind that woke the covered mention's agent, nil when not covered.
+  defp covered_by(item, items) do
+    if covered?(item) do
+      Enum.find_value(items, "answer", fn other ->
+        (other.agent == item.agent and other.result in ["queued", "merged"] and
+           other.trigger != "mention") && other.trigger
+      end)
+    end
+  end
+
+  defp covered_text("requested"), do: dgettext("ui", "已由这条记录的回调唤醒")
+  defp covered_text(_answer), do: dgettext("ui", "已由这条记录的回答唤醒")
 
   # A squad's leader run reads「web-team（keel/lead）」.
   defp item_name(%{squad: squad, agent: agent}) when is_binary(squad), do: "#{squad}（#{agent}）"

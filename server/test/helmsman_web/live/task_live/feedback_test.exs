@@ -331,31 +331,21 @@ defmodule HelmsmanWeb.TaskLive.FeedbackTest do
       refute open?(view, @panel)
     end
 
-    test "a reply nests under its root and links to its target", ctx do
+    test "a reply nests under the record it replies to, without a 回复 @… line", ctx do
       add(ctx, :alice, "comment", "已复现")
       {:ok, view, _html} = live(as(ctx, :bob), ctx.path)
 
       view |> element("#feedback-1-reply") |> render_click()
       submit(view, %{kind: "comment", content: "我也遇到了"})
-      assert has_element?(view, "#feedback-thread-1-replies > li > #feedback-2")
-
-      assert has_element?(
-               view,
-               ~s(#feedback-2-reply-to[href="#feedback-1"]),
-               "回复 @#{name(ctx, :alice)} #1"
-             )
-
-      assert has_element?(view, "#feedback-2-reply-to [data-target-summary]", "已复现")
+      assert has_element?(view, "#feedback-thread-1-replies > ol > li > #feedback-2")
+      refute has_element?(view, "#feedback-2-reply-to")
 
       view |> element("#feedback-2-reply") |> render_click()
       submit(view, %{kind: "comment", content: "第三条"})
-      assert has_element?(view, "#feedback-thread-1-replies > li > #feedback-3")
-
-      assert has_element?(
-               view,
-               ~s(#feedback-3-reply-to[href="#feedback-2"]),
-               "回复 @#{name(ctx, :bob)} #2"
-             )
+      assert has_element?(view, "#feedback-thread-2-replies > ol > li > #feedback-3")
+      assert has_element?(view, "#feedback-thread-2[data-depth='1']")
+      assert has_element?(view, "#feedback-thread-3[data-depth='2']")
+      refute has_element?(view, "#feedback-3-reply-to")
     end
 
     test "a reply written elsewhere shows at once; a revised target shows its current version",
@@ -367,17 +357,45 @@ defmodule HelmsmanWeb.TaskLive.FeedbackTest do
       |> Task.await()
 
       assert has_element?(view, "#feedback-thread-1-replies #feedback-2", "MCP 的回复")
+      assert has_element?(view, "#feedback-thread-1-replies[data-count='1']")
 
+      # The revised target keeps its place; the reply stays under it, no label (D7).
       Task.async(fn -> revise(ctx, :alice, root, "修订后") end) |> Task.await()
+
+      assert has_element?(view, "#feedback-thread-1 > #feedback-3", "修订后")
+      assert has_element?(view, "#feedback-thread-1-replies > ol > li > #feedback-2")
+      refute has_element?(view, "#feedback-2-reply-to")
+    end
+
+    test "a deep reply flattened at depth 3 links to its target, revised or not", ctx do
+      %{id: first} = add(ctx, :alice, "comment", "一")
+
+      ids =
+        Enum.reduce(2..5, [first], fn i, [last | _] = acc ->
+          [add_reply(ctx, :bob, "comment", "第#{i}", last).id | acc]
+        end)
+
+      [_fifth, fourth | _] = ids
+      {:ok, view, _html} = live(as(ctx, :alice), ctx.path)
+
+      assert has_element?(view, "#feedback-thread-3-replies > ol > li > #feedback-4")
+      assert has_element?(view, "#feedback-thread-3-replies > ol > li > #feedback-5")
 
       assert has_element?(
                view,
-               ~s(#feedback-2-reply-to[href="#feedback-3"]),
-               "回复 @#{name(ctx, :alice)} #3"
+               ~s(#feedback-5-reply-to[href="#feedback-4"]),
+               "回复 @#{name(ctx, :bob)} #4"
              )
 
-      assert has_element?(view, "#feedback-2 [data-target-revised]", "已修订")
-      assert has_element?(view, "#feedback-2 [data-target-summary]", "修订后")
+      Task.async(fn -> revise(ctx, :bob, fourth, "第4（改）") end) |> Task.await()
+
+      assert has_element?(
+               view,
+               ~s(#feedback-5-reply-to[href="#feedback-6"]),
+               "回复 @#{name(ctx, :bob)} #6"
+             )
+
+      assert has_element?(view, "#feedback-5 [data-target-revised]", "已修订")
     end
 
     test "回答 replies to its question and reads as its answer", ctx do
@@ -388,7 +406,7 @@ defmodule HelmsmanWeb.TaskLive.FeedbackTest do
       submit(view, %{content: "B"})
 
       assert has_element?(view, "#feedback-thread-#{q}-replies #feedback-2[data-kind=answer]")
-      assert has_element?(view, "#feedback-2-reply-to[data-answer]", "回答 @keel/dev ##{q} 的提问")
+      refute has_element?(view, "#feedback-2-reply-to")
       refute has_element?(view, "#task-open-question")
     end
   end

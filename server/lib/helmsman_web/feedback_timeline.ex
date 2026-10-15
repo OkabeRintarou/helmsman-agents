@@ -22,27 +22,101 @@ defmodule HelmsmanWeb.FeedbackTimeline do
     end)
   end
 
+  @type node_ :: %{
+          current: map(),
+          history: [map()],
+          depth: 0..3,
+          label?: boolean(),
+          replies: [node_()]
+        }
+
+  @max_depth 3
+
   @doc """
-  The threads grouped one level deep (add-feedback-replies D5): roots in thread
-  order, each with `replies`, the threads whose `reply_root` is that root, also in
-  thread order. A reply whose root is missing shows as a root.
+  The threads as a reply tree (add-nested-feedback-replies D1–D4, D7).
+
+  A thread's parent is the thread of the record its current version replies to
+  (`reply_to`, an earlier version included). A thread without `reply_to`, or whose
+  target is not in `feedback`, is a root. Roots and siblings are in thread order.
+  Depth is at most 3: a deeper reply shows under its depth-2 ancestor, among that
+  ancestor's other replies. `label?` is true when the shown parent is not the thread
+  the record replies to (flattened, or the target is missing): only then does the
+  card say whom it replies to.
+
+  A reply's target is always an earlier record and the target of a thread never
+  changes (revisions keep it), so a parent's `thread_seq` is smaller than its
+  child's: one pass in thread order computes every depth, and the tree has no cycle.
   """
-  @spec tree([map()]) :: [%{current: map(), history: [map()], replies: [thread()]}]
+  @spec tree([map()]) :: [node_()]
   def tree(feedback) do
     threads = threads(feedback)
-    roots = MapSet.new(threads, & &1.current.thread_seq)
+    thread_of = Map.new(feedback, &{&1.seq, &1.thread_seq})
 
-    {replies, top} =
-      Enum.split_with(threads, fn thread ->
-        root = root_of(thread)
-        root != nil and root != thread.current.thread_seq and MapSet.member?(roots, root)
+    # thread_seq => %{thread, parent (actual), depth, a2 (depth-2 ancestor), missing?}
+    info =
+      Enum.reduce(threads, %{}, fn thread, info ->
+        Map.put(info, thread.current.thread_seq, place(thread, info, thread_of))
       end)
 
-    replies = Enum.group_by(replies, &root_of/1)
-    Enum.map(top, &Map.put(&1, :replies, Map.get(replies, &1.current.thread_seq, [])))
+    shown_parent = fn %{parent: parent, depth: depth, a2: a2} ->
+      if depth > @max_depth, do: a2, else: parent
+    end
+
+    children =
+      info
+      |> Map.values()
+      |> Enum.filter(& &1.parent)
+      |> Enum.group_by(shown_parent)
+      |> Map.new(fn {parent, kids} ->
+        {parent, Enum.sort_by(kids, & &1.thread.current.thread_seq)}
+      end)
+
+    threads
+    |> Enum.map(&info[&1.current.thread_seq])
+    |> Enum.filter(&is_nil(&1.parent))
+    |> Enum.map(&build(&1, 0, nil, children))
   end
 
-  defp root_of(%{current: current}), do: seq_of(current.reply_root)
+  # thread_seq => %{thread, parent (the actual one), depth, a2 (the depth-2 ancestor),
+  # missing? (its target is not in the timeline)}; `info` has every earlier thread.
+  defp place(thread, info, thread_of) do
+    ts = thread.current.thread_seq
+    target = seq_of(thread.current[:reply_to])
+    parent = target && thread_of[target]
+    parent = if parent && parent < ts && Map.has_key?(info, parent), do: parent
+    depth = if parent, do: info[parent].depth + 1, else: 0
+
+    %{
+      thread: thread,
+      parent: parent,
+      depth: depth,
+      a2: depth_2_ancestor(ts, depth, parent && info[parent]),
+      missing?: target != nil and parent == nil
+    }
+  end
+
+  defp depth_2_ancestor(_ts, depth, _parent) when depth < 2, do: nil
+  defp depth_2_ancestor(ts, 2, _parent), do: ts
+  defp depth_2_ancestor(_ts, _depth, parent), do: parent.a2
+
+  defp build(entry, depth, shown, children) do
+    ts = entry.thread.current.thread_seq
+
+    entry.thread
+    |> Map.merge(%{
+      depth: depth,
+      label?: entry.missing? or (shown != nil and shown != entry.parent),
+      replies:
+        children
+        |> Map.get(ts, [])
+        |> Enum.map(&build(&1, min(depth + 1, @max_depth), ts, children))
+    })
+  end
+
+  @doc "The number of replies shown under a node of `tree/1`, at every level."
+  @spec reply_count(node_()) :: non_neg_integer()
+  def reply_count(%{replies: replies}),
+    do: Enum.reduce(replies, 0, &(&2 + 1 + reply_count(&1)))
 
   @doc "The last active question, or nil."
   @spec last_open_question([map()]) :: map() | nil

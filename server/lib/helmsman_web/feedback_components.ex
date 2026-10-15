@@ -2,8 +2,10 @@ defmodule HelmsmanWeb.FeedbackComponents do
   @moduledoc """
   Feedback timeline of the task page (design D4, spec web-feedback): one card per
   thread showing its active record, earlier versions folded underneath, a
-  `feedback-<seq>` anchor on every record. Replies are indented one level under their
-  root thread and say whom they reply to (add-feedback-replies D5).
+  `feedback-<seq>` anchor on every record. Replies form a tree of at most three
+  indented levels (`HelmsmanWeb.FeedbackTimeline.tree/1`); a reply only says whom it
+  replies to when its place does not (add-nested-feedback-replies D3–D6). A thread's
+  replies fold in a `<details>` whose open state the browser keeps across patches.
 
   Events pushed to the page: `open_feedback` with `mode` `add`, `answer` (`target` the
   question's ID), `reply` or `revise` (`target` the record's ID).
@@ -44,7 +46,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
     assigns =
       assign(assigns,
         tree: tree,
-        count: Enum.reduce(tree, 0, &(&2 + 1 + length(&1.replies))),
+        count: Enum.reduce(tree, 0, &(&2 + 1 + FeedbackTimeline.reply_count(&1))),
         kinds: Map.new(assigns.feedback, &{&1.id, &1.kind})
       )
 
@@ -58,9 +60,9 @@ defmodule HelmsmanWeb.FeedbackComponents do
         {dgettext("ui", "还没有 Feedback")}
       </p>
       <ol id="feedback-threads" class="flex flex-col gap-3">
-        <li :for={root <- @tree} id={"feedback-thread-#{root.current.thread_seq}"}>
-          <.thread
-            thread={root}
+        <li :for={root <- @tree} id={"feedback-thread-#{root.current.thread_seq}"} data-depth="0">
+          <.tree_node
+            node={root}
             html={@html}
             scope={@scope}
             revisable={@revisable}
@@ -71,31 +73,6 @@ defmodule HelmsmanWeb.FeedbackComponents do
             appearance={@appearance}
             uri={@uri}
           />
-          <ol
-            :if={root.replies != []}
-            id={"feedback-thread-#{root.current.thread_seq}-replies"}
-            aria-label={dgettext("ui", "%{id} 的回复", id: root.current.id)}
-            class="mt-2 ml-2 flex flex-col gap-2 border-l-2 border-border pl-2.5 sm:ml-4 sm:pl-4"
-          >
-            <li
-              :for={reply <- root.replies}
-              id={"feedback-thread-#{reply.current.thread_seq}"}
-              data-reply-root={root.current.thread_seq}
-            >
-              <.thread
-                thread={reply}
-                html={@html}
-                scope={@scope}
-                revisable={@revisable}
-                can_feedback?={@can_feedback?}
-                fresh_after={@fresh_after}
-                kinds={@kinds}
-                agents={@agents}
-                appearance={@appearance}
-                uri={@uri}
-              />
-            </li>
-          </ol>
         </li>
       </ol>
       <div :if={@can_feedback?}>
@@ -109,6 +86,89 @@ defmodule HelmsmanWeb.FeedbackComponents do
         </.button>
       </div>
     </section>
+    """
+  end
+
+  @collapse_over 10
+
+  attr :node, :map, required: true
+  attr :html, :map, required: true
+  attr :scope, :map, required: true
+  attr :revisable, :any, required: true
+  attr :can_feedback?, :boolean, required: true
+  attr :fresh_after, :integer, required: true
+  attr :kinds, :map, required: true
+  attr :agents, :map, default: %{}
+  attr :appearance, :map, default: %{}
+  attr :uri, :string, default: nil
+
+  # A thread and its replies (D3–D6): one indented level with a guide line per depth;
+  # the replies of a root start open, those of a reply start folded past 10. The
+  # `open` attribute is the browser's after mount, so patches keep what the user did.
+  defp tree_node(assigns) do
+    count = FeedbackTimeline.reply_count(assigns.node)
+
+    assigns =
+      assign(assigns,
+        count: count,
+        open: assigns.node.depth == 0 or count <= @collapse_over,
+        ts: assigns.node.current.thread_seq
+      )
+
+    ~H"""
+    <.thread
+      thread={@node}
+      html={@html}
+      scope={@scope}
+      revisable={@revisable}
+      can_feedback?={@can_feedback?}
+      fresh_after={@fresh_after}
+      kinds={@kinds}
+      agents={@agents}
+      appearance={@appearance}
+      uri={@uri}
+    />
+    <details
+      :if={@node.replies != []}
+      id={"feedback-thread-#{@ts}-replies"}
+      open={@open}
+      phx-mounted={JS.ignore_attributes(["open"])}
+      data-count={@count}
+      class="hm-replies mt-1.5"
+    >
+      <summary
+        id={"feedback-thread-#{@ts}-toggle"}
+        class="inline-flex min-h-6 cursor-pointer items-center gap-1 rounded-field px-1 text-caption text-fg-muted hover:text-fg max-sm:min-h-8"
+      >
+        <span class="hm-replies-open">{dgettext("ui", "收起 %{n} 条回复", n: @count)}</span>
+        <span class="hm-replies-closed">{dgettext("ui", "展开 %{n} 条回复", n: @count)}</span>
+      </summary>
+      <ol
+        aria-label={dgettext("ui", "%{id} 的回复", id: @node.current.id)}
+        class="mt-1.5 flex flex-col gap-2 border-l border-border pl-3 sm:pl-6"
+      >
+        <li
+          :for={reply <- @node.replies}
+          id={"feedback-thread-#{reply.current.thread_seq}"}
+          data-depth={reply.depth}
+          data-parent={@ts}
+          class="min-w-0"
+        >
+          <.tree_node
+            node={reply}
+            html={@html}
+            scope={@scope}
+            revisable={@revisable}
+            can_feedback?={@can_feedback?}
+            fresh_after={@fresh_after}
+            kinds={@kinds}
+            agents={@agents}
+            appearance={@appearance}
+            uri={@uri}
+          />
+        </li>
+      </ol>
+    </details>
     """
   end
 
@@ -133,6 +193,8 @@ defmodule HelmsmanWeb.FeedbackComponents do
       revisable?={MapSet.member?(@revisable, @thread.current.id)}
       can_feedback?={@can_feedback?}
       fresh?={@thread.current.seq > @fresh_after}
+      label?={Map.get(@thread, :label?, false)}
+      nested?={Map.get(@thread, :depth, 0) > 0}
       target_kind={target_kind(@thread.current, @kinds)}
       agents={@agents}
       appearance={@appearance}
@@ -180,6 +242,12 @@ defmodule HelmsmanWeb.FeedbackComponents do
   attr :can_feedback?, :boolean, default: false
   attr :fresh?, :boolean, default: false
   attr :target_kind, :string, default: nil, doc: "kind of the current version replied to"
+
+  attr :label?, :boolean,
+    default: false,
+    doc: "say whom it replies to: its place in the tree does not (D4)"
+
+  attr :nested?, :boolean, default: false, doc: "a reply: less padding"
   attr :agents, :map, default: %{}, doc: "see `HelmsmanWeb.TaskComponents.actor_ref/1`"
   attr :appearance, :map, default: %{}, doc: "see `HelmsmanWeb.TaskComponents.actor_ref/1`"
   attr :uri, :string, default: nil, doc: "page URI for the run links of the triggers"
@@ -212,7 +280,8 @@ defmodule HelmsmanWeb.FeedbackComponents do
       data-system={@system? && "true"}
       phx-mounted={@fresh? && JS.transition("animate-row-flash", time: 600)}
       class={[
-        "scroll-mt-16 rounded-box border border-border px-3 py-2",
+        "scroll-mt-16 min-w-0 rounded-box border border-border py-2",
+        if(@nested?, do: "px-2.5 sm:px-3", else: "px-3"),
         if(@system? or !@active?, do: "bg-canvas", else: "bg-surface")
       ]}
     >
@@ -264,7 +333,13 @@ defmodule HelmsmanWeb.FeedbackComponents do
           <:trigger><.icon name="lucide-ellipsis" class="size-4" /></:trigger>
         </.dropdown>
       </header>
-      <.reply_to :if={@target} target={@target} answer?={@answer?} dom_id={@dom_id} />
+      <.reply_to
+        :if={@label? and @entry[:reply_to] != nil}
+        target={@target}
+        reply_to={@entry.reply_to}
+        answer?={@answer?}
+        dom_id={@dom_id}
+      />
       <.markdown
         content={@entry.content}
         html={@html}
@@ -281,6 +356,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
           :if={@entry.kind == "question"}
           id={"#{@dom_id}-answer"}
           size="xs"
+          class="max-sm:min-h-8"
           icon="lucide-reply"
           phx-click={JS.push("open_feedback", value: %{mode: "answer", target: @entry.id})}
         >
@@ -289,6 +365,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
         <.button
           id={"#{@dom_id}-reply"}
           size="xs"
+          class="max-sm:min-h-8"
           variant="ghost"
           icon="lucide-message-square-reply"
           aria-label={dgettext("ui", "回复 %{id}", id: @entry.id)}
@@ -301,9 +378,27 @@ defmodule HelmsmanWeb.FeedbackComponents do
     """
   end
 
-  attr :target, :map, required: true
+  attr :target, :map, default: nil
+  attr :reply_to, :string, required: true
   attr :answer?, :boolean, required: true
   attr :dom_id, :string, required: true
+
+  # A target that is not on the page (D4, D7): its number only, not a link.
+  defp reply_to(%{target: nil} = assigns) do
+    assigns = assign(assigns, :n, FeedbackTimeline.seq_of(assigns.reply_to))
+
+    ~H"""
+    <p
+      id={"#{@dom_id}-reply-to"}
+      data-reply-to={@reply_to}
+      data-target-missing
+      class="mt-1.5 inline-flex items-center gap-1 text-caption text-fg-muted"
+    >
+      <.icon name="lucide-corner-down-right" class="size-3.5 shrink-0" />
+      <span data-reply-label class="font-medium">{dgettext("ui", "回复 #%{n}", n: @n)}</span>
+    </p>
+    """
+  end
 
   # What a reply answers (add-feedback-replies D5): the replied record's current
   # version, linked so a click scrolls to it and flashes it.
@@ -330,7 +425,7 @@ defmodule HelmsmanWeb.FeedbackComponents do
           name={if @answer?, do: "lucide-reply", else: "lucide-corner-down-right"}
           class="size-3.5 shrink-0"
         />
-        <span data-reply-label class="truncate font-medium">{@label}</span>
+        <span data-reply-label class="min-w-0 break-words font-medium">{@label}</span>
         <span
           :if={@target.status == "superseded"}
           data-target-revised

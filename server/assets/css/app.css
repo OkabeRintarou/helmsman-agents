@@ -402,6 +402,13 @@ html[data-theme-pref=dark] .hm-theme-option[data-theme-option=dark] {
   transition-delay: 0s, 0s;
 }
 
+/* Feedback replies (add-nested-feedback-replies D6): the summary says what a click
+   does, from the browser-kept open state of the <details>. */
+.hm-replies[open] > summary .hm-replies-closed,
+.hm-replies:not([open]) > summary .hm-replies-open { display: none; }
+.hm-replies > summary { list-style: none; }
+.hm-replies > summary::-webkit-details-marker { display: none; }
+
 /* Reduced motion (design D4): finish decorative animations immediately but keep
    animation-delay so timed content (e.g. the 5s info flash) still lasts its full time. */
 @media (prefers-reduced-motion: reduce) {

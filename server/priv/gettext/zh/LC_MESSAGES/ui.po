@@ -9817,3 +9817,28 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "（已修订）"
 msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "回复 #%{n}"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "展开 %{n} 条回复"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "已由这条记录的回答唤醒"
+msgstr ""
+
+#: lib/helmsman_web/collab_components.ex
+#, elixir-autogen, elixir-format
+msgid "已由这条记录的回调唤醒"
+msgstr ""
+
+#: lib/helmsman_web/feedback_components.ex
+#, elixir-autogen, elixir-format
+msgid "收起 %{n} 条回复"
+msgstr ""
