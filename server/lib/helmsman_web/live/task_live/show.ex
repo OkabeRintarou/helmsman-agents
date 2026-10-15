@@ -32,6 +32,9 @@ defmodule HelmsmanWeb.TaskLive.Show do
     RunComponents,
     RunData,
     RunLog,
+    SpecComponents,
+    SpecData,
+    SpecErrors,
     TaskCollab,
     TaskComponents,
     TaskData,
@@ -96,6 +99,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
      |> TaskRuns.load()
      |> TaskLocalBranch.load(detail)
      |> TaskPullRequest.init()
+     |> load_spec()
      |> RunLog.init()
      |> RunActions.init()
      |> then(
@@ -231,6 +235,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   def handle_event("runs_" <> _ = event, _params, socket),
     do: {:noreply, TaskRuns.handle_event(event, socket)}
+
+  def handle_event("spec_start", _params, socket) do
+    %{current_scope: scope, task: task} = socket.assigns
+
+    case SpecData.update(scope, task.id, %{}) do
+      {:ok, _summary} -> {:noreply, load_spec(socket)}
+      {:error, reason} -> {:noreply, load_spec(socket, SpecErrors.message(reason))}
+    end
+  end
 
   def handle_event("pr_" <> _ = event, params, socket),
     do: {:noreply, TaskPullRequest.handle_event(event, params, socket, &refresh/1)}
@@ -432,6 +445,8 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   def handle_info({:links_changed, _ident}, socket), do: {:noreply, refresh(socket)}
 
+  def handle_info({:spec_changed, _task_id}, socket), do: {:noreply, load_spec(socket)}
+
   def handle_info({:steer_acked, _receipt}, socket), do: {:noreply, refresh(socket)}
 
   def handle_info({:task_picked, picker, summary}, socket),
@@ -585,10 +600,37 @@ defmodule HelmsmanWeb.TaskLive.Show do
 
   defp refresh(socket) do
     case Tasks.get(socket.assigns.current_scope, socket.assigns.task.id) do
-      {:ok, task} -> put_task(socket, Tasks.detail(task))
+      {:ok, task} -> socket |> put_task(Tasks.detail(task)) |> load_spec()
       {:error, _} -> socket
     end
   end
+
+  # The 规格 card (add-spec-workflow-ui, web-specs 任务页的规格卡片): the task's spec,
+  # or its epic's when it has none.
+  defp load_spec(socket, error \\ nil) do
+    %{current_scope: scope, task: task} = socket.assigns
+    spec = spec_ok(SpecData.summary(scope, task.id))
+
+    epic =
+      with nil <- spec,
+           ident when is_binary(ident) <- task.epic,
+           %{} = epic_spec <- spec_ok(SpecData.summary(scope, ident)) do
+        %{ident: ident, spec: epic_spec}
+      else
+        _ -> nil
+      end
+
+    perms =
+      case SpecData.permissions(scope, task.id) do
+        {:ok, perms} -> perms
+        _ -> SpecData.no_permissions()
+      end
+
+    assign(socket, :spec_card, %{spec: spec, epic: epic, perms: perms, error: error})
+  end
+
+  defp spec_ok({:ok, value}), do: value
+  defp spec_ok(_error), do: nil
 
   # New task data: fields being edited keep their draft and are flagged when changed
   # by someone else; an open transition panel is blocked if its transition is gone.
@@ -1108,6 +1150,14 @@ defmodule HelmsmanWeb.TaskLive.Show do
               </.property_row>
             </.property_list>
           </div>
+          <SpecComponents.task_card
+            spec={@spec_card.spec}
+            epic={@spec_card.epic}
+            perms={@spec_card.perms}
+            error={@spec_card.error}
+            slug={@slug}
+            ident={@task.id}
+          />
           <TaskRuns.section
             state={@task_runs}
             stream={@streams.task_runs}

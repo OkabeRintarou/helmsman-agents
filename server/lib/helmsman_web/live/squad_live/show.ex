@@ -293,6 +293,11 @@ defmodule HelmsmanWeb.SquadLive.Show do
             <p :if={(@squad.description || "") != ""} id="squad-description" class="text-body text-fg">
               {@squad.description}
             </p>
+            <p id="squad-spec-finalize" class="text-caption text-fg-muted">
+              {dgettext("ui", "规格定稿方式：%{mode}",
+                mode: spec_finalize_label(Map.get(@squad, :spec_finalize))
+              )}
+            </p>
             <div
               :if={(@squad.instructions || "") != ""}
               id="squad-instructions"
@@ -444,4 +449,9 @@ defmodule HelmsmanWeb.SquadLive.Show do
     </Layouts.app>
     """
   end
+
+  # add-spec-workflow-ui D17
+  defp spec_finalize_label(:leader), do: dgettext("ui", "Leader 定稿")
+  defp spec_finalize_label(:approval), do: dgettext("ui", "需要人批准")
+  defp spec_finalize_label(_inherit), do: dgettext("ui", "继承项目")
 end

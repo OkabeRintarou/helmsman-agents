@@ -43,7 +43,13 @@ defmodule HelmsmanWeb.SquadForm do
   def new(scope, gen) do
     base(scope, gen, :new)
     |> Map.merge(%{
-      params: %{"name" => "", "description" => "", "instructions" => "", "leader" => ""},
+      params: %{
+        "name" => "",
+        "description" => "",
+        "instructions" => "",
+        "leader" => "",
+        "spec_finalize" => ""
+      },
       members: []
     })
   end
@@ -212,11 +218,16 @@ defmodule HelmsmanWeb.SquadForm do
         "name" => view.name,
         "description" => view.description || "",
         "instructions" => view.instructions || "",
-        "leader" => view.leader.name
+        "leader" => view.leader.name,
+        "spec_finalize" => spec_finalize_value(Map.get(view, :spec_finalize))
       },
+      spec_finalize_base: spec_finalize_value(Map.get(view, :spec_finalize)),
       members: Enum.map(view.members, &%{"name" => &1.name, "role_note" => &1.role_note || ""})
     }
   end
+
+  defp spec_finalize_value(nil), do: ""
+  defp spec_finalize_value(value), do: to_string(value)
 
   defp base(scope, gen, mode, new \\ []) do
     {leaders, humans, agents} = candidates(scope, mode, new)
@@ -224,6 +235,8 @@ defmodule HelmsmanWeb.SquadForm do
     %{
       mode: mode,
       gen: gen,
+      admin?: scope.role in [:owner, :admin],
+      spec_finalize_base: "",
       name: nil,
       version: nil,
       base: nil,
@@ -327,7 +340,11 @@ defmodule HelmsmanWeb.SquadForm do
   @doc "`phx-change`: keeps the input, adds the chosen member, moves a new leader out of the members."
   def change(form, params) do
     raw = params["squad"] || %{}
-    form_params = Map.merge(form.params, Map.take(raw, ~w(name description instructions leader)))
+
+    form_params =
+      form.params
+      |> Map.merge(Map.take(raw, ~w(name description instructions leader)))
+      |> Map.merge(spec_finalize_change(form, raw["spec_finalize"]))
 
     notes = raw["members"] || %{}
 
@@ -410,8 +427,32 @@ defmodule HelmsmanWeb.SquadForm do
       members: Enum.map(form.members, &%{name: &1["name"], role_note: &1["role_note"] || ""})
     }
 
-    if form.mode == :edit, do: Map.put(attrs, :lock_version, form.version), else: attrs
+    attrs = if form.mode == :edit, do: Map.put(attrs, :lock_version, form.version), else: attrs
+
+    # 规格定稿方式 (add-spec-workflow-ui D17) only when it changed: a non-admin saving
+    # a `leader` squad leaves it alone.
+    case form.params["spec_finalize"] do
+      value when value in [nil, form.spec_finalize_base] -> attrs
+      "" -> Map.put(attrs, :spec_finalize, nil)
+      value -> Map.put(attrs, :spec_finalize, value)
+    end
   end
+
+  # Only admins may choose `leader` (unless it is already the value).
+  defp spec_finalize_change(_form, nil), do: %{}
+
+  defp spec_finalize_change(form, value) do
+    cond do
+      value not in ["", "approval", "leader"] -> %{}
+      value == "leader" and not leader_choosable?(form) -> %{}
+      true -> %{"spec_finalize" => value}
+    end
+  end
+
+  @doc "Whether the 规格定稿方式 `leader` may be chosen in `form`."
+  def leader_choosable?(form), do: form.admin? or form.params["spec_finalize"] == "leader"
+
+  defp spec_finalize_admin_only, do: dgettext("ui", "只有管理员可以设为 Leader 定稿")
 
   defp blank_nil(""), do: nil
   defp blank_nil(value), do: value
@@ -436,7 +477,11 @@ defmodule HelmsmanWeb.SquadForm do
         {:error, %{form | notice: :stale}}
 
       {:error, :forbidden} ->
-        {:error, :forbidden}
+        if Map.has_key?(attrs(form), :spec_finalize),
+          do:
+            {:error,
+             %{form | errors: Map.put(form.errors, :spec_finalize, [spec_finalize_admin_only()])}},
+          else: {:error, :forbidden}
 
       {:error, :not_found} ->
         {:error, %{form | error: dgettext("ui", "这个小队已不存在")}}
@@ -637,6 +682,34 @@ defmodule HelmsmanWeb.SquadForm do
           ]}
         >
           {dgettext("ui", "%{n} / %{max} 字节", n: @description_bytes, max: @limits.description)}
+        </p>
+      </div>
+      <div :if={@form.mode != :draft} class="flex flex-col gap-1" id="squad-form-spec-finalize">
+        <label for="squad-form-spec-finalize-select" class="text-label font-medium text-fg">
+          {dgettext("ui", "规格定稿方式")}
+        </label>
+        <select
+          id="squad-form-spec-finalize-select"
+          name="squad[spec_finalize]"
+          class="h-9 rounded-field border border-border bg-surface px-2 text-body"
+        >
+          <option value="" selected={@p["spec_finalize"] == ""}>{dgettext("ui", "继承项目")}</option>
+          <option value="approval" selected={@p["spec_finalize"] == "approval"}>
+            {dgettext("ui", "需要人批准")}
+          </option>
+          <option
+            value="leader"
+            selected={@p["spec_finalize"] == "leader"}
+            disabled={!leader_choosable?(@form)}
+          >
+            {dgettext("ui", "Leader 定稿")}
+          </option>
+        </select>
+        <p :if={!@form.admin?} id="squad-form-spec-finalize-help" class="text-caption text-fg-subtle">
+          {spec_finalize_admin_only()}
+        </p>
+        <p :for={e <- Map.get(@e, :spec_finalize, [])} class="text-caption text-danger-fg" data-error>
+          {e}
         </p>
       </div>
       <div class="flex flex-col gap-1">

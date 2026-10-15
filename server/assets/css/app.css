@@ -409,6 +409,13 @@ html[data-theme-pref=dark] .hm-theme-option[data-theme-option=dark] {
 .hm-replies > summary { list-style: none; }
 .hm-replies > summary::-webkit-details-marker { display: none; }
 
+/* Spec source view (add-spec-workflow-ui D5): row hover and the target line of `?line=`. */
+.hm-spec-line:hover { background: var(--color-hover); }
+.hm-spec-line-target {
+  background: color-mix(in oklch, var(--color-brand) 14%, transparent);
+  box-shadow: inset 2px 0 0 var(--color-brand);
+}
+
 /* Reduced motion (design D4): finish decorative animations immediately but keep
    animation-delay so timed content (e.g. the 5s info flash) still lasts its full time. */
 @media (prefers-reduced-motion: reduce) {

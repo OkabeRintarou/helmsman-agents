@@ -153,7 +153,11 @@ defmodule HelmsmanWeb.TaskLive.Index do
         |> assign(
           panel: "edit-project",
           edit: %{
-            params: %{"name" => project.name, "description" => project.description || ""},
+            params: %{
+              "name" => project.name,
+              "description" => project.description || "",
+              "spec_finalize" => Atom.to_string(project.spec_finalize)
+            },
             errors: %{}
           }
         )
@@ -414,15 +418,21 @@ defmodule HelmsmanWeb.TaskLive.Index do
   end
 
   def handle_event("edit_project_change", %{"project" => params}, socket) do
-    edit = %{socket.assigns.edit | params: Map.take(params, ~w(name description))}
+    edit = %{socket.assigns.edit | params: Map.take(params, ~w(name description spec_finalize))}
     {:noreply, assign(socket, :edit, edit)}
   end
 
   def handle_event("edit_project_save", %{"project" => params}, socket) do
     %{current_scope: scope, project: project} = socket.assigns
-    params = Map.take(params, ~w(name description))
+    params = Map.take(params, ~w(name description spec_finalize))
 
-    case Projects.update(scope, project.key, params) do
+    # 规格定稿方式 (add-spec-workflow-ui D17) only when it changed.
+    attrs =
+      if params["spec_finalize"] in [nil, Atom.to_string(project.spec_finalize)],
+        do: Map.delete(params, "spec_finalize"),
+        else: params
+
+    case Projects.update(scope, project.key, attrs) do
       {:ok, project} ->
         {:noreply,
          socket
@@ -1266,6 +1276,32 @@ defmodule HelmsmanWeb.TaskLive.Index do
             errors={Map.get(@edit.errors, :description, [])}
             rows="5"
           />
+          <fieldset id="edit-project-spec-finalize" class="flex flex-col gap-1.5">
+            <legend class="mb-1 text-label font-medium text-fg">{dgettext("ui", "规格定稿方式")}</legend>
+            <label
+              :for={{value, label, help} <- spec_finalize_options()}
+              class="flex items-start gap-2 text-body"
+            >
+              <input
+                type="radio"
+                id={"edit-project-spec-finalize-#{value}"}
+                name="project[spec_finalize]"
+                value={value}
+                checked={@edit.params["spec_finalize"] == value}
+                class="mt-1"
+              />
+              <span class="flex flex-col">
+                <span class="text-fg">{label}</span>
+                <span class="text-caption text-fg-muted">{help}</span>
+              </span>
+            </label>
+            <p
+              :for={e <- Map.get(@edit.errors, :spec_finalize, [])}
+              class="text-caption text-danger-fg"
+            >
+              {e}
+            </p>
+          </fieldset>
         </.form>
         <:footer :let={cancel}>
           <span />
@@ -1288,6 +1324,12 @@ defmodule HelmsmanWeb.TaskLive.Index do
     </Layouts.app>
     """
   end
+
+  defp spec_finalize_options,
+    do: [
+      {"approval", dgettext("ui", "需要人批准"), dgettext("ui", "Leader 或执行方 Agent 提出定稿，人批准")},
+      {"leader", dgettext("ui", "Leader 定稿"), dgettext("ui", "只对指派给小队的任务生效，小队可以单独设置")}
+    ]
 
   defp project_menu(archived?, uri, can_github?) do
     edit = %{

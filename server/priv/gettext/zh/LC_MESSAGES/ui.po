@@ -146,6 +146,7 @@ msgstr ""
 #: lib/helmsman_web/components/layouts.ex
 #: lib/helmsman_web/components/overlay.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
 #, elixir-autogen, elixir-format
 msgid "关闭"
 msgstr ""
@@ -215,6 +216,9 @@ msgstr ""
 #: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_review_form.ex
+#: lib/helmsman_web/spec_version_form.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "删除"
@@ -246,6 +250,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/settings_live/tokens.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_panel.ex
@@ -253,6 +258,9 @@ msgstr ""
 #: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/spec_panels.ex
+#: lib/helmsman_web/spec_review_form.ex
+#: lib/helmsman_web/spec_version_form.ex
 #: lib/helmsman_web/squad_form.ex
 #: lib/helmsman_web/task_collab.ex
 #: lib/helmsman_web/task_local_branch.ex
@@ -629,6 +637,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/members.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "更多操作"
@@ -848,6 +857,8 @@ msgstr ""
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "说明"
 msgstr ""
@@ -999,6 +1010,8 @@ msgstr ""
 
 #: lib/helmsman_web/live/agent_design_live.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "放弃"
 msgstr ""
@@ -1024,6 +1037,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/spec_panels.ex
 #: lib/helmsman_web/squad_form.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
@@ -1196,6 +1210,8 @@ msgstr ""
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/user_live/settings.ex
+#: lib/helmsman_web/spec_review_form.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "正在提交…"
 msgstr ""
@@ -1436,6 +1452,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/agent_live/index.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #: lib/helmsman_web/live/task_live/filter.ex
 #, elixir-autogen, elixir-format
 msgid "全部"
@@ -1451,6 +1468,7 @@ msgstr ""
 msgid "创建后保留面板，继续填写下一个任务"
 msgstr ""
 
+#: lib/helmsman_web/live/spec_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "历史"
@@ -1612,6 +1630,7 @@ msgstr ""
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_panel.ex
+#: lib/helmsman_web/spec_panels.ex
 #: lib/helmsman_web/task_components.ex
 #, elixir-autogen, elixir-format
 msgid "提交"
@@ -1799,6 +1818,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/markdown_editor.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "编辑"
 msgstr ""
@@ -1853,6 +1873,9 @@ msgstr ""
 
 #: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/task_live/transition_panel.ex
+#: lib/helmsman_web/run_components.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_review_form.ex
 #, elixir-autogen, elixir-format
 msgid "通过"
 msgstr ""
@@ -2402,6 +2425,7 @@ msgid "身份名"
 msgstr "身份名"
 
 #: lib/helmsman_web/live/settings_live/tokens.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "过期"
 msgstr "过期"
@@ -2645,6 +2669,7 @@ msgstr ""
 #: lib/helmsman_web/collab_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/spec_errors.ex
 #, elixir-autogen, elixir-format
 msgid "任务不存在"
 msgstr ""
@@ -2666,6 +2691,7 @@ msgid "修订自 #%{n}"
 msgstr ""
 
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
 #, elixir-autogen, elixir-format
 msgid "内容"
 msgstr ""
@@ -2754,6 +2780,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/new_task_panel.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
 #, elixir-autogen, elixir-format
 msgid "种类"
 msgstr ""
@@ -2764,11 +2791,14 @@ msgid "编辑方式"
 msgstr ""
 
 #: lib/helmsman_web/feedback_components.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "评审"
 msgstr ""
 
 #: lib/helmsman_web/feedback_components.ex
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "评论"
 msgstr ""
@@ -2790,6 +2820,7 @@ msgstr ""
 
 #: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/markdown_editor.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "预览"
 msgstr ""
@@ -3002,6 +3033,8 @@ msgstr ""
 
 #: lib/helmsman_web/live/device_live.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
 #, elixir-autogen, elixir-format
 msgid "版本"
 msgstr ""
@@ -4397,6 +4430,8 @@ msgid "已设置"
 msgstr ""
 
 #: lib/helmsman_web/provider_account_form.ex
+#: lib/helmsman_web/spec_panels.ex
+#: lib/helmsman_web/spec_review_form.ex
 #, elixir-autogen, elixir-format
 msgid "必填"
 msgstr ""
@@ -5195,6 +5230,7 @@ msgid "机器离线或仓库不可用，恢复后会自动检查"
 msgstr ""
 
 #: lib/helmsman_web/local_repository_components.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "查看差异"
 msgstr ""
@@ -5245,6 +5281,7 @@ msgstr ""
 msgid "说明最多 2000 字"
 msgstr ""
 
+#: lib/helmsman_web/spec_panels.ex
 #: lib/helmsman_web/task_local_branch.ex
 #, elixir-autogen, elixir-format
 msgid "说明（可选）"
@@ -5655,6 +5692,7 @@ msgstr ""
 
 #: lib/helmsman_web/github_components.ex
 #: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "草稿"
 msgstr ""
@@ -6817,6 +6855,7 @@ msgstr ""
 msgid "没有插话 %{agent}：%{reason}"
 msgstr ""
 
+#: lib/helmsman_web/spec_version_form.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
 msgid "添加"
@@ -7228,6 +7267,8 @@ msgstr ""
 
 #: lib/helmsman_web/autopilot_form.ex
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "%{bytes} / %{max} 字节"
 msgstr ""
@@ -7362,6 +7403,7 @@ msgstr ""
 msgid "上一次还在进行，已跳过这一次"
 msgstr ""
 
+#: lib/helmsman_web/spec_review_form.ex
 #: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "上移"
@@ -7383,6 +7425,7 @@ msgstr ""
 msgid "下次运行"
 msgstr ""
 
+#: lib/helmsman_web/spec_review_form.ex
 #: lib/helmsman_web/squad_form.ex
 #, elixir-autogen, elixir-format
 msgid "下移"
@@ -7429,6 +7472,7 @@ msgid "不能触发 %{name}"
 msgstr ""
 
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
 #, elixir-autogen, elixir-format
 msgid "不能超过 4 KB"
 msgstr ""
@@ -7450,6 +7494,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_design_squad.ex
 #: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/squad_form.ex
@@ -7830,6 +7875,7 @@ msgid "手动附加的说明"
 msgstr ""
 
 #: lib/helmsman_web/agent_design_squad.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #: lib/helmsman_web/live/squad_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "托管 Agent"
@@ -8458,11 +8504,13 @@ msgid "上传失败"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/spec_panels.ex
 #, elixir-autogen, elixir-format
 msgid "下载"
 msgstr ""
 
 #: lib/helmsman_web/data_settings_components.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "不变"
 msgstr ""
@@ -8553,6 +8601,7 @@ msgid "合并：按任务新增和快进，只增不删；本地较新的任务�
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "外接 Agent"
 msgstr ""
@@ -8623,6 +8672,7 @@ msgid "导入记录不存在"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "导出"
 msgstr ""
@@ -8719,6 +8769,8 @@ msgid "托管 Agent 不能转移"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "批准"
 msgstr ""
@@ -8771,6 +8823,7 @@ msgid "数据目录不可用，请联系管理员"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/live/spec_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "文件"
 msgstr ""
@@ -8806,6 +8859,8 @@ msgid "新名"
 msgstr ""
 
 #: lib/helmsman_web/data_settings_components.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "新增"
 msgstr ""
@@ -9800,6 +9855,8 @@ msgid "%{id} 的回复"
 msgstr ""
 
 #: lib/helmsman_web/feedback_components.ex
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
 #, elixir-autogen, elixir-format
 msgid "回复"
 msgstr ""
@@ -9923,4 +9980,1289 @@ msgstr ""
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "已由这条记录的回答或回调唤醒"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{author} 已提交 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{author} 提交了 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 委派：修订规格"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 委派：评审规格 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 委派：起草规格"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 定稿于 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 批准了规格 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 提议 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 提议以 v%{v} 定稿"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 评审了规格 v%{v}：%{verdict}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 请求评审规格 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{by} 退回了规格"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{ident} 规格 · %{title}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{ident} 还没有规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 不能评审规格（只能请人、托管 Agent 或外接 Agent）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 写了这个版本，不能评审它"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 已在评审 R%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{name} 已在评审 R%{n}，未重复请求"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} / %{max_n} 个文件 · %{bytes} / %{max} 字节"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "%{n} 个问题"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{ref} 已是%{state}，可以追加评论"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "%{text}（请求已建立）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "Epic %{ident} 的规格：%{status} v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "Leader 定稿"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "Leader 定稿（%{squad}）"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "Leader 或执行方 Agent 提出定稿，人批准"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "P1 必须改"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "P2 应该改"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "P3 建议"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "RENAMED 格式不对"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "capability 是 1–3 段小写字母、数字与 -，用 / 分隔"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "change_id 只能用 2–64 个小写字母、数字与 -，以字母或数字开头"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "change_id 已改为 %{id}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "change_id 改为 %{to}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "proposal.md 缺少 ## Why 或 ## What Changes"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "tasks.md 没有勾选项"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "v%{v} 没有这个文件"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "不变：%{paths}"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 200 字节"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "不能超过 8 KB"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "不通过"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "作者"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "你写了 v%{n}，不能评审它"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "你在看 v%{v}，最新是 v%{latest}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "你没有权限执行这个操作"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "保留"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "修改"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "修改 %{m} · 新增 %{a} · 删除 %{r} · 不变 %{u}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "修改 change_id"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "先写规格、再实现：起草、评审、修订，定稿后再照常实现。"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "先选择文件"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "写评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "压缩包不合法：含链接、绝对路径或 ..，或不是 tar.gz / zip"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "压缩包（tar.gz 或 zip，≤ 2 MB）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "参数 %{field} 不合法：%{message}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "参数不合法"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "取消 %{name} 的评审请求？"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "取消请求"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "只对指派给小队的任务生效，小队可以单独设置"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "只接受 tar.gz 或 zip"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "只有协调者（小队 leader 或执行方 Agent）或人可以这样做"
+msgstr ""
+
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "只有管理员可以设为 Leader 定稿"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "只看未解决"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "只能上传一个文件"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "唤醒 %{agent}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "唤醒 %{squad} 的 leader"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "回复 %{ref}"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "在哪个版本修改（可选）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "在此行提问题"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "在第 %{n} 行提问题"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "基于 v%{n} 重新提交"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "填写 capability"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "处理了规格"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "定稿"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "定稿 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "定稿 · %{by}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "定稿于 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "定稿方式：%{mode}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "定稿门槛"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "对比"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "对比上一定稿版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "对比上一定稿版本或上一版"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "对比失败，请重试"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "导入 OpenSpec 目录"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "导入为 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "导出 OpenSpec 目录"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "导出时的目录名：2–64 个小写字母、数字与 -，以字母或数字开头"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "将覆盖 v%{n} 的修改"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "差异计算超时，按整体替换显示（旧 %{a} 行 → 新 %{b} 行）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已为 %{name} 排队评审"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已取消 %{name} 的评审请求"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已取消（被撤回）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已取消（被新版本取代）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已取消（规格已放弃）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已唤醒 %{agent}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已唤醒 %{squad} 的 leader（%{leader}）"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "已在评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已定稿"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已定稿于 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已定稿于 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已导入为 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已建立空规格，提交第一版开始起草。"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已批准 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已接受"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已提交 R%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已提交 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已提交 v%{n}（校验未通过，定稿前需要修好）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已撤回"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "已改"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已放弃"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已放弃规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "已有 v%{n}，评审只能针对最新版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "已有新版本 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "已请 %{name} 评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "已过期（评审运行结束时没有提交）"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已退回定稿提议"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "已重新打开规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "建立规格（%{id}）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "建议"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "建议（可选）"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "开始规格"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "当前版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "待你批准"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "待删除"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "待回复"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "待处理的规格"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "待完成的评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "待完成的评审请求将作废，待批准的提议将撤回。"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "待批准"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "待批准期间不能请求评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "待评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "待评审：%{names}"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "忽略的路径：%{paths}"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "意见"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "打开规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "批准 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "接受"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "提交 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "提交 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "提交新版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "提交评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "提交评审 R%{n}（v%{v}）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "提议以 v%{v} 定稿"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "摘要不能超过 16 KB"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "摘要（Markdown）"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "撤回"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "撤回 v%{v} 的定稿提议"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "撤销删除"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "改为评审 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "放弃规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "整体替换"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "文件不合法：%{list}"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "文件超过 2 MB"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "文件里没有增量小节"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "显示更多（共 %{n} 行）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "最新已是 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "最新版本校验通过"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "最新版本没有待完成的评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "最新版本还有待完成的评审：%{names}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "有并发修改，请重试"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "有异议"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "查看定稿版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "校验"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "校验未通过，定稿前需要修好"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "校验未通过：%{errors}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "校验通过"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "正在计算差异…"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "汇总"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有可提交的修改"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有唤醒 %{agent}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有唤醒 %{agent}：%{reason}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有增量"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有待批准的提议"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "没有未解决的 P1 / P2"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "没有评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "没有问题 %{ref}"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "添加规格文件：specs/<capability>/spec.md"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "添加问题"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "渲染"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "源码"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "理由（必填）"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "看最新"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "结果过大已截断"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "结论"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "继承项目"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "维持"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "缺少 proposal.md"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "缺少 tasks.md"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "行"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "行号在 1–%{max} 之间"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "被撤回"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "被新版本取代"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "裁定"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "裁定：维持"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "裁定：驳回"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格功能暂不可用"
+msgstr ""
+
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "规格定稿方式"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "规格定稿方式：%{mode}"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "规格属性"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格已关闭"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "规格已关闭，不能提交新版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格已定稿"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格已放弃"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格待批准，不能请求评审"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格没有定稿或放弃，不需要重新打开"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "规格还没有版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "评审 v%{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "评审中"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "评审了规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "评审人"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "评审请求"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "评审请求 #%{n} 结束（%{why}）"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "说明不能超过 4 KB"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "请 %{name} 评审 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "请你评审"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "请求取消后不再挡住定稿；评审人已开始的运行在领取前会被丢弃。"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "请求评审"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "请求评审规格"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "起草第一版"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "还有未解决的 P1 / P2 问题：%{refs}"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "还没有版本"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "这个 change_id 已被使用"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "这个任务还没有规格"
+msgstr ""
+
+#: lib/helmsman_web/spec_version_form.ex
+#, elixir-autogen, elixir-format
+msgid "这个文件已存在"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "退回"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "退回 v%{v} 的定稿提议"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "选择文件"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "选择结论"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "通知执行方继续（%{target}）"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "重新打开"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "重新预览"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "针对 v%{v}"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "锚点（可选）"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "问题 %{n}"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "问题不合法：%{list}"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "问题（必填）"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "附带评审（reviews/spec-review-<n>.md）"
+msgstr ""
+
+#: lib/helmsman_web/spec_panels.ex
+#, elixir-autogen, elixir-format
+msgid "附言（可选）"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "需求在多个小节冲突"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "需求正文没有 SHALL / MUST"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "需求没有场景"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "需求缺少正文"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "需求重名"
+msgstr ""
+
+#: lib/helmsman_web/live/squad_live/show.ex
+#: lib/helmsman_web/live/task_live/index.ex
+#: lib/helmsman_web/spec_components.ex
+#: lib/helmsman_web/squad_form.ex
+#, elixir-autogen, elixir-format
+msgid "需要人批准"
+msgstr ""
+
+#: lib/helmsman_web/spec_errors.ex
+#, elixir-autogen, elixir-format
+msgid "驳回"
+msgstr ""
+
+#: lib/helmsman_web/spec_review_form.ex
+#, elixir-autogen, elixir-format
+msgid "（不定位到文件）"
+msgstr ""
+
+#: lib/helmsman_web/spec_components.ex
+#, elixir-autogen, elixir-format
+msgid "（在 v%{v} 修改）"
+msgstr ""
+
+#: lib/helmsman_web/live/spec_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "（空）"
 msgstr ""

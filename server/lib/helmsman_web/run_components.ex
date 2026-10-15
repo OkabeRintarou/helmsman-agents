@@ -234,6 +234,9 @@ defmodule HelmsmanWeb.RunComponents do
   defp kind_name("epic_stalled"), do: dgettext("ui", "Epic 停滞")
   defp kind_name("autopilot"), do: dgettext("ui", "自动化")
   defp kind_name("design"), do: dgettext("ui", "创建对话")
+  defp kind_name("spec_review"), do: dgettext("ui", "请求评审规格")
+  defp kind_name("spec_reviewed"), do: dgettext("ui", "评审了规格")
+  defp kind_name("spec_decided"), do: dgettext("ui", "处理了规格")
   defp kind_name(_), do: dgettext("ui", "其他触发")
 
   @doc "「<触发者> <种类>」of one trigger (「自动重试」 alone)."
@@ -268,6 +271,46 @@ defmodule HelmsmanWeb.RunComponents do
     end
   end
 
+  # add-spec-workflow-ui (web-runs 规格相关的运行): the spec role of a delegation and the
+  # spec triggers; without their fields the generic label stays.
+  def trigger_label(%{kind: kind, spec_role: role} = trigger)
+      when kind in ["delegated", :delegated] and is_binary(role) do
+    by = by_name(trigger)
+
+    case role do
+      "draft" -> dgettext("ui", "%{by} 委派：起草规格", by: by)
+      "revise" -> dgettext("ui", "%{by} 委派：修订规格", by: by)
+      "review" -> dgettext("ui", "%{by} 委派：评审规格 v%{v}", by: by, v: trigger[:spec_version])
+      _ -> "#{by} #{trigger_kind(trigger)}"
+    end
+  end
+
+  def trigger_label(%{kind: kind, spec_version: v} = trigger)
+      when kind in ["spec_review", :spec_review] and is_integer(v),
+      do: dgettext("ui", "%{by} 请求评审规格 v%{v}", by: by_name(trigger), v: v)
+
+  def trigger_label(%{kind: kind, version: v, verdict: verdict} = trigger)
+      when kind in ["spec_reviewed", :spec_reviewed] and is_integer(v),
+      do:
+        dgettext("ui", "%{by} 评审了规格 v%{v}：%{verdict}",
+          by: by_name(trigger),
+          v: v,
+          verdict: verdict_name(verdict)
+        )
+
+  def trigger_label(%{kind: kind, decision: decision} = trigger)
+      when kind in ["spec_decided", :spec_decided] and is_binary(decision) do
+    by = by_name(trigger)
+    v = trigger[:version]
+
+    case decision do
+      "approved" -> dgettext("ui", "%{by} 批准了规格 v%{v}", by: by, v: v)
+      "finalized" -> dgettext("ui", "%{by} 定稿于 v%{v}", by: by, v: v)
+      "rejected" -> dgettext("ui", "%{by} 退回了规格", by: by)
+      _ -> "#{by} #{trigger_kind(trigger)}"
+    end
+  end
+
   def trigger_label(trigger) do
     case trigger[:by] do
       %{name: name} -> "#{name} #{trigger_kind(trigger)}"
@@ -279,6 +322,59 @@ defmodule HelmsmanWeb.RunComponents do
   defp autopilot_source(source) when source in ["manual", :manual], do: dgettext("ui", "手动")
   defp autopilot_source(source) when source in ["webhook", :webhook], do: "webhook"
   defp autopilot_source(_source), do: dgettext("ui", "触发")
+
+  defp by_name(trigger) do
+    case trigger[:by] do
+      %{name: name} -> name
+      _ -> "?"
+    end
+  end
+
+  defp verdict_name("pass"), do: dgettext("ui", "通过")
+  defp verdict_name("fail"), do: dgettext("ui", "不通过")
+  defp verdict_name("comment"), do: dgettext("ui", "意见")
+  defp verdict_name(other), do: to_string(other)
+
+  @doc """
+  The extra line of a spec trigger in the triggers tooltip: the issue counts of a review,
+  the reason of a rejection; nil otherwise.
+  """
+  def trigger_detail(%{kind: kind, counts: %{} = counts})
+      when kind in ["spec_reviewed", :spec_reviewed] do
+    n = &(counts[&1] || counts[String.to_atom(&1)] || 0)
+    "P1 #{n.("P1")} · P2 #{n.("P2")} · P3 #{n.("P3")}"
+  end
+
+  def trigger_detail(%{kind: kind, decision: "rejected", reason: reason})
+      when kind in ["spec_decided", :spec_decided] and is_binary(reason),
+      do: reason
+
+  def trigger_detail(_trigger), do: nil
+
+  @doc """
+  Where a run's trigger links: the autopilot's page, or the spec page of `task` for a spec
+  trigger (the 评审 tab for a review); nil otherwise.
+  """
+  def trigger_path(trigger, slug, task) do
+    autopilot_path(trigger, slug) || spec_trigger_path(trigger, slug, task)
+  end
+
+  defp spec_trigger_path(_trigger, _slug, nil), do: nil
+
+  defp spec_trigger_path(%{kind: kind} = trigger, slug, task) do
+    kind = to_string(kind)
+    base = "/w/#{slug}/t/#{task}/spec"
+
+    cond do
+      kind in ["spec_review", "spec_reviewed"] -> base <> "?tab=reviews"
+      kind == "delegated" and trigger[:spec_role] == "review" -> base <> "?tab=reviews"
+      kind == "delegated" and is_binary(trigger[:spec_role]) -> base
+      kind == "spec_decided" -> base
+      true -> nil
+    end
+  end
+
+  defp spec_trigger_path(_trigger, _slug, _task), do: nil
 
   @doc "The page of the autopilot that started a run (its trigger), or nil (none, deleted)."
   def autopilot_path(%{kind: kind, autopilot: %{id: id}}, slug)
@@ -481,21 +577,25 @@ defmodule HelmsmanWeb.RunComponents do
       </div>
       <div :if={@first} class="hm-tooltip-host relative flex w-fit" tabindex="0" data-run-triggers>
         <.link
-          :if={autopilot_path(@first, @slug)}
-          navigate={autopilot_path(@first, @slug)}
+          :if={trigger_path(@first, @slug, @run[:task])}
+          navigate={trigger_path(@first, @slug, @run[:task])}
           class="text-caption text-fg-muted hover:underline"
-          data-autopilot-link
+          data-autopilot-link={autopilot_path(@first, @slug) && true}
+          data-trigger-link
         >
           {trigger_summary(@run.triggers)}
         </.link>
-        <span :if={!autopilot_path(@first, @slug)} class="text-caption text-fg-muted">
+        <span :if={!trigger_path(@first, @slug, @run[:task])} class="text-caption text-fg-muted">
           {trigger_summary(@run.triggers)}
         </span>
         <span role="tooltip" class={[tooltip_class(:bottom), "max-w-80"]} data-run-triggers-tip>
           <span :for={t <- @run.triggers} class="block">
-            {trigger_label(t)}<span :if={t[:at]}> · {Calendar.strftime(t.at, "%m-%d %H:%M")}</span><span :if={
-              t[:instructions]
-            }>（{dgettext("ui", "说明：")}{t.instructions}）</span>
+            {trigger_label(t)}<span :if={trigger_detail(t)}>（{trigger_detail(t)}）</span><span :if={
+              t[:at]
+            }> · {Calendar.strftime(t.at, "%m-%d %H:%M")}</span><span :if={t[:instructions]}>（{dgettext(
+              "ui",
+              "说明："
+            )}{t.instructions}）</span>
           </span>
         </span>
       </div>

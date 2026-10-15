@@ -316,6 +316,7 @@ defmodule HelmsmanWeb.Router do
     pipe_through [:browser, :require_authenticated_user, :workspace_page]
 
     get "/w/:slug/exports/:id/download", ExportController, :download
+    get "/w/:slug/t/:ident/spec/export", SpecExportController, :export
 
     live_session :workspace,
       on_mount: [
@@ -327,6 +328,7 @@ defmodule HelmsmanWeb.Router do
       live "/w/:slug/projects", ProjectLive.Index, :index
       live "/w/:slug/p/:key", TaskLive.Index, :index
       live "/w/:slug/t/:ident", TaskLive.Show, :show
+      live "/w/:slug/t/:ident/spec", SpecLive.Show, :show
       live "/w/:slug/query", QueryLive, :show
       live "/w/:slug/settings", SettingsLive.General, :show
       live "/w/:slug/settings/members", SettingsLive.Members, :index

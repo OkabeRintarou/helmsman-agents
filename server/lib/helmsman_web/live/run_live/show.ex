@@ -161,14 +161,16 @@ defmodule HelmsmanWeb.RunLive.Show do
         <ul class="flex flex-col gap-0.5">
           <li :for={t <- @run.triggers} class="text-body text-fg">
             <.link
-              :if={autopilot_path(t, @slug)}
-              navigate={autopilot_path(t, @slug)}
+              :if={trigger_path(t, @slug, @run[:task])}
+              navigate={trigger_path(t, @slug, @run[:task])}
               class="hover:underline"
-              data-autopilot-link
+              data-autopilot-link={autopilot_path(t, @slug) && true}
+              data-trigger-link
             >
               {trigger_label(t)}
             </.link>
-            <span :if={!autopilot_path(t, @slug)}>{trigger_label(t)}</span>
+            <span :if={!trigger_path(t, @slug, @run[:task])}>{trigger_label(t)}</span>
+            <span :if={trigger_detail(t)} class="text-caption text-fg-muted">（{trigger_detail(t)}）</span>
             <span :if={t[:at]} class="text-caption text-fg-muted">
               {Calendar.strftime(t.at, "%m-%d %H:%M")}
             </span>

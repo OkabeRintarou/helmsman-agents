@@ -530,6 +530,8 @@ defmodule HelmsmanWeb.AgentDesignDraftTest do
       assert open?(view, "squad-panel")
       assert in_portal?(view, "squad-panel", "#squad-panel-title", "编辑小队")
       assert in_portal?(view, "squad-panel", "#squad-form-submit", "保存到草稿")
+      # add-spec-workflow-ui D17: no 规格定稿方式 in a draft.
+      refute in_portal?(view, "squad-panel", "#squad-form-spec-finalize")
 
       assert in_portal?(
                view,
