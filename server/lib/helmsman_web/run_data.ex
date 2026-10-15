@@ -66,6 +66,8 @@ defmodule HelmsmanWeb.RunData do
   The agents with a run in progress on each task of `idents` (R5): `{:ok, %{ident =>
   [agent name]}}`.
   """
+  def task_run_states(scope, idents), do: Runs.task_run_states(scope, idents)
+
   def active_agents(scope, idents), do: Runs.active_agents(scope, idents)
 
   @doc "The runs and usage of agent `name` per day over the last `days` days (R6)."

@@ -18,7 +18,8 @@ defmodule HelmsmanWeb.JsHooksTest do
           "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
           "--test",
           "--test-reporter=spec",
-          "avatar_cropper_test.mjs"
+          "avatar_cropper_test.mjs",
+          "board_drag_test.mjs"
         ],
         cd: @dir,
         stderr_to_stdout: true

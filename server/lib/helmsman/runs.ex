@@ -1276,6 +1276,8 @@ defmodule Helmsman.Runs do
 
   ## Read models (add-run-read-models)
 
+  defdelegate task_run_states(scope, idents), to: Helmsman.Runs.ReadModels
+
   defdelegate active_agents(scope, idents), to: Helmsman.Runs.ReadModels
   defdelegate usage_for_agent(scope, name, opts \\ []), to: Helmsman.Runs.ReadModels
   defdelegate list_open(scope, target, opts \\ []), to: Helmsman.Runs.ReadModels

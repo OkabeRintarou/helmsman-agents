@@ -11,6 +11,7 @@ defmodule HelmsmanWeb.Filters do
     array params instead (`label[]=api,backend&label[]=ui`), which `parse/2` reads as is.
     Unknown values are dropped when `allowed` is given.
   * `:string`: a single trimmed string (search text).
+  * `{:enum, allowed}`: one of the declared values; other values are omitted.
 
   Empty dimensions are omitted, so `parse(to_query(filters), schema) == filters` for any
   filter map produced by `parse/2`.
@@ -18,7 +19,7 @@ defmodule HelmsmanWeb.Filters do
 
   alias Plug.Conn.Query
 
-  @type schema :: keyword(:list | {:list, [String.t()]} | :string)
+  @type schema :: keyword(:list | {:list, [String.t()]} | {:enum, [String.t()]} | :string)
   @type t :: %{optional(atom()) => [String.t()] | String.t()}
 
   @doc "Parses query params (string keys) into a filter map."
@@ -31,6 +32,9 @@ defmodule HelmsmanWeb.Filters do
       end
     end)
   end
+
+  defp parse_value(value, {:enum, allowed}) when is_binary(value),
+    do: if(value in allowed, do: value)
 
   defp parse_value(nil, _type), do: nil
   defp parse_value(value, :string) when is_binary(value), do: String.trim(value)

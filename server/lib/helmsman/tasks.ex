@@ -372,15 +372,55 @@ defmodule Helmsman.Tasks do
       |> select_blocked()
       |> page(opts[:before], opts[:offset])
       |> filter_status(opts[:status])
-      |> filter_label(opts[:label])
-      |> filter_assignee(workspace_id, opts[:assignee])
-      |> filter_kind(kind)
-      |> filter_epic(workspace_id, opts[:epic])
-      |> filter_text(text)
+      |> matching_filters(workspace_id, kind, text, opts)
       |> Repo.all()
       |> put_derived()
 
     {:ok, tasks}
+  end
+
+  defp matching_filters(query, workspace_id, kind, text, opts) do
+    query
+    |> filter_label(opts[:label])
+    |> filter_assignee(workspace_id, opts[:assignee])
+    |> filter_kind(kind)
+    |> filter_epic(workspace_id, opts[:epic])
+    |> filter_text(text)
+  end
+
+  @doc "Counts all six statuses under the list filters, ignoring status and paging. One query."
+  @spec count_by_status(Scope.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def count_by_status(%Scope{workspace: %Workspace{id: workspace_id}} = scope, key, opts \\ []) do
+    with :ok <- Policy.authorize(scope, :read_tasks),
+         {:ok, kind} <- kind_filter(opts[:kind]),
+         {:ok, text} <- text_filter(opts[:q]) do
+      tasks =
+        from(t in Task, as: :task, where: t.workspace_id == ^workspace_id)
+        |> matching_filters(workspace_id, kind, text, opts)
+
+      rows =
+        from(p in Project,
+          left_join: t in subquery(tasks),
+          on: t.project_id == p.id,
+          where: p.workspace_id == ^workspace_id and p.key == ^String.upcase(key),
+          group_by: [p.id, t.status],
+          select: {t.status, count(t.id)}
+        )
+        |> Repo.all()
+
+      case rows do
+        [] ->
+          {:error, :not_found}
+
+        _ ->
+          zero = Map.new(Task.statuses(), &{Atom.to_string(&1), 0})
+
+          {:ok,
+           Enum.reduce(rows, zero, fn {status, count}, acc ->
+             if status, do: Map.put(acc, Atom.to_string(status), count), else: acc
+           end)}
+      end
+    end
   end
 
   # `nil` (no filter), `:nothing` or the tsquery text.
@@ -395,6 +435,7 @@ defmodule Helmsman.Tasks do
   end
 
   defp filter_text(query, nil), do: query
+  defp filter_text(query, :nothing), do: where(query, false)
   defp filter_text(query, tsquery), do: where(query, ^Search.task_matches(tsquery, :task))
 
   defp limit(n) when is_integer(n), do: n |> max(0) |> min(@max_limit)

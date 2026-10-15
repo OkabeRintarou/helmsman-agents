@@ -27,6 +27,7 @@ import topbar from "../vendor/topbar"
 import Hotkeys from "./hooks/hotkeys"
 import Editor from "./hooks/editor"
 import Mermaid from "./hooks/mermaid"
+import BoardDrag from "./hooks/board_drag"
 import AvatarCropper from "./hooks/avatar_cropper"
 
 const RECENT_TASKS = "hm:recent-tasks"
@@ -42,7 +43,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
     recent_tasks: recentTasks(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }),
-  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid, AvatarCropper},
+  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid, AvatarCropper, BoardDrag},
   dom: {
     // A failed avatar stays hidden across patches until its address changes.
     onBeforeElUpdated(from, to) {

@@ -419,3 +419,7 @@ html[data-theme-pref=dark] .hm-theme-option[data-theme-option=dark] {
     scroll-behavior: auto !important;
   }
 }
+
+/* The server owns card positions; drag feedback only changes appearance. */
+#task-board [aria-dropeffect="move"] { outline: 2px solid var(--color-brand); outline-offset: -2px; }
+#task-board [data-board-pending="true"] { opacity: .6; }

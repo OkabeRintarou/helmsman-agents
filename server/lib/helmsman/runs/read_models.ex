@@ -91,6 +91,58 @@ defmodule Helmsman.Runs.ReadModels do
 
   ## Usage (R6)
 
+  @doc "One-snapshot task run summaries, ordered running > queued > deferred > latest failed."
+  @spec task_run_states(Scope.t(), [String.t()]) ::
+          {:ok, map()} | {:error, :forbidden | :too_many}
+  def task_run_states(%Scope{workspace: %Workspace{id: workspace_id}} = scope, idents) do
+    with :ok <- Policy.authorize(scope, :view_runs),
+         {:ok, idents} <- normalize_idents(idents) do
+      rows =
+        from(t in Task,
+          left_join: r in Run,
+          on: r.task_id == t.id and r.workspace_id == t.workspace_id,
+          left_join: a in Actor,
+          on: a.id == r.agent_id and a.workspace_id == t.workspace_id,
+          where: t.workspace_id == ^workspace_id and t.ident in ^idents,
+          group_by: t.ident,
+          select:
+            {t.ident,
+             fragment(
+               "array_agg(? ORDER BY ? NULLS LAST, ?) FILTER (WHERE ? IN ('claimed', 'running', 'cancelling'))",
+               a.name,
+               r.claimed_at,
+               r.id,
+               r.status
+             ), fragment("bool_or(? = 'queued')", r.status),
+             fragment("bool_or(? = 'deferred')", r.status),
+             fragment(
+               "(array_agg(? ORDER BY ? DESC NULLS LAST, ? DESC) FILTER (WHERE ? IN ('succeeded', 'failed', 'cancelled')))[1]",
+               r.status,
+               r.finished_at,
+               r.id,
+               r.status
+             )}
+        )
+        |> Repo.all()
+
+      {:ok,
+       Enum.reduce(rows, %{}, fn {ident, names, queued, deferred, latest}, acc ->
+         case run_state(names, queued, deferred, latest) do
+           nil -> acc
+           state -> Map.put(acc, ident, state)
+         end
+       end)}
+    end
+  end
+
+  defp run_state([_ | _] = names, _queued, _deferred, _latest),
+    do: %{status: :running, agents: Enum.uniq(names)}
+
+  defp run_state(_names, true, _deferred, _latest), do: %{status: :queued, agents: []}
+  defp run_state(_names, _queued, true, _latest), do: %{status: :deferred, agents: []}
+  defp run_state(_names, _queued, _deferred, "failed"), do: %{status: :failed, agents: []}
+  defp run_state(_names, _queued, _deferred, _latest), do: nil
+
   @doc """
   The managed agent `name`'s runs that ended in each of the last `days`
   UTC days, today included (`:view_runs`): per day the runs that

@@ -18,7 +18,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
   require Logger
 
   alias Helmsman.{Events, Feedback, Policy, Runs, Tasks}
-  alias Helmsman.GitHub.PullRequests
   alias Helmsman.Tasks.StateMachine
 
   alias HelmsmanWeb.{
@@ -26,7 +25,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
     FeedbackComponents,
     FeedbackTimeline,
     FormErrors,
-    GitHubComponents,
     LocalRepositoryComponents,
     Markdown,
     MarkdownEditor,
@@ -37,7 +35,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
     TaskCollab,
     TaskComponents,
     TaskData,
-    TaskEvidence,
     TaskLocalBranch,
     TaskPullRequest,
     TaskRuns,
@@ -82,7 +79,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
        availability: availability(scope),
        assign_confirm: nil,
        label_options: TaskData.labels(scope, detail.project_key),
-       transition_panel: nil,
        feedback_panel: nil,
        feedback_html: %{},
        description_html: nil,
@@ -90,8 +86,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
        fresh_after: detail.feedback |> Enum.map(& &1.seq) |> Enum.max(fn -> 0 end),
        # Editing sessions (design D14): one more for every new edit, never reused.
        feedback_session: 0,
-       description_session: 0,
-       transition_session: 0
+       description_session: 0
      )
      |> assign(:uri, "/w/#{scope.workspace.slug}/t/#{detail.id}")
      |> TaskCollab.init()
@@ -326,66 +321,15 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
-  def handle_event("open_transition", %{"to" => to} = params, socket) do
-    from = socket.assigns.task.status
-    found = Enum.find(buttons(socket.assigns), &(&1.to == to and &1.kind != :direct))
+  def handle_event(event, params, socket)
+      when event in ~w(open_transition close_transition transition_change submit_transition) do
+    send_update(HelmsmanWeb.TaskLive.TransitionPanel,
+      id: "task-transition",
+      event: event,
+      params: params
+    )
 
-    case params["from"] == from && found do
-      nil ->
-        {:noreply, socket}
-
-      false ->
-        {:noreply, socket}
-
-      button ->
-        panel = %{
-          to: button.to,
-          from: socket.assigns.task.status,
-          kind: button.kind,
-          label: button.label,
-          params: %{"result" => "none"},
-          errors: %{},
-          top: nil,
-          blocked: nil,
-          preview: merge_preview(socket, button.to)
-        }
-
-        # D9: the 验收 preview shows the branch as it is now.
-        socket = if button.to == "verified", do: TaskLocalBranch.reload(socket), else: socket
-
-        {:noreply,
-         socket
-         |> update(:transition_session, &(&1 + 1))
-         |> assign(:transition_panel, panel)}
-    end
-  end
-
-  def handle_event("close_transition", _params, socket),
-    do: {:noreply, assign(socket, :transition_panel, nil)}
-
-  def handle_event("transition_change", %{"transition" => params} = form, socket) do
-    if transition_session?(socket, form),
-      do: {:noreply, update_panel(socket, &%{&1 | params: params})},
-      else: {:noreply, socket}
-  end
-
-  def handle_event("submit_transition", %{"transition" => params} = form, socket) do
-    panel = socket.assigns.transition_panel
-
-    if panel == nil or panel.blocked != nil or not transition_session?(socket, form) do
-      {:noreply, socket}
-    else
-      socket = update_panel(socket, &%{&1 | params: params})
-      kind = if panel.kind == :reason, do: "reason", else: "evidence"
-
-      case TaskEvidence.parse(Map.merge(params, %{"kind" => kind, "to" => panel.to})) do
-        {:error, errors} ->
-          {:noreply, update_panel(socket, &%{&1 | errors: errors, top: nil})}
-
-        {:ok, opts} ->
-          {:noreply, run_transition(socket, panel, opts)}
-      end
-    end
+    {:noreply, socket}
   end
 
   ## Feedback (design D5)
@@ -451,16 +395,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
-  # The merge preview of the 验收 panel (add-github-ui D11), nil without a repository.
-  defp merge_preview(socket, "verified") do
-    case PullRequests.verify_preview(socket.assigns.current_scope, socket.assigns.task.id) do
-      {:ok, preview} -> preview
-      {:error, _} -> nil
-    end
-  end
-
-  defp merge_preview(_socket, _to), do: nil
-
   defp direct_button(from, to) when is_binary(from) do
     Enum.find(
       TaskTransitions.buttons(from, [to]),
@@ -482,28 +416,14 @@ defmodule HelmsmanWeb.TaskLive.Show do
     Tasks.transition(scope, task.id, to, Map.put(opts, :expected_from, from))
   end
 
-  defp run_transition(socket, panel, opts) do
-    case transition(socket, panel.from, panel.to, opts) do
-      {:ok, detail} ->
-        socket |> assign(:transition_panel, nil) |> put_task(detail)
-
-      {:error, reason} ->
-        case TransitionErrors.message(reason, panel.label) do
-          {:blocked, text} ->
-            socket |> refresh() |> update_panel(&%{&1 | blocked: text, errors: %{}, top: nil})
-
-          {{:field, field}, text} ->
-            update_panel(socket, &%{&1 | errors: %{field => text}, top: nil})
-
-          {:top, text} ->
-            update_panel(socket, &%{&1 | top: text, errors: %{}})
-        end
-    end
-  end
-
   ## Notifications
 
   @impl true
+  def handle_info({:transition_panel, result, _ident}, socket) when result in [:done, :refresh],
+    do: {:noreply, refresh(socket)}
+
+  def handle_info({:transition_panel, :closed, _ident}, socket), do: {:noreply, socket}
+
   # The project topic of the task's epic (add-collaboration-ui D10): only its summary.
   def handle_info({:task_updated, %{id: _} = summary}, socket),
     do: {:noreply, TaskCollab.handle_summary(socket, summary)}
@@ -652,13 +572,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
     end
   end
 
-  defp update_panel(socket, fun) do
-    case socket.assigns.transition_panel do
-      nil -> socket
-      panel -> assign(socket, :transition_panel, fun.(panel))
-    end
-  end
-
   defp parse_version(nil), do: nil
 
   defp parse_version(value) when is_binary(value) do
@@ -702,27 +615,7 @@ defmodule HelmsmanWeb.TaskLive.Show do
     )
     |> TaskCollab.sync()
     |> cache_rendered()
-    |> check_panel()
     |> check_feedback_panel()
-  end
-
-  defp check_panel(socket) do
-    task = socket.assigns.task
-
-    case socket.assigns.transition_panel do
-      %{blocked: nil, to: to, from: from, label: label} = panel ->
-        if task.status != from or to not in allowed(task.status) do
-          {:blocked, text} =
-            TransitionErrors.message({:invalid_transition, task.status, to, []}, label)
-
-          assign(socket, :transition_panel, %{panel | blocked: text})
-        else
-          socket
-        end
-
-      _ ->
-        socket
-    end
   end
 
   defp allowed(status),
@@ -743,19 +636,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
   end
 
   defp current_session?(_socket, _field, _params), do: true
-
-  # A reason panel's form must come from the current reason editor; evidence panels
-  # have no editor.
-  defp transition_session?(socket, form) do
-    case socket.assigns.transition_panel do
-      %{kind: :reason} ->
-        MarkdownEditor.session_of(%{"session" => form["editor_session"]}) ==
-          socket.assigns.transition_session
-
-      _ ->
-        true
-    end
-  end
 
   defp feedback_session?(socket, form) do
     case socket.assigns.feedback_panel do
@@ -1267,12 +1147,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
           </section>
         </aside>
       </div>
-      <.transition_panel
-        panel={@transition_panel}
-        local_branch={@local_branch}
-        task={@task}
+      <.live_component
+        module={HelmsmanWeb.TaskLive.TransitionPanel}
+        id="task-transition"
+        ident={@task.id}
+        version={{@task.status, @task.updated_at, @local_branch}}
         scope={@current_scope}
-        session={@transition_session}
         candidates={@mention_candidates}
       />
       <.feedback_panel
@@ -1858,162 +1738,6 @@ defmodule HelmsmanWeb.TaskLive.Show do
       _ ->
         RunComponents.unavailable_reason(agent, {:skipped, :unknown})
     end
-  end
-
-  defp passed_tests(%{last_done_tests: %{passed: true} = tests}), do: tests
-  defp passed_tests(_hint), do: nil
-
-  # Always rendered (closed when `panel` is nil) so that closing runs the overlay's
-  # phx-remove and gives the page back its focus and pointer events.
-  attr :panel, :map, default: nil
-  attr :task, :map, required: true
-  attr :scope, :map, required: true
-  attr :session, :integer, default: 0
-  attr :candidates, :list, default: []
-  attr :local_branch, :map, default: nil
-
-  defp transition_panel(%{panel: nil} = assigns) do
-    ~H"""
-    <.side_panel id="transition-panel" show={false} title="" on_cancel={JS.push("close_transition")}>
-      <div />
-    </.side_panel>
-    """
-  end
-
-  defp transition_panel(assigns) do
-    panel = assigns.panel
-
-    hint =
-      panel.to == "verified" && TaskTransitions.self_verify_hint(assigns.task, assigns.scope)
-
-    assigns =
-      assign(assigns,
-        hint: hint,
-        result: panel.params["result"] || "none",
-        help: panel.kind == :reason && TaskTransitions.panel_help(panel.from, panel.to)
-      )
-
-    ~H"""
-    <.side_panel
-      id="transition-panel"
-      show
-      title={"#{@panel.label} #{@task.id}"}
-      dirty
-      focus={if(@panel.kind == :reason, do: "#transition-editor-input-#{@session}")}
-      on_cancel={JS.push("close_transition")}
-    >
-      <:error :if={@panel.blocked || @panel.top}>
-        <span id="transition-panel-error">{@panel.blocked || @panel.top}</span>
-      </:error>
-      <div
-        :if={@hint}
-        id="self-verify-hint"
-        class="mb-4 rounded-field border border-border tint-info px-3 py-2 text-body text-info-fg"
-      >
-        <span :if={passed_tests(@hint)}>{dgettext("ui", "你是执行方：验收需要通过的测试结果。最近一次完成已附带通过的测试：")}<code class="font-mono">{passed_tests(
-          @hint
-        ).command}</code></span>
-        <span :if={!passed_tests(@hint)}>{dgettext("ui", "你是执行方：验收需要通过的测试结果。最近一次完成没有附带通过的测试，请在下方填写")}</span>
-      </div>
-      <p :if={@help} id="transition-help" class="mb-4 text-body text-fg-muted">{@help}</p>
-      <TaskLocalBranch.verify_preview
-        :if={@panel.to == "verified" and @local_branch != nil}
-        state={@local_branch}
-      />
-      <GitHubComponents.merge_preview :if={@panel.kind == :evidence} preview={@panel[:preview]} />
-      <.form
-        for={%{}}
-        as={:transition}
-        id="transition-form"
-        phx-change="transition_change"
-        phx-submit="submit_transition"
-        class="flex flex-col gap-4"
-      >
-        <%= if @panel.kind == :evidence do %>
-          <.input
-            type="textarea"
-            id="transition-commits"
-            name="transition[commits]"
-            label={dgettext("ui", "提交")}
-            help={dgettext("ui", "每行一个提交 hash，也可以用空格或逗号分隔")}
-            value={@panel.params["commits"]}
-            errors={List.wrap(@panel.errors[:commits])}
-            rows="3"
-            class="font-mono"
-          />
-          <.input
-            type="radio"
-            id="transition-result"
-            name="transition[result]"
-            label={dgettext("ui", "测试结果")}
-            value={@result}
-            options={[
-              {dgettext("ui", "不附测试结果"), "none"},
-              {dgettext("ui", "通过"), "passed"},
-              {dgettext("ui", "未通过"), "failed"}
-            ]}
-            errors={List.wrap(@panel.errors[:tests])}
-          />
-          <%= if @result in ~w(passed failed) do %>
-            <.input
-              id="transition-command"
-              name="transition[command]"
-              label={dgettext("ui", "测试命令")}
-              value={@panel.params["command"]}
-              errors={List.wrap(@panel.errors[:command])}
-              class="font-mono"
-              autocomplete="off"
-            />
-            <.input
-              id="transition-summary"
-              name="transition[summary]"
-              label={dgettext("ui", "摘要（可选）")}
-              value={@panel.params["summary"]}
-              autocomplete="off"
-            />
-          <% end %>
-          <.input
-            type="textarea"
-            id="transition-comment"
-            name="transition[comment]"
-            label={dgettext("ui", "备注（可选）")}
-            value={@panel.params["comment"]}
-            errors={List.wrap(@panel.errors[:comment])}
-            rows="4"
-          />
-        <% else %>
-          <.live_component
-            module={MarkdownEditor}
-            id="transition-editor"
-            session={@session}
-            scope={@scope}
-            name="transition[comment]"
-            value=""
-            label={dgettext("ui", "原因")}
-            errors={List.wrap(@panel.errors[:comment])}
-            submit={:form}
-            rows={6}
-            candidates={@candidates}
-          />
-        <% end %>
-      </.form>
-      <:footer :let={cancel}>
-        <span />
-        <div class="flex items-center gap-2">
-          <.button phx-click={cancel}>{dgettext("ui", "取消")}</.button>
-          <.button
-            id="transition-submit"
-            type="submit"
-            form="transition-form"
-            variant="primary"
-            disabled={@panel.blocked != nil}
-          >
-            {@panel.label}
-          </.button>
-        </div>
-      </:footer>
-    </.side_panel>
-    """
   end
 
   # Always rendered (closed when `panel` is nil), like the transition panel.

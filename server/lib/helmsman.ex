@@ -48,6 +48,7 @@ defmodule Helmsman do
       Links,
       BQL,
       Filters,
+      ViewPrefs,
       Filters.SavedFilter,
       Tasks,
       Tasks.Task,

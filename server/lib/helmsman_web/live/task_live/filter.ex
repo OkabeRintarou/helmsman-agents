@@ -11,7 +11,14 @@ defmodule HelmsmanWeb.TaskLive.Filter do
   @closed ~w(verified rejected cancelled)
 
   @doc "The `HelmsmanWeb.Filters` schema of the task list."
-  def schema, do: [status: {:list, @statuses}, label: :string, assignee: :string, q: :string]
+  def schema,
+    do: [
+      status: {:list, @statuses},
+      label: :string,
+      assignee: :string,
+      q: :string,
+      view: {:enum, ~w(list board)}
+    ]
 
   @doc "Statuses in display order."
   def statuses, do: @statuses

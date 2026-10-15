@@ -17,12 +17,14 @@ msgid "%{date}：%{value}"
 msgstr ""
 
 #: lib/helmsman_web/components/actor.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "%{name} 正在处理"
 msgstr ""
 
 #: lib/helmsman_web/components/actor.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "%{name} 等 %{count} 个正在处理"
@@ -219,6 +221,7 @@ msgid "删除"
 msgstr ""
 
 #: lib/helmsman_web/components/data_table.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/task_runs.ex
 #, elixir-autogen, elixir-format
 msgid "加载更多"
@@ -245,6 +248,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/tokens.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/project_github_form.ex
@@ -527,6 +531,7 @@ msgstr ""
 #: lib/helmsman_web/autopilot_components.ex
 #: lib/helmsman_web/components/status.ex
 #: lib/helmsman_web/data_settings_components.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #, elixir-autogen, elixir-format
 msgid "排队中"
 msgstr ""
@@ -580,6 +585,7 @@ msgstr ""
 #: lib/helmsman_web/live/command_palette/actions.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/new_task_panel.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "新建任务"
@@ -707,6 +713,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/data.ex
 #: lib/helmsman_web/live/settings_live/github.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/query_components.ex
@@ -1387,7 +1394,7 @@ msgstr ""
 msgid "不能超过 64 KB"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "不附测试结果"
 msgstr ""
@@ -1418,12 +1425,12 @@ msgstr ""
 msgid "你是执行方，验收需要通过的测试结果"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "你是执行方：验收需要通过的测试结果。最近一次完成已附带通过的测试："
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "你是执行方：验收需要通过的测试结果。最近一次完成没有附带通过的测试，请在下方填写"
 msgstr ""
@@ -1451,7 +1458,7 @@ msgid "历史"
 msgstr ""
 
 #: lib/helmsman_web/live/autopilot_live/show.ex
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #: lib/helmsman_web/task_pull_request.ex
 #, elixir-autogen, elixir-format
 msgid "原因"
@@ -1462,7 +1469,7 @@ msgstr ""
 msgid "备注无效"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "备注（可选）"
 msgstr ""
@@ -1605,6 +1612,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #: lib/helmsman_web/task_components.ex
 #, elixir-autogen, elixir-format
 msgid "提交"
@@ -1615,7 +1623,7 @@ msgstr ""
 msgid "提出方"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "摘要（可选）"
 msgstr ""
@@ -1699,7 +1707,7 @@ msgstr ""
 msgid "未指派"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "未通过"
 msgstr ""
@@ -1720,7 +1728,7 @@ msgstr ""
 msgid "每个标签须为 1–32 个字符"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "每行一个提交 hash，也可以用空格或逗号分隔"
 msgstr ""
@@ -1754,7 +1762,7 @@ msgstr ""
 msgid "没有权限执行此操作"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "测试命令"
 msgstr ""
@@ -1764,7 +1772,7 @@ msgstr ""
 msgid "测试未通过"
 msgstr ""
 
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "测试结果"
 msgstr ""
@@ -1827,6 +1835,7 @@ msgstr ""
 msgid "输入新标签后按 Enter"
 msgstr ""
 
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #, elixir-autogen, elixir-format
 msgid "还没有任务"
@@ -1844,7 +1853,7 @@ msgid "连续创建"
 msgstr ""
 
 #: lib/helmsman_web/github_components.ex
-#: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/task_live/transition_panel.ex
 #, elixir-autogen, elixir-format
 msgid "通过"
 msgstr ""
@@ -2698,6 +2707,7 @@ msgstr ""
 msgid "已作废，被"
 msgstr ""
 
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/query_components.ex
@@ -6876,6 +6886,7 @@ msgid "被替代（它接手本任务）"
 msgstr ""
 
 #: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/query_components.ex
 #: lib/helmsman_web/task_collab.ex
@@ -7745,6 +7756,7 @@ msgid "已启用 %{name}；停用期间错过的工作不会补派"
 msgstr ""
 
 #: lib/helmsman_web/live/autopilot_live/show.ex
+#: lib/helmsman_web/live/task_live/board_components.ex
 #, elixir-autogen, elixir-format
 msgid "已完成"
 msgstr ""
@@ -9847,3 +9859,63 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "收起 %{n} 条回复"
 msgstr ""
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "%{button} → %{column}"
+msgstr "%{button} → %{column}"
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "%{id} 已移到%{column}"
+msgstr "%{id} moved to %{column}"
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "上次运行失败"
+msgstr "Last run failed"
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "任务视图"
+msgstr "Task view"
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "列表"
+msgstr "List"
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "已隐藏 %{n} 列"
+msgstr "%{n} hidden columns"
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "显示"
+msgstr "Show"
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "看板"
+msgstr "Board"
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "移动 %{id}"
+msgstr "Move %{id}"
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "等前置任务"
+msgstr "Waiting for dependencies"
+
+#: lib/helmsman_web/live/task_live/board_components.ex
+#, elixir-autogen, elixir-format
+msgid "隐藏此列"
+msgstr "Hide column"
+
+#: lib/helmsman_web/live/task_live/index.ex
+#, elixir-autogen, elixir-format
+msgid "（该列已隐藏）"
+msgstr " (column hidden)"

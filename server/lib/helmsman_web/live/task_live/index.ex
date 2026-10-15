@@ -26,7 +26,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
   """
   use HelmsmanWeb, :live_view
 
-  alias Helmsman.{Events, GitHub, Policy, Projects, Tasks}
+  alias Helmsman.{Events, GitHub, Policy, Projects, Tasks, ViewPrefs}
 
   alias HelmsmanWeb.{
     CollabComponents,
@@ -38,11 +38,13 @@ defmodule HelmsmanWeb.TaskLive.Index do
     RunData,
     TaskComponents,
     TaskData,
+    TaskTransitions,
     Throttle,
     Url
   }
 
-  alias HelmsmanWeb.TaskLive.Filter
+  alias Helmsman.Tasks.StateMachine
+  alias HelmsmanWeb.TaskLive.{Board, BoardComponents, Filter, TransitionErrors}
 
   @impl true
   def mount(%{"key" => key}, _session, socket) do
@@ -55,6 +57,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
       end
 
     agents = TaskData.agent_info(scope)
+    {:ok, prefs} = ViewPrefs.get(scope)
 
     if connected?(socket) do
       Events.subscribe(Events.topic(:project, project.id))
@@ -66,6 +69,9 @@ defmodule HelmsmanWeb.TaskLive.Index do
      |> stream_configure(:tasks, dom_id: &"task-#{&1.id}")
      |> stream(:tasks, [])
      |> assign(
+       view_prefs: prefs,
+       task_view: nil,
+       can_transition?: Policy.authorize(scope, :transition_task) == :ok,
        project: project,
        page_title: project.name,
        filters: nil,
@@ -83,7 +89,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
        has_more: false,
        panel: nil,
        edit: nil
-     )}
+     )
+     |> Board.init()}
   end
 
   @impl true
@@ -94,10 +101,30 @@ defmodule HelmsmanWeb.TaskLive.Index do
       {:noreply, push_navigate(socket, to: canonical(uri, key, project.key), replace: true)}
     else
       filters = Filters.parse(params, Filter.schema())
-      socket = if filters != socket.assigns.filters, do: load(socket, filters), else: socket
+      view = filters[:view] || socket.assigns.view_prefs.view
+
+      socket = select_view(socket, filters, view)
+
       {:noreply, socket |> assign(:uri, relative(uri)) |> put_panel(params["panel"])}
     end
   end
+
+  defp select_view(socket, filters, view) do
+    if filters != socket.assigns.filters or view != socket.assigns.task_view do
+      socket |> assign(:task_view, view) |> load_view(filters, view)
+    else
+      socket
+    end
+  end
+
+  defp load_view(socket, filters, "board"),
+    do:
+      socket
+      |> stream(:tasks, [], reset: true)
+      |> assign(shown: MapSet.new(), working: %{})
+      |> Board.load(filters)
+
+  defp load_view(socket, filters, "list"), do: socket |> Board.clear() |> load(filters)
 
   defp canonical(uri, key, canonical_key) do
     %URI{path: path, query: query} = URI.parse(uri)
@@ -187,6 +214,95 @@ defmodule HelmsmanWeb.TaskLive.Index do
     end
   end
 
+  defp choose_move(socket, task, from, to, status) do
+    case Enum.find(TaskTransitions.buttons(from, StateMachine.allowed(status)), &(&1.to == to)) do
+      nil ->
+        move_error(
+          socket,
+          task,
+          {:invalid_transition, task.status, to, StateMachine.allowed(task.status)},
+          TaskTransitions.direct_label(to)
+        )
+
+      button ->
+        perform_move(socket, task, from, button)
+    end
+  end
+
+  defp perform_move(socket, task, from, button) do
+    cond do
+      to_string(task.status) != from ->
+        move_error(socket, task, {:status_changed, task.status}, button.label)
+
+      button.kind == :direct ->
+        direct_move(socket, task, from, button)
+
+      true ->
+        send_update(HelmsmanWeb.TaskLive.TransitionPanel,
+          id: "board-transition",
+          event: "open_transition",
+          params: %{"from" => from, "to" => button.to}
+        )
+
+        assign(socket, :board_panel, %{ident: task.ident, version: task.lock_version, from: from})
+    end
+  end
+
+  defp direct_move(socket, task, from, button) do
+    case Tasks.transition(socket.assigns.current_scope, task.ident, button.to, %{
+           expected_from: from
+         }) do
+      {:ok, _} -> moved(socket, task.ident)
+      {:error, reason} -> move_error(socket, task, reason, button.label)
+    end
+  end
+
+  defp move_error(socket, task, reason, label) do
+    {_where, text} = TransitionErrors.message(reason, label)
+
+    case Tasks.get(socket.assigns.current_scope, task.ident) do
+      {:ok, fresh} -> socket |> Board.summary(Tasks.summary(fresh)) |> put_flash(:error, text)
+      _ -> put_flash(socket, :error, text)
+    end
+  end
+
+  defp moved(socket, ident) do
+    case Tasks.get(socket.assigns.current_scope, ident) do
+      {:ok, task} ->
+        status = to_string(task.status)
+        hidden? = status not in socket.assigns.board_columns
+
+        text =
+          dgettext("ui", "%{id} 已移到%{column}",
+            id: ident,
+            column: BoardComponents.column_label(status)
+          ) <> if(hidden?, do: dgettext("ui", "（该列已隐藏）"), else: "")
+
+        source_status = source_status(socket, ident)
+
+        socket = Board.summary(socket, Tasks.summary(task))
+        socket = if Filter.search?(socket.assigns.filters), do: Board.reload(socket), else: socket
+        socket = assign(socket, :board_announcement, text)
+
+        focus =
+          if hidden?,
+            do: "board-heading-#{source_status}",
+            else: "board-#{status}-#{ident}-link"
+
+        push_event(socket, "board-focus", %{id: focus})
+
+      _ ->
+        socket
+    end
+  end
+
+  defp source_status(socket, ident) do
+    source = socket.assigns.board_rows[ident]
+
+    (source && source.status) || (socket.assigns.board_panel && socket.assigns.board_panel[:from]) ||
+      hd(socket.assigns.board_columns)
+  end
+
   @max_search 200
   @search_reload_ms 1000
 
@@ -211,6 +327,73 @@ defmodule HelmsmanWeb.TaskLive.Index do
   end
 
   @impl true
+  def handle_event("switch_view", %{"view" => view}, socket) when view in ~w(list board) do
+    case ViewPrefs.put(socket.assigns.current_scope, %{view: view}) do
+      {:ok, prefs} ->
+        base = "/w/#{socket.assigns.current_scope.workspace.slug}/p/#{socket.assigns.project.key}"
+
+        {:noreply,
+         socket
+         |> assign(:view_prefs, prefs)
+         |> push_patch(to: Filters.path(base, Map.put(socket.assigns.filters, :view, view)))}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("board_more", %{"status" => status}, socket),
+    do: {:noreply, Board.more(socket, status)}
+
+  def handle_event(event, %{"status" => status}, socket)
+      when event in ~w(hide_column show_column) do
+    hidden = socket.assigns.view_prefs.hidden_columns
+
+    hidden =
+      if event == "hide_column",
+        do: Enum.uniq(hidden ++ [status]),
+        else: List.delete(hidden, status)
+
+    if socket.assigns.filters[:status] do
+      {:noreply, socket}
+    else
+      case ViewPrefs.put(socket.assigns.current_scope, %{hidden_columns: hidden}) do
+        {:ok, prefs} ->
+          {:noreply, socket |> assign(:view_prefs, prefs) |> Board.load(socket.assigns.filters)}
+
+        _ ->
+          {:noreply, socket}
+      end
+    end
+  end
+
+  def handle_event("move", %{"id" => ident, "from" => from, "to" => to}, socket) do
+    scope = socket.assigns.current_scope
+
+    with true <- socket.assigns.task_view == "board",
+         :ok <- Policy.authorize(scope, :transition_task),
+         {:ok, task} <- Tasks.get(scope, ident),
+         true <- task.project_id == socket.assigns.project.id,
+         {:ok, status} <- StateMachine.normalize(from) do
+      {:noreply, choose_move(socket, task, from, to, status)}
+    else
+      _ -> {:noreply, put_flash(socket, :error, failure(:forbidden))}
+    end
+  end
+
+  def handle_event(event, params, socket)
+      when event in ~w(close_transition transition_change submit_transition) do
+    if socket.assigns.board_panel,
+      do:
+        send_update(HelmsmanWeb.TaskLive.TransitionPanel,
+          id: "board-transition",
+          event: event,
+          params: params
+        )
+
+    {:noreply, socket}
+  end
+
   def handle_event("load_more", _params, socket), do: {:noreply, load_next(socket)}
 
   # The search box (add-search-query-ui D2): the text goes to the URL; too long a text
@@ -505,6 +688,37 @@ defmodule HelmsmanWeb.TaskLive.Index do
   defp failure(_reason), do: dgettext("ui", "操作失败，请稍后重试")
 
   @impl true
+  def handle_info({:transition_panel, :done, ident}, socket),
+    do: {:noreply, moved(socket, ident)}
+
+  def handle_info({:transition_panel, :closed, _ident}, socket),
+    do: {:noreply, socket}
+
+  def handle_info({:transition_panel, :refresh, ident}, socket) do
+    case Tasks.get(socket.assigns.current_scope, ident) do
+      {:ok, task} -> {:noreply, Board.summary(socket, Tasks.summary(task))}
+      _ -> {:noreply, socket}
+    end
+  end
+
+  def handle_info(
+        {event, %{project_key: _} = summary},
+        %{assigns: %{task_view: "board"}} = socket
+      )
+      when event in [:task_created, :task_updated], do: {:noreply, Board.summary(socket, summary)}
+
+  def handle_info(:board_counts, %{assigns: %{task_view: "board"}} = socket),
+    do: {:noreply, socket |> Throttle.done(:board_counts) |> Board.counts()}
+
+  def handle_info(:board_search, %{assigns: %{task_view: "board"}} = socket),
+    do: {:noreply, socket |> Throttle.done(:board_search) |> Board.reload()}
+
+  def handle_info({:run_updated, %{task: ident}}, %{assigns: %{task_view: "board"}} = socket)
+      when is_binary(ident), do: {:noreply, Board.run_updated(socket, ident)}
+
+  def handle_info(:board_runs, %{assigns: %{task_view: "board"}} = socket),
+    do: {:noreply, socket |> Throttle.done(:board_runs) |> Board.refresh_runs()}
+
   def handle_info({event, %{project_key: _} = summary}, socket)
       when event in [:task_created, :task_updated] do
     socket = merge_labels(socket, [summary])
@@ -668,6 +882,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
   # a time), with whether more follow and the cursor of the last (code-review-1 P2-1).
   defp reread_rows(%{assigns: %{filters: nil}} = socket), do: socket
 
+  defp reread_rows(%{assigns: %{task_view: "board"}} = socket), do: Board.reload(socket)
+
   defp reread_rows(socket) do
     %{current_scope: scope, project: project, filters: filters} = socket.assigns
     count = max(MapSet.size(socket.assigns.shown), TaskData.page_size())
@@ -767,6 +983,26 @@ defmodule HelmsmanWeb.TaskLive.Index do
         <.page_header title={@project.name}>
           <:crumb navigate={"/w/#{@slug}/projects"}>{dgettext("ui", "项目")}</:crumb>
           <:actions>
+            <div
+              class="inline-flex rounded-field border border-border p-0.5"
+              role="group"
+              aria-label={dgettext("ui", "任务视图")}
+            >
+              <button
+                :for={
+                  {value, label} <- [{"list", dgettext("ui", "列表")}, {"board", dgettext("ui", "看板")}]
+                }
+                id={"task-layout-#{value}"}
+                type="button"
+                phx-click="switch_view"
+                phx-value-view={value}
+                aria-pressed={to_string(@task_view == value)}
+                class={[
+                  "h-8 rounded-field px-3 text-label",
+                  @task_view == value && "bg-selected font-medium"
+                ]}
+              >{label}</button>
+            </div>
             <.dropdown
               :if={@can_manage?}
               id="project-menu"
@@ -846,6 +1082,7 @@ defmodule HelmsmanWeb.TaskLive.Index do
         {@search_error}
       </p>
       <.data_table
+        :if={@task_view == "list"}
         id="tasks"
         class={@empty? && "hidden"}
         rows={@streams.tasks}
@@ -931,12 +1168,12 @@ defmodule HelmsmanWeb.TaskLive.Index do
         </:col>
       </.data_table>
       <.empty_state
-        :if={@empty? and @filters != %{}}
+        :if={@task_view == "list" and @empty? and Map.delete(@filters, :view) != %{}}
         kind={:filtered}
         on_clear={JS.patch(@base)}
       />
       <.empty_state
-        :if={@empty? and @filters == %{}}
+        :if={@task_view == "list" and @empty? and Map.delete(@filters, :view) == %{}}
         icon="lucide-list-todo"
         title={dgettext("ui", "还没有任务")}
       >
@@ -946,6 +1183,37 @@ defmodule HelmsmanWeb.TaskLive.Index do
           </.button>
         </:action>
       </.empty_state>
+
+      <BoardComponents.board
+        :if={@task_view == "board"}
+        streams={@streams}
+        columns={@board_columns}
+        counts={@board_counts}
+        pages={@board}
+        filters={@filters}
+        hidden={@view_prefs.hidden_columns}
+        can_move={@can_transition?}
+        can_create={@shell.can_create_task? and not @archived?}
+        new_path={@new_task_path}
+        slug={@slug}
+        agents={@agents}
+        appearance={@appearance}
+        announcement={@board_announcement}
+      />
+      <.live_component
+        :if={@board_panel}
+        module={HelmsmanWeb.TaskLive.TransitionPanel}
+        id="board-transition"
+        ident={@board_panel.ident}
+        version={
+          if(@board_rows[@board_panel.ident],
+            do: {@board_rows[@board_panel.ident].status, @board_rows[@board_panel.ident].updated_at},
+            else: @board_panel.version
+          )
+        }
+        scope={@current_scope}
+        candidates={@assignable}
+      />
 
       <.confirm_dialog
         :if={@can_manage?}
