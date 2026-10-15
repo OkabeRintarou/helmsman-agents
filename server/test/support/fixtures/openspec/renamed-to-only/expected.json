@@ -1,0 +1,15 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "specs/settings/spec.md",
+      "line": null,
+      "rule": "no_delta_sections"
+    },
+    {
+      "file": "specs/settings/spec.md",
+      "line": 3,
+      "rule": "renamed_malformed"
+    }
+  ]
+}

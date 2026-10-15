@@ -63,7 +63,7 @@ defmodule Helmsman.AgentDesigns.ConfirmSquadTest do
     assert length(agents) == 4
     assert Enum.all?(agents, &(&1.owner.id == ctx.alice.id))
 
-    assert %{name: "web-team", leader: %{name: "web-lead"}} = squad
+    assert %{name: "web-team", leader: %{name: "web-lead"}, spec_finalize: nil} = squad
 
     assert Enum.map(squad.members, &{&1.name, &1.role_note}) == [
              {"fe-dev", "前端"},

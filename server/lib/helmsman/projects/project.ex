@@ -40,6 +40,10 @@ defmodule Helmsman.Projects.Project do
     # one of `repository_id` and `local_repository_id` is set.
     field :local_repository_id, :id
 
+    # How a spec of the project's tasks is finalized (`add-spec-workflow`
+    # decision 7); only admins change it.
+    field :spec_finalize, Ecto.Enum, values: [:approval, :leader], default: :approval
+
     # Set by `Helmsman.Projects` reads: `%{owner, name, full_name, available}`
     # or nil, and the effective base branch (the default branch when
     # `base_branch` is nil).
@@ -140,11 +144,15 @@ defmodule Helmsman.Projects.Project do
     |> check_constraint(:key, name: :projects_key_format, message: @key_message)
   end
 
-  @doc "Changeset for changing the name and description; the key is ignored."
+  @doc """
+  Changeset for changing the name, the description and the spec finalize
+  mode (`approval` / `leader`); the key is ignored.
+  """
   @spec update_changeset(t(), map()) :: Ecto.Changeset.t()
   def update_changeset(project, attrs) do
     project
-    |> cast(attrs, [:name, :description], empty_values: [])
+    |> cast(attrs, [:name, :description, :spec_finalize], empty_values: [])
+    |> validate_required([:spec_finalize])
     |> validate_fields()
   end
 

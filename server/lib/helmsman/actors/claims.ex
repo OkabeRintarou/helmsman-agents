@@ -13,7 +13,16 @@ defmodule Helmsman.Actors.Claims do
     {"task_links", "actor_id"},
     {"runs", "cancel_requested_by_id"},
     {"task_grants", "granted_by_id"},
-    {"task_local_branches", "merged_by_id"}
+    {"task_local_branches", "merged_by_id"},
+    # `add-spec-workflow` decision 2 (pending requests: `merge_review_requests/3`).
+    {"task_specs", "created_by_id"},
+    {"task_specs", "proposal_by_id"},
+    {"task_spec_versions", "author_id"},
+    {"task_spec_review_requests", "reviewer_id"},
+    {"task_spec_review_requests", "requested_by_id"},
+    {"task_spec_reviews", "reviewer_id"},
+    {"task_spec_issue_notes", "author_id"},
+    {"task_spec_events", "actor_id"}
   ]
   @agent_only [
     {"api_tokens", "default_agent_id"},
@@ -274,6 +283,8 @@ defmodule Helmsman.Actors.Claims do
       [wid, squads]
     )
 
+    merge_review_requests(wid, source.id, target.id)
+
     for {table, col} <- @foreign_columns do
       Repo.query!("UPDATE #{table} SET #{col}=$3 WHERE workspace_id=$1 AND #{col}=$2", [
         wid,
@@ -295,6 +306,40 @@ defmodule Helmsman.Actors.Claims do
     Enum.each(squads, &Events.after_commit(Events.topic(:workspace_squads, wid), {:squad, &1}))
 
     :ok
+  end
+
+  # `add-spec-workflow`: at most one `requested` request per version and
+  # reviewer. A pending request of the source on a version the target also
+  # has one on is closed (`cancelled / withdrawn`) with its audit event, by
+  # the system identity, so the spec still equals the replay of its events;
+  # the spec's status does not change (the target's request stays).
+  defp merge_review_requests(wid, source_id, target_id) do
+    Repo.query!(
+      """
+      WITH dup AS (
+        SELECT r.id, r.spec_id, r.number FROM task_spec_review_requests r
+        WHERE r.workspace_id = $1 AND r.reviewer_id = $2 AND r.status = 'requested'
+          AND EXISTS (SELECT 1 FROM task_spec_review_requests o
+                      WHERE o.version_id = r.version_id AND o.reviewer_id = $3
+                        AND o.status = 'requested')
+      ), numbered AS (
+        SELECT dup.*, s.event_seq + row_number() OVER (PARTITION BY dup.spec_id ORDER BY dup.number) AS event_no
+        FROM dup JOIN task_specs s ON s.id = dup.spec_id
+      ), events AS (
+        INSERT INTO task_spec_events (workspace_id, spec_id, number, actor_id, action, data, inserted_at)
+        SELECT $1, spec_id, event_no, (SELECT id FROM actors WHERE workspace_id = $1 AND kind = 'system'),
+               'review_request_closed',
+               jsonb_build_object('request', number, 'status', 'cancelled', 'reason', 'withdrawn'), now()
+        FROM numbered RETURNING spec_id
+      ), specs AS (
+        UPDATE task_specs s SET event_seq = s.event_seq + c.n, lock_version = s.lock_version + 1
+        FROM (SELECT spec_id, count(*) AS n FROM events GROUP BY spec_id) c WHERE s.id = c.spec_id
+      )
+      UPDATE task_spec_review_requests r SET status = 'cancelled', close_reason = 'withdrawn', closed_at = now()
+      FROM dup WHERE r.id = dup.id
+      """,
+      [wid, source_id, target_id]
+    )
   end
 
   defp notify(scope) do

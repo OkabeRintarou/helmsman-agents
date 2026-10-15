@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "proposal.md",
+      "line": null,
+      "rule": "missing_proposal"
+    }
+  ]
+}

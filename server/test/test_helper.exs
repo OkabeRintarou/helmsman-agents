@@ -10,7 +10,7 @@ if :os.type() != {:unix, :linux} do
   IO.puts("Skipping :e2e tests: daemon end-to-end tests require Linux.")
 end
 
-ExUnit.start(exclude: [:e2e], assert_receive_timeout: 1_000)
+ExUnit.start(exclude: [:e2e, :openspec_cli], assert_receive_timeout: 1_000)
 Ecto.Adapters.SQL.Sandbox.mode(Helmsman.Repo, :manual)
 
 # A suite-level fallback handles daemon process groups if an individual test's

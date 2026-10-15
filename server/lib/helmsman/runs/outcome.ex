@@ -29,6 +29,9 @@ defmodule Helmsman.Runs.Outcome do
           | :delegated
           | :delegate_done
           | :autopilot
+          | :spec_review
+          | :spec_reviewed
+          | :spec_decided
   @type result :: :queued | :merged | :deferred | :skipped
   @type reason ::
           :not_started

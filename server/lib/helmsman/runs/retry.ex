@@ -115,6 +115,8 @@ defmodule Helmsman.Runs.Retry do
   # happen wakes its leader now.
   defp not_requeued(run) do
     if Runs.delegated?(run), do: Runs.delegate_done!(run)
+    # `add-spec-workflow` decision 10: its review requests lapse now.
+    if Runs.spec_requests?(run), do: Runs.spec_settle!(run)
     # `add-autopilots` decision 8: the autopilot that started its task
     # settles now.
     Helmsman.Autopilots.after_task_changed(run.task_id)

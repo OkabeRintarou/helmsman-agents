@@ -5,7 +5,9 @@ defmodule Helmsman.Runs.Workers.SideEffect do
   in a new one after it: `auto_claim` when it started, `fallback` when it
   succeeded, `steer_settle` when it succeeded with an acknowledged
   steering push (`add-run-steering` decision 7), `delegate_done` when a
-  delegated run ended and wakes its leader (`add-squads` decision 9). Unique per run and kind;
+  delegated run ended and wakes its leader (`add-squads` decision 9),
+  `spec_settle` when a run with review requests ended for good
+  (`add-spec-workflow` decision 10). Unique per run and kind;
   each effect is idempotent.
   """
 
@@ -31,5 +33,9 @@ defmodule Helmsman.Runs.Workers.SideEffect do
 
   def perform(%Oban.Job{args: %{"run_id" => run_id, "kind" => "delegate_done"}}) do
     :ok = SideEffects.delegate_done(run_id)
+  end
+
+  def perform(%Oban.Job{args: %{"run_id" => run_id, "kind" => "spec_settle"}}) do
+    :ok = Helmsman.TaskSpecs.settle_run(run_id)
   end
 end

@@ -577,8 +577,42 @@ defmodule Helmsman.Runs do
     |> Enum.each(fn run -> {:ok, _job} = Oban.insert(SettleTurn.new(%{run_id: run.id})) end)
 
     runs |> Enum.filter(&wakes_leader?/1) |> Enum.each(&delegate_done!/1)
+    runs |> Enum.filter(&settles_spec?/1) |> Enum.each(&spec_settle!/1)
     Helmsman.Autopilots.after_runs_ended(runs)
   end
+
+  @doc false
+  # Inserts the `spec_settle` effect of the ended `run` (`add-spec-workflow`
+  # decision 10), at most once: only a job, never a lock on the task or
+  # spec here. Also by `Helmsman.Runs.Retry` when an automatic retry did
+  # not requeue the run.
+  @spec spec_settle!(Run.t()) :: :ok
+  def spec_settle!(%Run{id: id}) do
+    {:ok, _job} = Oban.insert(SideEffectJob.new(%{run_id: id, kind: "spec_settle"}))
+    :ok
+  end
+
+  @doc """
+  Whether the ended `run` settles its review requests now
+  (`add-spec-workflow` decision 10): it has a trigger with a
+  `spec_request`, and it will not be retried automatically (succeeded,
+  failed without an automatic retry, or cancelled, by a person too).
+  """
+  @spec settles_spec?(Run.t()) :: boolean()
+  def settles_spec?(%Run{} = run) do
+    spec_requests?(run) and
+      case run.status do
+        :succeeded -> true
+        :failed -> not Retry.automatic?(run)
+        :cancelled -> true
+        _other -> false
+      end
+  end
+
+  @doc "Whether `run` has a trigger with a review request (`spec_request`)."
+  @spec spec_requests?(Run.t()) :: boolean()
+  def spec_requests?(%Run{triggers: triggers}),
+    do: Enum.any?(triggers, &is_integer(&1["spec_request"]))
 
   @doc false
   # Inserts the `delegate_done` effect of the ended delegated `run`, at
@@ -976,6 +1010,10 @@ defmodule Helmsman.Runs do
   `%{id, task, agent, agent_owner_id, lane, status, triggers: [%{kind,
   by, at, instructions}] (a retry marker also has `auto` and `retry_of`;
   `delegate_done` has `member`; `autopilot` has `autopilot: %{id, name}`,
+  the spec triggers (`delegated`, `spec_review`, `spec_reviewed`,
+  `spec_decided`) the spec fields they have (`spec_role`, `spec_version`,
+  `spec_request`, `review`, `version`, `verdict`, `counts`, `decision`,
+  `reason`),
   nil once deleted, and `source`: "schedule" | "manual" | "webhook"),
   failure_reason, priority, attempt, daemon, provider_account_name (the
   account the claim used; nil: none or deleted), provider_account (its
@@ -1122,9 +1160,22 @@ defmodule Helmsman.Runs do
       # `add-squads` decision 9: the member whose delegated run ended.
       "delegate_done" -> Map.put(view, :member, view.by)
       "autopilot" -> Map.merge(view, autopilot_view(trigger, workspace_id, lookups.autopilots))
-      _other -> view
+      _other -> Map.merge(view, spec_view(trigger))
     end
   end
+
+  # `add-spec-workflow` decision 12: the spec fields a trigger has.
+  @spec_fields [:spec_role, :spec_version, :spec_request, :review, :version, :verdict, :counts] ++
+                 [:decision, :reason]
+  @spec_kinds ~w(delegated spec_review spec_reviewed spec_decided)
+
+  defp spec_view(%{"kind" => kind} = trigger) when kind in @spec_kinds do
+    for field <- @spec_fields, Map.has_key?(trigger, Atom.to_string(field)), into: %{} do
+      {field, trigger[Atom.to_string(field)]}
+    end
+  end
+
+  defp spec_view(_trigger), do: %{}
 
   defp autopilot_view(trigger, workspace_id, names) do
     id = trigger["autopilot_id"]

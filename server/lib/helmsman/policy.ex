@@ -68,7 +68,10 @@ defmodule Helmsman.Policy do
     :design_agents,
     # avatars (`add-actor-avatars` decision 12)
     :set_avatar,
-    :remove_avatar
+    :remove_avatar,
+    # spec finalize modes (`add-spec-workflow` decision 7)
+    :update_project_spec_finalize,
+    :set_leader_spec_finalize
   ]
 
   # Actions with an authorization clause below.
@@ -136,7 +139,14 @@ defmodule Helmsman.Policy do
     :manage_autopilots,
     :delegate,
     :set_avatar,
-    :remove_avatar
+    :remove_avatar,
+    :view_spec,
+    :write_spec,
+    :coordinate_spec,
+    :rule_spec_issue,
+    :approve_spec,
+    :update_project_spec_finalize,
+    :set_leader_spec_finalize
   ]
 
   # The capability a run token needs for each action it may attempt; any
@@ -158,7 +168,11 @@ defmodule Helmsman.Policy do
     write_task: "write_task",
     link_tasks: "write_task",
     design: "design",
-    delegate: "delegate"
+    delegate: "delegate",
+    view_spec: "read",
+    write_spec: "write_task",
+    coordinate_spec: "write_task",
+    rule_spec_issue: "write_task"
   }
 
   @role_rank %{owner: 4, admin: 3, member: 2, viewer: 1}
@@ -523,6 +537,39 @@ defmodule Helmsman.Policy do
   # `Helmsman.Squads.delegate/4`.
   defp check(%Scope{via: :run, run: %Run{capabilities: caps}} = scope, :delegate, _resource),
     do: allow_if("delegate" in caps and role_at_least?(scope, :member))
+
+  ## Specs (`add-spec-workflow` decisions 7, 14; not management actions,
+  ## except the finalize modes)
+
+  # A project's or squad's mode `leader`: admins and above (agents never).
+  defp check(%Scope{} = scope, action, _resource)
+       when action in [:update_project_spec_finalize, :set_leader_spec_finalize],
+       do: allow_if(role_at_least?(scope, :admin))
+
+  defp check(%Scope{} = scope, :view_spec, _resource),
+    do: allow_if(role_at_least?(scope, :viewer))
+
+  # The coarse check; a run may only write its own task's spec
+  # (`:write_task` on the locked task).
+  defp check(%Scope{} = scope, :write_spec, _resource),
+    do: allow_if(role_at_least?(scope, :member))
+
+  # `coordinator`: `Helmsman.TaskSpecs.Coordinator.resolve/2` for the
+  # locked task.
+  defp check(%Scope{} = scope, :coordinate_spec, coordinator),
+    do: allow_if(role_at_least?(scope, :member) and coordinator not in [nil, :none])
+
+  defp check(%Scope{} = scope, :rule_spec_issue, coordinator),
+    do:
+      allow_if(
+        role_at_least?(scope, :member) and
+          (coordinator == :human or match?({:leader, _}, coordinator))
+      )
+
+  # People only, whatever the credential's owner: no agent identity, no
+  # run (the run gate has no capability for it).
+  defp check(%Scope{actor: %Actor{kind: :human}, run: nil} = scope, :approve_spec, _resource),
+    do: allow_if(role_at_least?(scope, :member))
 
   ## Runs (not management actions)
 

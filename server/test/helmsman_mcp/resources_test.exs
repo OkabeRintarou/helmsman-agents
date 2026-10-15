@@ -53,6 +53,15 @@ defmodule HelmsmanMCP.ResourcesTest do
       assert text =~ "after delegating, finish your run"
     end
 
+    # add-spec-workflow 2.5: the specs section (decision 23).
+    test "the workflow has the specs section", %{session: session} do
+      assert {:ok, text} = read(session, "helmsman://workflow")
+      assert text =~ "## 10. Specs"
+
+      for word <- ["submit_spec_version", "finalize_spec", "submit_spec_review", "base_version"],
+          do: assert(text =~ word)
+    end
+
     test "BQL is the exact English guide", %{session: session} do
       assert read(session, "helmsman://bql") ==
                {:ok, File.read!(Path.expand("../../../docs/BQL.en.md", __DIR__))}

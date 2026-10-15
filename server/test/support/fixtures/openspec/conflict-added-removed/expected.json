@@ -1,0 +1,10 @@
+{
+  "valid": false,
+  "errors": [
+    {
+      "file": "specs/settings/spec.md",
+      "line": 12,
+      "rule": "requirement_conflict"
+    }
+  ]
+}

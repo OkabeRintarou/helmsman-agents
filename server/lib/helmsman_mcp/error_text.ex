@@ -12,6 +12,10 @@ defmodule HelmsmanMCP.ErrorText do
   clause (the pipeline then answers with `internal/1`).
   """
   @spec format(term(), Context.t()) :: {:ok, String.t()} | :error
+  # `add-spec-workflow` decision 20.
+  def format(reason, ctx) when is_tuple(reason) and elem(reason, 0) == :spec,
+    do: HelmsmanMCP.SpecErrorText.format(reason, ctx)
+
   def format(:bql_or_filter, _ctx), do: {:ok, "Pass either bql or filter_id."}
 
   def format(:no_identity, %Context{tool: "query_tasks"}),
