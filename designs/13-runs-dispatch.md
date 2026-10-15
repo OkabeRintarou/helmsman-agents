@@ -61,7 +61,7 @@
 | **回调提出方** `requested` | 任务的提出方是托管 Agent（且 `wake_on_requested`），任务变为 DONE（等它验收）、REJECTED（需求被拒），或执行方提了 `question` | work（在被提出的那个任务上） | 验收 / 修改需求 / 回答问题；授权继承它**建这个任务时**所在运行的授权来源（建任务时记为 `task_grants` 的 `requested`） |
 | **依赖满足** `unblocked` | 见 §2.4 | work | 不新建运行：把因依赖延后的 `deferred` 运行改为 `queued`，在 `triggers` 末尾追加一条不带授权来源的中性标记（授权仍由原指派类触发承担，领取时照常复核） |
 | **委派完成** `delegate_done` | 委派出去的运行结束：成功，或失败且不会自动重试，或被停止而不是人请求的；任务仍在 NEW / IN_PROGRESS、执行方仍是该小队、小队未停用（`add-squads` 决策 9） | work（以小队身份，目标为当前 leader） | leader 决定下一步；授权与链继承发起委派的那次 leader 运行 |
-| **Epic 停滞** `epic_stalled` | 执行方是小队的 Epic 在 IN_PROGRESS、没有待回答、未被阻塞，Epic 与步骤上没有进行中的运行，且有闲置步骤（无人或托管执行方、没有任何运行、没有待回答）；由检查任务在运行终态、步骤迁移之后（宽限 120 秒）与依赖清扫时判定；按停滞签名去重、两次至少间隔 15 分钟、无步骤完成时最多连续 3 次（16 §1.2，`improve-squad-leader-orchestration` 决策 9–12） | work（任务为 Epic，以小队身份，目标为当前 leader） | 开工、改派或排序闲置步骤，或写 `question`；等待正确就说明并结束；授权与链继承「Epic × 小队」的指派授权 |
+| **Epic 停滞** `epic_stalled` | 执行方是小队的 Epic 在 IN_PROGRESS、没有待回答、未被阻塞，Epic 与步骤上没有进行中的运行，且有闲置步骤（无人或托管执行方、没有任何运行、没有待回答）；由检查任务在运行终态、Epic 或步骤迁移、人在其上写 Feedback 之后（宽限 120 秒）与依赖清扫时（公平轮转）判定；在同一进展周期内按停滞签名去重、最多连续 3 次，两次至少间隔 15 分钟（16 §1.2，`improve-squad-leader-orchestration` 决策 9–12） | work（任务为 Epic，以小队身份，目标为当前 leader） | 开工、改派或排序闲置步骤，或写 `question`；等待正确就说明并结束；授权与链继承「Epic × 小队」的指派授权 |
 | **评审完成** `spec_reviewed` | 人提交的评审完成了一个由运行建立的评审请求（例如 leader 请人类成员评审），任务在 NEW / IN_PROGRESS、执行方是托管 Agent 或小队（17 §5） | work（执行方是小队时以小队身份、目标为当前 leader） | 看评审、决定下一步；授权与链继承「任务 × 执行方」的指派授权（同打回） |
 | **定稿决定** `spec_decided` | 人定稿、批准或退回规格且选择唤醒（缺省唤醒），任务在 NEW / IN_PROGRESS、执行方是托管 Agent 或小队 | 同上 | 定稿 → 按规格继续实现；退回 → 修订；授权同上（`add-spec-workflow` 决策 11） |
 
@@ -208,7 +208,7 @@ SELECT r.* FROM runs r
 | NEW → IN_PROGRESS（§7） | `running` 之后 | `task_events` 部分唯一 `(source_run_id) WHERE auto AND from_status = 'new' AND to_status = 'in_progress'` |
 | 兜底回帖（§7） | `succeeded` 之后 | `feedback` 部分唯一 `(source_run_id) WHERE fallback` |
 | 唤醒 leader（`delegate_done`） | 委派运行进入终态的同一事务里插入（会自动重试的失败、人请求的停止除外；自动重试最终没排上队时由重试任务补插，`add-squads` 决策 9） | `(run_id, delegate_done)` |
-| Epic 停滞检查（`EpicWatch`） | 任务是 Epic 或其步骤的运行进入终态的同一事务里插入（只插入 Job，`scheduled_at` = 现在 + 宽限，新事件把它往后推）；步骤迁移与依赖清扫同样插入（`improve-squad-leader-orchestration` 决策 11） | Oban 唯一键（`epic_id`） |
+| Epic 停滞检查（`EpicWatch`） | 任务是 Epic 或其步骤的运行进入终态的同一事务里插入（只插入 Job，`scheduled_at` = 现在 + 宽限，新事件把它往后推）；Epic 或步骤迁移、人在其上写 Feedback 与依赖清扫同样插入（`improve-squad-leader-orchestration` 决策 11） | Oban 唯一键（`epic_id`） |
 | 开 / 更新 PR（15 §3） | `pushed` 之后 | Oban 唯一键 |
 | 重新对账 PR（15 §3、§4.1：等待中的合并） | 运行从 `claimed` / `running` / `cancelling` 进入任一终态的同一事务里（任务所在项目绑定了 GitHub 仓库时；`Runs.after_terminal/1`，`add-pr-reconcile-merge` 决策 4） | Oban 唯一键 |
 | 插话结算（§8） | 运行以 `succeeded` 结束、且有已回执的插话 | Oban 唯一键（`steer_settle`） |
@@ -288,7 +288,7 @@ SELECT r.* FROM runs r
   - 延续：继承授权来源那次运行的链 + 目标 Agent。例如「回调提出方」继承提出方当初建任务那次运行的链，**不会**把执行方加进来——提出方 Agent 被唤醒去验收执行方的工作，本来就是独立的评审（15 §4.1）。
 - 链长超过 5，或者新发起的目标 Agent 已经在链上（A → B → A），不再触发，并在任务上留一条系统备注。
 - 同一任务每小时最多 20 次运行（可按工作区配置），超出的触发只记录不执行。
-- **Epic 停滞唤醒**是延续，不加长因果链，所以不受链长 / 链上重复的约束；限制它的是停滞签名去重（leader 上次没做任何改变就不再叫）、两次唤醒的最小间隔、自上次步骤完成或人介入以来的连续上限（到达后在 Epic 上写系统备注请人处理），以及本节的每任务频率上限。leader 被唤醒后做的改派 / 开工是 Agent 引起的新发起，照常按链检查。看门狗不解除、不取消、不绕过任何依赖延后的运行（§2.4）。
+- **Epic 停滞唤醒**是延续，不加长因果链，所以不受链长 / 链上重复的约束；限制它的是以进展周期（步骤完成或人介入开启新周期，系统与 Agent 的 Feedback 不算）为单位的停滞签名去重（leader 上次没做任何改变就不再叫）与连续上限（到达后在 Epic 上写系统备注请人处理）、两次唤醒的最小间隔，以及本节的每任务频率上限。leader 被唤醒后做的改派 / 开工是 Agent 引起的新发起，照常按链检查。看门狗不解除、不取消、不绕过任何依赖延后的运行（§2.4）。
 - Agent 不会被自己写的 Feedback 触发。
 
 ## 8. 停止与插话
