@@ -43,7 +43,7 @@
 | 触发 | 条件 | lane | 运行要做什么 |
 |---|---|---|---|
 | **指派** `assign` | 任务的执行方被设为托管 Agent 或小队（建单时或修改时），任务在 NEW / IN_PROGRESS，且没有勾选「暂不开始」 | work | 完成这个任务 |
-| **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己）。被 @ 的 Agent 是某个未停用小队的 leader、任务（或其 Epic）的执行方是该小队、且触发者能触发该小队时，以小队身份运行（16 §1.2，`improve-squad-leader-orchestration` 决策 14）。同一条记录对同一目标已有「回答」或「回调提出方」触发时，提及记为 `skipped / covered`，不另建运行（06 §3a，`add-nested-feedback-replies`） | reply | 回应这条 Feedback，**不改变**执行方 |
+| **提及** `mention` | 一条新的有效 Feedback 里 @了托管 Agent 或小队（作者不是该 Agent 自己）。被 @ 的 Agent 是某个未停用小队的 leader、任务（或其 Epic）的执行方是该小队、且触发者能触发该小队时，以小队身份运行（16 §1.2，`improve-squad-leader-orchestration` 决策 14）。同一条记录对同一目标的「回答」或「回调提出方」触发已排上队（`queued` / `merged`）时，提及记为 `skipped / covered`，不另建运行；前者被跳过或延后时提及照常派发（06 §3a，`add-nested-feedback-replies` 决策 12） | reply | 回应这条 Feedback，**不改变**执行方 |
 | **委派** `delegated` | 小队 leader 在以小队身份的运行里调用 `delegate`，对象是本次运行的任务（执行方是这个小队）与小队里的托管成员（16 §1.2）；运行本身不带 `squad_id`，触发条目记下小队与 leader 的运行；可带规格角色 `draft` / `review` / `revise`（17 §5，`review` 同时建评审请求） | work | 按 leader 的指示做；不看依赖 |
 | **手动** `manual` | 界面上的「运行」按钮、MCP / REST `run_agent`；对小队 leader 的升级规则同提及 | work | 按附带的说明做 |
 | **自动化** `autopilot` | 仅运行模式的自动化被触发（定时 / 手动 / webhook，16 §2）；建任务模式不用它——建出的任务指派给目标，就是普通的 `assign` | work（无任务） | 按自动化的说明做，最后输出即结果；不合并、不自动重试也不能人工重试，优先级 1；授权来源是这次触发的授权来源（16 §2.5），链为空（`add-autopilots` 决策 11） |
