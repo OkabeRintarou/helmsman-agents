@@ -44,7 +44,7 @@ defmodule Helmsman.Runs.Run do
   @active [:claimed, :running, :cancelling]
   @ended [:succeeded, :failed, :cancelled]
   @push_statuses [:none, :pushed, :conflict, :failed]
-  @capabilities ["read", "write_task", "create_tasks", "delegate", "design"]
+  @capabilities ["read", "write_task", "create_tasks", "delegate", "design", "orchestrate"]
   @failure_reasons [
     :runtime_offline,
     :daemon_restart,

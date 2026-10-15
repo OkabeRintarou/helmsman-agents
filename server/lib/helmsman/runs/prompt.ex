@@ -46,6 +46,7 @@ defmodule Helmsman.Runs.Prompt do
   alias Helmsman.Feedback.Replies
   alias Helmsman.Runs.{GitRepo, LocalRepo, Run, Spec}
   alias Helmsman.Squads
+  alias Helmsman.Squads.EpicWatch
   alias Helmsman.Tasks.Task
   alias Helmsman.Workspaces.Workspace
 
@@ -565,6 +566,24 @@ defmodule Helmsman.Runs.Prompt do
       "Its final output:",
       output
     ])
+  end
+
+  # `improve-squad-leader-orchestration` decision 15: the watchdog woke the
+  # leader on its epic.
+  defp trigger_line(%{"kind" => "epic_stalled"} = trigger, _run, ctx) do
+    ident = ident(ctx)
+    idle = trigger["idle"] || []
+    more = (trigger["idle_count"] || length(idle)) - length(idle)
+
+    more_text =
+      if more > 0, do: ~s[ (#{more} more; get_task("#{ident}") lists all)], else: ""
+
+    "- Helmsman woke you because #{ident} has made no progress: nothing is running on it " <>
+      "or its steps, and these steps are idle: #{EpicWatch.idle_text(idle)}" <>
+      more_text <>
+      ". Start, assign or order them (see the Orchestration section), or write a question " <>
+      "on #{ident} if you need a person. If waiting is right, say why and end the run; " <>
+      "Helmsman will not wake you again until something changes."
   end
 
   # `add-dependency-dispatch` decision 11; nothing without prerequisites.

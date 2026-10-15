@@ -145,6 +145,7 @@ defmodule Helmsman.Policy do
     :coordinate_spec,
     :rule_spec_issue,
     :approve_spec,
+    :orchestrate_task,
     :update_project_spec_finalize,
     :set_leader_spec_finalize
   ]
@@ -169,6 +170,7 @@ defmodule Helmsman.Policy do
     link_tasks: "write_task",
     design: "design",
     delegate: "delegate",
+    orchestrate_task: "orchestrate",
     view_spec: "read",
     write_spec: "write_task",
     coordinate_spec: "write_task",
@@ -570,6 +572,17 @@ defmodule Helmsman.Policy do
   # run (the run gate has no capability for it).
   defp check(%Scope{actor: %Actor{kind: :human}, run: nil} = scope, :approve_spec, _resource),
     do: allow_if(role_at_least?(scope, :member))
+
+  ## Orchestration (`improve-squad-leader-orchestration` decision 3)
+
+  # A run with the capability (the run gate checked it), on a task its
+  # `Helmsman.Squads.Orchestration` scope covers and that is not its root.
+  defp check(
+         %Scope{via: :run, run: %Run{capabilities: caps}} = scope,
+         :orchestrate_task,
+         %{covered: true, root?: false}
+       ),
+       do: allow_if("orchestrate" in caps and role_at_least?(scope, :member))
 
   ## Runs (not management actions)
 

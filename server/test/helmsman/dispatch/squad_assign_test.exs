@@ -51,7 +51,7 @@ defmodule Helmsman.Dispatch.SquadAssignTest do
                }
              ] = runs_of(ctx.bos12.id)
 
-      assert caps == ["read", "write_task", "create_tasks", "delegate"]
+      assert caps == ["read", "write_task", "create_tasks", "delegate", "orchestrate"]
 
       assert [%TaskGrant{kind: :assign, squad_id: ^squad_id, causal_agent_ids: []}] =
                grants(ctx.bos12, ctx.squad_actor)

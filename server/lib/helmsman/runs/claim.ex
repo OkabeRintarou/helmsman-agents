@@ -67,6 +67,7 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Runs
   alias Helmsman.Runs.{GitRepo, Lifecycle, LocalRepo, Run, RunTokens, Spec, Steering, Triggers}
   alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.EpicWatch
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -192,7 +193,8 @@ defmodule Helmsman.Runs.Claim do
           steers: Steering.facts(run.triggers),
           design: AgentDesigns.turn_state(run),
           autopilot: Helmsman.Autopilots.record_state(run),
-          spec_requests: Helmsman.TaskSpecs.request_states(run)
+          spec_requests: Helmsman.TaskSpecs.request_states(run),
+          epic_stalled: EpicWatch.claim_state(run)
         })
 
       decide(run, locked, state)

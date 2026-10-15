@@ -477,6 +477,18 @@ defmodule Helmsman.PolicyMatrixTest do
 
               {action, role, kind, resource, if(allowed, do: :ok, else: :forbidden)}
             end,
+            # orchestrate_task (improve-squad-leader-orchestration decision
+            # 3): never outside a run with the capability (runs in
+            # policy_test.exs)
+            for role <- @roles,
+                kind <- [:human, :agent],
+                resource <- [
+                  %{covered: true, root?: false},
+                  %{covered: false, root?: false},
+                  %{covered: true, root?: true}
+                ] do
+              {:orchestrate_task, role, kind, resource, :forbidden}
+            end,
             # specs (add-spec-workflow decision 14; run tokens in
             # policy_test.exs): reads for all; writes member and above;
             # coordinating with a coordinator; ruling a person or a leader;

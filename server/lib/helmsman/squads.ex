@@ -475,6 +475,14 @@ defmodule Helmsman.Squads do
   defdelegate delegate(scope, task_ident, to, instructions, spec \\ nil),
     to: Helmsman.Squads.Delegate
 
+  @doc """
+  `start_task(task_id, instructions)` of an orchestrating run
+  (`improve-squad-leader-orchestration` decision 5):
+  `Helmsman.Squads.StartTask.start_task/3`.
+  """
+  defdelegate start_task(scope, task_ident, instructions \\ nil),
+    to: Helmsman.Squads.StartTask
+
   ## Write helpers
 
   defp normalize(attrs) do

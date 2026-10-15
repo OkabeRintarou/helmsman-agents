@@ -286,4 +286,68 @@ defmodule Helmsman.PolicyTest do
       assert Policy.authorize(read_only, :write_spec) == {:error, :forbidden}
     end
   end
+
+  describe ":orchestrate_task (improve-squad-leader-orchestration 1.3, decision 3)" do
+    @resources [
+      %{covered: true, root?: false},
+      %{covered: false, root?: false},
+      %{covered: true, root?: true},
+      %{covered: false, root?: true}
+    ]
+
+    defp orch_scope(role, kind) do
+      base = %Scope{
+        user: %Helmsman.Accounts.User{id: 10},
+        workspace: %Helmsman.Workspaces.Workspace{id: 1},
+        role: role,
+        actor: %Helmsman.Actors.Actor{id: 200, workspace_id: 1, kind: :agent, owner_id: 10},
+        via: :run
+      }
+
+      case kind do
+        :human ->
+          %{
+            base
+            | actor: %Helmsman.Actors.Actor{id: 100, workspace_id: 1, kind: :human, user_id: 10},
+              via: :web
+          }
+
+        :external ->
+          %{base | via: :mcp}
+
+        :run ->
+          %{
+            base
+            | run: %Run{id: 900, task_id: 500, squad_id: 7, capabilities: ["read", "write_task"]}
+          }
+
+        :orchestrating ->
+          %{
+            base
+            | run: %Run{
+                id: 900,
+                task_id: 500,
+                squad_id: 7,
+                capabilities: ["read", "write_task", "create_tasks", "delegate", "orchestrate"]
+              }
+          }
+      end
+    end
+
+    test "only a run with the capability, member and above, on a covered target that is not the root" do
+      for role <- [:owner, :admin, :member, :viewer],
+          kind <- [:human, :external, :run, :orchestrating],
+          resource <- @resources do
+        allowed =
+          kind == :orchestrating and role != :viewer and
+            resource == %{covered: true, root?: false}
+
+        assert Policy.authorize(orch_scope(role, kind), :orchestrate_task, resource) ==
+                 if(allowed, do: :ok, else: {:error, :forbidden}),
+               "#{role} #{kind} #{inspect(resource)}"
+      end
+
+      refute :orchestrate_task in Policy.management_actions()
+    end
+  end
 end

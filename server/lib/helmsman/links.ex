@@ -27,6 +27,7 @@ defmodule Helmsman.Links do
   alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Runs.Run
+  alias Helmsman.Squads.Orchestration
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task, TaskEvent}
   alias Helmsman.Workspaces
@@ -77,8 +78,11 @@ defmodule Helmsman.Links do
    FROM (SELECT ?::bigint AS id, ?::bigint AS project_id, ?::text AS status, ?::text AS kind) t)
   """
 
-  # Expands to the fragment of `@waiting_for_sql` inside a query.
-  defmacrop waiting_for_sql(id, project_id, status, kind) do
+  @doc """
+  Expands to the fragment of `waiting_for/1` inside a query (a string or
+  NULL); `waiting_for_value/1` reads it. Needs `require Helmsman.Links`.
+  """
+  defmacro waiting_for_sql(id, project_id, status, kind) do
     quote do
       fragment(
         unquote(@waiting_for_sql),
@@ -191,17 +195,64 @@ defmodule Helmsman.Links do
 
   # Lock order: maintenance lock, membership row (write_transaction), graph
   # lock, task rows by primary key (designs/01 §4).
+  #
+  # An orchestrating run (`improve-squad-leader-orchestration` decision 8)
+  # also locks its squad's rows after the graph lock, before the task rows.
   defp write_locked(scope, op, {from, to}, type) do
     with :ok <- Locks.graph!(scope.workspace.id),
+         :ok <- lock_orchestration(scope),
          {:ok, a, b} <- lock_ends(scope.workspace.id, from, to),
-         :ok <- Policy.authorize(scope, :link_tasks, {a, b}),
+         {:ok, orchestration} <- authorize_link(scope, op, a, b, type),
          {:ok, changed?} <- apply_op(op, scope, a, b, type) do
+      if changed? and orchestration, do: audit_link(orchestration, op, a, b)
       # Re-read: replacing a step of `from`'s own epic may have moved it
       # (`Helmsman.Tasks.Epics.recompute/3`).
       task = a |> Repo.reload!() |> Tasks.load_detail()
       if changed?, do: notify_links_changed(task, b)
       {:ok, Tasks.detail(task)}
     end
+  end
+
+  defp lock_orchestration(scope) do
+    if Orchestration.orchestrating?(scope), do: Orchestration.lock!(scope), else: :ok
+  end
+
+  # One end must be the run's own task; an orchestrating run may also link
+  # two tasks of its scope with `depends_on` (decision 4). `{:ok, nil | ctx}`.
+  defp authorize_link(scope, op, a, b, type) do
+    case Policy.authorize(scope, :link_tasks, {a, b}) do
+      :ok ->
+        {:ok, nil}
+
+      {:error, :forbidden} = forbidden ->
+        if Orchestration.orchestrating?(scope),
+          do: scope |> check_ends(op, [a, b], type) |> Orchestration.emit_error(link_action(op)),
+          else: forbidden
+    end
+  end
+
+  defp link_action(:add), do: :link
+  defp link_action(:remove), do: :unlink
+
+  defp check_ends(scope, op, ends, type) do
+    Enum.reduce_while(ends, {:ok, nil}, fn task, _acc ->
+      case Orchestration.check(scope, task, {:link, type, op}) do
+        {:ok, ctx} -> {:cont, {:ok, ctx}}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  # The note goes on the `from` end (decision 7).
+  defp audit_link(ctx, op, a, b) do
+    what =
+      case op do
+        :add -> "#{a.ident} now depends on #{b.ident}."
+        :remove -> "#{a.ident} no longer depends on #{b.ident}."
+      end
+
+    Orchestration.emit(link_action(op), :ok)
+    Orchestration.audit!(ctx, Repo.reload!(a), what)
   end
 
   @doc """
@@ -427,6 +478,23 @@ defmodule Helmsman.Links do
   end
 
   @doc """
+  The unsatisfied prerequisites of each of `task_ids` by internal ID, in
+  one query: `%{task_id => [ident]}` (absent: none).
+  """
+  @spec blockers_of([pos_integer()]) :: %{pos_integer() => [String.t()]}
+  def blockers_of([]), do: %{}
+
+  def blockers_of(task_ids) when is_list(task_ids) do
+    from([link: l, prereq: p] in unsatisfied_prereqs(),
+      where: l.from_task_id in ^task_ids,
+      order_by: [asc: l.from_task_id, asc: p.id],
+      select: {l.from_task_id, p.ident}
+    )
+    |> Repo.all()
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+  end
+
+  @doc """
   The IDs of the unsatisfied prerequisites of the task `task_id`, by
   internal ID.
   """
@@ -568,6 +636,10 @@ defmodule Helmsman.Links do
   end
 
   defp type_rank(type), do: Enum.find_index(Link.types(), &(&1 == type))
+
+  @doc "Reads the value of `waiting_for_sql/4` (`waiting_for/1`'s atoms)."
+  @spec waiting_for_value(String.t() | nil) :: waiting_for()
+  def waiting_for_value(value), do: to_waiting_for(value)
 
   defp to_waiting_for(nil), do: nil
   defp to_waiting_for("status"), do: :status

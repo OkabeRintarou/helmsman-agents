@@ -21,7 +21,8 @@ defmodule Helmsman.Runs.Triggers do
   assignee:
 
     * `assign`, `reopen`, `resubmit`, `delegate_done`, `spec_reviewed`,
-      `spec_decided` (`add-spec-workflow` decision 11): the squad in a run
+      `spec_decided` (`add-spec-workflow` decision 11), `epic_stalled`
+      (`improve-squad-leader-orchestration` decision 10): the squad in a run
       as a squad leader, otherwise the run's agent;
     * `delegated`: the squad of the entry (`"squad_id"`);
     * `answer`: the entry's `"bound_assignee_id"`; an older entry with only
@@ -41,7 +42,8 @@ defmodule Helmsman.Runs.Triggers do
              "resubmit",
              "delegate_done",
              "spec_reviewed",
-             "spec_decided"
+             "spec_decided",
+             "epic_stalled"
            ] do
     if squad_id, do: {:squad, squad_id}, else: {:actor, agent_id}
   end

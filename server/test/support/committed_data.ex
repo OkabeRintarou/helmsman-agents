@@ -48,6 +48,13 @@ defmodule Helmsman.CommittedData do
       # child table goes with them.
       Repo.query!("DELETE FROM task_specs WHERE workspace_id = ANY($1)", [workspace_ids])
 
+      # Stall checks of the workspaces' epics (improve-squad-leader-orchestration).
+      Repo.query!(
+        "DELETE FROM oban_jobs WHERE worker = 'Helmsman.Squads.Workers.EpicWatch' " <>
+          "AND (args->>'epic_id')::bigint IN (SELECT id FROM tasks WHERE workspace_id = ANY($1))",
+        [workspace_ids]
+      )
+
       # Autopilots (add-autopilots) refer to agents, projects, tasks and
       # runs; their records go with them.
       Repo.query!("DELETE FROM autopilots WHERE workspace_id = ANY($1)", [workspace_ids])

@@ -29,6 +29,10 @@ defmodule Helmsman.Runs.TaskGrant do
     # (`agent_id` is then the squad identity), or of the run that created
     # the task as a squad leader (`requested`).
     belongs_to :squad, Helmsman.Squads.Squad
+    # `improve-squad-leader-orchestration` decision 2: on a `requested`
+    # grant of a task created outside any epic in a run as a squad with an
+    # orchestration root, that root; cleared when the task's epic changes.
+    belongs_to :root_task, Task
     field :inserted_at, :utc_datetime_usec
   end
 end

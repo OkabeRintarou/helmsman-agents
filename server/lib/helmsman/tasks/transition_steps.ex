@@ -11,7 +11,9 @@ defmodule Helmsman.Tasks.TransitionSteps do
   `Helmsman.Dispatch.Dependencies.after_transition/3` (a cancelled or
   verified task's runs deferred by a dependency cancelled), then the pull
   request reconciliation, then `Helmsman.Autopilots.after_transition/3`
-  (a task an autopilot started reached a final status: it is settled).
+  (a task an autopilot started reached a final status: it is settled), then
+  `Helmsman.Squads.EpicWatch.after_transition/3` (a stall check of the
+  task's epic led by a squad, a job only).
   The triggers of `add-continuation-triggers` run right after the steps
   (`Helmsman.Tasks.transition/4`), not as a step: they are planned before
   the task row is locked.
@@ -27,7 +29,8 @@ defmodule Helmsman.Tasks.TransitionSteps do
     &Helmsman.Links.after_transition/3,
     &Helmsman.Dispatch.Dependencies.after_transition/3,
     &Helmsman.GitHub.PullRequests.after_transition/3,
-    &Helmsman.Autopilots.after_transition/3
+    &Helmsman.Autopilots.after_transition/3,
+    &Helmsman.Squads.EpicWatch.after_transition/3
   ]
 
   @doc "Runs every step in order; stops at the first error."

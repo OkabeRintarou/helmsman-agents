@@ -26,7 +26,10 @@ defmodule Helmsman.Runs.Revalidation do
   Between 2 and 3, a trigger with a review request (`"spec_request"`,
   `add-spec-workflow` decision 10) whose request is no longer
   `requested` (`spec_requests: %{number => status}`, read by the caller)
-  is dropped; nothing else left is `{:obsolete, :spec_settled}`.
+  is dropped; nothing else left is `{:obsolete, :spec_settled}`. So are
+  the `epic_stalled` triggers when the epic is no longer stalled
+  (`epic_stalled: :not_stalled`, `improve-squad-leader-orchestration`
+  decision 10; nothing else left: `{:obsolete, :epic_progressed}`).
 
   When the earliest trigger is dropped, the next one's source and chain
   are used (`derive/2`). Nothing left but neutral markers: the step that
@@ -66,7 +69,8 @@ defmodule Helmsman.Runs.Revalidation do
           optional(:steers) => Steering.facts(),
           optional(:design) => :current | :ended | nil,
           optional(:autopilot) => :current | :ended | nil,
-          optional(:spec_requests) => %{pos_integer() => atom()}
+          optional(:spec_requests) => %{pos_integer() => atom()},
+          optional(:epic_stalled) => :stalled | :not_stalled | nil
         }
   @type obsolete_why ::
           :agent_disabled
@@ -81,6 +85,7 @@ defmodule Helmsman.Runs.Revalidation do
           | :not_leader
           | :autopilot_ended
           | :spec_settled
+          | :epic_progressed
   @type changes :: %{
           triggers: [map()],
           root_initiator_user_id: pos_integer(),
@@ -113,7 +118,8 @@ defmodule Helmsman.Runs.Revalidation do
   defp check_valid(run, locked) do
     with nil <- obsolete(run, locked),
          {:ok, kept} <- drop_unbound(run, locked),
-         {:ok, kept} <- drop_settled_specs(kept, locked) do
+         {:ok, kept} <- drop_settled_specs(kept, locked),
+         {:ok, kept} <- drop_epic_stalled(kept, locked) do
       authorize_kept(run, kept, locked)
     else
       {:obsolete, why} -> {:obsolete, why}
@@ -150,6 +156,20 @@ defmodule Helmsman.Runs.Revalidation do
   end
 
   # The triggers whose review request was settled meanwhile.
+  # `improve-squad-leader-orchestration` decision 10: `epic_stalled`
+  # triggers of an epic no longer stalled (`epic_stalled: :not_stalled`,
+  # read by the caller, this run left out).
+  defp drop_epic_stalled(kept, %{epic_stalled: :not_stalled}) do
+    left = Enum.reject(kept, &(&1["kind"] == "epic_stalled"))
+
+    if Enum.any?(kept, &(not Triggers.neutral?(&1))) and
+         not Enum.any?(left, &(not Triggers.neutral?(&1))),
+       do: :epic_progressed,
+       else: {:ok, left}
+  end
+
+  defp drop_epic_stalled(kept, _locked), do: {:ok, kept}
+
   defp drop_settled_specs(kept, locked) do
     states = Map.get(locked, :spec_requests, %{})
 

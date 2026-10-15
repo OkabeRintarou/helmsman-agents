@@ -20,6 +20,8 @@ defmodule Helmsman.Tasks.Epics do
   alias Helmsman.Accounts.Scope
   alias Helmsman.Events
   alias Helmsman.Links
+
+  require Helmsman.Links
   alias Helmsman.Repo
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Task, TaskEvent}
@@ -31,6 +33,8 @@ defmodule Helmsman.Tasks.Epics do
         }
   @type cause :: :step_transition | :step_added | :step_removed
   @type event_attrs :: %{actor_id: pos_integer(), source_run_id: pos_integer() | nil}
+
+  @active_runs ["queued", "claimed", "running", "cancelling"]
 
   @completed [:done, :verified]
   @finished [:done, :verified, :cancelled]
@@ -65,6 +69,144 @@ defmodule Helmsman.Tasks.Epics do
       by_status: Map.new(Task.statuses(), &{Atom.to_string(&1), Map.get(counts, &1, 0)})
     }
   end
+
+  @typedoc "What a step waits for (`step_states/2`); nil: nothing."
+  @type waiting ::
+          :merge
+          | :verification
+          | :requester
+          | :answer
+          | :run
+          | :prerequisites
+          | :assignment
+          | :assignee
+          | :start
+          | nil
+
+  @type step_state :: %{
+          task: Task.t(),
+          waiting_for: waiting(),
+          blocked_by: [String.t()],
+          assignee_kind: :human | :agent | :external | :squad | nil,
+          latest_run_id: pos_integer() | nil,
+          active_run: boolean(),
+          deferred_run: boolean()
+        }
+
+  @doc """
+  The state of each step of `epic`, in creation order
+  (`improve-squad-leader-orchestration` decision 13; task-epics 「Epic 的
+  读取」): `waiting_for`, the first that holds of — nothing (`verified`
+  and satisfied, or `cancelled`); `:merge` (verified, not satisfied);
+  `:verification` (done); `:requester` (rejected); `:answer` (an open
+  question); `:run` (a queued, claimed, running or cancelling run);
+  `:prerequisites` (a deferred run); `:assignment` (no assignee); for a
+  person or an external agent assignee `:prerequisites` (an unsatisfied
+  prerequisite) or `:assignee`; else (a managed agent or a squad without
+  any run, whether or not its prerequisites hold) `:start`. Also the
+  unsatisfied prerequisites (`blocked_by`), the assignee's kind, the
+  latest run and whether a run is active or deferred.
+
+  Three queries whatever the number of steps. Options: `exclude_run_id`,
+  a run left out (the claim check of `epic_stalled`).
+  """
+  @spec step_states(Task.t(), keyword()) :: [step_state()]
+  def step_states(%Task{} = epic, opts \\ []) do
+    from(t in Task,
+      where: t.workspace_id == ^epic.workspace_id and t.epic_id == ^epic.id,
+      order_by: [asc: t.inserted_at, asc: t.id]
+    )
+    |> states(opts)
+  end
+
+  @doc """
+  The same states as `step_states/2` for any tasks (`task_ids`, in that
+  order; unknown IDs left out): the tasks of an orchestration scope that
+  are not an epic's steps. Three queries.
+  """
+  @spec task_states([pos_integer()], keyword()) :: [step_state()]
+  def task_states(task_ids, opts \\ [])
+  def task_states([], _opts), do: []
+
+  def task_states(task_ids, opts) when is_list(task_ids) do
+    order = task_ids |> Enum.with_index() |> Map.new()
+
+    from(t in Task, where: t.id in ^task_ids)
+    |> states(opts)
+    |> Enum.sort_by(&Map.fetch!(order, &1.task.id))
+  end
+
+  defp states(query, opts) do
+    steps = rows(query)
+    ids = Enum.map(steps, fn {task, _kind, _waiting} -> task.id end)
+    runs = run_facts(ids, opts[:exclude_run_id])
+    blockers = Links.blockers_of(ids)
+
+    Enum.map(steps, fn {task, kind, satisfaction} ->
+      facts = Map.get(runs, task.id, %{active: false, deferred: false, latest: nil})
+      blocked_by = Map.get(blockers, task.id, [])
+
+      %{
+        task: task,
+        waiting_for: waiting(task, kind, satisfaction, facts, blocked_by),
+        blocked_by: blocked_by,
+        assignee_kind: kind,
+        latest_run_id: facts.latest,
+        active_run: facts.active,
+        deferred_run: facts.deferred
+      }
+    end)
+  end
+
+  defp rows(query) do
+    from(t in query,
+      left_join: a in Helmsman.Actors.Actor,
+      on: a.id == t.assignee_id,
+      left_join: p in Helmsman.Agents.AgentProfile,
+      on: p.actor_id == a.id,
+      select:
+        {t, a.kind, not is_nil(p.id), Links.waiting_for_sql(t.id, t.project_id, t.status, t.kind)}
+    )
+    |> Repo.all()
+    |> Enum.map(fn {task, kind, profile?, waiting} ->
+      {task, assignee_kind(kind, profile?), Links.waiting_for_value(waiting)}
+    end)
+  end
+
+  defp assignee_kind(nil, _profile?), do: nil
+  defp assignee_kind(:agent, false), do: :external
+  defp assignee_kind(kind, _profile?), do: kind
+
+  defp run_facts([], _exclude), do: %{}
+
+  defp run_facts(ids, exclude) do
+    from(r in Helmsman.Runs.Run,
+      where: r.task_id in ^ids and r.id != ^(exclude || 0),
+      group_by: r.task_id,
+      select:
+        {r.task_id, fragment("bool_or(? = ANY(?))", type(r.status, :string), ^@active_runs),
+         fragment("bool_or(? = 'deferred')", type(r.status, :string)), max(r.id)}
+    )
+    |> Repo.all()
+    |> Map.new(fn {id, active, deferred, latest} ->
+      {id, %{active: active, deferred: deferred, latest: latest}}
+    end)
+  end
+
+  defp waiting(%Task{status: :cancelled}, _kind, _satisfaction, _facts, _blocked), do: nil
+  defp waiting(%Task{status: :verified}, _kind, nil, _facts, _blocked), do: nil
+  defp waiting(%Task{status: :verified}, _kind, _waiting, _facts, _blocked), do: :merge
+  defp waiting(%Task{status: :done}, _kind, _satisfaction, _facts, _blocked), do: :verification
+  defp waiting(%Task{status: :rejected}, _kind, _satisfaction, _facts, _blocked), do: :requester
+  defp waiting(%Task{open_question: true}, _kind, _satisfaction, _facts, _blocked), do: :answer
+  defp waiting(_task, _kind, _satisfaction, %{active: true}, _blocked), do: :run
+  defp waiting(_task, _kind, _satisfaction, %{deferred: true}, _blocked), do: :prerequisites
+  defp waiting(_task, nil, _satisfaction, _facts, _blocked), do: :assignment
+
+  defp waiting(_task, kind, _satisfaction, _facts, blocked) when kind in [:human, :external],
+    do: if(blocked == [], do: :assignee, else: :prerequisites)
+
+  defp waiting(_task, _kind, _satisfaction, _facts, _blocked), do: :start
 
   @doc """
   The `TransitionSteps` step: after a step's transition, recomputes its

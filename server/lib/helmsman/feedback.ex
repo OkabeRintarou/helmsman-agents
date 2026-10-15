@@ -30,6 +30,7 @@ defmodule Helmsman.Feedback do
   alias Helmsman.Policy
   alias Helmsman.Repo
   alias Helmsman.Runs.{Outcome, Steering}
+  alias Helmsman.Squads.EpicWatch
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Workspaces
@@ -252,6 +253,9 @@ defmodule Helmsman.Feedback do
     task = refresh_counters(task, seq)
     entry = entry |> load(task.ident) |> hd()
     if Keyword.get(opts, :notify, true), do: notify_entry(task, entry)
+    # `improve-squad-leader-orchestration` decision 11: a person writing on
+    # an epic led by a squad, or a step, starts a new progress cycle.
+    EpicWatch.after_feedback(task, actor)
     {:ok, {entry, task}}
   end
 
@@ -390,6 +394,7 @@ defmodule Helmsman.Feedback do
       )
 
     task = refresh_counters(task, seq)
+    EpicWatch.after_feedback(task, scope.actor)
     {entry |> load(task.ident) |> hd(), task}
   end
 

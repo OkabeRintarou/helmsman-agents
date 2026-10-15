@@ -173,12 +173,18 @@ defmodule Helmsman.Runs.SquadRunsTest do
 
     defp reload(run), do: Repo.get!(Run, run.id)
 
-    test "a leader run has read, write_task, create_tasks and delegate", ctx do
+    test "a leader run has read, write_task, create_tasks, delegate and orchestrate", ctx do
       refute "create_tasks" in profile(ctx.lead).capabilities
       assert [spec] = claim(ctx)
       assert spec.run_id == ctx.run.id
 
-      assert reload(ctx.run).capabilities == ["read", "write_task", "create_tasks", "delegate"]
+      assert reload(ctx.run).capabilities == [
+               "read",
+               "write_task",
+               "create_tasks",
+               "delegate",
+               "orchestrate"
+             ]
 
       own = run_fixture(ctx.lead, %{task_id: ctx.task.id, status: :queued})
       assert own.squad_id == nil

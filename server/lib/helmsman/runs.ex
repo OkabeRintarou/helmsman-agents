@@ -29,6 +29,7 @@ defmodule Helmsman.Runs do
   alias Helmsman.Repo
   alias Helmsman.Runs.{Origin, Outcome, Retry, Run, RunEvent, Triggers}
   alias Helmsman.Runs.Workers.SideEffect, as: SideEffectJob
+  alias Helmsman.Squads.{EpicWatch, Orchestration}
   alias Helmsman.Tasks
   alias Helmsman.Tasks.{Ident, Task}
   alias Helmsman.Tx
@@ -279,7 +280,10 @@ defmodule Helmsman.Runs do
   (`add-autopilots` decision 11).
   A run as a squad leader (`squad_id` set, `add-squads` decision 7) has
   `read`, `write_task` (with a task), `create_tasks` and `delegate`,
-  whatever the profile.
+  whatever the profile, and `orchestrate` when it has an orchestration
+  root (`Helmsman.Squads.Orchestration.root/2`,
+  `improve-squad-leader-orchestration` decision 3), computed when it is
+  queued and again when it is claimed.
   """
   @spec capabilities(AgentProfile.t(), Task.t() | nil, [map()], pos_integer() | nil) ::
           [String.t()]
@@ -294,13 +298,20 @@ defmodule Helmsman.Runs do
         autopilot_capabilities(triggers)
 
       not is_nil(squad_id) ->
-        ["read"] ++ if(task, do: ["write_task"], else: []) ++ ["create_tasks", "delegate"]
+        squad_capabilities(task, squad_id)
 
       true ->
         ["read"] ++
           if(task, do: ["write_task"], else: []) ++
           if("create_tasks" in (caps || []), do: ["create_tasks"], else: [])
     end
+  end
+
+  defp squad_capabilities(task, squad_id) do
+    ["read"] ++
+      if(task, do: ["write_task"], else: []) ++
+      ["create_tasks", "delegate"] ++
+      if(Orchestration.root(task, squad_id), do: ["orchestrate"], else: [])
   end
 
   @doc """
@@ -578,6 +589,8 @@ defmodule Helmsman.Runs do
 
     runs |> Enum.filter(&wakes_leader?/1) |> Enum.each(&delegate_done!/1)
     runs |> Enum.filter(&settles_spec?/1) |> Enum.each(&spec_settle!/1)
+    # `improve-squad-leader-orchestration` decision 11: only jobs, no task lock.
+    EpicWatch.after_runs_ended(runs)
     Helmsman.Autopilots.after_runs_ended(runs)
   end
 

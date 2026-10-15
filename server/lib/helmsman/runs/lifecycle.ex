@@ -26,6 +26,7 @@ defmodule Helmsman.Runs.Lifecycle do
   alias Helmsman.Runs.{Revalidation, Run, RunEvent, RunTokens, Steering}
   alias Helmsman.Runs.Workers.{Retry, SideEffect}
   alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.EpicWatch
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
@@ -186,7 +187,8 @@ defmodule Helmsman.Runs.Lifecycle do
           steers: Steering.facts(run.triggers),
           design: AgentDesigns.turn_state(run),
           autopilot: Helmsman.Autopilots.record_state(run),
-          spec_requests: Helmsman.TaskSpecs.request_states(run)
+          spec_requests: Helmsman.TaskSpecs.request_states(run),
+          epic_stalled: EpicWatch.claim_state(run)
         }
 
         decide_starting(run, locked, ctx.user_id)

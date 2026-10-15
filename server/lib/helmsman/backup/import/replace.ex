@@ -35,7 +35,10 @@ defmodule Helmsman.Backup.Import.Replace do
     {"run_events", "run_id"},
     {"run_tokens", "run_id"},
     # `add-spec-workflow`: a task's spec goes with it (its children cascade).
-    {"task_specs", "task_id"}
+    {"task_specs", "task_id"},
+    # `improve-squad-leader-orchestration` decision 2.
+    {"task_grants", "root_task_id"},
+    {"epic_watch_checks", "epic_id"}
   ]
   def deleted_columns, do: @deleted_columns
 
@@ -82,7 +85,7 @@ defmodule Helmsman.Backup.Import.Replace do
       )
 
       for table <-
-            ~w(task_specs task_links task_events task_grants task_pull_requests task_local_branches feedback) do
+            ~w(task_specs epic_watch_checks task_links task_events task_grants task_pull_requests task_local_branches feedback) do
         Repo.query!("DELETE FROM #{table} WHERE workspace_id=$1", [wid])
       end
 

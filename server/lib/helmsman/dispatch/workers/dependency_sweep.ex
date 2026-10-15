@@ -9,10 +9,14 @@ defmodule Helmsman.Dispatch.Workers.DependencySweep do
   use Oban.Worker, queue: :default, unique: [period: 300]
 
   alias Helmsman.Dispatch.Dependencies
+  alias Helmsman.Squads.EpicWatch
 
   @impl true
   def perform(%Oban.Job{}) do
     _count = Dependencies.sweep()
+    # `improve-squad-leader-orchestration` decision 11: the epics that may
+    # be stalled, oldest check first.
+    _checks = EpicWatch.sweep()
     :ok
   end
 end

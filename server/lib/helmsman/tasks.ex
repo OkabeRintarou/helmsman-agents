@@ -38,6 +38,7 @@ defmodule Helmsman.Tasks do
   alias Helmsman.Search
   alias Helmsman.Squads
   alias Helmsman.Squads.Dispatch, as: SquadDispatch
+  alias Helmsman.Squads.Orchestration
   alias Helmsman.Squads.Squad
   alias Helmsman.Tx
 
@@ -230,8 +231,14 @@ defmodule Helmsman.Tasks do
   # decision 5). Never removed: the requester does not change. A run as a
   # squad leader records its squad: the callback runs as it (`add-squads`
   # decision 2).
-  defp requested_grant(%Scope{via: :run, run: %Run{} = run, actor: %Actor{} = agent}, task) do
+  # With an orchestration root, a task created outside any epic records it
+  # (`improve-squad-leader-orchestration` decision 2).
+  defp requested_grant(
+         %Scope{via: :run, run: %Run{} = run, actor: %Actor{} = agent} = scope,
+         task
+       ) do
     Repo.insert!(%TaskGrant{
+      root_task_id: Orchestration.root_for_new(scope, task),
       workspace_id: task.workspace_id,
       task_id: task.id,
       agent_id: agent.id,
@@ -613,12 +620,13 @@ defmodule Helmsman.Tasks do
     Workspaces.write_transaction(scope, :update_task, fn scope ->
       with {:ok, ident, _key, _seq} <- Ident.parse(ident),
            epic_input = fetch_epic(attrs),
+           :ok <- lock_orchestration(scope, ident),
            :ok <- lock_graph_for_update(scope.workspace.id, epic_input, attrs),
            assignee = lock_assignee(scope.workspace.id, attrs),
            _ = test_hook(:assignee_locked),
            :ok <- not_busy(assignee),
            {:ok, task} <- lock_task(scope.workspace.id, ident),
-           :ok <- Policy.authorize(scope, :write_task, task),
+           {:ok, orchestration} <- authorize_edit(scope, task, attrs, assignee),
            :ok <- check_version(task, lock_version) do
         test_hook(:version_checked)
         epic = lock_epics(task, epic_input)
@@ -631,8 +639,71 @@ defmodule Helmsman.Tasks do
         |> put_start_error(start_error)
         |> put_epic(epic)
         |> save(scope, start?)
+        |> audit_orchestration(orchestration, task, start?)
       end
     end)
+  end
+
+  # `improve-squad-leader-orchestration` decision 8: an orchestrating run
+  # editing another task locks its squad's rows (and the graph) before the
+  # task row, so the scope it is checked against stays put.
+  defp lock_orchestration(scope, ident) do
+    if Orchestration.orchestrating?(scope) and not own_task?(scope, ident),
+      do: Orchestration.lock!(scope),
+      else: :ok
+  end
+
+  defp own_task?(%Scope{run: %Run{task_id: task_id}}, ident) when is_integer(task_id),
+    do: Repo.exists?(from(t in Task, where: t.id == ^task_id and t.ident == ^ident))
+
+  defp own_task?(_scope, _ident), do: false
+
+  # A run may edit its own task; an orchestrating run may also assign a
+  # task of its scope (decision 4). `{:ok, nil | context}`.
+  defp authorize_edit(scope, task, attrs, assignee) do
+    case Policy.authorize(scope, :write_task, task) do
+      :ok ->
+        {:ok, nil}
+
+      {:error, :forbidden} = forbidden ->
+        if Orchestration.orchestrating?(scope),
+          do: orchestration_check(scope, task, attrs, assignee),
+          else: forbidden
+    end
+  end
+
+  defp orchestration_check(scope, task, attrs, assignee) do
+    scope
+    |> Orchestration.check(task, {:update, attrs, new_assignee(assignee)})
+    |> Orchestration.emit_error(:assign)
+  end
+
+  defp new_assignee({:set, id}), do: id
+  defp new_assignee(_keep_or_invalid), do: :keep
+
+  defp audit_orchestration(result, nil, _before, _start?), do: result
+
+  defp audit_orchestration({:ok, task}, ctx, %Task{assignee_id: before}, start?) do
+    if task.assignee_id == before do
+      {:ok, task}
+    else
+      what = assignment_note(task, start?)
+      Orchestration.emit(:assign, :ok)
+      Orchestration.audit!(ctx, Repo.get!(Task, task.id), what, task.dispatch)
+      {:ok, preload_detail(Repo.get!(Task, task.id)) |> Map.put(:dispatch, task.dispatch)}
+    end
+  end
+
+  defp audit_orchestration(error, _ctx, _before, _start?), do: error
+
+  defp assignment_note(%Task{assignee_id: nil, ident: ident}, _start?), do: "unassigned #{ident}."
+
+  defp assignment_note(%Task{ident: ident, assignee: %Actor{name: name}} = task, start?) do
+    cond do
+      not start? -> "assigned #{ident} to #{name} (not started)."
+      task.dispatch != [] -> "assigned #{ident} to #{name} and started it."
+      true -> "assigned #{ident} to #{name}."
+    end
   end
 
   @doc """
@@ -677,6 +748,10 @@ defmodule Helmsman.Tasks do
 
     with {:ok, task} <- Repo.update(changeset) do
       :ok = recompute_epics(scope, changeset.data.epic_id, task.epic_id)
+
+      # `improve-squad-leader-orchestration` decision 2: a task whose epic
+      # changes leaves any orchestration root behind.
+      if changeset.data.epic_id != task.epic_id, do: Orchestration.clear_root!(task)
 
       {task, dispatch} =
         if task.assignee_id != prev_assignee_id,

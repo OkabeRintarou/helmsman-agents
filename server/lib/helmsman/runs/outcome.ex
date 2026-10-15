@@ -32,6 +32,7 @@ defmodule Helmsman.Runs.Outcome do
           | :spec_review
           | :spec_reviewed
           | :spec_decided
+          | :epic_stalled
   @type result :: :queued | :merged | :deferred | :skipped
   @type reason ::
           :not_started
@@ -46,6 +47,7 @@ defmodule Helmsman.Runs.Outcome do
           | :rate_limited
           | :no_grant
           | :squad_disabled
+          | :stall_capped
   @type t :: %__MODULE__{
           agent: String.t(),
           agent_id: pos_integer() | nil,
