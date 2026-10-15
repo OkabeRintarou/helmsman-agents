@@ -392,6 +392,62 @@ defmodule Helmsman.TaskSpecs.ArchiveTest do
       assert {:ok, nil} = TaskSpecs.summary(ctx.alice_scope, ctx.ident)
     end
 
+    test "a zip whose local headers differ from its central directory", ctx do
+      ok = spec_files()
+
+      for {label, central, local} <- [
+            {"dot dot", "x/proposal.md", "x/../tasks.md"},
+            {"absolute", "xproposal.md", "/proposal.md"},
+            {"renamed", "x/proposal.md", "x/proposal.mx"}
+          ] do
+        files = [{~c"#{central}", ok["proposal.md"]}, {~c"x/tasks.md", ok["tasks.md"]}]
+        zip = files |> zip() |> local_name(central, local)
+
+        assert {:error, {:spec, :invalid_archive, message}} =
+                 import(ctx, zip, base_version: 0),
+               label
+
+        assert message =~ "does not match the zip's central directory", label
+      end
+
+      assert {:ok, nil} = TaskSpecs.summary(ctx.alice_scope, ctx.ident)
+    end
+
+    test "a zip that declares less than it holds stops at the limit", ctx do
+      ok = spec_files()
+      started = System.monotonic_time(:millisecond)
+
+      # 64 MB of real content declared as 1 byte, with its correct CRC.
+      bomb = zip([{~c"x/big.txt", :binary.copy(<<0>>, 64 * 1024 * 1024)}]) |> declare_size(1)
+      assert byte_size(bomb) < Archive.max_bytes()
+
+      assert {:error, {:spec, :invalid_archive, "the archive holds more than 1 MB"}} =
+               import(ctx, bomb, base_version: 0)
+
+      assert System.monotonic_time(:millisecond) - started < 5_000
+
+      # Several entries under the limit each, each lying about its size.
+      several =
+        [
+          {~c"x/proposal.md", ok["proposal.md"]}
+          | for(i <- 1..3, do: {~c"x/n#{i}.txt", :binary.copy("a", 600_000)})
+        ]
+        |> zip()
+        |> declare_size(1)
+
+      assert {:error, {:spec, :invalid_archive, message}} = import(ctx, several, base_version: 0)
+      assert message =~ "declared size or checksum"
+
+      # A wrong checksum.
+      zip = zip([{~c"x/proposal.md", ok["proposal.md"]}])
+      {at, _} = :binary.match(zip, <<"PK", 1, 2>>)
+      <<head::binary-size(^at), entry::binary-16, crc::32-little, rest::binary>> = zip
+      broken = head <> entry <> <<crc + 1::32-little>> <> rest
+      assert {:error, {:spec, :invalid_archive, _}} = import(ctx, broken, base_version: 0)
+
+      assert {:ok, nil} = TaskSpecs.summary(ctx.alice_scope, ctx.ident)
+    end
+
     test "a gzip that expands beyond the limit stops early", ctx do
       bomb = :zlib.gzip(:binary.copy(<<0>>, 64 * 1024 * 1024))
       assert byte_size(bomb) < Archive.max_bytes()
@@ -399,6 +455,29 @@ defmodule Helmsman.TaskSpecs.ArchiveTest do
       assert {:error, {:spec, :invalid_archive, "the archive holds more than 1 MB"}} =
                import(ctx, bomb, base_version: 0)
     end
+  end
+
+  # Renames the first (local header) occurrence of a name only.
+  defp local_name(zip, from, to) when byte_size(from) == byte_size(to) do
+    {at, n} = :binary.match(zip, from)
+    <<head::binary-size(^at), _old::binary-size(^n), rest::binary>> = zip
+    head <> to <> rest
+  end
+
+  # Sets the uncompressed size of every entry, in its local header and in
+  # the central directory.
+  defp declare_size(zip, size) do
+    patch = fn zip, signature, offset ->
+      zip
+      |> :binary.matches(signature)
+      |> Enum.reduce(zip, fn {at, _}, zip ->
+        at = at + offset
+        <<head::binary-size(^at), _old::32, rest::binary>> = zip
+        head <> <<size::32-little>> <> rest
+      end)
+    end
+
+    zip |> patch.(<<"PK", 3, 4>>, 22) |> patch.(<<"PK", 1, 2>>, 24)
   end
 
   # `:zip.create/3` makes absolute names relative: rename in the bytes.

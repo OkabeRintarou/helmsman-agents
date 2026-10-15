@@ -273,6 +273,20 @@ defmodule HelmsmanWeb.API.SpecControllerTest do
       import(ctx, ctx.token, "?base_version=2", [{"content-type", "application/zip"}], "PK..")
 
     assert %{"reason" => _} = error!(conn, 422, "invalid_archive")
+
+    # code-review-6: the local header names x/../tasks.md, the directory x/proposal.md.
+    files = for {p, c} <- spec_files(tag: "3"), do: {~c"x/#{p}", c}
+    {:ok, {_name, zip}} = :zip.create(~c"x.zip", files, [:memory])
+    {at, _} = :binary.match(zip, "x/proposal.md")
+    <<head::binary-size(^at), _::binary-13, rest::binary>> = zip
+    zip = head <> "x/../tasks.md" <> rest
+
+    {conn, _ref} =
+      import(ctx, ctx.token, "?base_version=2", [{"content-type", "application/zip"}], zip)
+
+    assert %{"reason" => reason} = error!(conn, 422, "invalid_archive")
+    assert reason =~ "central directory"
+    assert {:ok, %{latest_version: 2}} = TaskSpecs.summary(ctx.alice_scope, ctx.ident)
   end
 
   test "import: denials before the body is read", ctx do

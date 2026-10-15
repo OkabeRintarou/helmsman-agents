@@ -272,16 +272,15 @@ defmodule Helmsman.TaskSpecs.Archive do
     end
   end
 
+  # Read here, not with `:zip.unzip/2`: that extracts by the local
+  # headers' names (making absolute ones relative) and inflates every
+  # entry whole whatever the central directory declares.
   def read(<<"PK", 3, 4, _rest::binary>> = binary) do
     with {:ok, listing} <- zip_listing(binary),
-         :ok <- check(listing) do
-      case :zip.unzip(binary, [:memory]) do
-        {:ok, files} -> contents(files)
-        {:error, _reason} -> invalid("the zip file is damaged")
-      end
+         :ok <- check(listing),
+         {:ok, files} <- zip_extract(binary, listing) do
+      contents(files)
     end
-  rescue
-    _error -> invalid("the zip file is damaged")
   end
 
   def read(_binary), do: invalid("the upload is not a tar.gz or zip archive")
@@ -356,12 +355,24 @@ defmodule Helmsman.TaskSpecs.Archive do
 
   defp directory(binary, offset, count, acc) when offset < byte_size(binary) do
     case binary_part(binary, offset, byte_size(binary) - offset) do
-      <<"PK", 1, 2, _version, made_by, _needed::16, _flags::16, _method::16, _time::16, _date::16,
-        _crc::32, _compressed::32-little, size::32-little, name_length::16-little,
-        extra_length::16-little, comment_length::16-little, _disk::16, _internal::16,
-        external::32-little, _local::32, name::binary-size(name_length), _rest::binary>> ->
+      <<"PK", 1, 2, _version, made_by, _needed::16, flags::16-little, method::16-little,
+        _time::16, _date::16, crc::32-little, compressed::32-little, size::32-little,
+        name_length::16-little, extra_length::16-little, comment_length::16-little, _disk::16,
+        _internal::16, external::32-little, local::32-little, name::binary-size(name_length),
+        _rest::binary>> ->
         mode = if made_by == 3, do: Bitwise.bsr(external, 16), else: 0
-        entry = %{name: name, type: zip_type(name, mode), size: size}
+
+        entry = %{
+          name: name,
+          type: zip_type(name, mode),
+          size: size,
+          compressed: compressed,
+          method: method,
+          flags: flags,
+          crc: crc,
+          local: local
+        }
+
         next = offset + 46 + name_length + extra_length + comment_length
         directory(binary, next, count - 1, [entry | acc])
 
@@ -371,6 +382,102 @@ defmodule Helmsman.TaskSpecs.Archive do
   end
 
   defp directory(_binary, _offset, _count, _acc), do: :error
+
+  # Every entry's local header must repeat its central directory name,
+  # method and flags; file contents are inflated within what is left of
+  # the 1 MB budget and must have the declared size and CRC.
+  defp zip_extract(binary, listing) do
+    listing
+    |> Enum.reduce_while({:ok, [], 0}, fn entry, {:ok, files, used} ->
+      case zip_entry(binary, entry, @max_content_bytes - used) do
+        {:ok, nil} -> {:cont, {:ok, files, used}}
+        {:ok, content} -> {:cont, {:ok, [{entry.name, content} | files], used + entry.size}}
+        error -> {:halt, error}
+      end
+    end)
+    |> case do
+      {:ok, files, _used} -> {:ok, Enum.reverse(files)}
+      error -> error
+    end
+  end
+
+  defp zip_entry(_binary, %{flags: flags} = entry, _budget) when Bitwise.band(flags, 1) == 1,
+    do: invalid("#{name(entry.name)} is encrypted")
+
+  defp zip_entry(_binary, %{size: size} = entry, _budget)
+       when size == 0xFFFFFFFF or entry.compressed == 0xFFFFFFFF or entry.local == 0xFFFFFFFF,
+       do: invalid("#{name(entry.name)} needs ZIP64, which is not supported")
+
+  defp zip_entry(binary, entry, budget) do
+    with {:ok, data} <- local_data(binary, entry) do
+      cond do
+        entry.type == :directory -> {:ok, nil}
+        entry.size > budget -> invalid("the archive holds more than 1 MB")
+        true -> entry_content(entry, data, budget)
+      end
+    end
+  end
+
+  defp local_data(binary, entry) do
+    compressed = entry.compressed
+
+    rest =
+      if entry.local < byte_size(binary),
+        do: binary_part(binary, entry.local, byte_size(binary) - entry.local),
+        else: <<>>
+
+    case rest do
+      <<"PK", 3, 4, _needed::16, flags::16-little, method::16-little, _time::16, _date::16,
+        _crc::32, _compressed::32, _size::32, name_length::16-little, extra_length::16-little,
+        name::binary-size(name_length), _extra::binary-size(extra_length),
+        data::binary-size(^compressed), _rest::binary>> ->
+        if name == entry.name and method == entry.method and flags == entry.flags,
+          do: {:ok, data},
+          else: invalid("#{name(name)} does not match the zip's central directory")
+
+      _other ->
+        invalid("the zip file is damaged")
+    end
+  end
+
+  defp entry_content(%{method: 0} = entry, data, _budget), do: verify(entry, data)
+
+  defp entry_content(%{method: 8} = entry, data, budget) do
+    z = :zlib.open()
+
+    try do
+      :ok = :zlib.inflateInit(z, -15)
+
+      case inflate_raw(z, :zlib.safeInflate(z, data), [], 0, budget) do
+        {:ok, content} -> verify(entry, content)
+        error -> error
+      end
+    rescue
+      _error -> invalid("the zip file is damaged")
+    after
+      :zlib.close(z)
+    end
+  end
+
+  defp entry_content(entry, _data, _budget),
+    do: invalid("#{name(entry.name)} uses an unsupported compression method")
+
+  defp inflate_raw(z, {status, output}, acc, size, budget) do
+    size = size + IO.iodata_length(output)
+    acc = [acc | output]
+
+    cond do
+      size > budget -> invalid("the archive holds more than 1 MB")
+      status == :finished -> {:ok, IO.iodata_to_binary(acc)}
+      true -> inflate_raw(z, :zlib.safeInflate(z, []), acc, size, budget)
+    end
+  end
+
+  defp verify(entry, content) do
+    if byte_size(content) == entry.size and :erlang.crc32(content) == entry.crc,
+      do: {:ok, content},
+      else: invalid("#{name(entry.name)} does not have its declared size or checksum")
+  end
 
   # The Unix file type a zip records (`made_by` 3), else by the name.
   defp zip_type(name, mode) do
