@@ -90,9 +90,19 @@ defmodule HelmsmanDaemon.StatusFileTest do
     File.rm!(StatusFile.path())
     eventually(fn -> File.exists?(StatusFile.path()) end)
 
-    assert Bitwise.band(File.stat!(StatusFile.path()).mode, 0o777) == 0o600
-    assert Path.wildcard(StatusFile.path() <> ".*.tmp") == []
-    contents = File.read!(StatusFile.path())
+    # Each tick writes the temporary file and renames it within one callback;
+    # suspending between callbacks keeps the next tick from racing the checks.
+    :ok = :sys.suspend(StatusFile)
+
+    contents =
+      try do
+        assert Bitwise.band(File.stat!(StatusFile.path()).mode, 0o777) == 0o600
+        assert Path.wildcard(StatusFile.path() <> ".*.tmp") == []
+        File.read!(StatusFile.path())
+      after
+        :sys.resume(StatusFile)
+      end
+
     refute contents =~ credentials().token
     refute contents =~ "hmd_"
 
