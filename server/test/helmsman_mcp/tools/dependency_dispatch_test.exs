@@ -8,7 +8,7 @@ defmodule HelmsmanMCP.Tools.DependencyDispatchTest do
   import Helmsman.RunsFixtures
 
   alias HelmsmanMCP.Context
-  alias HelmsmanMCP.Tools.{GetTask, UpdateTask}
+  alias HelmsmanMCP.Tools.{CreateTask, GetTask, UpdateTask}
 
   setup do
     ctx = dependency_fixture()
@@ -34,6 +34,26 @@ defmodule HelmsmanMCP.Tools.DependencyDispatchTest do
                blocked_by: [ctx.bos1.ident]
              }
            ]
+  end
+
+  test "create_task with depends_on and an assignee: deferred with blocked_by", ctx do
+    args = %{
+      "project_key" => ctx.project.key,
+      "title" => "Next",
+      "assignee" => "keel/dev",
+      "depends_on" => [ctx.bos1.ident]
+    }
+
+    assert {:ok, result} = call(CreateTask, ctx.alice_scope, args)
+    assert [%{result: "deferred", blocked_by: blocked}] = result.dispatch
+    assert blocked == [ctx.bos1.ident]
+    assert %{direction: "out", type: "depends_on"} = link(result, ctx.bos1.ident)
+  end
+
+  test "create_task: an unknown depends_on task is a parameter error", ctx do
+    args = %{"project_key" => ctx.project.key, "title" => "Next", "depends_on" => ["BOS-99"]}
+    assert {:error, changeset} = call(CreateTask, ctx.alice_scope, args)
+    assert %{depends_on: ["BOS-99 not found"]} = errors_on(changeset)
   end
 
   test "get_task: waiting_for on an unsatisfied outgoing depends_on only", ctx do
