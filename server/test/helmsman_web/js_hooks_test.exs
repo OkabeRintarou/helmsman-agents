@@ -14,7 +14,12 @@ defmodule HelmsmanWeb.JsHooksTest do
     {output, status} =
       System.cmd(
         @node,
-        ["--disable-warning=MODULE_TYPELESS_PACKAGE_JSON", "--test", "avatar_cropper_test.mjs"],
+        [
+          "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+          "--test",
+          "--test-reporter=spec",
+          "avatar_cropper_test.mjs"
+        ],
         cd: @dir,
         stderr_to_stdout: true
       )
