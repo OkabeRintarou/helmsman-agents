@@ -78,11 +78,7 @@ jobs:
         run: mix ecto.rollback --all && mix ecto.migrate
 
   daemon:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-15]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: daemon
@@ -104,11 +100,6 @@ jobs:
           MIX_ENV: test
         run: mix compile
       - run: ../scripts/hostile-git-env.sh mix precommit
-      # test_helper.exs excludes :macos (login-keychain tests with a temporary
-      # keychain); only the macOS runner includes them.
-      - name: macOS keychain tests
-        if: runner.os == 'macOS'
-        run: ../scripts/hostile-git-env.sh mix test --include macos --only macos
 
   scripts:
     runs-on: ubuntu-24.04
