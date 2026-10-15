@@ -39,6 +39,14 @@ defmodule HelmsmanWeb.TaskLive.BoardTest do
     assert {:ok, %{hidden_columns: ["verified", "cancelled"]}} = ViewPrefs.get(ctx.alice_scope)
   end
 
+  test "new task labels become filter options without leaving the board", ctx do
+    {:ok, view, _} = open(ctx)
+    task = create(ctx, %{labels: ["newlabel"]})
+    send(view.pid, {:task_created, Tasks.summary(task)})
+    assert has_element?(view, card(task, "new"))
+    assert has_element?(view, "#filter-label-newlabel")
+  end
+
   test "status filter overrides hidden and fixed order; one column cannot hide", ctx do
     {:ok, view, _} = open(ctx, "&status=cancelled,new")
     assert has_element?(view, "#board-column-new")

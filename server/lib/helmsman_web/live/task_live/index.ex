@@ -705,7 +705,8 @@ defmodule HelmsmanWeb.TaskLive.Index do
         {event, %{project_key: _} = summary},
         %{assigns: %{task_view: "board"}} = socket
       )
-      when event in [:task_created, :task_updated], do: {:noreply, Board.summary(socket, summary)}
+      when event in [:task_created, :task_updated],
+      do: {:noreply, socket |> merge_labels([summary]) |> Board.summary(summary)}
 
   def handle_info(:board_counts, %{assigns: %{task_view: "board"}} = socket),
     do: {:noreply, socket |> Throttle.done(:board_counts) |> Board.counts()}
