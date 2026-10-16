@@ -23,6 +23,10 @@ defmodule HelmsmanWeb.AgentForm do
     two choices and the owner is always the current user. `draft_attrs/1` gives what to
     send to `put_agent/4`; the page submits it and `rebase/2` merges a newer draft agent
     after a `stale` refusal.
+  * Edit conversations (add-edit-design-conversations D14): `draft_edit/5` with
+    `lock_name: true` (the name is fixed), `baseline:` (the target's current
+    configuration: each field that differs gets 「恢复为当前配置」, `agent_form_revert`)
+    and `configure?: false` for an admin who is not the owner (as the edit panel).
   """
   use HelmsmanWeb, :html
 
@@ -148,15 +152,19 @@ defmodule HelmsmanWeb.AgentForm do
 
   @doc """
   A panel editing the draft agent `entry` (string keys) of generation `gen`; `errors`
-  are field errors to show at once (a refused confirmation, D8).
+  are field errors to show at once (a refused confirmation, D8). `opts`:
+  `lock_name` (the name cannot change), `baseline` (the configuration the fields
+  can be reverted to), `configure?` (false: only the description and limits).
   """
-  def draft_edit(scope, gen, entry, errors \\ %{}) do
+  def draft_edit(scope, gen, entry, errors \\ %{}, opts \\ []) do
     %{
       mode: :draft_edit,
       gen: gen,
       name: entry["name"],
       base: entry,
-      configure?: true,
+      lock_name?: Keyword.get(opts, :lock_name, false),
+      baseline: Keyword.get(opts, :baseline),
+      configure?: Keyword.get(opts, :configure?, true),
       params: draft_params(entry),
       add_rows: [],
       errors: errors,
@@ -286,6 +294,9 @@ defmodule HelmsmanWeb.AgentForm do
 
       "agent_form_remove_env" ->
         {:noreply, put(socket, remove_row(form, row_id(params["row"])))}
+
+      "agent_form_revert" ->
+        {:noreply, put(socket, revert(form, scope, params["field"]))}
 
       "agent_form_submit" ->
         case submit(form, scope, params) do
@@ -666,6 +677,36 @@ defmodule HelmsmanWeb.AgentForm do
       else: List.delete(@draft_fields, "provider_account_id")
   end
 
+  @doc """
+  The fields of a draft form that differ from its `baseline` (an edit
+  conversation's target as it is now), among those the form may change.
+  """
+  def reverts(%{baseline: %{} = baseline} = form) do
+    old = draft_params(baseline)
+    editable = if form.configure?, do: @draft_fields, else: @basic ++ @limits
+
+    Enum.filter(editable, fn field ->
+      Map.has_key?(baseline, field) and
+        value(field, form.params[field]) != value(field, old[field])
+    end)
+  end
+
+  def reverts(_form), do: []
+
+  defp revert(%{baseline: %{} = baseline} = form, scope, field) when is_binary(field) do
+    if field in reverts(form) do
+      form = %{form | params: Map.put(form.params, field, draft_params(baseline)[field])}
+
+      if field == "provider",
+        do: form |> load_runtimes(scope) |> load_accounts(scope),
+        else: form
+    else
+      form
+    end
+  end
+
+  defp revert(form, _scope, _field), do: form
+
   @doc "Field errors of a refused draft save (a changeset of `put_agent/4`)."
   def draft_errors(form, %Ecto.Changeset{} = cs), do: field_errors(form, cs)
 
@@ -749,6 +790,27 @@ defmodule HelmsmanWeb.AgentForm do
       >
         <.icon name="lucide-hourglass" class="mt-0.5 size-4 shrink-0" />
         {@locked}
+      </div>
+      <div
+        :if={@form && reverts(@form) != []}
+        id="agent-form-reverts"
+        class="mb-4 flex flex-col gap-1 rounded-field border border-border bg-surface px-3 py-2"
+      >
+        <p class="text-caption text-fg-muted">{dgettext("ui", "与当前配置不同的字段")}</p>
+        <div :for={field <- reverts(@form)} class="flex items-center justify-between gap-2">
+          <span class="text-body text-fg">
+            {HelmsmanWeb.AgentDesignComponents.field_label(field)}
+          </span>
+          <.button
+            id={"agent-form-revert-#{field}"}
+            size="xs"
+            variant="ghost"
+            phx-click="agent_form_revert"
+            phx-value-field={field}
+          >
+            {dgettext("ui", "恢复为当前配置")}
+          </.button>
+        </div>
       </div>
       <.agent_form :if={@form} form={@form} scope={@scope} />
       <:footer :let={cancel}>
@@ -853,6 +915,7 @@ defmodule HelmsmanWeb.AgentForm do
           name="agent[name]"
           label={dgettext("ui", "名字")}
           value={@p["name"]}
+          disabled={@form[:lock_name?] == true}
           placeholder="keel/dev"
           autocomplete="off"
           errors={Map.get(@e, :name, [])}

@@ -63,18 +63,56 @@ defmodule HelmsmanWeb.SquadForm do
   @doc """
   A form editing the squad part of the conversation draft of `design` (an
   `AgentDesigns` view of a `squad` conversation), with the field `errors` of a refused
-  confirmation (`%{field => [message]}`).
+  confirmation (`%{field => [message]}`). A `squad_edit` conversation
+  (add-edit-design-conversations D14) has its name fixed and each field that differs
+  from its baseline gets 「恢复为当前配置」 (`squad_form_revert`).
   """
   def draft(scope, gen, design, errors \\ %{}) do
     squad = draft_squad(design.draft)
 
     form = base(scope, gen, :draft, new_names(design.draft))
 
+    baseline =
+      case design do
+        %{kind: :squad_edit, baseline: %{"squad" => b}} -> Map.put(b, "name", squad["name"])
+        _other -> nil
+      end
+
     form
     |> Map.merge(canonical(form, from_squad(squad)))
-    |> Map.merge(%{version: design.draft_version, base: squad})
+    |> Map.merge(%{
+      version: design.draft_version,
+      base: squad,
+      lock_name?: baseline != nil,
+      baseline: baseline
+    })
     |> put_errors(errors || %{})
   end
+
+  @doc "The fields of a `squad_edit` form that differ from its baseline."
+  def reverts(%{baseline: %{} = baseline} = form) do
+    old = canonical(form, from_squad(baseline))
+    now = %{params: form.params, members: form.members}
+
+    Enum.filter(~w(description instructions leader members), fn
+      "members" -> not same?("members", now.members, old.members)
+      field -> not same?(field, now.params[field], old.params[field])
+    end)
+  end
+
+  def reverts(_form), do: []
+
+  defp revert(%{baseline: %{} = baseline} = form, field) do
+    old = canonical(form, from_squad(baseline))
+
+    cond do
+      field not in reverts(form) -> form
+      field == "members" -> %{form | members: old.members}
+      true -> %{form | params: Map.put(form.params, field, old.params[field])}
+    end
+  end
+
+  defp revert(form, _field), do: form
 
   # The domain resolves the squad's names case-insensitively (the draft's agents first,
   # then the workspace's identities): a reference is shown as the candidate it resolves
@@ -298,6 +336,9 @@ defmodule HelmsmanWeb.SquadForm do
   end
 
   ## Events
+
+  def handle_event("squad_form_revert", params, %{assigns: %{squad_form: %{} = form}} = socket),
+    do: {:noreply, put(socket, revert(form, params["field"]))}
 
   def handle_event(event, params, %{assigns: %{squad_form: %{} = form}} = socket) do
     scope = socket.assigns.current_scope
@@ -596,6 +637,25 @@ defmodule HelmsmanWeb.SquadForm do
         <.icon name="lucide-hourglass" class="mt-0.5 size-4 shrink-0" />
         {@locked}
       </div>
+      <div
+        :if={@form && reverts(@form) != []}
+        id="squad-form-reverts"
+        class="mb-4 flex flex-col gap-1 rounded-field border border-border bg-surface px-3 py-2"
+      >
+        <p class="text-caption text-fg-muted">{dgettext("ui", "与当前配置不同的字段")}</p>
+        <div :for={field <- reverts(@form)} class="flex items-center justify-between gap-2">
+          <span class="text-body text-fg">{HelmsmanWeb.AgentDesignSquad.field_label(field)}</span>
+          <.button
+            id={"squad-form-revert-#{field}"}
+            size="xs"
+            variant="ghost"
+            phx-click="squad_form_revert"
+            phx-value-field={field}
+          >
+            {dgettext("ui", "恢复为当前配置")}
+          </.button>
+        </div>
+      </div>
       <.squad_form :if={@form} form={@form} scope={@scope} appearance={@appearance} />
       <:footer :let={cancel}>
         <span />
@@ -661,6 +721,7 @@ defmodule HelmsmanWeb.SquadForm do
         name="squad[name]"
         label={dgettext("ui", "名字")}
         value={@p["name"]}
+        disabled={@form[:lock_name?] == true}
         errors={Map.get(@e, :name, [])}
         autocomplete="off"
       />

@@ -56,6 +56,13 @@ defmodule HelmsmanWeb.Url do
   @spec agent_design_path(String.t()) :: String.t()
   def agent_design_path(slug), do: "/w/#{slug}/agent-design"
 
+  @doc """
+  The edit conversation page of the agent or squad `name`
+  (add-edit-design-conversations D14).
+  """
+  def agent_design_edit_path(slug, name),
+    do: "/w/#{slug}/agent-design/edit?" <> URI.encode_query(%{"target" => name})
+
   @doc "The agent name of the `*name` glob segments of `agent_path/2`."
   @spec agent_name([String.t()]) :: String.t()
   def agent_name(segments) when is_list(segments), do: Enum.join(segments, "/")

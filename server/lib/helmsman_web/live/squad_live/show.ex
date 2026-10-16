@@ -246,6 +246,17 @@ defmodule HelmsmanWeb.SquadLive.Show do
               {dgettext("ui", "编辑")}
             </.button>
             <.button
+              :if={@squad.can_manage and not @gone?}
+              id="squad-design-edit"
+              size="sm"
+              icon="lucide-messages-square"
+              navigate={
+                HelmsmanWeb.Url.agent_design_edit_path(@current_scope.workspace.slug, @squad.name)
+              }
+            >
+              {dgettext("ui", "用对话修改")}
+            </.button>
+            <.button
               :if={@squad.can_manage and not @squad.disabled and not @gone?}
               id="squad-disable"
               size="sm"

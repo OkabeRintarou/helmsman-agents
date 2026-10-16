@@ -339,6 +339,7 @@ defmodule HelmsmanWeb.Router do
       live "/w/:slug/agents", AgentLive.Index, :index
       live "/w/:slug/agents/*name", AgentLive.Show, :show
       live "/w/:slug/agent-design", AgentDesignLive, :show
+      live "/w/:slug/agent-design/edit", AgentDesignLive, :edit
       live "/w/:slug/squads", SquadLive.Index, :index
       live "/w/:slug/squads/*name", SquadLive.Show, :show
       live "/w/:slug/autopilots", AutopilotLive.Index, :index

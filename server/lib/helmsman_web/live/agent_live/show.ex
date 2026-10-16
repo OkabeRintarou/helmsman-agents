@@ -604,6 +604,15 @@ defmodule HelmsmanWeb.AgentLive.Show do
               {dgettext("ui", "编辑")}
             </.button>
             <.button
+              :if={@can_edit?}
+              id="agent-design-edit"
+              size="sm"
+              icon="lucide-messages-square"
+              navigate={Url.agent_design_edit_path(@slug, @agent.name)}
+            >
+              {dgettext("ui", "用对话修改")}
+            </.button>
+            <.button
               :if={@run_state != :hidden}
               id="agent-run"
               size="sm"

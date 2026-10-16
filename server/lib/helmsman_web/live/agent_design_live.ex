@@ -18,6 +18,12 @@ defmodule HelmsmanWeb.AgentDesignLive do
   kind choice (`?kind=squad` preselects it), the squad block above the cards
   (`HelmsmanWeb.AgentDesignSquad`), its `SquadForm` `:draft` panel and the squad in the
   confirmation.
+
+  `:edit` (`/w/:slug/agent-design/edit?target=<名字>`, add-edit-design-conversations
+  D14) is the user's edit conversation (`current(scope, :edit)`): the start area for the
+  target, the empty state when it cannot be edited, the note when the open conversation
+  edits another target, and `HelmsmanWeb.AgentDesignEdit`'s draft column and
+  confirmation.
   """
   use HelmsmanWeb, :live_view
 
@@ -28,6 +34,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
   alias Helmsman.{Actors, AgentDesigns, Events, ProviderAccounts, Runtimes}
 
   alias HelmsmanWeb.{
+    AgentDesignEdit,
     AgentDesignSquad,
     AgentDesignTurn,
     AgentForm,
@@ -73,7 +80,13 @@ defmodule HelmsmanWeb.AgentDesignLive do
         discarding?: false,
         tab: :chat,
         draft_dot?: false,
-        highlight: %{names: MapSet.new(), version: 0}
+        highlight: %{names: MapSet.new(), version: 0},
+        edit_wanted: nil,
+        edit_target: nil,
+        edit_block: nil,
+        other_target: nil,
+        baseline_notice: nil,
+        target_errors: nil
       )
       |> stream_configure(:messages, dom_id: &"msg-#{&1.seq}")
       |> stream(:messages, [])
@@ -82,15 +95,68 @@ defmodule HelmsmanWeb.AgentDesignLive do
       {:ok, helpers} ->
         socket = socket |> put_helpers(helpers) |> load_lookup()
 
-        case AgentDesigns.current(scope) do
-          {:ok, %{} = view} -> {:ok, enter(socket, view)}
-          _ -> {:ok, socket}
-        end
+        {:ok, mount_page(socket, socket.assigns.live_action, params)}
 
       {:error, _forbidden} ->
         {:ok, assign(socket, :forbidden?, true)}
     end
   end
+
+  defp mount_page(socket, :edit, params), do: mount_edit(socket, params["target"])
+
+  defp mount_page(socket, _action, _params) do
+    case AgentDesigns.current(socket.assigns.current_scope) do
+      {:ok, %{} = view} -> enter(socket, view)
+      _ -> socket
+    end
+  end
+
+  # The edit page (D14): the open edit conversation if any — with a note when it edits
+  # another target than `target` —, else the start area or why it cannot start.
+  defp mount_edit(socket, target) do
+    scope = socket.assigns.current_scope
+    wanted = if is_binary(target) and target != "", do: target
+    resolved = if wanted, do: AgentDesigns.edit_target(scope, wanted), else: {:error, :not_found}
+
+    socket =
+      socket
+      |> assign(edit_wanted: wanted, page_title: AgentDesignEdit.heading(wanted || ""))
+      |> put_edit_target(resolved)
+
+    case AgentDesigns.current(scope, :edit) do
+      {:ok, %{} = view} ->
+        other = other_target(view, wanted, resolved)
+
+        socket
+        |> assign(other_target: other, page_title: AgentDesignEdit.heading(view.target.name))
+        |> enter(view)
+
+      _ ->
+        socket
+    end
+  end
+
+  defp put_edit_target(socket, {:ok, target}),
+    do: assign(socket, edit_target: target, edit_block: nil)
+
+  defp put_edit_target(socket, {:error, reason}),
+    do: assign(socket, edit_target: nil, edit_block: reason)
+
+  # A target found by its current name that is not the open conversation's.
+  defp other_target(%{target: %{id: id}}, wanted, {:ok, %{id: other}}) when id != other,
+    do: wanted
+
+  defp other_target(_view, _wanted, _resolved), do: nil
+
+  defp recheck_edit(%{assigns: %{live_action: :edit, edit_wanted: wanted}} = socket)
+       when is_binary(wanted),
+       do:
+         put_edit_target(
+           socket,
+           AgentDesigns.edit_target(socket.assigns.current_scope, wanted)
+         )
+
+  defp recheck_edit(socket), do: socket
 
   ## Reading
 
@@ -190,9 +256,13 @@ defmodule HelmsmanWeb.AgentDesignLive do
       discarding?: false,
       send_warning: nil,
       message_errors: [],
-      draft_dot?: false
+      draft_dot?: false,
+      other_target: nil,
+      baseline_notice: nil,
+      target_errors: nil
     )
     |> stream(:messages, [], reset: true)
+    |> recheck_edit()
   end
 
   defp show(socket, view, reset?) do
@@ -265,6 +335,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
       highlight: %{names: changed, version: view.draft_version},
       invalid: nil,
       squad_invalid: nil,
+      target_errors: nil,
       draft_dot?: socket.assigns.draft_dot? or (old != nil and socket.assigns.tab == :chat)
     )
   end
@@ -331,6 +402,40 @@ defmodule HelmsmanWeb.AgentDesignLive do
       })
 
     {:noreply, started(socket, result, helper)}
+  end
+
+  # D14: an edit conversation on the page's target.
+  def handle_event("edit_start", params, %{assigns: %{edit_target: %{} = target}} = socket) do
+    text = params["message"] || ""
+    helper = params["helper"] || socket.assigns.helper_choice
+    socket = assign(socket, message: text, helper_choice: helper, start_errors: %{})
+
+    result =
+      AgentDesigns.start_edit(socket.assigns.current_scope, %{
+        target: target.name,
+        helper: helper,
+        message: text
+      })
+
+    {:noreply, started(socket, result, helper)}
+  end
+
+  def handle_event("edit_revert", %{"part" => part, "field" => field}, socket) do
+    case {locked_reason(socket.assigns), socket.assigns.design} do
+      {nil, %{} = design} ->
+        scope = socket.assigns.current_scope
+
+        case AgentDesigns.revert_field(scope, design.id, design.draft_version, part, field) do
+          {:ok, view} ->
+            {:noreply, show(socket, view, false)}
+
+          {:error, reason} ->
+            {:noreply, socket |> reread() |> put_flash(:error, error_text(reason, nil))}
+        end
+
+      _locked ->
+        {:noreply, socket}
+    end
   end
 
   ## Events: conversation (D4, D5)
@@ -405,7 +510,8 @@ defmodule HelmsmanWeb.AgentDesignLive do
       {nil, %{} = entry} ->
         gen = socket.assigns.form_gen + 1
         errors = invalid_errors(socket.assigns.invalid, entry["name"])
-        form = AgentForm.draft_edit(socket.assigns.current_scope, gen, entry, errors)
+        opts = AgentDesignEdit.form_opts(socket.assigns.design, entry)
+        form = AgentForm.draft_edit(socket.assigns.current_scope, gen, entry, errors, opts)
         {:noreply, assign(socket, form_gen: gen, agent_form: seen(form, socket))}
 
       _ ->
@@ -504,7 +610,8 @@ defmodule HelmsmanWeb.AgentDesignLive do
   ## Events: the squad part (D16)
 
   def handle_event("edit_squad", _params, %{assigns: %{design: %{} = design}} = socket) do
-    if AgentDesignSquad.squad?(design) and locked_reason(socket.assigns) == nil do
+    if (AgentDesignSquad.squad?(design) or design.kind == :squad_edit) and
+         locked_reason(socket.assigns) == nil do
       gen = socket.assigns.form_gen + 1
 
       form =
@@ -546,6 +653,15 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
   ## Events: confirm and discard (D8)
 
+  def handle_event("ask_confirm", _params, %{assigns: %{design: %{kind: kind} = design}} = socket)
+      when kind in [:agent_edit, :squad_edit] do
+    if AgentDesignEdit.confirm_reason(design, open?(socket.assigns)) == nil,
+      do:
+        {:noreply,
+         assign(socket, confirming: AgentDesignEdit.snapshot(design), baseline_notice: nil)},
+      else: {:noreply, socket}
+  end
+
   def handle_event("ask_confirm", _params, %{assigns: %{design: %{} = design}} = socket) do
     if confirm_reason(socket.assigns) == nil,
       do:
@@ -566,11 +682,13 @@ defmodule HelmsmanWeb.AgentDesignLive do
     version = confirm_version(socket.assigns.confirming, params["version"])
     socket = assign(socket, :confirming, nil)
 
-    if version,
-      do:
-        {:noreply,
-         confirmed(socket, AgentDesigns.confirm(socket.assigns.current_scope, design.id, version))},
-      else: {:noreply, socket}
+    result = version && AgentDesigns.confirm(socket.assigns.current_scope, design.id, version)
+
+    cond do
+      result == nil -> {:noreply, socket}
+      AgentDesignEdit.edit?(design) -> {:noreply, confirmed_edit(socket, result)}
+      true -> {:noreply, confirmed(socket, result)}
+    end
   end
 
   def handle_event("ask_discard", _params, socket),
@@ -724,6 +842,31 @@ defmodule HelmsmanWeb.AgentDesignLive do
 
   defp confirmed(socket, {:error, reason}),
     do: socket |> reread() |> put_flash(:error, error_text(reason, helper_name(socket)))
+
+  # D14: an applied edit goes to the target's page; a changed baseline reloads the
+  # comparison with its note; field errors stay on the page.
+  defp confirmed_edit(socket, {:ok, %{design: view}}) do
+    slug = socket.assigns.current_scope.workspace.slug
+    n = length(view.applied || [])
+
+    socket
+    |> put_flash(:info, dgettext("ui", "已更新 %{name}（%{n} 项）", name: view.target.name, n: n))
+    |> push_navigate(to: AgentDesignEdit.target_path(slug, view.target))
+  end
+
+  defp confirmed_edit(socket, {:error, {:baseline_changed, fields}}),
+    do: socket |> reread() |> assign(:baseline_notice, fields)
+
+  defp confirmed_edit(socket, {:error, %Ecto.Changeset{} = cs}) do
+    errors = FormErrors.messages(cs)
+    name = AgentDesignEdit.target_entry(socket.assigns.design)["name"]
+    assign(socket, target_errors: errors, invalid: %{name => errors})
+  end
+
+  defp confirmed_edit(socket, {:error, :no_changes}),
+    do: socket |> reread() |> put_flash(:error, dgettext("ui", "草稿与当前配置相同，没有修改"))
+
+  defp confirmed_edit(socket, result), do: confirmed(socket, result)
 
   defp message_errors(cs), do: Map.get(FormErrors.messages(cs), :message, [])
 
@@ -893,7 +1036,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} shell={@shell}>
       <:header>
-        <.page_header title={page_heading(@design)}>
+        <.page_header title={page_heading(assigns)}>
           <:crumb navigate={~p"/w/#{@current_scope.workspace.slug}/agents"}>Agents</:crumb>
         </.page_header>
       </:header>
@@ -905,8 +1048,31 @@ defmodule HelmsmanWeb.AgentDesignLive do
         />
       </div>
 
+      <AgentDesignEdit.start_area
+        :if={!@forbidden? and @design == nil and @live_action == :edit and @edit_target != nil}
+        helpers={@helpers}
+        choice={@helper_choice}
+        target={@edit_target}
+        message={@message}
+        gen={@input_gen}
+        errors={@start_errors}
+        scope={@current_scope}
+      />
+
+      <AgentDesignEdit.blocked
+        :if={!@forbidden? and @design == nil and @live_action == :edit and @edit_block != nil}
+        reason={@edit_block}
+        name={@edit_wanted}
+      />
+
+      <AgentDesignEdit.other_target
+        :if={@design && @other_target && @design[:target]}
+        current={@design.target.name}
+        wanted={@other_target}
+      />
+
       <.start_area
-        :if={!@forbidden? and @design == nil}
+        :if={!@forbidden? and @design == nil and @live_action != :edit}
         helpers={@helpers}
         choice={@helper_choice}
         kind={@kind_choice}
@@ -920,7 +1086,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
         :if={@design}
         tab={@tab}
         draft_dot?={@draft_dot?}
-        draft_label={dgettext("ui", "草稿（%{n}）", n: length(agents(@design.draft)))}
+        draft_label={draft_label(@design)}
       >
         <:chat :let={class}>
           <.chat_column
@@ -939,7 +1105,24 @@ defmodule HelmsmanWeb.AgentDesignLive do
           />
         </:chat>
         <:draft :let={class}>
+          <AgentDesignEdit.draft_column
+            :if={AgentDesignEdit.edit?(@design)}
+            class={class}
+            design={@design}
+            lookup={@lookup}
+            invalid={@invalid}
+            squad_invalid={@squad_invalid}
+            target_errors={@target_errors}
+            baseline_notice={@baseline_notice}
+            humans={@humans}
+            locked={locked_reason(assigns)}
+            confirm_reason={AgentDesignEdit.confirm_reason(@design, open?(assigns))}
+            highlight={@highlight}
+            scope={@current_scope}
+            appearance={@appearance}
+          />
           <.draft_column
+            :if={!AgentDesignEdit.edit?(@design)}
             class={class}
             design={@design}
             lookup={@lookup}
@@ -995,12 +1178,22 @@ defmodule HelmsmanWeb.AgentDesignLive do
         id="design-confirm"
         show={@confirming != nil}
         title={@confirming && confirm_title(@confirming)}
-        confirm_label={dgettext("ui", "创建")}
+        confirm_label={
+          if(@confirming && @confirming[:edit?],
+            do: dgettext("ui", "应用"),
+            else: dgettext("ui", "创建")
+          )
+        }
         on_confirm="confirm"
         confirm_value={if(@confirming, do: %{version: @confirming.version}, else: %{})}
         on_cancel={JS.push("dismiss_confirm")}
       >
-        <div :if={@confirming} class="flex flex-col gap-3">
+        <AgentDesignEdit.confirm_body
+          :if={@confirming && @confirming[:edit?]}
+          snapshot={@confirming}
+          lookup={@lookup}
+        />
+        <div :if={@confirming && !@confirming[:edit?]} class="flex flex-col gap-3">
           <.confirm_list
             agents={@confirming.agents}
             squad={@confirming.squad || nil}
@@ -1034,11 +1227,29 @@ defmodule HelmsmanWeb.AgentDesignLive do
     """
   end
 
-  defp page_heading(design) do
+  defp page_heading(%{live_action: :edit, design: %{target: %{name: name}}}),
+    do: AgentDesignEdit.heading(name)
+
+  defp page_heading(%{live_action: :edit} = assigns),
+    do:
+      AgentDesignEdit.heading(
+        (assigns.edit_target && assigns.edit_target.name) || assigns.edit_wanted || ""
+      )
+
+  defp page_heading(%{design: design}) do
     if AgentDesignSquad.squad?(design),
       do: dgettext("ui", "用对话创建小队"),
       else: dgettext("ui", "用对话创建 Agent")
   end
+
+  defp draft_label(design) do
+    if AgentDesignEdit.edit?(design),
+      do: dgettext("ui", "草稿（%{n} 项修改）", n: AgentDesignEdit.change_count(design)),
+      else: dgettext("ui", "草稿（%{n}）", n: length(agents(design.draft)))
+  end
+
+  defp confirm_title(%{edit?: true, target: target}),
+    do: dgettext("ui", "把修改应用到 %{name}？", name: target.name)
 
   defp confirm_title(%{squad: %{} = squad, agents: []}),
     do: dgettext("ui", "创建小队 %{name}？", name: squad["name"])

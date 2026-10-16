@@ -120,6 +120,35 @@ defmodule Helmsman.AgentDesigns.Edit do
     end
   end
 
+  @doc """
+  The target `name` of a `kind` conversation if `scope` may start one on it
+  (as `open/3`, without reading the baseline): `{:ok, actor}`, `:not_found`
+  or `:forbidden`.
+  """
+  @spec authorize(Scope.t(), :agent_edit | :squad_edit, String.t()) ::
+          {:ok, Actor.t()} | {:error, :not_found | :forbidden}
+  def authorize(%Scope{} = scope, :agent_edit, name) do
+    case target_by_name(scope.workspace.id, name) do
+      {%Actor{kind: :agent} = actor, %AgentProfile{archived_at: nil}} ->
+        with :ok <- Policy.authorize(scope, :administer_agent, actor), do: {:ok, actor}
+
+      _other ->
+        {:error, :not_found}
+    end
+  end
+
+  def authorize(%Scope{} = scope, :squad_edit, name) do
+    case target_by_name(scope.workspace.id, name) do
+      {%Actor{kind: :squad} = actor, _profile} ->
+        squad = Repo.get_by!(Squad, actor_id: actor.id)
+        leader = Repo.get!(Actor, squad.leader_agent_id)
+        with :ok <- Policy.authorize(scope, :manage_squads, leader), do: {:ok, actor}
+
+      _other ->
+        {:error, :not_found}
+    end
+  end
+
   @doc "The draft fields of the managed agent `actor` with `profile` (string keys)."
   @spec agent_fields(Actor.t(), AgentProfile.t()) :: map()
   def agent_fields(%Actor{} = actor, %AgentProfile{} = profile) do

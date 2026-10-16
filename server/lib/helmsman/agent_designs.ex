@@ -221,6 +221,22 @@ defmodule Helmsman.AgentDesigns do
   defp empty_draft(:agent), do: %{"agents" => []}
 
   @doc """
+  Whether `scope` may start an edit conversation on the identity `name`
+  now (read only; the start checks again): `{:ok, %{id, name, kind}}`, or
+  `{:error, :forbidden | :not_found}` as `start_edit/2` would refuse.
+  """
+  @spec edit_target(Scope.t(), term()) ::
+          {:ok, %{id: pos_integer(), name: String.t(), kind: :agent | :squad}}
+          | {:error, :forbidden | :not_found}
+  def edit_target(%Scope{} = scope, name) do
+    with :ok <- Policy.authorize(scope, :design_agents),
+         {:ok, kind} <- Edit.kind_of(scope.workspace.id, name),
+         {:ok, actor} <- Edit.authorize(scope, kind, name) do
+      {:ok, %{id: actor.id, name: actor.name, kind: actor.kind}}
+    end
+  end
+
+  @doc """
   Starts an edit conversation (`add-edit-design-conversations` decisions
   4, 5) on the identity `target` (a name): `agent_edit` for an unarchived
   managed agent (its owner, or an admin and above), `squad_edit` for a

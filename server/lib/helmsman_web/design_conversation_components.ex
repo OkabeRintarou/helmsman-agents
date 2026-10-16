@@ -310,7 +310,16 @@ defmodule HelmsmanWeb.DesignConversationComponents do
       data-status={@design.status}
       class="flex flex-wrap items-center gap-2 rounded-field border border-border bg-surface px-3 py-2 text-body text-fg"
     >
-      <span :if={@design.status == :confirmed}>
+      <span :if={@design.status == :confirmed and edit?(@design)}>
+        {dgettext("ui", "这个对话已确认，修改了")}
+        <.link
+          :if={@design.target}
+          navigate={target_path(@scope.workspace.slug, @design.target)}
+          class="font-mono font-medium text-brand-fg hover:underline"
+          data-target
+        >{@design.target.name}</.link>
+      </span>
+      <span :if={@design.status == :confirmed and not edit?(@design)}>
         {dgettext("ui", "这个对话已确认，创建了")}
         <%= for {a, i} <- Enum.with_index(@design.created_agents) do %>
           <span :if={i > 0}>、</span><.link
@@ -321,13 +330,22 @@ defmodule HelmsmanWeb.DesignConversationComponents do
         <% end %>
       </span>
       <span :if={@design.status == :discarded}>{dgettext("ui", "这个对话已放弃")}</span>
-      <span :if={@design.status == :expired}>{dgettext("ui", "这个对话 7 天没有活动，已过期")}</span>
+      <span :if={@design.status == :expired and not edit?(@design)}>
+        {dgettext("ui", "这个对话 7 天没有活动，已过期")}
+      </span>
+      <span :if={@design.status == :expired and edit?(@design)}>{dgettext("ui", "这个对话已过期")}</span>
       <.button id="design-new" size="sm" class="ml-auto" phx-click="new_conversation">
         {dgettext("ui", "开始新的对话")}
       </.button>
     </div>
     """
   end
+
+  defp edit?(%{kind: kind}), do: kind in [:agent_edit, :squad_edit]
+  defp edit?(_design), do: false
+
+  defp target_path(slug, %{kind: :squad, name: name}), do: Url.squad_path(slug, name)
+  defp target_path(slug, %{name: name}), do: Url.agent_path(slug, name)
 
   # A squad conversation created its squad too (D16): that name links to the squad page.
   defp created_path(design, slug, name) do

@@ -66,7 +66,13 @@ defmodule HelmsmanWeb.AgentDesignComponents do
       end
 
     removed = for %{"agent" => agent, "removed" => true} <- edits, do: agent
-    {squad ++ changed, removed}
+    {baseline_parts(edits) ++ squad ++ changed, removed}
+  end
+
+  # An edit conversation's rebaseline (add-edit-design-conversations D8).
+  defp baseline_parts(edits) do
+    for %{"baseline" => fields} <- edits,
+        do: dgettext("ui", "基线已更新（%{fields}）", fields: Enum.join(fields, "、"))
   end
 
   @doc "「你修改了草稿：…；移除了 …」, or nil without edits."
@@ -102,12 +108,23 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   def system_text(%{code: "helper_changed"} = message, _helper),
     do: dgettext("ui", "起草 Agent 换成了 %{name}", name: message[:detail])
 
+  def system_text(%{code: "baseline_changed"} = message, _helper),
+    do: dgettext("ui", "目标在对话期间被修改（%{fields}），没有写入，对比已更新", fields: message[:detail] || "")
+
+  def system_text(%{code: "target_archived"}, _helper),
+    do: dgettext("ui", "目标已归档，对话已过期")
+
+  def system_text(%{code: "permission_lost"}, _helper),
+    do: dgettext("ui", "你已不能修改这个目标，对话已过期")
+
   def system_text(_message, _helper), do: dgettext("ui", "系统消息")
 
   defp system_icon("stopped"), do: "lucide-circle-stop"
   defp system_icon("queue_timeout"), do: "lucide-hourglass"
   defp system_icon("failed"), do: "lucide-circle-x"
   defp system_icon("helper_changed"), do: "lucide-repeat"
+  defp system_icon("baseline_changed"), do: "lucide-git-compare"
+  defp system_icon(code) when code in ["target_archived", "permission_lost"], do: "lucide-lock"
   defp system_icon(_code), do: "lucide-info"
 
   @doc "Text of a domain error of the conversation functions (D11)."
