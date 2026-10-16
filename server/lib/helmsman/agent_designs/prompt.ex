@@ -24,7 +24,17 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
-  alias Helmsman.AgentDesigns.{AgentDesign, AgentDesignMessage, Draft, Options, SquadDraft}
+
+  alias Helmsman.AgentDesigns.{
+    AgentDesign,
+    AgentDesignMessage,
+    Changes,
+    Draft,
+    Edit,
+    Options,
+    SquadDraft
+  }
+
   alias Helmsman.Repo
   alias Helmsman.Runs
   alias Helmsman.Runs.Run
@@ -51,7 +61,11 @@ defmodule Helmsman.AgentDesigns.Prompt do
   @squad_example """
   - Squad leader: reads the task, splits or delegates it to the members, checks their work and finishes the task; does not write code itself. claude: opus, high. codex: high.
   """
+  @edit_explained """
+  Baseline and draft: the baseline is the target's configuration when this conversation started (or at the last check); the draft is the configuration after your changes. Only the fields that differ from the baseline are written, when the user confirms. To change one field, give only it: for example propose_agent(name: "<the agent>", model: "opus") switches the model and keeps everything else. null restores a field's default; to go back to the baseline, give the baseline's value.
+  """
   @identity_description_bytes 200
+  @diff_bytes 8 * 1024
   @squad_description_bytes 200
   @squad_instructions_bytes 400
   @role_note_bytes 200
@@ -79,20 +93,7 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
     {current, earlier} = split_turn(messages, run.id)
 
-    before =
-      if design.kind == :squad,
-        do: [
-          squad_intro(user, human, workspace),
-          @examples <> @squad_example,
-          options(user, workspace, people_and_agents(workspace, user)),
-          draft(design, current) <> squad_part(design, user, workspace)
-        ],
-        else: [
-          intro(user, human, workspace),
-          @examples,
-          options(user, workspace),
-          draft(design, current)
-        ]
+    before = sections(design, user, human, workspace, current)
 
     last = new_message(current)
     # The history gets what the other parts leave of the whole, at most
@@ -101,6 +102,58 @@ defmodule Helmsman.AgentDesigns.Prompt do
     budget = @history_bytes |> min(@prompt_bytes - used - 200) |> max(0)
 
     Enum.join(before ++ [history(earlier, budget), last], "\n")
+  end
+
+  # Parts 1–4 by kind (`add-edit-design-conversations` decision 11); the
+  # creation kinds' parts are unchanged.
+  defp sections(%AgentDesign{kind: :agent} = design, user, human, workspace, current) do
+    [
+      intro(user, human, workspace),
+      @examples,
+      options(user, workspace),
+      draft(design, current)
+    ]
+  end
+
+  defp sections(%AgentDesign{kind: :squad} = design, user, human, workspace, current) do
+    [
+      squad_intro(user, human, workspace),
+      @examples <> @squad_example,
+      options(user, workspace, people_and_agents(workspace, user)),
+      draft(design, current) <> squad_part(design, user, workspace)
+    ]
+  end
+
+  defp sections(%AgentDesign{kind: :agent_edit} = design, user, human, workspace, current) do
+    {rights, owner} = Edit.rights(design)
+    name = Edit.target_name(design) || design.baseline["agent"]["name"]
+    readonly = Edit.readonly(design, rights)
+
+    options =
+      if rights == :owner,
+        do: options(user, workspace),
+        else:
+          "Options for #{user.display_name}: the runtime and provider account of #{name} " <>
+            "are read-only here (only its owner #{owner} can change them).\nFields:\n" <>
+            Enum.map_join(Options.rules(), "", &"- #{&1}\n")
+
+    [
+      agent_edit_intro(user, human, workspace, name, owner, readonly),
+      @edit_explained,
+      options,
+      edit_state(design, current)
+    ]
+  end
+
+  defp sections(%AgentDesign{kind: :squad_edit} = design, user, human, workspace, current) do
+    name = Edit.target_name(design) || design.draft["squad"]["name"]
+
+    [
+      squad_edit_intro(user, human, workspace, name),
+      @edit_explained,
+      options(user, workspace, people_and_agents(workspace, user)),
+      edit_state(design, current) <> squad_part(design, user, workspace)
+    ]
   end
 
   # This turn's user message and the messages before it.
@@ -125,6 +178,97 @@ defmodule Helmsman.AgentDesigns.Prompt do
     - Never put secrets in the draft or your reply. Environment variables, extra MCP servers and CLI arguments cannot be proposed; tell the user to add them after creating the agent.
     """
   end
+
+  defp agent_edit_intro(user, human, workspace, name, owner, readonly) do
+    who = if human, do: "#{user.display_name} (#{human})", else: user.display_name
+
+    readonly_line =
+      case readonly do
+        [] ->
+          ""
+
+        fields ->
+          "- #{user.display_name} is not the owner: these fields are read-only and must not " <>
+            "be proposed: #{Enum.join(fields, ", ")}.\n"
+      end
+
+    """
+    You are helping #{who} edit the existing managed agent "#{name}" (owner: #{owner}) in the Helmsman workspace "#{workspace.slug}". This run has no task.
+    How this works:
+    - You and the user talk in turns. Every turn you get the conversation so far; you keep no memory between turns.
+    - Change the draft only with the Helmsman MCP tools get_design and propose_agent(name: "#{name}", ...). Only the fields that differ from the baseline are written, and only after #{user.display_name} confirms on the web page.
+    - You cannot rename, disable, archive or delete the agent, and you cannot change its environment, extra MCP servers or CLI arguments: if asked, tell #{user.display_name} to do it on the agent's page.
+    #{readonly_line}- If something important is unclear, ask first. Otherwise propose, then say briefly what you changed and why.
+    - Reply in the language the user writes in, in at most 3000 characters. Your final message is shown to the user.
+    - Never put secrets in the draft or your reply.
+    """
+  end
+
+  defp squad_edit_intro(user, human, workspace, name) do
+    who = if human, do: "#{user.display_name} (#{human})", else: user.display_name
+
+    """
+    You are helping #{who} edit the existing squad "#{name}" of the Helmsman workspace "#{workspace.slug}": its description, instructions, leader, members and their role notes. This run has no task.
+    How this works:
+    - You and the user talk in turns. Every turn you get the conversation so far; you keep no memory between turns.
+    - Change the draft only with the Helmsman MCP tools get_design, propose_agent, withdraw_agent and propose_squad. Only the fields that differ from the baseline are written, and the new agents created, after #{user.display_name} confirms on the web page.
+    - You may propose new agents to join the squad (propose_agent, then add them with propose_squad); to change an existing member's configuration, suggest an edit conversation for that agent. You cannot rename or disable the squad: if asked, tell #{user.display_name} to do it on the squad's page.
+    - If something important is unclear, ask first. Otherwise propose, then say briefly what you changed and why.
+    - Reply in the language the user writes in, in at most 3000 characters. Your final message is shown to the user.
+    - Never put secrets in the draft or your reply. Environment variables, extra MCP servers and CLI arguments cannot be proposed.
+    """
+  end
+
+  # An edit conversation's state: the baseline, the changes against it
+  # (long texts as line diffs, at most #{8} KB in all), conflicts, the new
+  # agents of a squad, and the user's edits before this message.
+  defp edit_state(design, current) do
+    edit = Edit.present(design)
+
+    edit_baseline(design, edit) <>
+      "Changes against the baseline:\n" <>
+      Changes.text(edit.changes, @diff_bytes) <>
+      "\n" <>
+      conflicts_text(edit.conflicts) <>
+      new_agents_text(design) <>
+      current_edits_text(current)
+  end
+
+  defp edit_baseline(%AgentDesign{kind: :agent_edit} = design, edit),
+    do:
+      "Baseline (version #{design.draft_version}):\n" <>
+        agent_line(redacted(edit.baseline["agent"]))
+
+  defp edit_baseline(%AgentDesign{kind: :squad_edit}, _edit),
+    do: "Baseline: the squad as below, before your changes.\n"
+
+  defp conflicts_text([]), do: ""
+
+  defp conflicts_text(fields),
+    do:
+      "Conflicts (someone changed these on the target meanwhile; the draft keeps its own value): " <>
+        Enum.join(fields, ", ") <> ".\n"
+
+  defp new_agents_text(%AgentDesign{kind: :squad_edit} = design) do
+    case Draft.agents(design.draft) do
+      [] -> "New agents: none.\n"
+      agents -> "New agents:\n" <> Enum.map_join(agents, "", &agent_line/1)
+    end
+  end
+
+  defp new_agents_text(_design), do: ""
+
+  defp current_edits_text(current) do
+    case current && edits_text(current.edits) do
+      nil -> ""
+      text -> "The user changed the draft before this message: #{text}.\n"
+    end
+  end
+
+  defp redacted(%{"provider_account" => %{"name" => name, "host" => host}} = entry),
+    do: entry |> Map.delete("provider_account") |> Map.put("account_text", "#{name} (#{host})")
+
+  defp redacted(entry), do: entry
 
   # `add-squads` decision 12: how a squad conversation works.
   defp squad_intro(user, human, workspace) do
@@ -258,7 +402,12 @@ defmodule Helmsman.AgentDesigns.Prompt do
     end
   end
 
-  defp agent_line(entry) do
+  defp agent_line(%{"account_text" => text} = entry),
+    do: agent_line(Map.delete(entry, "account_text"), ", provider account #{text}")
+
+  defp agent_line(entry), do: agent_line(entry, account(entry["provider_account_id"]))
+
+  defp agent_line(entry, account) do
     caps =
       if entry["capabilities"] in [nil, []],
         do: "none",
@@ -267,7 +416,7 @@ defmodule Helmsman.AgentDesigns.Prompt do
     instructions = entry["instructions"] || ""
 
     "- #{entry["name"]}: #{entry["provider"]}, runtime #{entry["runtime_id"] || "none"}" <>
-      account(entry["provider_account_id"]) <>
+      account <>
       ", model #{entry["model"] || "default"}, effort #{entry["effort"] || "default"}" <>
       ", access #{entry["access"]}, capabilities #{caps}" <>
       ", limits #{entry["max_concurrency"]}/#{entry["timeout_minutes"]}/#{entry["idle_timeout_minutes"]}" <>
@@ -364,10 +513,20 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
   def edits_text(edits) do
     Enum.map_join(edits, "; ", fn
-      %{"squad" => true, "fields" => fields} -> "the squad (#{Enum.join(fields, ", ")})"
-      %{"removed" => true, "agent" => name} -> "removed #{name}"
-      %{"added" => true, "agent" => name} -> "added #{name}"
-      %{"agent" => name, "fields" => fields} -> "#{name} (#{Enum.join(fields, ", ")})"
+      %{"squad" => true, "fields" => fields} ->
+        "the squad (#{Enum.join(fields, ", ")})"
+
+      %{"baseline" => fields} ->
+        "someone else changed #{Enum.join(fields, ", ")} on the target (the baseline now has their values)"
+
+      %{"removed" => true, "agent" => name} ->
+        "removed #{name}"
+
+      %{"added" => true, "agent" => name} ->
+        "added #{name}"
+
+      %{"agent" => name, "fields" => fields} ->
+        "#{name} (#{Enum.join(fields, ", ")})"
     end)
   end
 
@@ -423,6 +582,17 @@ defmodule Helmsman.AgentDesigns.Prompt do
   def system_text("cancelled", detail), do: "The turn was cancelled (#{detail})."
   def system_text("no_reply", _detail), do: "The turn ended without a reply."
   def system_text("helper_changed", detail), do: "The user switched the helper to #{detail}."
+
+  def system_text("baseline_changed", detail),
+    do:
+      "The confirm wrote nothing: the target was changed meanwhile (#{detail}). " <>
+        "The baseline now has the current values; the user must confirm again."
+
+  def system_text("target_archived", _detail),
+    do: "The conversation expired: its target was archived."
+
+  def system_text("permission_lost", _detail),
+    do: "The conversation expired: the user may no longer edit its target."
 
   defp new_message(nil), do: "The user's new message:\n>\n"
 

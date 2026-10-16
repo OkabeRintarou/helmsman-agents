@@ -72,6 +72,14 @@ defmodule Helmsman.AgentDesigns.Draft do
     do:
       ~w(name provider description runtime_id provider_account_id model effort instructions capabilities access max_concurrency timeout_minutes idle_timeout_minutes)
 
+  @doc "The Ecto types of the draft fields (atom keys)."
+  @spec types() :: %{atom() => term()}
+  def types, do: @types
+
+  @doc "The fields a draft never takes (secrets, what runs on the owner's machine)."
+  @spec refused() :: [String.t()]
+  def refused, do: @refused
+
   @doc "The defaults of the optional fields (string keys)."
   @spec defaults() :: map()
   def defaults, do: Map.new(@defaults, fn {k, v} -> {Atom.to_string(k), v} end)

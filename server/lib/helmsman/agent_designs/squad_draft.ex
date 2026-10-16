@@ -55,9 +55,9 @@ defmodule Helmsman.AgentDesigns.SquadDraft do
   `description`, `leader`, `instructions`, `members`, or `base` for an
   unknown key).
   """
-  @spec put(map(), map(), Scope.t()) ::
+  @spec put(map(), map(), Scope.t(), keyword()) ::
           {:ok, map(), map(), [String.t()]} | {:error, Ecto.Changeset.t()}
-  def put(draft, attrs, %Scope{} = user_scope) do
+  def put(draft, attrs, %Scope{} = user_scope, opts \\ []) do
     attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
     current = get(draft) || @defaults
 
@@ -72,7 +72,7 @@ defmodule Helmsman.AgentDesigns.SquadDraft do
 
     unknown = attrs |> Map.keys() |> Enum.reject(&(&1 in @fields)) |> Enum.sort()
 
-    case unknown_errors(unknown) ++ errors(squad, draft, user_scope) do
+    case unknown_errors(unknown) ++ errors(squad, draft, user_scope, opts) do
       [] ->
         changed = Enum.filter(@fields, &(Map.get(current, &1) != Map.get(squad, &1)))
         {:ok, Map.put(draft, "squad", squad), squad, changed}
@@ -101,14 +101,15 @@ defmodule Helmsman.AgentDesigns.SquadDraft do
   @doc """
   The errors of the squad part `squad` of `draft`, as
   `[{field, {message, opts}}]`. `require: true` (confirming) also needs
-  `name` and `leader`.
+  `name` and `leader`; `fixed_name: true` (an edit conversation, whose
+  name is the existing squad's) skips the name's checks.
   """
   @spec errors(map(), map(), Scope.t(), keyword()) :: [{atom(), {String.t(), keyword()}}]
   def errors(squad, draft, %Scope{} = user_scope, opts \\ []) do
     ws = user_scope.workspace.id
     refs = resolve(squad, draft, ws)
 
-    name_errors(squad["name"], draft, ws, opts) ++
+    if(opts[:fixed_name], do: [], else: name_errors(squad["name"], draft, ws, opts)) ++
       text_errors(squad, "description", Squads.limits().description) ++
       text_errors(squad, "instructions", Squads.limits().instructions) ++
       leader_errors(squad["leader"], refs, opts) ++

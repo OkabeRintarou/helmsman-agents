@@ -82,6 +82,65 @@ defmodule Helmsman.AgentDesignsFixtures do
     end)
   end
 
+  @doc """
+  `add-edit-design-conversations`: `design_fixture/1` with a helper every
+  member may trigger, plus alice's `fe-dev` (on her runtime: sonnet, high,
+  instructions of two lines), carol (admin), bob (member), dan (viewer)
+  and the squad `web-team` led by alice's `web-lead` with the members
+  `fe-dev` (「前端」) and bob. Scopes are `<name>_scope`.
+  """
+  def edit_fixture do
+    ctx = design_fixture(%{access: "workspace"})
+    {carol, carol_scope} = member_scope_fixture(ctx.workspace, :admin)
+    {bob, bob_scope} = member_scope_fixture(ctx.workspace)
+    {dan, dan_scope} = member_scope_fixture(ctx.workspace, :viewer)
+
+    Helmsman.AgentsFixtures.managed_agent_fixture(ctx.alice_scope, %{
+      name: "fe-dev",
+      runtime_id: ctx.runtime.id,
+      model: "sonnet",
+      effort: "high",
+      description: "Builds the web UI",
+      instructions: "You build the web UI.\nUse Tailwind."
+    })
+
+    Helmsman.AgentsFixtures.managed_agent_fixture(ctx.alice_scope, %{
+      name: "web-lead",
+      runtime_id: ctx.runtime.id,
+      access: "workspace"
+    })
+
+    bob_actor = human_actor(ctx.workspace, bob)
+
+    Helmsman.SquadsFixtures.squad_fixture(ctx.alice_scope, %{
+      name: "web-team",
+      leader: "web-lead",
+      description: "The web squad",
+      instructions: "Ship the web app.",
+      members: [%{name: "fe-dev", role_note: "前端"}, %{name: bob_actor.name, role_note: ""}]
+    })
+
+    Map.merge(ctx, %{
+      carol: carol,
+      carol_scope: carol_scope,
+      bob: bob,
+      bob_name: bob_actor.name,
+      bob_scope: bob_scope,
+      dan: dan,
+      dan_scope: dan_scope,
+      fe_dev: agent_actor(ctx.workspace, "fe-dev"),
+      squad: agent_actor(ctx.workspace, "web-team")
+    })
+  end
+
+  @doc "Starts an edit conversation of `scope` on `target`; the view."
+  def start_edit!(scope, target, message \\ "Change it", helper \\ "helper") do
+    {:ok, view} =
+      AgentDesigns.start_edit(scope, %{target: target, helper: helper, message: message})
+
+    view
+  end
+
   @doc "The conversation row `id`."
   def design!(id), do: Repo.get!(AgentDesign, id)
 

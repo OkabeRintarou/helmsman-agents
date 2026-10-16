@@ -40,7 +40,10 @@ defmodule Helmsman.AgentDesigns do
   alias Helmsman.AgentDesigns.{
     AgentDesign,
     AgentDesignMessage,
+    Changes,
     Draft,
+    Edit,
+    EditConfirm,
     Kinds,
     Options,
     Prompt,
@@ -216,6 +219,25 @@ defmodule Helmsman.AgentDesigns do
 
   defp empty_draft(:squad), do: %{"agents" => [], "squad" => SquadDraft.empty()}
   defp empty_draft(:agent), do: %{"agents" => []}
+
+  @doc """
+  Starts an edit conversation (`add-edit-design-conversations` decisions
+  4, 5) on the identity `target` (a name): `agent_edit` for an unarchived
+  managed agent (its owner, or an admin and above), `squad_edit` for a
+  squad (who may manage it). `attrs`: `target`, `helper`, `message`. The
+  baseline is the target's current draft fields; the draft starts equal to
+  it. Errors as `start/2`, and `:not_found` (no such target, a person, an
+  external or archived agent) and `:forbidden`; nothing is written then.
+  """
+  @spec start_edit(Scope.t(), map()) :: {:ok, view()} | {:error, term()}
+  def start_edit(%Scope{} = scope, attrs) when is_map(attrs) do
+    target = attrs[:target] || attrs["target"]
+
+    with :ok <- Policy.authorize(scope, :design_agents),
+         {:ok, kind} <- Edit.kind_of(scope.workspace.id, target) do
+      start_conversation(scope, kind, attrs, &Edit.open(&1, kind, target))
+    end
+  end
 
   @doc false
   # The start shared by every kind (`add-edit-design-conversations`
@@ -488,7 +510,7 @@ defmodule Helmsman.AgentDesigns do
     locked_open(scope, id, fn scope, design ->
       with :ok <- no_turn(design),
            :ok <- same_version(design, version),
-           {:ok, draft, entry, edit} <- Draft.put(design.draft, attrs, scope, "user") do
+           {:ok, draft, entry, edit} <- put_draft_agent(design, attrs, scope, "user") do
         previous = attrs[:previous_name] || attrs["previous_name"]
         draft = follow_rename(draft, previous, entry)
         pending = Draft.merge_edit(design.pending_edits, edit, previous)
@@ -497,11 +519,23 @@ defmodule Helmsman.AgentDesigns do
     end)
   end
 
-  @doc "Removes the draft agent `name` as the user; see `put_agent/4`."
+  # The kinds' rules for an agent of the draft (`add-edit-design-conversations`
+  # decision 7): an edit conversation's target or new agents.
+  defp put_draft_agent(%AgentDesign{kind: kind} = design, attrs, scope, by)
+       when kind in [:agent_edit, :squad_edit],
+       do: Edit.put_agent(design, attrs, scope, by)
+
+  defp put_draft_agent(design, attrs, scope, by), do: Draft.put(design.draft, attrs, scope, by)
+
+  @doc """
+  Removes the draft agent `name` as the user; see `put_agent/4`. An
+  agent edit conversation's target cannot be removed (`:not_removable`).
+  """
   @spec remove_agent(Scope.t(), term(), integer(), term()) :: {:ok, view()} | {:error, term()}
   def remove_agent(%Scope{} = scope, id, version, name) do
     locked_open(scope, id, fn scope, design ->
       with :ok <- no_turn(design),
+           :ok <- removable(design),
            :ok <- same_version(design, version),
            :ok <- not_referenced(design.draft, name),
            {:ok, draft, entry} <- Draft.remove(design.draft, name) do
@@ -524,17 +558,60 @@ defmodule Helmsman.AgentDesigns do
       with :ok <- no_turn(design),
            :ok <- same_version(design, version),
            :ok <- squad_design(design),
-           {:ok, draft, _squad, fields} <- squad_put(design.draft, attrs, scope, "user") do
+           {:ok, draft, _squad, fields} <- squad_put(design, attrs, scope, "user") do
         pending = merge_squad_edit(design.pending_edits, fields)
         {:ok, view(scope, write_draft!(design, draft, pending_edits: pending))}
       end
     end)
   end
 
-  defp squad_design(%AgentDesign{kind: :squad}), do: :ok
+  defp removable(%AgentDesign{kind: :agent_edit}), do: {:error, :not_removable}
+  defp removable(_design), do: :ok
+
+  defp squad_design(%AgentDesign{kind: kind}) when kind in [:squad, :squad_edit], do: :ok
   defp squad_design(_design), do: {:error, :not_squad}
 
-  defp squad_put(draft, attrs, user_scope, by) do
+  @doc """
+  Restores one field of an edit conversation's draft to its baseline value
+  as the user (decision 8, the page's 「恢复为当前配置」): `part` `"agent"`
+  (`agent_edit`) or `"squad"` (`squad_edit`). The field's conflict mark
+  goes; the pending edits record it. Errors: `:not_a_field`,
+  `:forbidden`, `:turn_running`, `:stale` and those of a locked
+  conversation.
+  """
+  @spec revert_field(Scope.t(), term(), integer(), String.t(), String.t()) ::
+          {:ok, view()} | {:error, term()}
+  def revert_field(%Scope{} = scope, id, version, part, field) do
+    locked_open(scope, id, fn scope, design ->
+      with :ok <- no_turn(design),
+           :ok <- same_version(design, version),
+           {:ok, draft, edit} <- Edit.revert(design, part, field) do
+        pending = merge_revert(design.pending_edits, edit)
+        {:ok, view(scope, write_draft!(design, draft, pending_edits: pending))}
+      end
+    end)
+  end
+
+  defp merge_revert(pending, %{"squad" => true, "fields" => fields}),
+    do: merge_squad_edit(pending, fields)
+
+  defp merge_revert(pending, edit), do: Draft.merge_edit(pending, edit, nil)
+
+  defp squad_put(%AgentDesign{kind: :squad_edit} = design, attrs, user_scope, by) do
+    case Edit.put_squad(design, attrs, user_scope) do
+      {:ok, draft, squad, fields} ->
+        squad = Map.put(squad, "updated_by", by)
+        {:ok, Map.put(draft, "squad", squad), squad, fields}
+
+      {:error, %Ecto.Changeset{} = cs} ->
+        {:error, {:invalid_squad, cs}}
+
+      error ->
+        error
+    end
+  end
+
+  defp squad_put(%AgentDesign{draft: draft}, attrs, user_scope, by) do
     case SquadDraft.put(draft, attrs, user_scope) do
       {:ok, draft, squad, fields} ->
         squad = Map.put(squad, "updated_by", by)
@@ -588,24 +665,48 @@ defmodule Helmsman.AgentDesigns do
   ## Confirming
 
   @doc """
-  Creates every agent of the draft, owned by the user (decision 12), in
-  one transaction: all of them or none. `{:ok, %{design: view, agents:
-  [agent_view], squad: squad_view | nil}}`; `{:error, {:invalid, %{name =>
-  changeset}}}` with the errors of every invalid agent (keys are agent
-  names only); in a squad conversation, once every agent is valid,
-  `{:error, {:invalid_squad, changeset}}` for the squad; `:empty_draft`,
-  `:turn_running`, `:stale` and those of a locked conversation.
+  Confirms the draft (`version` the draft version the user saw), by kind.
+
+  `agent` / `squad`: creates every agent of the draft, owned by the user
+  (decision 12), in one transaction: all of them or none. `{:ok, %{design:
+  view, agents: [agent_view], squad: squad_view | nil}}`; `{:error,
+  {:invalid, %{name => changeset}}}` with the errors of every invalid
+  agent (keys are agent names only); in a squad conversation, once every
+  agent is valid, `{:error, {:invalid_squad, changeset}}` for the squad;
+  `:empty_draft`.
+
+  `agent_edit` / `squad_edit` (`add-edit-design-conversations` decisions
+  8, 9; `Helmsman.AgentDesigns.EditConfirm`): writes the fields that
+  differ from the baseline (and creates a squad's new agents), or, when
+  the target changed since the baseline, rebaselines the draft, commits
+  that and returns `{:error, {:baseline_changed, fields}}`. `{:ok,
+  %{design: view, agents: [agent_view], squad: name | nil}}`; errors
+  `:no_changes`, `:not_found` (the target archived or gone),
+  `:forbidden`, a changeset of the agent's fields, `{:invalid, ...}`,
+  `{:invalid_squad, changeset}`.
+
+  Every kind: `:turn_running`, `:stale` and those of a locked conversation.
   """
   @spec confirm(Scope.t(), term(), integer()) :: {:ok, map()} | {:error, term()}
-  def confirm(%Scope{} = scope, id, version),
-    do: locked_open(scope, id, &confirm_locked(&1, &2, version))
+  def confirm(%Scope{} = scope, id, version) do
+    case locked_open(scope, id, &confirm_locked(&1, &2, version)) do
+      {:ok, {:baseline_changed, fields}} -> {:error, {:baseline_changed, fields}}
+      other -> other
+    end
+  end
 
   defp confirm_locked(scope, design, version) do
+    with :ok <- no_turn(design),
+         :ok <- same_version(design, version) do
+      confirm_kind(scope, design)
+    end
+  end
+
+  # One clause per kind (`add-edit-design-conversations` decision 2).
+  defp confirm_kind(scope, %AgentDesign{kind: kind} = design) when kind in [:agent, :squad] do
     agents = Draft.agents(design.draft)
 
-    with :ok <- no_turn(design),
-         :ok <- same_version(design, version),
-         :ok <- not_empty(design, agents),
+    with :ok <- not_empty(design, agents),
          :ok <- validate_all(scope, agents),
          :ok <- validate_squad(scope, design),
          _ = test_hook(:confirm_validated),
@@ -619,6 +720,48 @@ defmodule Helmsman.AgentDesigns do
         |> update!(created_actor_ids: ids)
 
       {:ok, %{design: view(scope, design), agents: created, squad: squad}}
+    end
+  end
+
+  defp confirm_kind(scope, %AgentDesign{kind: kind} = design)
+       when kind in [:agent_edit, :squad_edit] do
+    test_hook(:confirm_validated)
+
+    case EditConfirm.run(scope, design) do
+      {:rebaseline, baseline, draft, fields} ->
+        rebaseline!(design, baseline, draft, fields)
+        {:ok, {:baseline_changed, fields}}
+
+      {:applied, applied, created, result} ->
+        design =
+          design
+          |> close!(:confirmed)
+          |> update!(applied: applied, created_actor_ids: created)
+
+        EditConfirm.log(design, applied, created)
+        {:ok, Map.put(result, :design, view(scope, design))}
+
+      error ->
+        error
+    end
+  end
+
+  # Decision 8: the new baseline and merged draft, a `baseline_changed`
+  # message listing the fields, and the fields in the pending edits.
+  defp rebaseline!(design, baseline, draft, fields) do
+    append!(design, %{role: :system, code: "baseline_changed", detail: Enum.join(fields, ", ")})
+    pending = merge_baseline_edit(design.pending_edits, fields)
+    write_draft!(design, draft, baseline: baseline, pending_edits: pending)
+  end
+
+  defp merge_baseline_edit(pending, fields) do
+    case Enum.find(pending, &Map.has_key?(&1, "baseline")) do
+      nil ->
+        pending ++ [%{"baseline" => Enum.sort(fields)}]
+
+      old ->
+        merged = %{old | "baseline" => Enum.sort(Enum.uniq(old["baseline"] ++ fields))}
+        Enum.map(pending, &if(&1 == old, do: merged, else: &1))
     end
   end
 
@@ -814,17 +957,8 @@ defmodule Helmsman.AgentDesigns do
     do: %{target: nil, baseline: nil, changes: [], conflicts: [], readonly: []}
 
   defp view_kind(_scope, %AgentDesign{kind: kind} = design)
-       when kind in [:agent_edit, :squad_edit] do
-    target =
-      Repo.one(
-        from(a in Actor,
-          where: a.id == ^design.target_actor_id,
-          select: %{id: a.id, name: a.name, kind: a.kind}
-        )
-      )
-
-    %{target: target, baseline: design.baseline, changes: [], conflicts: [], readonly: []}
-  end
+       when kind in [:agent_edit, :squad_edit],
+       do: design |> Edit.present() |> Map.delete(:rights)
 
   defp helper_of(scope, actor_id) do
     {actor, profile, owner_name} =
@@ -921,17 +1055,54 @@ defmodule Helmsman.AgentDesigns do
          user_edits: edits || [],
          user_edits_text: Prompt.edits_text(edits),
          options:
-           %{
-             runtimes: Options.runtimes(design.workspace_id, design.user_id),
-             provider_accounts: Options.accounts(design.user_id),
-             agents: Options.agents(design.workspace_id)
-           }
+           design
+           |> base_options()
            |> put_squad_options(design),
          limits: %{max_agents: Draft.max_agents(), field_rules: Options.rules()}
        }
-       |> put_squad_summary(design, user_scope)}
+       |> put_squad_summary(design, user_scope)
+       |> describe_kind(design)}
     end
   end
+
+  # An admin editing someone else's agent cannot change its runtime or
+  # account: neither list is given (`add-edit-design-conversations`
+  # decision 5).
+  defp base_options(%AgentDesign{kind: :agent_edit} = design) do
+    case Edit.rights(design) do
+      {:owner, _name} -> user_options(design)
+      _other -> %{agents: Options.agents(design.workspace_id)}
+    end
+  end
+
+  defp base_options(design), do: user_options(design)
+
+  defp user_options(design) do
+    %{
+      runtimes: Options.runtimes(design.workspace_id, design.user_id),
+      provider_accounts: Options.accounts(design.user_id),
+      agents: Options.agents(design.workspace_id)
+    }
+  end
+
+  # `add-edit-design-conversations` decision 10: an edit conversation also
+  # gives its target, baseline, changes (long texts as unified diffs),
+  # conflicts and read-only fields.
+  defp describe_kind(result, %AgentDesign{kind: kind} = design)
+       when kind in [:agent_edit, :squad_edit] do
+    edit = Edit.present(design)
+
+    Map.merge(result, %{
+      target: edit.target && Map.take(edit.target, [:name, :kind, :owner]),
+      baseline: edit.baseline,
+      draft: edit.draft,
+      changes: Changes.json(edit.changes),
+      conflicts: edit.conflicts,
+      readonly: edit.readonly
+    })
+  end
+
+  defp describe_kind(result, _design), do: result
 
   @doc """
   The draft tool `propose_agent` (decision 7): adds or patches one agent
@@ -945,7 +1116,7 @@ defmodule Helmsman.AgentDesigns do
   @spec propose_agent(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
   def propose_agent(%Scope{} = scope, attrs) when is_map(attrs) do
     draft_write(scope, fn design, user_scope ->
-      case Draft.put(design.draft, attrs, user_scope, "ai") do
+      case put_draft_agent(design, attrs, user_scope, "ai") do
         {:ok, draft, entry, _edit} ->
           draft = follow_rename(draft, attrs["previous_name"] || attrs[:previous_name], entry)
           {:ok, design, draft, %{agent: entry, warnings: warnings(entry)}}
@@ -990,7 +1161,7 @@ defmodule Helmsman.AgentDesigns do
   def propose_squad(%Scope{} = scope, attrs) when is_map(attrs) do
     draft_write(scope, fn design, user_scope ->
       with :ok <- kind_tool(design, "propose_squad"),
-           {:ok, draft, squad, _fields} <- squad_put(design.draft, attrs, user_scope, "ai") do
+           {:ok, draft, squad, _fields} <- squad_put(design, attrs, user_scope, "ai") do
         summary = SquadDraft.trigger_summary(draft, user_scope)
 
         {:ok, design, draft,
@@ -1067,13 +1238,15 @@ defmodule Helmsman.AgentDesigns do
 
   # `add-squads` decision 12: a squad conversation also sees the people
   # of the workspace and the squad's hint.
-  defp put_squad_options(options, %AgentDesign{kind: :squad} = design),
-    do: Map.put(options, :people, Options.people(design.workspace_id))
+  defp put_squad_options(options, %AgentDesign{kind: kind} = design)
+       when kind in [:squad, :squad_edit],
+       do: Map.put(options, :people, Options.people(design.workspace_id))
 
   defp put_squad_options(options, _design), do: options
 
-  defp put_squad_summary(result, %AgentDesign{kind: :squad} = design, user_scope),
-    do: Map.put(result, :trigger_summary, SquadDraft.trigger_summary(design.draft, user_scope))
+  defp put_squad_summary(result, %AgentDesign{kind: kind} = design, user_scope)
+       when kind in [:squad, :squad_edit],
+       do: Map.put(result, :trigger_summary, SquadDraft.trigger_summary(design.draft, user_scope))
 
   defp put_squad_summary(result, _design, _user_scope), do: result
 
@@ -1239,6 +1412,13 @@ defmodule Helmsman.AgentDesigns do
   workspace, are `expired` (their turn stopped); conversations closed over
   #{@retention_days} days ago are deleted with their messages (their
   design runs stay). Returns `%{expired: n, deleted: n}`.
+
+  `add-edit-design-conversations` decision 12: an edit conversation also
+  expires, with a system message, when its target agent is archived
+  (`target_archived`) or its user may no longer start it
+  (`permission_lost`: not the agent's owner nor an admin, cannot manage
+  the squad). A disabled agent is still editable; a deleted target takes
+  its conversations with it.
   """
   @spec expire() :: %{expired: non_neg_integer(), deleted: non_neg_integer()}
   def expire do
@@ -1251,7 +1431,9 @@ defmodule Helmsman.AgentDesigns do
         left_join: m in Membership,
         on: m.workspace_id == d.workspace_id and m.user_id == d.user_id,
         where: d.status == :open,
-        where: d.last_activity_at < ^idle or is_nil(m.id) or m.role not in ^@member_roles,
+        where:
+          d.last_activity_at < ^idle or is_nil(m.id) or m.role not in ^@member_roles or
+            d.slot == :edit,
         select: d.id
       )
       |> Repo.all()
@@ -1273,14 +1455,48 @@ defmodule Helmsman.AgentDesigns do
   defp expire_locked(id, idle) do
     design = Repo.one(from(d in AgentDesign, where: d.id == ^id, lock: "FOR UPDATE"))
 
-    if design && design.status == :open && expirable?(design, idle) do
-      if design.current_run_id, do: stop_run(design.current_run_id, nil)
-      close!(design, :expired)
-      true
-    else
-      false
+    case design && design.status == :open && expiry(design, idle) do
+      reason when reason in [:idle, :target_archived, :permission_lost] ->
+        if design.current_run_id, do: stop_run(design.current_run_id, nil)
+
+        if reason != :idle,
+          do: append!(design, %{role: :system, code: Atom.to_string(reason)})
+
+        close!(design, :expired)
+        true
+
+      _keep ->
+        false
     end
   end
+
+  defp expiry(design, idle) do
+    cond do
+      expirable?(design, idle) -> :idle
+      Kinds.edit?(design.kind) -> target_expiry(design)
+      true -> nil
+    end
+  end
+
+  # Read under the conversation's lock only (decision 12): the next check
+  # or the confirm sees any later change.
+  defp target_expiry(%AgentDesign{kind: :agent_edit} = design) do
+    archived? =
+      Repo.exists?(
+        from(p in AgentProfile,
+          where: p.actor_id == ^design.target_actor_id and not is_nil(p.archived_at)
+        )
+      )
+
+    cond do
+      archived? -> :target_archived
+      elem(Edit.rights(design), 0) == :none -> :permission_lost
+      true -> nil
+    end
+  end
+
+  defp target_expiry(design),
+    do: if(elem(Edit.rights(design), 0) == :none, do: :permission_lost)
 
   defp expirable?(design, idle) do
     role =

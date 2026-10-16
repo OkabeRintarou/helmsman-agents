@@ -366,13 +366,37 @@ defmodule Helmsman.Squads do
   end
 
   defp update_locked(scope, name, squad_actor_id, attrs) do
-    ws = scope.workspace.id
-    refs = lock_refs(ws, squad_actor_id, attrs)
-    squad = lock_squad(squad_actor_id)
+    locked = lock_for_update(scope.workspace.id, squad_actor_id, attrs)
+    write_locked(scope, name, locked, attrs)
+  end
+
+  @doc false
+  # The first half of an update (`add-edit-design-conversations` decision
+  # 9): the squad identity `FOR UPDATE` with the identities named by
+  # `attrs` (`leader`, `members`; normalized or plain) and `extra_names`
+  # `FOR SHARE` by ascending ID, then the `squads` row `FOR UPDATE`.
+  # `%{refs, squad}`; `write_locked/4` finishes it.
+  @spec lock_for_update(pos_integer(), pos_integer(), map(), [String.t()]) :: map()
+  def lock_for_update(ws, squad_actor_id, attrs, extra_names \\ []) do
+    attrs = if Map.has_key?(attrs, :given), do: attrs, else: normalize(attrs)
+    refs = lock_refs(ws, squad_actor_id, attrs, extra_names)
+    %{refs: refs, squad: lock_squad(squad_actor_id), squad_actor_id: squad_actor_id}
+  end
+
+  @doc false
+  # The second half: `new_actors` (identities this transaction inserted,
+  # e.g. a design conversation's new agents) join the references; then the
+  # profiles `FOR SHARE`, the checks and the write. `{:ok, {squad_id,
+  # cancelled}}` or the errors of `update/3`; notifies after the commit.
+  @spec write_locked(Scope.t(), String.t(), map(), map(), [Actor.t()]) ::
+          {:ok, {pos_integer(), list()}} | {:error, term()}
+  def write_locked(scope, name, %{refs: refs, squad: squad} = locked, attrs, new_actors \\ []) do
+    attrs = if Map.has_key?(attrs, :given), do: attrs, else: normalize(attrs)
+    refs = add_new(refs, new_actors, attrs)
     # Profiles after the squad row (decision 3).
     refs = with_profiles(refs)
     current_leader = Repo.get!(Actor, squad.leader_agent_id)
-    squad_actor = Map.fetch!(refs.locked, squad_actor_id)
+    squad_actor = Map.fetch!(refs.locked, locked.squad_actor_id)
 
     with :ok <- check_name_still(squad_actor, name),
          :ok <- Policy.authorize(scope, :manage_squads, current_leader),
@@ -381,7 +405,7 @@ defmodule Helmsman.Squads do
          {:ok, attrs} <-
            validate(attrs, refs, %{
              leader_id: current_leader.id,
-             name_taken: renamed_taken?(ws, squad_actor, attrs),
+             name_taken: renamed_taken?(scope.workspace.id, squad_actor, attrs),
              member_ids: member_ids(squad)
            }),
          :ok <- authorize_spec_finalize(scope, squad, attrs),
@@ -516,8 +540,12 @@ defmodule Helmsman.Squads do
   # squad identity (`FOR UPDATE`; the others `FOR SHARE`) by ascending
   # ID, then reads the profiles of the managed ones `FOR SHARE`. A name
   # renamed in between resolves to nothing (reported as not found).
-  defp lock_refs(ws, squad_actor_id, attrs) do
-    names = Enum.uniq(Enum.reject([ref_name(attrs.leader) | member_names(attrs)], &is_nil/1))
+  defp lock_refs(ws, squad_actor_id, attrs, extra_names \\ []) do
+    names =
+      [ref_name(attrs.leader) | member_names(attrs)]
+      |> Kernel.++(Enum.map(extra_names, &ref_name/1))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
 
     guessed =
       Repo.all(from(a in Actor, where: a.workspace_id == ^ws and a.name in ^names, select: a.id))
@@ -526,6 +554,14 @@ defmodule Helmsman.Squads do
     by_name = Map.new(Map.values(locked), &{&1.name, &1})
 
     %{locked: locked, by_name: by_name, leader: by_name[ref_name(attrs.leader)], profiles: %{}}
+  end
+
+  defp add_new(refs, [], _attrs), do: refs
+
+  defp add_new(refs, actors, attrs) do
+    locked = Enum.reduce(actors, refs.locked, &Map.put(&2, &1.id, &1))
+    by_name = Map.new(Map.values(locked), &{&1.name, &1})
+    %{refs | locked: locked, by_name: by_name, leader: by_name[ref_name(attrs.leader)]}
   end
 
   defp lock_actors(squad_actor_id, ids) do

@@ -146,21 +146,58 @@ defmodule Helmsman.Agents do
   end
 
   def update(scope, name, attrs) do
-    action =
-      if Enum.any?(Map.keys(attrs), &(to_string(&1) in @execution_fields)),
-        do: :configure_agent,
-        else: :administer_agent
+    mutate(scope, name, update_action(attrs), &write_profile(&1, &2, attrs))
+  end
 
-    mutate(scope, name, action, fn actor, profile ->
-      with :ok <- managed(profile),
-           :ok <- active(profile),
-           {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update() do
-        move_pending_runs(actor, profile.runtime_id, updated.runtime_id)
-        notify_accounts(actor, profile.provider_account_id, updated.provider_account_id)
+  defp update_action(attrs) do
+    if Enum.any?(Map.keys(attrs), &(to_string(&1) in @execution_fields)),
+      do: :configure_agent,
+      else: :administer_agent
+  end
 
-        {:ok, actor}
-      end
-    end)
+  defp write_profile(actor, profile, attrs) do
+    with :ok <- managed(profile),
+         :ok <- active(profile),
+         {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update() do
+      move_pending_runs(actor, profile.runtime_id, updated.runtime_id)
+      notify_accounts(actor, profile.provider_account_id, updated.provider_account_id)
+
+      {:ok, actor}
+    end
+  end
+
+  @doc false
+  # `add-edit-design-conversations` decision 9: the rows `update/3` locks,
+  # in its order (the identity, then the profile, `FOR UPDATE`), for a
+  # caller in its own write transaction that compares before writing
+  # (`update_locked/4`). `{:ok, actor, profile}` or `{:error, :not_found}`
+  # (no such agent identity in the workspace).
+  @spec lock_for_update(Helmsman.Accounts.Scope.t(), pos_integer()) ::
+          {:ok, Actor.t(), AgentProfile.t() | nil} | {:error, :not_found}
+  def lock_for_update(scope, actor_id) do
+    query =
+      from(a in Actor,
+        where: a.id == ^actor_id and a.workspace_id == ^scope.workspace.id and a.kind == :agent,
+        lock: "FOR UPDATE"
+      )
+
+    case Repo.one(query) do
+      nil -> {:error, :not_found}
+      actor -> {:ok, actor, lock_profile(actor, [])}
+    end
+  end
+
+  @doc false
+  # The rest of `update/3` on the rows of `lock_for_update/2`: the same
+  # permission (owner-only execution fields), changeset, queued runs moved
+  # and notifications. `{:ok, view}` or the errors of `update/3`.
+  @spec update_locked(Helmsman.Accounts.Scope.t(), Actor.t(), AgentProfile.t() | nil, map()) ::
+          {:ok, map()} | {:error, term()}
+  def update_locked(scope, actor, profile, attrs) do
+    with :ok <- Policy.authorize(scope, update_action(attrs), actor) do
+      finish_mutation(write_profile(actor, profile, attrs))
+    end
+    |> scrub_result()
   end
 
   # Rebinding moves the agent's queued runs to the new runtime (bound and
