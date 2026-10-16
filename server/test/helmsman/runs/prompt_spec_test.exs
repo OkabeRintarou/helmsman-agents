@@ -262,7 +262,8 @@ defmodule Helmsman.Runs.PromptSpecTest do
 
     defp section(text) do
       [_, rest] = String.split(text, "\n\n## Specs\n", parts: 2)
-      [section | _] = String.split(rest, "\n\n---\n", parts: 2)
+      # The orchestration section of a run with a root follows this one.
+      [section | _] = String.split(rest, ["\n\n---\n", "\n\n## Orchestration: "], parts: 2)
       section
     end
 

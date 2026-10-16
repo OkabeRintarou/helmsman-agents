@@ -9,11 +9,12 @@ defmodule HelmsmanMCP.Tools.OrchestrationToolsTest do
   import Ecto.Query
 
   import Helmsman.ApiTokensFixtures
+  import Helmsman.OrchestrationFixtures
   import Helmsman.ProjectsFixtures
   import Helmsman.RunsFixtures
   import Helmsman.SquadsFixtures
 
-  alias Helmsman.{Runs, Tasks, Tx}
+  alias Helmsman.{Links, Repo, Runs, Tasks, Tx}
   alias Helmsman.Runs.Run
   alias HelmsmanMCP.{Context, ErrorText}
   alias HelmsmanWeb.MCPClient
@@ -51,13 +52,118 @@ defmodule HelmsmanMCP.Tools.OrchestrationToolsTest do
 
   test "start_task is listed only for runs that orchestrate", ctx do
     # A run token lists a restricted tool only with its capability
-    # (`HelmsmanMCP.Server.server_tools/2`); runs with `orchestrate` exist
-    # once group 1's migration allows the capability.
+    # (`HelmsmanMCP.Server.server_tools/2`).
     assert HelmsmanMCP.Tools.required_capabilities()["start_task"] == "orchestrate"
+
+    orchestrating = leader_token(ctx, ~w(read write_task create_tasks delegate orchestrate))
+    assert "start_task" in names(session(orchestrating))
 
     plain = leader_token(ctx, ~w(read write_task create_tasks delegate))
     refute "start_task" in names(session(plain))
     refute "start_task" in names(session(ctx.token))
+  end
+
+  describe "a callback run of the leader on a step (the ACC-10 shape)" do
+    # `orchestration_fixture/1`: the epic led by web-team, its steps s1
+    # (keel/fe), s2 (keel/review) and s3 (unassigned), none started; the
+    # leader's run on s1 with the capabilities `Runs.capabilities/4` gives
+    # (as `leader_run/3`, keeping the token).
+    setup do
+      ctx = orchestration_fixture()
+      task = Repo.reload!(ctx.s1)
+
+      run =
+        run_fixture(ctx.lead, %{
+          task_id: task.id,
+          status: :running,
+          squad_id: ctx.squad.id,
+          capabilities: Runs.capabilities(profile(ctx.lead), task, [], ctx.squad.id),
+          root_initiator_user_id: ctx.alice.id,
+          causal_agent_ids: [ctx.lead.id]
+        })
+
+      {_scope, run_token} = run_scope_fixture(run)
+      %{token: token} = api_token_fixture(ctx.alice_scope)
+      Map.merge(ctx, %{run: run, run_token: run_token, token: token})
+    end
+
+    test "its capabilities list start_task", ctx do
+      assert "orchestrate" in ctx.run.capabilities
+      assert "start_task" in names(session(ctx.run_token))
+    end
+
+    test "get_task of the epic: what each step waits for, and what it may orchestrate",
+         ctx do
+      {:ok, %{"children" => children}} =
+        MCPClient.call_tool(ctx.run_token, MCPClient.handshake(ctx.run_token), "get_task", %{
+          task_id: ctx.epic.ident
+        })
+
+      fields = Enum.map(children, &Map.take(&1, ~w(id waiting_for blocked_by orchestrable)))
+
+      assert fields == [
+               %{
+                 "id" => ctx.s1.ident,
+                 "waiting_for" => "run",
+                 "blocked_by" => [],
+                 "orchestrable" => true
+               },
+               %{
+                 "id" => ctx.s2.ident,
+                 "waiting_for" => "start",
+                 "blocked_by" => [],
+                 "orchestrable" => true
+               },
+               %{
+                 "id" => ctx.s3.ident,
+                 "waiting_for" => "assignment",
+                 "blocked_by" => [],
+                 "orchestrable" => true
+               }
+             ]
+
+      {:ok, _} = Links.add(ctx.alice_scope, ctx.s2.ident, ctx.s1.ident, "depends_on")
+
+      {:ok, %{"children" => [_, s2, _]}} =
+        MCPClient.call_tool(ctx.token, MCPClient.handshake(ctx.token), "get_task", %{
+          task_id: ctx.epic.ident
+        })
+
+      # A managed assignee without a run still waits for start: start_task
+      # defers its run until the prerequisites are done (decision 13).
+      assert %{"waiting_for" => "start", "orchestrable" => nil} = s2
+      assert s2["blocked_by"] == [ctx.s1.ident]
+    end
+
+    test "start_task starts the step's assignee; refusals in English", ctx do
+      sid = MCPClient.handshake(ctx.run_token)
+
+      assert {:ok, %{"result" => "queued", "run" => %{"agent" => "keel/review"}}} =
+               MCPClient.call_tool(ctx.run_token, sid, "start_task", %{
+                 task_id: ctx.s2.ident,
+                 instructions: "PPU first"
+               })
+
+      assert {:ok, %{"result" => "already"}} =
+               MCPClient.call_tool(ctx.run_token, sid, "start_task", %{task_id: ctx.s2.ident})
+
+      assert {:error, text} =
+               MCPClient.call_tool(ctx.run_token, sid, "start_task", %{task_id: ctx.s3.ident})
+
+      assert text ==
+               "#{ctx.s3.ident} has no assignee. Assign it with " <>
+                 "update_task(task_id, assignee, start: true)."
+
+      assert {:error, text} =
+               MCPClient.call_tool(ctx.run_token, sid, "update_task", %{
+                 task_id: ctx.s2.ident,
+                 title: "PPU only"
+               })
+
+      assert text ==
+               "When orchestrating #{ctx.s2.ident} you may only change assignee and start. " <>
+                 "Put guidance in start_task instructions instead."
+    end
   end
 
   test "start_task for another caller is forbidden", ctx do
