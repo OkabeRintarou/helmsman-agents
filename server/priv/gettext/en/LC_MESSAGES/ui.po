@@ -11584,12 +11584,12 @@ msgstr "Keep the named members"
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "已改为进行中。改状态不会启动 %{name}。重新指派给小队，或在 Feedback 里 @%{name} 启动 leader。"
-msgstr ""
+msgstr "Changed to In Progress. Changing status does not start %{name}. Reassign to the squad or @%{name} in Feedback to start the leader."
 
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "已改为进行中。改状态不会启动 %{name}，需要时点「让 %{name} 开工」。"
-msgstr ""
+msgstr "Changed to In Progress. Changing status does not start %{name}. Click “Start %{name}” when needed."
 
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
@@ -11604,7 +11604,7 @@ msgstr "Start %{name}"
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
 msgid "进行中，但没有运行在处理：改状态不会启动 Agent。"
-msgstr ""
+msgstr "In progress, but no run is processing this task: changing status does not start an Agent."
 
 #: lib/helmsman_web/live/task_live/show.ex
 #, elixir-autogen, elixir-format
