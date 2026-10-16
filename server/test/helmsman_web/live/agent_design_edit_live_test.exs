@@ -281,6 +281,74 @@ defmodule HelmsmanWeb.AgentDesignEditLiveTest do
     end
   end
 
+  describe "code review 3" do
+    test "a members target keeps its access through a full form (P2-1)", ctx do
+      {:ok, _} =
+        Agents.update(ctx.alice_scope, "fe-dev", %{
+          access: "members",
+          access_member_ids: [ctx.bob.id]
+        })
+
+      id = start_edit(ctx, ctx.alice_scope, "fe-dev")
+      settle(id)
+      {view, _} = open(ctx, "fe-dev")
+      view |> element("#edit-target-edit") |> render_click()
+
+      assert in_portal?(view, "agent-panel", "option[value=members][selected]", "保持指定成员")
+
+      # The browser submits every field, the access as selected.
+      save(view, %{"description" => "Web UI", "access" => "members", "model" => "sonnet"})
+      assert hd(design!(id).draft["agents"])["access"] == "members"
+
+      view |> element("#design-confirm-open") |> render_click()
+      confirm_now(view)
+      assert %{access: "members", access_member_ids: [bob_id]} = profile_of(ctx)
+      assert bob_id == ctx.bob.id
+      assert profile_of(ctx).description == "Web UI"
+    end
+
+    test "after a rebaseline the open panel reverts to the new baseline (P2-2)", ctx do
+      id = start_edit(ctx, ctx.alice_scope, "fe-dev")
+      H.propose!(id, %{"name" => "fe-dev", "effort" => "medium"})
+      settle(id)
+      {view, _} = open(ctx, "fe-dev")
+      view |> element("#edit-target-edit") |> render_click()
+
+      {:ok, _} = Agents.update(ctx.alice_scope, "fe-dev", %{effort: "low"})
+      render_click(view, "dismiss_confirm", %{})
+      render_click(view, "ask_confirm", %{})
+      confirm_now(view)
+      assert has_element?(view, "#design-baseline-changed")
+
+      render_click(view, "agent_form_revert", %{"field" => "effort"})
+      save(view, %{})
+      # A stale save (the panel opened before the rebaseline) merges, then saves.
+      if open?(view, "agent-panel"), do: save(view, %{})
+
+      assert hd(design!(id).draft["agents"])["effort"] == "low"
+      refute has_element?(view, "#edit-field-effort[data-changed]")
+    end
+
+    test "the squad panel reverts to the new baseline too", ctx do
+      id = start_edit(ctx, ctx.alice_scope, "web-team")
+      H.propose_squad!(id, %{"instructions" => "Ship it."})
+      settle(id)
+      {view, _} = open(ctx, "web-team")
+      view |> element("#edit-squad-edit") |> render_click()
+
+      {:ok, _} = Squads.update(ctx.carol_scope, "web-team", %{instructions: "New rules."})
+      render_click(view, "ask_confirm", %{})
+      confirm_now(view)
+      assert has_element?(view, "#design-baseline-changed")
+
+      # The draft followed the new baseline (it had not changed the instructions
+      # since the last check: no revert left); a field changed again reverts to it.
+      render_click(view, "squad_form_change", %{"squad" => %{"instructions" => "Mine"}})
+      render_click(view, "squad_form_revert", %{"field" => "instructions"})
+      assert in_portal?(view, "squad-panel", "textarea[name='squad[instructions]']", "New rules.")
+    end
+  end
+
   describe "确认修改的界面" do
     test "应用修改: to the agent's page with the count", ctx do
       id = start_edit(ctx, ctx.alice_scope, "fe-dev")

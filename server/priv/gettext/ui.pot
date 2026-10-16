@@ -11575,3 +11575,8 @@ msgstr ""
 #, elixir-autogen, elixir-format
 msgid "需要新成员时，AI 会在这里提出新 Agent，确认时与小队的修改一起创建。"
 msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "保持指定成员"
+msgstr ""

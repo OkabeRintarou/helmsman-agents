@@ -693,9 +693,21 @@ defmodule HelmsmanWeb.AgentForm do
 
   def reverts(_form), do: []
 
+  @doc """
+  The open form of an edit conversation follows a new baseline (a rebaseline,
+  add-edit-design-conversations D8): its 「恢复为当前配置」 reverts to it.
+  """
+  def put_baseline(%{baseline: %{}} = form, %{} = baseline), do: %{form | baseline: baseline}
+  def put_baseline(form, _baseline), do: form
+
   defp revert(%{baseline: %{} = baseline} = form, scope, field) when is_binary(field) do
     if field in reverts(form) do
-      form = %{form | params: Map.put(form.params, field, draft_params(baseline)[field])}
+      # A new generation: the editors (instructions) show the reverted text.
+      form = %{
+        form
+        | params: Map.put(form.params, field, draft_params(baseline)[field]),
+          gen: form.gen + 1
+      }
 
       if field == "provider",
         do: form |> load_runtimes(scope) |> load_accounts(scope),
@@ -1249,10 +1261,22 @@ defmodule HelmsmanWeb.AgentForm do
     owner = {dgettext("ui", "仅所属用户"), "owner_only"}
     workspace = {dgettext("ui", "工作区成员"), "workspace"}
 
-    if draft?(form),
-      do: [owner, workspace],
-      else: [owner, {dgettext("ui", "指定成员"), "members"}, workspace]
+    cond do
+      # An edit conversation's agent with a member list keeps it (the list is not in
+      # the draft): the select shows it rather than falling back to its first option.
+      draft?(form) and members_kept?(form) ->
+        [owner, {dgettext("ui", "保持指定成员"), "members"}, workspace]
+
+      draft?(form) ->
+        [owner, workspace]
+
+      true ->
+        [owner, {dgettext("ui", "指定成员"), "members"}, workspace]
+    end
   end
+
+  defp members_kept?(form),
+    do: Enum.any?([form[:base], form[:baseline]], &match?(%{"access" => "members"}, &1))
 
   attr :id, :string, required: true
   attr :name, :string, required: true

@@ -298,7 +298,23 @@ defmodule HelmsmanWeb.AgentDesignLive do
     |> check_confirming(view)
     |> close_panel_if_closed(view)
     |> refresh_squad_form(previous, view)
+    |> refresh_baselines(view)
   end
+
+  # An open panel of an edit conversation reverts to the current baseline (D14).
+  defp refresh_baselines(socket, view) do
+    agent_form = socket.assigns.agent_form && edit_baseline(socket.assigns.agent_form, view)
+
+    squad_form =
+      socket.assigns.squad_form && SquadForm.put_baseline(socket.assigns.squad_form, view)
+
+    assign(socket, agent_form: agent_form, squad_form: squad_form)
+  end
+
+  defp edit_baseline(form, %{kind: :agent_edit, baseline: %{"agent" => baseline}}),
+    do: AgentForm.put_baseline(form, baseline)
+
+  defp edit_baseline(form, _view), do: form
 
   # The open squad panel follows the draft's new agents (its candidates), keeping the input.
   defp refresh_squad_form(%{assigns: %{squad_form: %{} = form}} = socket, previous, view) do
@@ -545,11 +561,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
           {:noreply, assign(socket, :agent_form, AgentForm.draft_errors(form, cs))}
 
         {:error, :stale} ->
-          socket = reread(socket)
-          fresh = socket.assigns.design && find_agent(socket, form.name)
-
-          {:noreply,
-           assign(socket, :agent_form, form |> AgentForm.rebase(scope, fresh) |> seen(socket))}
+          {:noreply, rebase_agent_form(reread(socket), form)}
 
         {:error, :design_closed} ->
           {:noreply, socket |> assign(:agent_form, nil) |> reread()}
@@ -721,6 +733,16 @@ defmodule HelmsmanWeb.AgentDesignLive do
   def handle_event("tab", _params, socket), do: {:noreply, assign(socket, :tab, :chat)}
 
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  # A `stale` save (D7): the newer draft agent merged, an edit conversation's panel
+  # reverting to the current baseline (D14).
+  defp rebase_agent_form(socket, form) do
+    design = socket.assigns.design
+    fresh = design && find_agent(socket, form.name)
+    form = form |> AgentForm.rebase(socket.assigns.current_scope, fresh) |> seen(socket)
+    form = if design, do: edit_baseline(form, design), else: form
+    assign(socket, :agent_form, form)
+  end
 
   defp seen(form, %{assigns: %{design: %{draft_version: v}}}),
     do: Map.put(form, :draft_version, v)

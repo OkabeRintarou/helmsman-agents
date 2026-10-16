@@ -105,10 +105,16 @@ defmodule HelmsmanWeb.SquadForm do
   defp revert(%{baseline: %{} = baseline} = form, field) do
     old = canonical(form, from_squad(baseline))
 
+    # A new generation: the editors (instructions) show the reverted text.
     cond do
-      field not in reverts(form) -> form
-      field == "members" -> %{form | members: old.members}
-      true -> %{form | params: Map.put(form.params, field, old.params[field])}
+      field not in reverts(form) ->
+        form
+
+      field == "members" ->
+        %{form | members: old.members, gen: form.gen + 1}
+
+      true ->
+        %{form | params: Map.put(form.params, field, old.params[field]), gen: form.gen + 1}
     end
   end
 
@@ -206,7 +212,20 @@ defmodule HelmsmanWeb.SquadForm do
       notice: :draft_stale,
       error: nil
     })
+    |> put_baseline(design)
   end
+
+  @doc """
+  The open form of a `squad_edit` conversation follows its new baseline (a
+  rebaseline, add-edit-design-conversations D8).
+  """
+  def put_baseline(
+        %{baseline: %{}} = form,
+        %{kind: :squad_edit, baseline: %{"squad" => b}} = design
+      ),
+      do: %{form | baseline: Map.put(b, "name", draft_squad(design.draft)["name"])}
+
+  def put_baseline(form, _design), do: form
 
   @doc """
   The attrs of `AgentDesigns.put_squad/4` (string keys; a blank name or leader is nil):
