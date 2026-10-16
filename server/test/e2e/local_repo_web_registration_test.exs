@@ -284,34 +284,37 @@ defmodule Helmsman.E2E.LocalRepoWebRegistrationTest do
       )
 
     write_config(ctx.machine_home, endpoint_url_from_config(config), [])
+    disabled_deadline = System.monotonic_time(:millisecond) + 30_000
 
-    DaemonE2E.wait_until(ctx.port, "web registration disabled after allowed roots cleared", fn ->
-      case Repo.get(Daemon, ctx.daemon.id) do
-        %Daemon{repo_registration: false} = disabled -> disabled
-        _ -> nil
-      end
-    end)
+    DaemonE2E.wait_until(
+      ctx.port,
+      "web registration disabled after allowed roots cleared",
+      fn ->
+        case Repo.get(Daemon, ctx.daemon.id) do
+          %Daemon{repo_registration: false} = disabled -> disabled
+          _ -> nil
+        end
+      end,
+      remaining_ms(disabled_deadline)
+    )
 
-    html =
-      await_view(
+    disabled_machine = "#register-machine-#{ctx.daemon.id}[disabled]"
+    disabled_reason = "#register-machine-#{ctx.daemon.id}-reason"
+
+    panel =
+      await_portal_until(
         view,
-        fn _rendered ->
-          in_portal?(
-            view,
-            "local-repository-register-panel",
-            "#register-machine-#{ctx.daemon.id}[disabled]"
-          ) and
-            in_portal?(
-              view,
-              "local-repository-register-panel",
-              "#register-machine-#{ctx.daemon.id}-reason",
-              "没有允许网页登记的目录"
-            )
+        "local-repository-register-panel",
+        fn tree ->
+          portal_has?(tree, disabled_machine) and
+            portal_has?(tree, disabled_reason, "没有允许网页登记的目录")
         end,
-        "disabled registration UI after config reload"
+        "disabled registration UI after config reload",
+        disabled_deadline
       )
 
-    assert html =~ "没有允许网页登记的目录"
+    assert portal_has?(panel, disabled_machine)
+    assert portal_has?(panel, disabled_reason, "没有允许网页登记的目录")
   end
 
   defp init_repository(path) do
@@ -377,4 +380,29 @@ defmodule Helmsman.E2E.LocalRepoWebRegistrationTest do
         await_view_until(view, predicate, label, deadline)
     end
   end
+
+  defp await_portal_until(view, portal_id, predicate, label, deadline) do
+    tree = portal(view, portal_id)
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      now <= deadline and predicate.(tree) ->
+        tree
+
+      now >= deadline ->
+        flunk("timed out waiting for #{label}")
+
+      true ->
+        Process.sleep(min(50, deadline - now))
+        await_portal_until(view, portal_id, predicate, label, deadline)
+    end
+  end
+
+  defp portal_has?(tree, selector, text \\ nil) do
+    tree
+    |> LazyHTML.query(selector)
+    |> Enum.any?(fn node -> is_nil(text) or LazyHTML.text(node) =~ text end)
+  end
+
+  defp remaining_ms(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
 end
