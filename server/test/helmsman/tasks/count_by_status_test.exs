@@ -87,6 +87,11 @@ defmodule Helmsman.Tasks.CountByStatusTest do
 
     Helmsman.Repo.insert_all(Helmsman.Tasks.Task, rows)
 
+    # Without fresh statistics the planner may sort another index's rows instead; with
+    # sorting off it must pick an index that already yields this order.
+    Helmsman.Repo.query!("ANALYZE tasks")
+    Helmsman.Repo.query!("SET LOCAL enable_sort = off")
+
     %{rows: plan} =
       Helmsman.Repo.query!(
         "EXPLAIN SELECT id FROM tasks WHERE project_id = $1 AND status = 'new' ORDER BY updated_at DESC, id DESC LIMIT 26",
