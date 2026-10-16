@@ -433,7 +433,7 @@ defmodule HelmsmanWeb.AgentDesignEdit do
 
   ## The target agent
 
-  @rows ~w(description provider runtime_id provider_account_id model effort access capabilities
+  @rows ~w(description provider runtime_id provider_account_id model effort access capabilities mcp_servers
            max_concurrency timeout_minutes idle_timeout_minutes instructions)
 
   attr :design, :map, required: true
@@ -633,6 +633,15 @@ defmodule HelmsmanWeb.AgentDesignEdit do
     if "create_tasks" in List.wrap(entry["capabilities"]),
       do: dgettext("ui", "可以建任务"),
       else: dgettext("ui", "只能更新自己的任务")
+  end
+
+  def value_text("mcp_servers", entry, lookup) do
+    Enum.map_join(List.wrap(entry["mcp_servers"]), ", ", fn name ->
+      case Map.get(Map.get(lookup, :mcp_servers, %{}), name) do
+        nil -> name
+        type -> "#{name}（#{type}）"
+      end
+    end)
   end
 
   def value_text("instructions", entry, _lookup),
@@ -837,6 +846,9 @@ defmodule HelmsmanWeb.AgentDesignEdit do
           <.badge tone={:success}>{dgettext("ui", "新建")}</.badge>
           <span class="font-mono text-body text-fg">{a["name"]}</span>
           <.badge tone={:muted}>{provider_label(a["provider"])}</.badge>
+          <.badge :if={List.wrap(a["mcp_servers"]) != []} tone={:warning}>
+            {dgettext("ui", "新增 MCP：%{names}", names: Enum.join(a["mcp_servers"], ", "))}
+          </.badge>
         </li>
       </ul>
       <p class="text-body text-fg-muted">
@@ -875,8 +887,9 @@ defmodule HelmsmanWeb.AgentDesignEdit do
   defp plain("provider_account_id", id, lookup),
     do: value_text("provider_account_id", %{"provider_account_id" => id}, lookup)
 
-  defp plain(field, value, lookup) when field in ~w(provider access capabilities model effort),
-    do: value_text(field, %{field => value}, lookup)
+  defp plain(field, value, lookup)
+       when field in ~w(provider access capabilities model effort mcp_servers),
+       do: value_text(field, %{field => value}, lookup)
 
   defp plain(_field, nil, _lookup), do: dgettext("ui", "无")
   defp plain(_field, value, _lookup), do: to_string(value)
@@ -888,6 +901,11 @@ defmodule HelmsmanWeb.AgentDesignEdit do
   defp risk_text(%{field: "capabilities", from: from, to: to}) do
     if "create_tasks" in List.wrap(to) and "create_tasks" not in List.wrap(from),
       do: dgettext("ui", "可以建任务")
+  end
+
+  defp risk_text(%{field: "mcp_servers", from: from, to: to}) do
+    added = List.wrap(to) -- List.wrap(from)
+    if added != [], do: dgettext("ui", "新增 MCP：%{names}", names: Enum.join(added, ", "))
   end
 
   defp risk_text(%{field: "runtime_id", to: nil}), do: dgettext("ui", "解绑：排队中的运行会被取消")

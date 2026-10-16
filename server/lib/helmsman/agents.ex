@@ -160,7 +160,8 @@ defmodule Helmsman.Agents do
   defp write_profile(actor, profile, attrs) do
     with :ok <- managed(profile),
          :ok <- active(profile),
-         {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update(log: false) do
+         {:ok, updated} <-
+           profile |> AgentProfile.changeset(attrs, actor) |> Repo.update(log: false) do
       save_mcp_refs(actor, updated)
       move_pending_runs(actor, profile.runtime_id, updated.runtime_id)
       notify_accounts(actor, profile.provider_account_id, updated.provider_account_id)

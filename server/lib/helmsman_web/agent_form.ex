@@ -1189,9 +1189,17 @@ defmodule HelmsmanWeb.AgentForm do
         />
       </fieldset>
 
-      <fieldset :if={draft?(@form)} id="agent-draft-mcp" class="flex flex-col gap-2">
+      <fieldset
+        :if={draft?(@form)}
+        id="agent-draft-mcp"
+        disabled={@locked?}
+        class="flex flex-col gap-2"
+      >
         <legend>{dgettext("ui", "我的 MCP 服务器")}</legend>
-        <input type="hidden" name="agent[mcp_servers][]" value="" />
+        <input :if={not @locked?} type="hidden" name="agent[mcp_servers][]" value="" />
+        <p :if={@locked?} id="agent-draft-mcp-readonly" class="text-label">
+          {Enum.join(@p["mcp_servers"], ", ")}
+        </p>
         <label :for={d <- @form.mcp_definitions} class="flex items-center gap-2 text-label">
           <input
             type="checkbox"
@@ -1200,6 +1208,9 @@ defmodule HelmsmanWeb.AgentForm do
             checked={d.name in @p["mcp_servers"]}
           />{d.name} · {d.type}
         </label>
+        <p class="text-caption text-fg-muted">
+          {dgettext("ui", "只能选择『我的 MCP 服务器』里已有的定义，新的服务器请在设置页添加")}
+        </p>
         <p :for={error <- Map.get(@e, :mcp_servers, [])} class="text-caption text-danger">{error}</p>
       </fieldset>
 

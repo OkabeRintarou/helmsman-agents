@@ -27,9 +27,19 @@ defmodule Helmsman.McpServers do
   defp program(%{"url" => url}) when is_binary(url), do: URI.parse(url).host
   defp program(_), do: nil
 
-  def resolve_names(scope, names) when is_list(names) do
-    options = design_options(scope.user.id)
-    by_name = Map.new(options, &{String.downcase(&1.name), &1.id})
+  def resolve_names(scope, names, opts \\ [])
+
+  def resolve_names(scope, names, opts) when is_list(names) do
+    requested = for name <- names, is_binary(name), do: String.downcase(name)
+
+    query =
+      from d in Definition,
+        where: d.user_id == ^scope.user.id and fragment("lower(?)", d.name) in ^requested,
+        order_by: d.id,
+        select: %{id: d.id, name: d.name}
+
+    definitions = Repo.all(if opts[:lock], do: lock(query, "FOR SHARE"), else: query)
+    by_name = Map.new(definitions, &{String.downcase(&1.name), &1.id})
     ids = Enum.map(names, fn name -> if is_binary(name), do: by_name[String.downcase(name)] end)
 
     if length(names) <= 16 and Enum.all?(ids, &is_integer/1) and
@@ -38,10 +48,10 @@ defmodule Helmsman.McpServers do
        else:
          {:error,
           "definition missing or renamed; available definitions: " <>
-            Enum.map_join(options, ", ", & &1.name)}
+            Enum.map_join(design_options(scope.user.id), ", ", & &1.name)}
   end
 
-  def resolve_names(scope, _), do: resolve_names(scope, [nil])
+  def resolve_names(scope, _names, opts), do: resolve_names(scope, [nil], opts)
 
   def list(scope) do
     with :ok <- Policy.authorize(scope, :manage_mcp_servers) do

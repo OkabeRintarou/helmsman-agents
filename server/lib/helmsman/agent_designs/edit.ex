@@ -156,6 +156,10 @@ defmodule Helmsman.AgentDesigns.Edit do
     |> Map.take(Enum.map(Changes.agent_fields(), &String.to_existing_atom/1))
     |> Map.new(fn {k, v} -> {Atom.to_string(k), v} end)
     |> Map.put("name", actor.name)
+    |> Map.put(
+      "mcp_servers",
+      Enum.map(Map.get(Helmsman.McpServers.references([actor.id]), actor.id, []), & &1.name)
+    )
   end
 
   @doc """
@@ -451,13 +455,30 @@ defmodule Helmsman.AgentDesigns.Edit do
   defp profile_errors(design, entry) do
     actor = Repo.get!(Actor, design.target_actor_id)
     profile = Repo.get_by!(AgentProfile, actor_id: actor.id)
-    attrs = Map.take(entry, Changes.agent_fields())
+    attrs = Map.take(entry, Changes.agent_fields()) |> Map.delete("mcp_servers")
 
-    profile
-    |> AgentProfile.changeset(attrs, actor)
-    |> AgentProfile.scrub()
-    |> Map.fetch!(:errors)
-    |> Enum.reject(fn {field, _error} -> field in [:actor_id, :access_member_ids] end)
+    refs =
+      if entry["mcp_servers"] != design.baseline["agent"]["mcp_servers"],
+        do:
+          Helmsman.McpServers.resolve_names(%{user: %{id: actor.owner_id}}, entry["mcp_servers"]),
+        else: {:ok, nil}
+
+    case refs do
+      {:error, message} ->
+        [{:mcp_servers, {message, []}}]
+
+      {:ok, ids} ->
+        attrs = if ids, do: Map.put(attrs, "mcp_server_ids", ids), else: attrs
+
+        profile
+        |> AgentProfile.changeset(attrs, actor)
+        |> AgentProfile.scrub()
+        |> Map.fetch!(:errors)
+        |> Enum.reject(fn {field, _error} -> field in [:actor_id, :access_member_ids] end)
+        |> Enum.map(fn {field, error} ->
+          {if(field == :mcp_server_ids, do: :mcp_servers, else: field), error}
+        end)
+    end
   end
 
   defp put_conflicts(entry, []), do: Map.delete(entry, "conflicts")

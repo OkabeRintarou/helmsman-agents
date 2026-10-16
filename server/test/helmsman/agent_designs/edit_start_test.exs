@@ -39,6 +39,7 @@ defmodule Helmsman.AgentDesigns.EditStartTest do
         "effort" => "high",
         "instructions" => "You build the web UI.\nUse Tailwind.",
         "capabilities" => [],
+        "mcp_servers" => [],
         "access" => profile.access,
         "max_concurrency" => profile.max_concurrency,
         "timeout_minutes" => profile.timeout_minutes,
@@ -62,7 +63,7 @@ defmodule Helmsman.AgentDesigns.EditStartTest do
 
       assert Enum.sort(view.readonly) ==
                Enum.sort(~w(provider runtime_id provider_account_id model effort instructions
-                            capabilities access))
+                            capabilities access mcp_servers))
     end
 
     test "a member who is not the owner: forbidden, nothing written", ctx do

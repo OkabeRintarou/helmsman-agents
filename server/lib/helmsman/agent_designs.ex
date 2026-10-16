@@ -1076,7 +1076,6 @@ defmodule Helmsman.AgentDesigns do
          options:
            design
            |> base_options()
-           |> Map.put(:mcp_servers, Helmsman.McpServers.design_options(design.user_id) |> Enum.map(&Map.drop(&1, [:id])))
            |> put_squad_options(design),
          limits: %{max_agents: Draft.max_agents(), field_rules: Options.rules()}
        }
@@ -1101,6 +1100,8 @@ defmodule Helmsman.AgentDesigns do
     %{
       runtimes: Options.runtimes(design.workspace_id, design.user_id),
       provider_accounts: Options.accounts(design.user_id),
+      mcp_servers:
+        Helmsman.McpServers.design_options(design.user_id) |> Enum.map(&Map.drop(&1, [:id])),
       agents: Options.agents(design.workspace_id)
     }
   end

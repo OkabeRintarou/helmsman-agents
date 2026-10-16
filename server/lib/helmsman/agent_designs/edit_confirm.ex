@@ -142,14 +142,51 @@ defmodule Helmsman.AgentDesigns.EditConfirm do
         {:error, :no_changes}
 
       changes ->
-        attrs = Map.new(changes, &{&1.field, &1.to})
-
-        case Agents.update_locked(scope, actor, profile, attrs) do
-          {:ok, view} -> {:applied, applied(changes), [], %{agents: [view], squad: nil}}
-          error -> error
-        end
+        write_agent(scope, actor, profile, entry, changes)
     end
   end
+
+  defp write_agent(scope, actor, profile, entry, changes) do
+    attrs = Map.new(changes, &{&1.field, &1.to})
+
+    with {:ok, attrs} <- reference_attrs(scope, attrs),
+         {:ok, view} <- Agents.update_locked(scope, actor, profile, attrs) do
+      {:applied, applied(changes), [], %{agents: [view], squad: nil}}
+    else
+      {:error, %Ecto.Changeset{} = cs} ->
+        {:error, {:invalid, %{entry["name"] => draft_errors(cs)}}}
+
+      error ->
+        error
+    end
+  end
+
+  defp draft_errors(cs) do
+    errors =
+      Enum.map(cs.errors, fn {field, error} ->
+        {if(field == :mcp_server_ids, do: :mcp_servers, else: field), error}
+      end)
+
+    %{cs | errors: errors}
+  end
+
+  defp reference_attrs(scope, %{"mcp_servers" => names} = attrs) do
+    case Helmsman.McpServers.resolve_names(scope, names, lock: true) do
+      {:ok, ids} ->
+        {:ok, attrs |> Map.delete("mcp_servers") |> Map.put("mcp_server_ids", ids)}
+
+      {:error, message} ->
+        {:error,
+         %Ecto.Changeset{
+           data: %{},
+           types: Draft.types(),
+           valid?: false,
+           errors: [{:mcp_servers, {message, []}}]
+         }}
+    end
+  end
+
+  defp reference_attrs(_scope, attrs), do: {:ok, attrs}
 
   defp apply_squad(scope, design, locked, current, new_agents) do
     changes = Changes.squad(design.baseline["squad"], design.draft["squad"])
@@ -191,7 +228,7 @@ defmodule Helmsman.AgentDesigns.EditConfirm do
   defp validate_new(scope, agents) do
     errors =
       Enum.reduce(agents, %{}, fn entry, acc ->
-        case Agents.validate_new(scope, Draft.create_attrs(entry)) do
+        case Draft.validate_create(scope, entry) do
           :ok -> acc
           {:error, cs} -> Map.put(acc, entry["name"], cs)
         end
@@ -204,7 +241,10 @@ defmodule Helmsman.AgentDesigns.EditConfirm do
   # errors are returned and everything rolls back.
   defp insert_new(scope, agents) do
     Enum.reduce_while(agents, {:ok, []}, fn entry, {:ok, created} ->
-      case Agents.insert_new(scope, Draft.create_attrs(entry)) do
+      result =
+        with {:ok, attrs} <- Draft.create_attrs(entry, scope), do: Agents.insert_new(scope, attrs)
+
+      case result do
         {:ok, view} -> {:cont, {:ok, created ++ [view]}}
         {:error, cs} -> {:halt, {:error, {:invalid, %{entry["name"] => AgentProfile.scrub(cs)}}}}
       end

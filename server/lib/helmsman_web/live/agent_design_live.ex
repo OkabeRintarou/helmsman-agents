@@ -299,12 +299,22 @@ defmodule HelmsmanWeb.AgentDesignLive do
     socket
     |> stream(:messages, fresh)
     |> assign(design: view, max_seq: max_seq, turn: turn)
+    |> put_mcp_lookup(view)
     |> track_draft(previous, view)
     |> check_confirming(view)
     |> close_panel_if_closed(view)
     |> refresh_squad_form(previous, view)
     |> refresh_baselines(view)
   end
+
+  defp put_mcp_lookup(socket, %{kind: :agent_edit, target: %{id: id}, readonly: readonly}) do
+    refs = Map.get(McpServers.references([id]), id, [])
+    own = if readonly == [], do: socket.assigns.lookup.mcp_servers, else: %{}
+    definitions = Enum.reduce(refs, own, &Map.put(&2, &1.name, &1.type))
+    assign(socket, :lookup, %{socket.assigns.lookup | mcp_servers: definitions})
+  end
+
+  defp put_mcp_lookup(socket, _view), do: socket
 
   # An open panel of an edit conversation reverts to the current baseline (D14).
   defp refresh_baselines(socket, view) do

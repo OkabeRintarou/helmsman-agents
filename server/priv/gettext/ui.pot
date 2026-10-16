@@ -11734,6 +11734,7 @@ msgid "执行机器离线，无法检查"
 msgstr ""
 
 #: lib/helmsman_web/agent_design_components.ex
+#: lib/helmsman_web/agent_design_edit.ex
 #, elixir-autogen, elixir-format
 msgid "新增 MCP：%{names}"
 msgstr ""
@@ -11871,4 +11872,9 @@ msgstr ""
 #: lib/helmsman_web/mcp_editor.ex
 #, elixir-autogen, elixir-format
 msgid "默认值被忽略"
+msgstr ""
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "只能选择『我的 MCP 服务器』里已有的定义，新的服务器请在设置页添加"
 msgstr ""

@@ -47,6 +47,120 @@ defmodule HelmsmanWeb.AgentDesignLiveTest do
     assert in_portal?(view, "design-confirm", "span", "新增 MCP：playwright")
   end
 
+  test "edit MCP compares baseline names/types, highlights only additions and reverts the picker" do
+    ctx = Helmsman.AgentDesignsFixtures.edit_fixture()
+
+    {:ok, old} =
+      Helmsman.McpServers.create(ctx.alice_scope, %{
+        name: "existing",
+        config: %{"command" => "npx"}
+      })
+
+    {:ok, _} =
+      Helmsman.McpServers.create(ctx.alice_scope, %{
+        name: "playwright",
+        config: %{"command" => "npx", "args" => ["MCP_EDIT_UI_SECRET_CANARY"]}
+      })
+
+    {:ok, _} = Agents.update(ctx.alice_scope, "fe-dev", %{mcp_server_ids: [old.id]})
+    %{id: id} = Helmsman.AgentDesignsFixtures.start_edit!(ctx.alice_scope, "fe-dev")
+    HelmsmanWeb.AgentDesignHelpers.reply!(id, "ok")
+
+    {:ok, _} =
+      AgentDesigns.put_agent(ctx.alice_scope, id, 0, %{
+        "name" => "fe-dev",
+        "mcp_servers" => ["existing", "playwright"]
+      })
+
+    conn = log_in_user(build_conn(), ctx.alice)
+
+    {:ok, view, html} =
+      live(conn, HelmsmanWeb.Url.agent_design_edit_path(ctx.workspace.slug, "fe-dev"))
+
+    assert has_element?(
+             view,
+             "#edit-field-mcp_servers[data-changed=true] [data-before]",
+             "existing（stdio）"
+           )
+
+    assert has_element?(
+             view,
+             "#edit-field-mcp_servers [data-now]",
+             "existing（stdio）, playwright（stdio）"
+           )
+
+    refute html =~ "MCP_EDIT_UI_SECRET_CANARY"
+    view |> element("#design-confirm-open") |> render_click()
+
+    assert in_portal?(
+             view,
+             "design-confirm",
+             "[data-field=mcp_servers][data-risky=true] span",
+             "新增 MCP：playwright"
+           )
+
+    refute in_portal?(view, "design-confirm", "span", "新增 MCP：existing")
+    render_click(view, "dismiss_confirm", %{})
+    view |> element("#edit-target-edit") |> render_click()
+
+    assert in_portal?(
+             view,
+             "agent-panel",
+             "input[name='agent[mcp_servers][]'][value=playwright][checked]"
+           )
+
+    assert in_portal?(view, "agent-panel", "p", "只能选择『我的 MCP 服务器』里已有的定义")
+    render_click(view, "agent_form_revert", %{"field" => "mcp_servers"})
+
+    assert in_portal?(
+             view,
+             "agent-panel",
+             "input[name='agent[mcp_servers][]'][value=existing][checked]"
+           )
+
+    refute in_portal?(
+             view,
+             "agent-panel",
+             "input[name='agent[mcp_servers][]'][value=playwright][checked]"
+           )
+  end
+
+  test "admin edit MCP picker is read-only, lists target names and has no personal choices" do
+    ctx = Helmsman.AgentDesignsFixtures.edit_fixture()
+
+    {:ok, d} =
+      Helmsman.McpServers.create(ctx.alice_scope, %{
+        name: "owner-definition",
+        config: %{"command" => "npx"}
+      })
+
+    {:ok, _} =
+      Helmsman.McpServers.create(ctx.carol_scope, %{
+        name: "ADMIN_PRIVATE_MCP",
+        config: %{"command" => "npx"}
+      })
+
+    {:ok, _} = Agents.update(ctx.alice_scope, "fe-dev", %{mcp_server_ids: [d.id]})
+    %{id: id} = Helmsman.AgentDesignsFixtures.start_edit!(ctx.carol_scope, "fe-dev")
+    HelmsmanWeb.AgentDesignHelpers.reply!(id, "ok")
+    conn = log_in_user(build_conn(), ctx.carol)
+
+    {:ok, view, _} =
+      live(conn, HelmsmanWeb.Url.agent_design_edit_path(ctx.workspace.slug, "fe-dev"))
+
+    assert has_element?(
+             view,
+             "#edit-field-mcp_servers[data-readonly=true]",
+             "owner-definition（stdio）"
+           )
+
+    view |> element("#edit-target-edit") |> render_click()
+    assert in_portal?(view, "agent-panel", "#agent-draft-mcp[disabled]")
+    assert in_portal?(view, "agent-panel", "#agent-draft-mcp-readonly", "owner-definition")
+    refute in_portal?(view, "agent-panel", "input[name='agent[mcp_servers][]']")
+    refute in_portal?(view, "agent-panel", "label", "ADMIN_PRIVATE_MCP")
+  end
+
   describe "对话创建页的进入与权限" do
     test "没有进行中的对话: the start area", ctx do
       {view, html} = open_page(ctx)
