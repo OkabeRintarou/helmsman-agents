@@ -355,8 +355,57 @@ defmodule Helmsman.Dispatch.Continuation do
       |> Enum.reject(&(&1.kind == :answer and task.open_question))
       |> Enum.map(&steer_item(&1, opts[:steer]))
 
-    {outcomes, _task} = fire_all(scope, task, items, entry.id)
+    {outcomes, _task} = fire_feedback(scope, task, items, entry.id)
     outcomes
+  end
+
+  # `add-nested-feedback-replies` decision 12: per target, the candidates
+  # in the order answer > requested > mention, each with its own checks;
+  # once one is `queued` or `merged`, the target's other mentions are not
+  # tried and are `covered`. A skipped, deferred or missing result does not
+  # cover. Different targets never cover each other.
+  @priority %{answer: 0, requested: 1, mention: 2}
+
+  defp fire_feedback(scope, task, items, feedback_id) do
+    items = Enum.sort_by(items, &Map.get(@priority, &1.kind, 3))
+
+    {outcomes, {task, _woken}} =
+      Enum.map_reduce(items, {task, MapSet.new()}, &fire_or_cover(scope, feedback_id, &1, &2))
+
+    {Enum.reject(outcomes, &is_nil/1), task}
+  end
+
+  defp fire_or_cover(scope, feedback_id, item, {task, woken}) do
+    if item.kind == :mention and MapSet.member?(woken, item.agent_id) do
+      {covered(item), {task, woken}}
+    else
+      outcome = fire(scope, task, item, feedback_id)
+      task = if is_nil(outcome), do: task, else: Repo.reload!(task)
+      {outcome, {task, mark_woken(woken, item, outcome)}}
+    end
+  end
+
+  defp mark_woken(woken, item, outcome),
+    do: if(covers?(outcome), do: MapSet.put(woken, item.agent_id), else: woken)
+
+  @doc false
+  # Whether an outcome woke its target for decision 12: queued or merged.
+  # Skipped, deferred (it waits for prerequisites) and none do not.
+  @spec covers?(Outcome.t() | nil) :: boolean()
+  def covers?(%Outcome{result: result}), do: result in [:queued, :merged]
+  def covers?(nil), do: false
+
+  # Without a steering mark: it waits for nothing.
+  defp covered(item) do
+    actor = Repo.get!(Actor, item.agent_id)
+
+    case actor.kind do
+      :squad ->
+        SquadDispatch.skipped(Squads.load(Squads.by_actor_id(actor.id)), :mention, :covered)
+
+      _agent ->
+        Outcome.skipped(actor, :mention, :covered)
+    end
   end
 
   defp steer_item(%{agent_id: id} = item, {id, run_id}), do: Map.put(item, :steer_run_id, run_id)

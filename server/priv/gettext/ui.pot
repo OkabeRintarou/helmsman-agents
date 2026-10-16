@@ -9845,12 +9845,12 @@ msgstr ""
 msgid "展开 %{n} 条回复"
 msgstr ""
 
-#: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "已由这条记录的回答唤醒"
 msgstr ""
 
-#: lib/helmsman_web/collab_components.ex
+#: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "已由这条记录的回调唤醒"
 msgstr ""
@@ -9923,4 +9923,9 @@ msgstr ""
 #: lib/helmsman_web/run_components.ex
 #, elixir-autogen, elixir-format
 msgid "Epic 停滞"
+msgstr ""
+
+#: lib/helmsman_web/run_components.ex
+#, elixir-autogen, elixir-format
+msgid "已由这条记录的回答或回调唤醒"
 msgstr ""

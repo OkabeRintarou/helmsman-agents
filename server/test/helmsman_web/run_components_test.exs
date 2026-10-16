@@ -82,6 +82,24 @@ defmodule HelmsmanWeb.RunComponentsTest do
                {:warning, "已派发给 keel/dev；没有启动 keel/qa：它没有绑定运行时"}
     end
 
+    # add-nested-feedback-replies D12: a covered mention adds nothing to the flash.
+    test "a covered mention: no warning, said by the queued answer" do
+      outcomes = [
+        %Outcome{agent: "keel/dev", trigger: :answer, result: :queued, run_id: 1},
+        Outcome.skipped(%Helmsman.Actors.Actor{name: "keel/dev"}, :mention, :covered)
+      ]
+
+      assert RunComponents.dispatch_flash(outcomes) == {:info, "已派发给 keel/dev"}
+      assert RunComponents.covered?(%{result: "skipped", reason: "covered"})
+      refute RunComponents.covered?(%{result: "skipped", reason: "no_grant"})
+
+      views = Enum.map(outcomes, &Map.new(Outcome.view(&1)))
+      assert RunComponents.covered_by(List.last(views), views) == "answer"
+      assert RunComponents.covered_by(hd(views), views) == nil
+      assert RunComponents.covered_text("requested") == "已由这条记录的回调唤醒"
+      assert RunComponents.covered_text("answer") == "已由这条记录的回答唤醒"
+    end
+
     test "an unknown reason is logged" do
       log =
         capture_log(fn ->

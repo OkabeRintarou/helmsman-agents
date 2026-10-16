@@ -15,7 +15,7 @@ defmodule HelmsmanWeb.RunComponents do
 
   @known_reasons ~w(not_started task_closed unauthorized agent_disabled agent_archived no_runtime
                     runtime_disabled daemon_outdated loop_detected chain_too_long rate_limited
-                    squad_disabled)a
+                    squad_disabled covered)a
 
   @doc """
   The flash of a dispatch outcome (`%Helmsman.Runs.Outcome{}` or a map with `agent`,
@@ -103,7 +103,8 @@ defmodule HelmsmanWeb.RunComponents do
   def dispatch_flash(nil), do: nil
 
   def dispatch_flash(outcomes) when is_list(outcomes) do
-    messages = Enum.map(outcomes, &dispatch_message/1)
+    # A covered mention's agent is already in the flash as queued or merged.
+    messages = outcomes |> Enum.reject(&covered?/1) |> Enum.map(&dispatch_message/1)
     level = if Enum.any?(messages, &(elem(&1, 0) == :warning)), do: :warning, else: :info
     {level, Enum.map_join(messages, "；", &elem(&1, 1))}
   end
@@ -118,6 +119,38 @@ defmodule HelmsmanWeb.RunComponents do
         dgettext("ui", "没有启动 %{agent}：%{reason}", agent: agent, reason: text)
     end
   end
+
+  @doc """
+  Whether a dispatch outcome (struct or stored map) is a mention not tried because the
+  same record already woke its target (add-nested-feedback-replies D12).
+  """
+  @spec covered?(map()) :: boolean()
+  def covered?(%{result: result, reason: reason}),
+    do: to_string(result) == "skipped" and to_string(reason) == "covered"
+
+  def covered?(_outcome), do: false
+
+  @doc """
+  For a covered outcome among `outcomes` (the same record's), the trigger that woke its
+  target — `"answer"` or `"requested"`, the queued or merged one of the same target;
+  nil when `outcome` is not covered.
+  """
+  @spec covered_by(map(), [map()]) :: String.t() | nil
+  def covered_by(outcome, outcomes) do
+    if covered?(outcome) do
+      Enum.find_value(outcomes, "answer", fn other ->
+        (other.agent == outcome.agent and to_string(other.result) in ["queued", "merged"] and
+           to_string(other.trigger) != "mention") && to_string(other.trigger)
+      end)
+    end
+  end
+
+  @doc "The text of a covered mention: 已由这条记录的回答 / 回调唤醒."
+  @spec covered_text(String.t() | atom()) :: String.t()
+  def covered_text(by) when by in ["requested", :requested],
+    do: dgettext("ui", "已由这条记录的回调唤醒")
+
+  def covered_text(_answer), do: dgettext("ui", "已由这条记录的回答唤醒")
 
   @doc """
   Why a trigger of `agent` started nothing, from the `reason` of a dispatch outcome
@@ -140,6 +173,7 @@ defmodule HelmsmanWeb.RunComponents do
 
   defp reason_text(_agent, :chain_too_long), do: dgettext("ui", "触发链过长，为防止循环没有启动")
   defp reason_text(_agent, :rate_limited), do: dgettext("ui", "这个任务一小时内的运行次数已达上限")
+  defp reason_text(_agent, :covered), do: dgettext("ui", "已由这条记录的回答或回调唤醒")
   defp reason_text(_agent, _reason), do: nil
 
   @doc """

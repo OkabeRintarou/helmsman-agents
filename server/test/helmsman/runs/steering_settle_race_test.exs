@@ -214,9 +214,10 @@ defmodule Helmsman.Runs.SteeringSettleLanesTest do
     assert System.monotonic_time(:millisecond) - started < 5_000
 
     # Scenario「结算与跨 lane 的写入并发」: no settled trigger is left; the
-    # answer and the mention are queued. The `reply` fallback had only the
-    # settled steer, so it is cancelled before the mention arrives, which
-    # then queues a new `reply` run.
+    # answer is queued. The `reply` fallback had only the settled steer, so
+    # it is cancelled; the mention of the same agent is `covered` by the
+    # queued answer (add-nested-feedback-replies decision 12): no new
+    # `reply` run.
     CommittedData.unboxed(fn ->
       runs = runs_of(ctx.task.id)
       queued = Enum.filter(runs, &(&1.status in Run.pending_statuses()))
@@ -224,8 +225,7 @@ defmodule Helmsman.Runs.SteeringSettleLanesTest do
 
       assert Enum.uniq(steer_marks) == [nil]
 
-      assert %{work: [%{"kind" => "answer"}], reply: [%{"kind" => "mention"}]} =
-               Map.new(queued, &{&1.lane, &1.triggers})
+      assert [%Run{lane: :work, triggers: [%{"kind" => "answer"}]}] = queued
 
       assert %Run{status: :queued} = Enum.find(runs, &(&1.id == ctx.work_id))
 

@@ -6,7 +6,8 @@ defmodule HelmsmanMCP.Tools.UpdateFeedback do
     description:
       "Revise a feedback record written by you or your own agents: a new record takes " <>
         "its place and the old one is kept as superseded. Only the current version can " <>
-        "be revised.",
+        "be revised. Only mentions new in this version trigger; a mention skipped with " <>
+        "reason covered was not run because the same record's answer already woke that agent.",
     schema: %{
       feedback_id: {:required, :string, description: "Feedback ID (e.g. BOS-12#3)."},
       content: {:required, :string, description: "New Markdown content."},

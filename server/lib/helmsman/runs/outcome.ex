@@ -48,6 +48,7 @@ defmodule Helmsman.Runs.Outcome do
           | :no_grant
           | :squad_disabled
           | :stall_capped
+          | :covered
   @type t :: %__MODULE__{
           agent: String.t(),
           agent_id: pos_integer() | nil,

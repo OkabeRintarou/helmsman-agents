@@ -6,7 +6,9 @@ defmodule HelmsmanMCP.Tools.AddFeedback do
     description:
       "Add feedback to a task: comment (default), review, question or answer. Records " <>
         "are immutable; use update_feedback to revise. After a question, stop and wait " <>
-        "for the answer.",
+        "for the answer. dispatch lists what the record triggered; a mention skipped with " <>
+        "reason covered was not run because the same record's answer or callback already " <>
+        "woke that agent.",
     schema: %{
       task_id: {:required, :string, description: "Task ID (e.g. BOS-12)."},
       content: {:required, :string, description: "Markdown, at most 64 KB."},

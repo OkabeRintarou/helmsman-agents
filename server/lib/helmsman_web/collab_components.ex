@@ -408,21 +408,9 @@ defmodule HelmsmanWeb.CollabComponents do
 
   # add-nested-feedback-replies D12: a mention skipped because the same record already
   # woke its agent (an answer or a callback that was queued or merged).
-  defp covered?(%{result: "skipped", reason: reason}), do: reason in ["covered", :covered]
-  defp covered?(_item), do: false
-
-  # The trigger kind that woke the covered mention's agent, nil when not covered.
-  defp covered_by(item, items) do
-    if covered?(item) do
-      Enum.find_value(items, "answer", fn other ->
-        (other.agent == item.agent and other.result in ["queued", "merged"] and
-           other.trigger != "mention") && other.trigger
-      end)
-    end
-  end
-
-  defp covered_text("requested"), do: dgettext("ui", "已由这条记录的回调唤醒")
-  defp covered_text(_answer), do: dgettext("ui", "已由这条记录的回答唤醒")
+  defp covered?(item), do: RunComponents.covered?(item)
+  defp covered_by(item, items), do: RunComponents.covered_by(item, items)
+  defp covered_text(by), do: RunComponents.covered_text(by)
 
   # A squad's leader run reads「web-team（keel/lead）」.
   defp item_name(%{squad: squad, agent: agent}) when is_binary(squad), do: "#{squad}（#{agent}）"
