@@ -1119,7 +1119,9 @@ defmodule Helmsman.AgentDesigns do
       case put_draft_agent(design, attrs, user_scope, "ai") do
         {:ok, draft, entry, _edit} ->
           draft = follow_rename(draft, attrs["previous_name"] || attrs[:previous_name], entry)
-          {:ok, design, draft, %{agent: entry, warnings: warnings(entry)}}
+
+          {:ok, design, draft,
+           %{agent: Edit.shown_entry(design, entry), warnings: warnings(entry)}}
 
         {:error, %Ecto.Changeset{} = cs} ->
           {:error, {:invalid_agent, attrs["name"] || attrs[:name], cs}}

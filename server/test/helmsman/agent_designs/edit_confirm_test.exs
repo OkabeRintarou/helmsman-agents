@@ -238,6 +238,38 @@ defmodule Helmsman.AgentDesigns.EditConfirmTest do
       refute Map.has_key?(d.draft["squad"], "conflicts")
     end
 
+    test "writing a conflicting field again clears it, even with the same value (code review 1)",
+         ctx do
+      put_squad!(ctx.alice_scope, ctx.id, %{"instructions" => "A", "description" => "D"})
+
+      {:ok, _} =
+        Squads.update(ctx.carol_scope, "web-team", %{instructions: "B", description: "E"})
+
+      assert {:error, {:baseline_changed, ["description", "instructions"]}} =
+               confirm(ctx.alice_scope, ctx.id)
+
+      assert design!(ctx.id).draft["squad"]["conflicts"] == ["description", "instructions"]
+
+      # An unrelated field leaves both.
+      view = put_squad!(ctx.alice_scope, ctx.id, %{"leader" => "web-lead"})
+      assert view.conflicts == ["description", "instructions"]
+
+      # The user, with the draft's own value.
+      view = put_squad!(ctx.alice_scope, ctx.id, %{"instructions" => "A"})
+      assert view.conflicts == ["description"]
+    end
+
+    test "the helper's propose_squad with the same value clears the conflict", ctx do
+      put_squad!(ctx.alice_scope, ctx.id, %{"instructions" => "A"})
+      {:ok, _} = Squads.update(ctx.carol_scope, "web-team", %{instructions: "B"})
+      assert {:error, {:baseline_changed, ["instructions"]}} = confirm(ctx.alice_scope, ctx.id)
+
+      {:ok, _} = AgentDesigns.send(ctx.alice_scope, ctx.id, "keep mine")
+      {scope, _token} = design_run_scope!(ctx, ctx.id)
+      assert {:ok, _} = AgentDesigns.propose_squad(scope, %{"instructions" => "A"})
+      refute Map.has_key?(design!(ctx.id).draft["squad"], "conflicts")
+    end
+
     test "only the squad's other settings changed (renamed): written as is", ctx do
       add_qa(ctx)
       {:ok, _} = Squads.update(ctx.carol_scope, "web-team", %{name: "web-squad"})

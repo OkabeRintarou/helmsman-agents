@@ -135,6 +135,19 @@ defmodule Helmsman.AgentDesigns.EditDraftTest do
       assert Keyword.has_key?(field_errors(result), :runtime_id)
     end
 
+    test "the owner's write result keeps the account ID", ctx do
+      account =
+        Helmsman.ProviderAccountsFixtures.provider_account_fixture(ctx.alice, %{cli: "claude"})
+
+      assert {:ok, %{agent: agent}} =
+               AgentDesigns.propose_agent(ctx.ai, %{
+                 "name" => "fe-dev",
+                 "provider_account_id" => account.id
+               })
+
+      assert agent["provider_account_id"] == account.id
+    end
+
     test "withdraw_agent is not a tool of the kind", ctx do
       assert {:error, {:design, {:wrong_kind, "withdraw_agent", :agent_edit}}} =
                AgentDesigns.withdraw_agent(ctx.ai, "fe-dev")
@@ -196,6 +209,38 @@ defmodule Helmsman.AgentDesigns.EditDraftTest do
 
       {:ok, view} = AgentDesigns.get(ctx.carol_scope, ctx.id)
       refute Map.has_key?(view.baseline["agent"], "provider_account_id")
+    end
+
+    test "a write's result shows the owner's account as name and host only (code review 1)",
+         ctx do
+      account =
+        Helmsman.ProviderAccountsFixtures.provider_account_fixture(ctx.alice, %{cli: "claude"})
+
+      Repo.update_all(
+        from(d in Helmsman.AgentDesigns.AgentDesign, where: d.id == ^ctx.id),
+        set: [
+          draft: %{"agents" => [Map.put(entry(ctx.id), "provider_account_id", account.id)]}
+        ]
+      )
+
+      assert {:ok, %{agent: agent}} =
+               AgentDesigns.propose_agent(ctx.ai, %{"name" => "fe-dev", "description" => "Web"})
+
+      refute Map.has_key?(agent, "provider_account_id")
+      assert %{"name" => name, "host" => _} = agent["provider_account"]
+      assert name == account.name
+
+      assert {:ok, json} =
+               HelmsmanMCP.Pipeline.call_tool(
+                 "propose_agent",
+                 %{"name" => "fe-dev", "description" => "Web UI"},
+                 ctx.ai,
+                 nil
+               )
+
+      refute json =~ "provider_account_id"
+      refute json =~ ~s("#{account.id}")
+      assert json =~ account.name
     end
 
     test "demoted to member: the next write is forbidden", ctx do

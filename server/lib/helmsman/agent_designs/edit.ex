@@ -461,9 +461,13 @@ defmodule Helmsman.AgentDesigns.Edit do
       true ->
         attrs = Map.delete(attrs, "name")
 
+        # A conflict goes when its field is written again, even with the
+        # draft's own value (decision 8); `fields` are those that changed.
+        given = Enum.filter(Changes.squad_fields(), &Map.has_key?(attrs, &1))
+
         with {:ok, draft, squad, fields} <-
                SquadDraft.put(design.draft, attrs, user_scope, fixed_name: true) do
-          squad = put_conflicts(squad, List.wrap(squad["conflicts"]) -- fields)
+          squad = put_conflicts(squad, List.wrap(squad["conflicts"]) -- given)
           {:ok, Map.put(draft, "squad", squad), squad, fields}
         end
     end
@@ -569,6 +573,21 @@ defmodule Helmsman.AgentDesigns.Edit do
       rights: rights
     }
   end
+
+  @doc """
+  A draft agent of `design` as the user may see it (a write's result):
+  someone other than the owner of an `agent_edit` target gets its provider
+  account as `%{"name", "host"}`, never its ID.
+  """
+  @spec shown_entry(AgentDesign.t(), map()) :: map()
+  def shown_entry(%AgentDesign{kind: :agent_edit} = design, entry) do
+    case rights(design) do
+      {:owner, _name} -> entry
+      _other -> redact_entry(entry)
+    end
+  end
+
+  def shown_entry(_design, entry), do: entry
 
   defp redact_baseline(%{"agent" => agent} = baseline),
     do: %{baseline | "agent" => redact_entry(agent)}
