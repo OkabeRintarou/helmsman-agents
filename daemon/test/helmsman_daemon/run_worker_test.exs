@@ -31,6 +31,22 @@ defmodule HelmsmanDaemon.RunWorkerTest do
     :ok
   end
 
+  test "merged definition collision warnings become execution status events" do
+    run = spec(91)
+    run = %{run | agent: %{run.agent | mcp_warnings: ["MCP 服务器 docs 的个人定义被 Agent 自有配置覆盖"]}}
+    {:ok, worker} = Runs.start_run(run, reporter: TestReporter)
+    monitor = Process.monitor(worker)
+    assert_receive {:report, 91, %Report.Events{events: events}, _, _, _}, 2_000
+
+    assert Enum.any?(
+             events,
+             &(&1.type == :status and &1.data.level == :warning and &1.data.message =~ "docs")
+           )
+
+    assert_receive {:report, 91, %Report.Finished{status: :succeeded}, _, _, _}, 2_000
+    assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 2_000
+  end
+
   test "success reports started then events then finished and cleans private files" do
     run = %{spec(1) | resume_session_id: "candidate-session"}
     {:ok, worker} = Runs.start_run(run, reporter: TestReporter)

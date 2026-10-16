@@ -23,6 +23,21 @@ defmodule HelmsmanWeb.API.ActorsControllerTest do
     ctx
   end
 
+  test "REST returns referenced definition names without values", ctx do
+    {:ok, definition} =
+      Helmsman.McpServers.create(ctx.scope, %{
+        name: "personal",
+        config: %{"command" => "npx", "auth" => %{"secret" => "REST_MCP_CANARY"}}
+      })
+
+    managed_agent_fixture(ctx.scope, %{name: "with-mcp", mcp_server_ids: [definition.id]})
+    result = ctx.token |> api_get(w(ctx.slug, "/agents")) |> body!(200)
+    assert_schema(result["data"], "AgentList", ctx.spec)
+    agent = Enum.find(result["data"]["agents"], &(&1["name"] == "with-mcp"))
+    assert [%{"name" => "personal", "source" => "personal"}] = agent["mcp_server_refs"]
+    refute Jason.encode!(result) =~ "REST_MCP_CANARY"
+  end
+
   test "GET /actors lists every identity", ctx do
     data = ctx.token |> api_get(w(ctx.slug, "/actors")) |> body!(200)
     assert_schema(data["data"], "ActorList", ctx.spec)

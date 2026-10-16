@@ -30,7 +30,9 @@ defmodule HelmsmanWeb.AgentLive.ShowTest do
       name: "keel/dev",
       instructions: "## 规则\n\n先写测试",
       env: %{"API_KEY" => "s3cret"},
-      extra_mcp_servers: %{"gh" => %{"command" => "mcp-secret-cmd", "env" => %{"T" => "mcpval"}}}
+      extra_mcp_servers: %{
+        "gh" => %{"command" => "npx", "auth" => "mcp-secret-cmd", "env" => %{"T" => "mcpval"}}
+      }
     })
 
     %{

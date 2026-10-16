@@ -59,7 +59,8 @@ defmodule HelmsmanMCP.Tools.ListAgents do
       archived: agent.archived,
       busy: agent.active_runs > 0,
       queued: agent.queued_runs,
-      wake_on_requested: agent.wake_on_requested
+      wake_on_requested: agent.wake_on_requested,
+      mcp_server_refs: Enum.map(agent.mcp_server_refs, &Map.take(&1, [:name, :source]))
     }
   end
 end

@@ -9,7 +9,8 @@ defmodule HelmsmanProtocolTest do
     assert HelmsmanProtocol.provider_account_headers_version() == 5
     assert HelmsmanProtocol.snapshot_version() == 6
     assert HelmsmanProtocol.snapshot_version() < HelmsmanProtocol.repo_registration_version()
-    assert HelmsmanProtocol.repo_registration_version() == HelmsmanProtocol.version()
+    assert HelmsmanProtocol.repo_registration_version() < HelmsmanProtocol.mcp_env_version()
+    assert HelmsmanProtocol.mcp_env_version() <= HelmsmanProtocol.version()
 
     assert HelmsmanProtocol.provider_account_version() <
              HelmsmanProtocol.local_repositories_version()

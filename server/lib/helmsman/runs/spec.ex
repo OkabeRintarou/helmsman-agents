@@ -46,9 +46,9 @@ defmodule Helmsman.Runs.Spec do
   """
   @spec build(Run.t(), String.t(), String.t(), GitRepo.t() | LocalRepo.t() | nil) ::
           {:ok, RunSpec.t()} | {:error, term()}
-  def build(%Run{} = run, token, base_url, repo \\ nil)
+  def build(%Run{} = run, token, base_url, repo \\ nil, profile \\ nil)
       when is_binary(token) and is_binary(base_url) do
-    with {:ok, profile} <- Agents.execution_config(run.agent_id) do
+    with {:ok, profile} <- execution_profile(run, profile) do
       agent = Repo.get!(Actor, run.agent_id)
       workspace = Repo.get!(Workspace, run.workspace_id)
       task = run.task_id && Repo.get!(Task, run.task_id)
@@ -83,6 +83,7 @@ defmodule Helmsman.Runs.Spec do
           custom_args: profile.custom_args || [],
           env: profile.env || %{},
           extra_mcp_servers: profile.extra_mcp_servers || %{},
+          mcp_warnings: mcp_warnings(profile),
           provider_account: provider_account(run.provider_account_id)
         },
         prompt: prompt(run, ctx),
@@ -94,6 +95,12 @@ defmodule Helmsman.Runs.Spec do
       })
     end
   end
+
+  defp execution_profile(run, nil), do: Agents.execution_config(run.agent_id)
+  defp execution_profile(_run, profile), do: {:ok, profile}
+
+  defp mcp_warnings(%{mcp_warnings: []}), do: nil
+  defp mcp_warnings(profile), do: profile.mcp_warnings
 
   # `add-agent-conversation` decision 8: a design run gets the prompt of
   # its conversation and at most 15 minutes, 5 without output.

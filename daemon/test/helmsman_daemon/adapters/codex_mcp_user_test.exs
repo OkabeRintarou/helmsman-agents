@@ -1,5 +1,6 @@
 defmodule HelmsmanDaemon.Adapters.CodexMCPUserTest do
   use HelmsmanDaemon.Case
+  import ExUnit.CaptureLog
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Codex
   alias HelmsmanDaemon.Adapters.Codex.Config
@@ -94,5 +95,44 @@ defmodule HelmsmanDaemon.Adapters.CodexMCPUserTest do
       refute message =~ "SECRET_SENTINEL"
       assert {:error, {:workspace_prepare, ^message}} = Codex.prepare(spec(1), dir, dir)
     end
+  end
+
+  test "references resolve before Codex conversion with safe missing warnings", %{tmp_dir: dir} do
+    run = spec(20)
+
+    run = %{
+      run
+      | agent: %{
+          run.agent
+          | custom_args: [],
+            extra_mcp_servers: %{
+              "good" => %{
+                "type" => "http",
+                "url" => "https://a.test",
+                "headers" => %{"Authorization" => "Bearer ${env:CANARY}"}
+              },
+              "missing" => %{"command" => "${env:NOT_SET}"}
+            }
+        }
+    }
+
+    {result, log} =
+      with_log(fn -> Codex.prepare(run, dir, dir, %{"CANARY" => "CANARY_CODEX_VALUE"}) end)
+
+    assert {:ok, launch} = result
+    refute log =~ "CANARY_CODEX_VALUE"
+
+    frames =
+      IO.iodata_to_binary(launch.stdin)
+      |> String.split("\n", trim: true)
+      |> Enum.map(&JSON.decode!/1)
+
+    frame = List.last(frames)
+    config = frame["params"]["config"]["mcp_servers"]
+    assert config["good"]["http_headers"]["Authorization"] == "Bearer CANARY_CODEX_VALUE"
+    refute Map.has_key?(config, "missing")
+    assert [{:status, %{level: :warning, message: message}}] = launch.events
+    assert message =~ "NOT_SET"
+    refute inspect(launch.events) =~ "CANARY_CODEX_VALUE"
   end
 end

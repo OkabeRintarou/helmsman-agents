@@ -24,6 +24,29 @@ defmodule HelmsmanWeb.AgentDesignLiveTest do
   defp send_message(view, text),
     do: view |> form("#design-send-form", %{"message" => text}) |> render_submit()
 
+  test "MCP draft names/types, picker and confirmation additions", ctx do
+    {:ok, definition} =
+      Helmsman.McpServers.create(ctx.alice_scope, %{
+        name: "playwright",
+        config: %{"command" => "npx"}
+      })
+
+    ready(ctx, [%{"name" => "fe-dev", "mcp_servers" => [definition.name]}])
+    {view, _} = open_page(ctx)
+    assert has_element?(view, "[data-field=mcp_servers]", "playwright（stdio）")
+    view |> element("#draft-agent-0-edit") |> render_click()
+
+    assert in_portal?(
+             view,
+             "agent-panel",
+             "input[name='agent[mcp_servers][]'][value=playwright]"
+           )
+
+    render_click(view, "close_panel", %{})
+    view |> element("#design-confirm-open") |> render_click()
+    assert in_portal?(view, "design-confirm", "span", "新增 MCP：playwright")
+  end
+
   describe "对话创建页的进入与权限" do
     test "没有进行中的对话: the start area", ctx do
       {view, html} = open_page(ctx)

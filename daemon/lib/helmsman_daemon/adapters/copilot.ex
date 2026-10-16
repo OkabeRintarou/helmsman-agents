@@ -2,7 +2,7 @@ defmodule HelmsmanDaemon.Adapters.Copilot do
   @moduledoc "Isolated Copilot CLI sessions with unattended JSONL output."
   @behaviour HelmsmanDaemon.Adapter
   alias HelmsmanDaemon.Adapters.Copilot.{Args, Environment, Home, Output, Probe}
-  alias HelmsmanDaemon.{AtomicFile, Env, Launch, Paths}
+  alias HelmsmanDaemon.{AtomicFile, Launch, Paths}
   @minimum Version.parse!("1.0.96")
 
   def provider, do: :copilot
@@ -12,7 +12,13 @@ defmodule HelmsmanDaemon.Adapters.Copilot do
   def detect(executor), do: Probe.detect(executable(), executor)
 
   def prepare(spec, run_dir, work_dir),
-    do: prepare(spec, run_dir, work_dir, Env.agent(System.get_env(), spec.agent.env))
+    do:
+      prepare(
+        spec,
+        run_dir,
+        work_dir,
+        HelmsmanDaemon.McpEnv.cli_env(System.get_env(), spec.agent.env)
+      )
 
   def prepare(spec, run_dir, _work_dir, env) do
     case Home.validate() do
@@ -25,7 +31,7 @@ defmodule HelmsmanDaemon.Adapters.Copilot do
     Paths.private_dir!(run_dir)
     logs = Paths.private_dir!(Path.join(run_dir, "copilot-logs"))
     path = Path.join(run_dir, "mcp.json")
-    extra = spec.agent.extra_mcp_servers
+    {extra, mcp_events} = HelmsmanDaemon.McpEnv.resolve(spec.agent.extra_mcp_servers, env)
 
     servers =
       extra
@@ -55,7 +61,8 @@ defmodule HelmsmanDaemon.Adapters.Copilot do
     dropped = env |> Map.new() |> Map.keys() |> Enum.filter(&Environment.drop?/1)
 
     warnings =
-      warning("Ignored Copilot arguments", removed) ++
+      mcp_events ++
+        warning("Ignored Copilot arguments", removed) ++
         warning(
           "Ignored extra MCP servers",
           if(Map.has_key?(extra, "helmsman"), do: ["helmsman"], else: [])

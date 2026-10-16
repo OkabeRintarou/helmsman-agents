@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Fake Claude: assert MCP expansion locally, report a boolean only."""
+import json, os, sys
+if "--version" in sys.argv:
+    print("2.1.99")
+    sys.exit(0)
+path = sys.argv[sys.argv.index("--mcp-config") + 1]
+with open(path) as f:
+    servers = json.load(f)["mcpServers"]
+assert servers["personal"]["env"]["TOKEN"] == os.environ["MCP_E2E_CANARY"]
+assert servers["own"]["headers"]["Authorization"] == "Bearer " + os.environ["MCP_E2E_CANARY"]
+assert "missing" not in servers
+assert os.stat(path).st_mode & 0o777 == 0o600
+print(json.dumps({"type": "system", "subtype": "init", "session_id": "mcp-env-e2e", "mcp_servers": []}))
+print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "MCP local expansion checked; private file mode 0600"}]}}))
+print(json.dumps({"type": "result", "subtype": "success", "session_id": "mcp-env-e2e", "result": "OK", "is_error": False, "usage": {"input_tokens": 1, "output_tokens": 1}}))

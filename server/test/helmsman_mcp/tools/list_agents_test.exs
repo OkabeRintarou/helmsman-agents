@@ -19,6 +19,22 @@ defmodule HelmsmanMCP.Tools.ListAgentsTest do
   defp call(tool, scope, args),
     do: tool.call(args, %Context{tool: tool.name(), scope: scope, args: args, session: nil})
 
+  test "MCP agent reads include personal source names and no stored values", ctx do
+    {:ok, definition} =
+      Helmsman.McpServers.create(ctx.alice_scope, %{
+        name: "personal",
+        config: %{"command" => "uvx", "env" => %{"TOKEN" => "MCP_READ_CANARY"}}
+      })
+
+    {:ok, _} =
+      Helmsman.Agents.update(ctx.alice_scope, ctx.lead.name, %{mcp_server_ids: [definition.id]})
+
+    assert {:ok, %{agents: agents}} = call(ListAgents, ctx.alice_scope, %{})
+    agent = Enum.find(agents, &(&1.name == ctx.lead.name))
+    assert [%{name: "personal", source: "personal"}] = agent.mcp_server_refs
+    refute Jason.encode!(agents) =~ "MCP_READ_CANARY"
+  end
+
   test "the squads with their leader and members", ctx do
     assert {:ok, %{agents: agents, squads: [squad]}} = call(ListAgents, ctx.alice_scope, %{})
     assert Enum.any?(agents, &(&1.name == "keel/lead"))

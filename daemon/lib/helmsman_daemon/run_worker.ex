@@ -14,7 +14,6 @@ defmodule HelmsmanDaemon.RunWorker do
 
   alias HelmsmanDaemon.{
     Adapter,
-    Env,
     EventBuffer,
     Exec,
     Git,
@@ -417,7 +416,9 @@ defmodule HelmsmanDaemon.RunWorker do
           state
           |> persist_members()
           |> reset_idle()
-          |> enqueue(state.prepare_events ++ warnings ++ state.launch.events)
+          |> enqueue(
+            state.prepare_events ++ mcp_warnings(state.spec) ++ warnings ++ state.launch.events
+          )
 
         state =
           report(state, :started, %Report.Started{
@@ -444,6 +445,12 @@ defmodule HelmsmanDaemon.RunWorker do
     if function_exported?(adapter, :init_state, 2),
       do: adapter.init_state(spec, launch),
       else: adapter.init_state(spec)
+  end
+
+  defp mcp_warnings(spec) do
+    Enum.map(spec.agent.mcp_warnings || [], fn message ->
+      {:status, %{level: :warning, message: message}}
+    end)
   end
 
   defp prepare_adapter(adapter, state, run_dir, work_dir) do
@@ -486,7 +493,7 @@ defmodule HelmsmanDaemon.RunWorker do
     }
 
     Keyword.get(state.opts, :base_env, System.get_env())
-    |> Env.agent(state.spec.agent.env)
+    |> HelmsmanDaemon.McpEnv.cli_env(state.spec.agent.env)
     |> Map.merge(own)
     |> Map.merge(
       if(state.spec.repo, do: Git.identity(state.spec.agent.name, server_url(state)), else: %{})

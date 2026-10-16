@@ -48,6 +48,10 @@ defmodule Helmsman.PolicyMatrixTest do
   # a builder `fn scope -> resource end`. Later changes append their rows
   # here.
   @matrix [
+            for role <- @roles, kind <- [:human, :agent] do
+              {:manage_mcp_servers, role, kind, @none,
+               if(kind == :human, do: :ok, else: :forbidden)}
+            end,
             for action <- [
                   :view_agents,
                   :manage_agents,

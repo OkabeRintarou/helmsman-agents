@@ -31,7 +31,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
   import HelmsmanWeb.DesignConversationComponents
   import HelmsmanWeb.AgentComponents, only: [provider_label: 1]
 
-  alias Helmsman.{Actors, AgentDesigns, Events, ProviderAccounts, Runtimes}
+  alias Helmsman.{Actors, AgentDesigns, Events, McpServers, ProviderAccounts, Runtimes}
 
   alias HelmsmanWeb.{
     AgentDesignEdit,
@@ -68,7 +68,7 @@ defmodule HelmsmanWeb.AgentDesignLive do
         start_errors: %{},
         message_errors: [],
         send_warning: nil,
-        lookup: %{runtimes: %{}, accounts: %{}},
+        lookup: %{runtimes: %{}, accounts: %{}, mcp_servers: %{}},
         humans: MapSet.new(),
         agent_form: nil,
         squad_form: nil,
@@ -205,7 +205,12 @@ defmodule HelmsmanWeb.AgentDesignLive do
           MapSet.new()
       end
 
-    assign(socket, lookup: %{runtimes: runtimes, accounts: accounts}, humans: humans)
+    definitions = Map.new(McpServers.design_options(scope.user.id), &{&1.name, &1.type})
+
+    assign(socket,
+      lookup: %{runtimes: runtimes, accounts: accounts, mcp_servers: definitions},
+      humans: humans
+    )
   end
 
   # Check, subscribe, read again (D2).

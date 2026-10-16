@@ -297,7 +297,7 @@ defmodule HelmsmanWeb.AgentLive.FormTest do
                ~s(#agent-form-1-env-A[phx-update="ignore"] input[type="password"][value=""])
              )
 
-      assert in_panel?(view, ~s(#agent-form-1-mcp[phx-update="ignore"] textarea))
+      assert in_panel?(view, ~s(#agent-form-1-mcp[phx-update="ignore"] input[type="hidden"]))
 
       render_patch(view, "/w/#{ctx.ws.slug}/agents/keel/dev")
       render_patch(view, ctx.edit)

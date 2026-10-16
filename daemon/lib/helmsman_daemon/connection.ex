@@ -689,11 +689,25 @@ defmodule HelmsmanDaemon.Connection do
 
   defp now(socket), do: Keyword.get(socket.assigns.opts, :clock, &DateTime.utc_now/0).()
 
+  defp handle_mcp_check(request, socket) do
+    runtime = Enum.find(socket.assigns.runtimes, &(&1.runtime_id == request.runtime_id))
+
+    if runtime && socket.assigns.protocol_version >= HelmsmanProtocol.mcp_env_version() do
+      report = HelmsmanDaemon.McpCheck.execute(request, runtime.provider)
+      {:ok, control(socket, "mcp_check_result", report)}
+    else
+      {:ok, socket}
+    end
+  end
+
   @impl true
   def handle_message(_topic, event, wire, socket) do
     StatusFile.message_received()
 
     case Messages.decode(event, wire) do
+      {:ok, %HelmsmanProtocol.Push.McpCheck{} = request} ->
+        handle_mcp_check(request, socket)
+
       {:ok, %HelmsmanProtocol.Push.RunsAvailable{}} ->
         {:ok, maybe_claim(socket)}
 

@@ -214,7 +214,9 @@ msgstr ""
 #: lib/helmsman_web/live/autopilot_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/query_live.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/spec_components.ex
 #: lib/helmsman_web/spec_review_form.ex
@@ -254,6 +256,7 @@ msgstr ""
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
 #: lib/helmsman_web/live/task_live/transition_panel.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
 #: lib/helmsman_web/local_repo_registration_components.ex
 #: lib/helmsman_web/project_github_form.ex
@@ -404,6 +407,7 @@ msgstr ""
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/dev/ui_live.ex
 #: lib/helmsman_web/live/settings_live/general.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #, elixir-autogen, elixir-format
 msgid "已保存"
@@ -1038,6 +1042,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/runtimes.ex
 #: lib/helmsman_web/live/task_live/index.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #: lib/helmsman_web/project_github_form.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/spec_panels.ex
@@ -1822,6 +1827,7 @@ msgstr ""
 #: lib/helmsman_web/live/query_live.ex
 #: lib/helmsman_web/live/squad_live/show.ex
 #: lib/helmsman_web/live/task_live/show.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/markdown_editor.ex
 #: lib/helmsman_web/spec_version_form.ex
@@ -2145,6 +2151,7 @@ msgstr ""
 #: lib/helmsman_web/live/settings_live/general.ex
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
 #: lib/helmsman_web/live/workspace_live/new.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "地址"
@@ -2640,6 +2647,7 @@ msgstr ""
 #: lib/helmsman_web/agent_form.ex
 #: lib/helmsman_web/live/admin/github_live.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/mcp_editor.ex
 #, elixir-autogen, elixir-format
 msgid "环境变量"
 msgstr ""
@@ -2828,6 +2836,7 @@ msgstr ""
 
 #: lib/helmsman_web/avatar_editor.ex
 #: lib/helmsman_web/markdown_editor.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/spec_version_form.ex
 #, elixir-autogen, elixir-format
 msgid "预览"
@@ -2888,7 +2897,9 @@ msgstr ""
 #: lib/helmsman_web/filter_form.ex
 #: lib/helmsman_web/live/autopilot_live/index.ex
 #: lib/helmsman_web/live/settings_live/runtimes.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #: lib/helmsman_web/local_repo_registration_components.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/provider_account_form.ex
 #: lib/helmsman_web/query_components.ex
 #: lib/helmsman_web/squad_form.ex
@@ -3266,12 +3277,9 @@ msgstr ""
 msgid "CLI 超过无输出上限没有任何输出"
 msgstr ""
 
-#: lib/helmsman_web/agent_form.ex
-#, elixir-autogen, elixir-format
-msgid "JSON 对象，留空不变，填写则整体替换"
-msgstr ""
-
+#: lib/helmsman_web/agent_design_components.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
 #, elixir-autogen, elixir-format
 msgid "MCP 服务器"
 msgstr ""
@@ -3352,6 +3360,7 @@ msgid "依赖满足"
 msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "值"
@@ -3816,11 +3825,6 @@ msgstr ""
 msgid "没有符合条件的 Agent"
 msgstr ""
 
-#: lib/helmsman_web/agent_form.ex
-#, elixir-autogen, elixir-format
-msgid "清除全部"
-msgstr ""
-
 #: lib/helmsman_web/live/agent_live/show.ex
 #: lib/helmsman_web/live/run_live/show.ex
 #: lib/helmsman_web/run_log.ex
@@ -3840,6 +3844,7 @@ msgstr ""
 
 #: lib/helmsman_web/live/agent_live/index.ex
 #: lib/helmsman_web/live/agent_live/show.ex
+#: lib/helmsman_web/mcp_editor.ex
 #, elixir-autogen, elixir-format
 msgid "类型"
 msgstr ""
@@ -4025,17 +4030,7 @@ msgstr ""
 
 #: lib/helmsman_web/agent_form.ex
 #, elixir-autogen, elixir-format
-msgid "额外的 MCP 服务器"
-msgstr ""
-
-#: lib/helmsman_web/agent_form.ex
-#, elixir-autogen, elixir-format
 msgid "额外的 MCP 服务器必须是 JSON 对象"
-msgstr ""
-
-#: lib/helmsman_web/agent_form.ex
-#, elixir-autogen, elixir-format
-msgid "额外的 MCP 服务器（JSON）"
 msgstr ""
 
 #: lib/helmsman_web/live/agent_live/show.ex
@@ -4436,6 +4431,7 @@ msgid "已清空：%{model} 不在运行时上报的模型里"
 msgstr ""
 
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/provider_account_form.ex
 #, elixir-autogen, elixir-format
 msgid "已设置"
@@ -5954,6 +5950,7 @@ msgid "自定义请求头"
 msgstr ""
 
 #: lib/helmsman_web/live/user_live/provider_accounts.ex
+#: lib/helmsman_web/mcp_editor.ex
 #, elixir-autogen, elixir-format
 msgid "请求头"
 msgstr ""
@@ -6886,6 +6883,8 @@ msgstr ""
 msgid "没有插话 %{agent}：%{reason}"
 msgstr ""
 
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#: lib/helmsman_web/mcp_editor.ex
 #: lib/helmsman_web/spec_version_form.ex
 #: lib/helmsman_web/task_collab.ex
 #, elixir-autogen, elixir-format
@@ -8639,6 +8638,7 @@ msgid "外接 Agent"
 msgstr ""
 
 #: lib/helmsman_web/live/settings_live/data.ex
+#: lib/helmsman_web/mcp_editor.ex
 #, elixir-autogen, elixir-format
 msgid "导入"
 msgstr ""
@@ -11615,3 +11615,260 @@ msgstr "Reassign to the squad or @%{squad} in Feedback to start the leader"
 #, elixir-autogen, elixir-format
 msgid "已改为进行中。改状态不会启动 %{name}。"
 msgstr "Changed to In Progress. Changing status does not start %{name}."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "Codex 不支持 sse，此服务器会被丢弃。"
+msgstr "Codex does not support SSE; this server will be omitted."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "Filesystem（请修改目录）"
+msgstr "Filesystem (change the directory)"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub（本地容器）"
+msgstr "GitHub (local container)"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "GitHub（远程）"
+msgstr "GitHub (remote)"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "不要把密钥写进参数或地址，用本机变量或固定值请求头。"
+msgstr ""
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "与自有服务器同名，未生效"
+msgstr "Same name as an agent-owned server; inactive"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "个人定义"
+msgstr "Personal definition"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "从模板添加"
+msgstr "Add from template"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "其他字段"
+msgstr "Other fields"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "删除 MCP 服务器？"
+msgstr "Delete MCP server?"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "参数（每行一项）"
+msgstr "Arguments (one per line)"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "同名服务器已存在，覆盖它？"
+msgstr "A server with this name exists. Overwrite it?"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "命令"
+msgstr "Command"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "命令已找到"
+msgstr "Command found"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "命令未找到"
+msgstr "Command not found"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "固定值"
+msgstr "Fixed value"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "守护进程版本过低，请升级后检查"
+msgstr "Upgrade the daemon before checking."
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "定义不存在"
+msgstr "Definition not found"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "工作目录"
+msgstr "Working directory"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "已删除"
+msgstr "Deleted"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "引用本机 %{names}"
+msgstr "Uses local %{names}"
+
+#: lib/helmsman_web/agent_form.ex
+#: lib/helmsman_web/components/layouts.ex
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "我的 MCP 服务器"
+msgstr "My MCP servers"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "执行机器离线，无法检查"
+msgstr "The execution machine is offline; checking is unavailable."
+
+#: lib/helmsman_web/agent_design_components.ex
+#, elixir-autogen, elixir-format
+msgid "新增 MCP：%{names}"
+msgstr "New MCP references: %{names}"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "无法检查，请确认运行时可用"
+msgstr "Cannot check. Verify that the runtime is available."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "无法识别的格式"
+msgstr "Unrecognized format"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "最多 32 个个人定义"
+msgstr "Up to 32 personal definitions"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "服务器名不能重复"
+msgstr "Server names must be unique."
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "服务器没有命令或地址，会被丢弃"
+msgstr "The server has no command or URL and will be omitted."
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "未绑定运行时，无法检查"
+msgstr "No runtime is bound; checking is unavailable."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "本机变量"
+msgstr "Local variable"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "本机检查"
+msgstr "Check on machine"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "检查超时，请重试"
+msgstr "Check timed out. Try again."
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "正在检查…"
+msgstr "Checking…"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "此 CLI 不支持该类型，服务器会被丢弃"
+msgstr "This CLI does not support this type; the server will be omitted."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "环境变量与请求头"
+msgstr "Environment variables and headers"
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "管理个人定义"
+msgstr "Manage personal definitions"
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "缺少环境变量 %{names}"
+msgstr "Missing environment variables: %{names}"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "表单"
+msgstr "Form"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "被 %{n} 个 Agent 使用"
+msgstr "Used by %{n} agents"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "请先取消这些 Agent 的引用：%{agents}"
+msgstr "Remove these agents’ references first: %{agents}"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "请在执行机器上设置："
+msgstr "Set these on the execution machine:"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "请填写一个有效的 MCP 服务器条目"
+msgstr "Enter one valid MCP server entry."
+
+#: lib/helmsman_web/live/agent_live/show.ex
+#, elixir-autogen, elixir-format
+msgid "请等待 10 秒再检查"
+msgstr "Wait 10 seconds before checking again."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "请输入有效的 JSON 值"
+msgstr "Enter a valid JSON value."
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "输入变量无法表示，请手动填写"
+msgstr "Input variables are unsupported; enter a value manually."
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "还没有 MCP 服务器"
+msgstr "No MCP servers yet"
+
+#: lib/helmsman_web/agent_form.ex
+#, elixir-autogen, elixir-format
+msgid "这个 Agent 专用"
+msgstr "Only for this agent"
+
+#: lib/helmsman_web/live/user_live/mcp_servers.ex
+#, elixir-autogen, elixir-format
+msgid "这些服务器只给你自己的 Agent 用，在你的 Agent 所在的机器上运行；密钥建议用本机变量。"
+msgstr ""
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "键"
+msgstr "Key"
+
+#: lib/helmsman_web/mcp_editor.ex
+#, elixir-autogen, elixir-format
+msgid "默认值被忽略"
+msgstr "Default value ignored"

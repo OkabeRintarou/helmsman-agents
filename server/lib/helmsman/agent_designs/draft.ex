@@ -36,6 +36,7 @@ defmodule Helmsman.AgentDesigns.Draft do
     effort: :string,
     instructions: :string,
     capabilities: {:array, :string},
+    mcp_servers: {:array, :string},
     access: :string,
     max_concurrency: :integer,
     timeout_minutes: :integer,
@@ -50,6 +51,7 @@ defmodule Helmsman.AgentDesigns.Draft do
     model: nil,
     effort: nil,
     capabilities: [],
+    mcp_servers: [],
     access: "owner_only",
     max_concurrency: 2,
     timeout_minutes: 120,
@@ -70,7 +72,7 @@ defmodule Helmsman.AgentDesigns.Draft do
   @spec fields() :: [String.t()]
   def fields,
     do:
-      ~w(name provider description runtime_id provider_account_id model effort instructions capabilities access max_concurrency timeout_minutes idle_timeout_minutes)
+      ~w(name provider description runtime_id provider_account_id model effort instructions capabilities mcp_servers access max_concurrency timeout_minutes idle_timeout_minutes)
 
   @doc "The Ecto types of the draft fields (atom keys)."
   @spec types() :: %{atom() => term()}
@@ -232,9 +234,22 @@ defmodule Helmsman.AgentDesigns.Draft do
       end)
 
   defp validate_new(user_scope, entry) do
-    case Agents.validate_new(user_scope, create_attrs(entry)) do
+    case validate_create(user_scope, entry) do
       :ok -> []
       {:error, cs} -> cs.errors
+    end
+  end
+
+  def validate_create(scope, entry) do
+    with {:ok, attrs} <- create_attrs(entry, scope), do: Agents.validate_new(scope, attrs)
+  end
+
+  def create_attrs(entry, scope) do
+    attrs = create_attrs(entry)
+
+    case Helmsman.McpServers.resolve_names(scope, attrs[:mcp_servers] || []) do
+      {:ok, ids} -> {:ok, attrs |> Map.delete(:mcp_servers) |> Map.put(:mcp_server_ids, ids)}
+      {:error, message} -> {:error, error_changeset([{:mcp_servers, {message, []}}])}
     end
   end
 

@@ -26,6 +26,8 @@ defmodule Helmsman.Dispatch do
   alias Helmsman.Workspaces
   alias Helmsman.Workspaces.Membership
 
+  alias Helmsman.McpServers.Entry, as: McpEntry
+
   @max_instructions_bytes 8192
   @max_rounds 3
   @open_statuses [:new, :in_progress]
@@ -378,7 +380,7 @@ defmodule Helmsman.Dispatch do
   `HelmsmanProtocol.provider_account_version/0` (`:daemon_outdated`, which
   claiming would leave queued; `add-provider-accounts` decision 4). An
   offline runtime is `:ok`. Neither the trigger chain nor the
-  rate is checked: this is a hint, `enqueue/3` checks again. Two queries,
+  rate is checked: this is a hint, `enqueue/3` checks again. Three queries,
   whatever the number of agents.
   """
   @spec availability(Scope.t()) :: {:ok, %{String.t() => availability()}} | {:error, :forbidden}
@@ -403,12 +405,20 @@ defmodule Helmsman.Dispatch do
         )
 
       role = user_id && member_role(workspace_id, user_id)
+      mcp = Helmsman.McpServers.effective_many(Enum.map(agents, &elem(&1, 1)))
 
       {:ok,
        Map.new(agents, fn {actor, profile, runtime, {daemon_name, protocol, headers}} ->
          {actor.name,
           %{
-            result: dispatchable(profile, actor, {user_id, role}, {runtime, protocol, headers}),
+            result:
+              dispatchable(
+                profile,
+                actor,
+                {user_id, role},
+                {runtime, protocol, headers},
+                elem(mcp[actor.id], 0)
+              ),
             runtime: runtime && runtime_view(runtime, daemon_name)
           }}
        end)}
@@ -424,25 +434,37 @@ defmodule Helmsman.Dispatch do
         )
       )
 
-  defp dispatchable(profile, actor, user, {runtime, protocol, headers}) do
+  defp dispatchable(profile, actor, user, {runtime, protocol, headers}, mcp) do
     case TriggerRule.check(profile, actor, user) do
-      :ok when is_nil(runtime) -> {:skipped, :no_runtime}
-      :ok when not is_nil(runtime.disabled_at) -> {:skipped, :runtime_disabled}
-      :ok -> if outdated?(profile, protocol, headers), do: {:skipped, :daemon_outdated}, else: :ok
-      {:error, reason} -> {:skipped, reason}
+      :ok when is_nil(runtime) ->
+        {:skipped, :no_runtime}
+
+      :ok when not is_nil(runtime.disabled_at) ->
+        {:skipped, :runtime_disabled}
+
+      :ok ->
+        if outdated?(profile, protocol, headers, mcp), do: {:skipped, :daemon_outdated}, else: :ok
+
+      {:error, reason} ->
+        {:skipped, reason}
     end
   end
 
   # A daemon that never reported its version counts as outdated.
-  defp outdated?(%AgentProfile{provider_account_id: nil}, _protocol, _headers), do: false
+  defp outdated?(profile, protocol, headers, mcp) do
+    mcp_required =
+      if McpEntry.contains_refs?(mcp),
+        do: HelmsmanProtocol.mcp_env_version(),
+        else: 0
 
-  defp outdated?(_profile, protocol, headers) do
-    required =
-      if headers in [nil, []],
-        do: HelmsmanProtocol.provider_account_version(),
-        else: HelmsmanProtocol.provider_account_headers_version()
+    account_required =
+      cond do
+        is_nil(profile.provider_account_id) -> 0
+        headers in [nil, []] -> HelmsmanProtocol.provider_account_version()
+        true -> HelmsmanProtocol.provider_account_headers_version()
+      end
 
-    (protocol || 0) < required
+    (protocol || 0) < max(mcp_required, account_required)
   end
 
   defp runtime_view(runtime, daemon_name) do

@@ -27,6 +27,7 @@ defmodule Helmsman.Application do
       Helmsman.Presence,
       {Helmsman.RateLimit, clean_period: :timer.minutes(1)},
       HelmsmanMCP.Supervisor,
+      {Helmsman.McpServers.Check, []},
       # `add-autopilots` decision 5: reconcile the schedules once at boot.
       Supervisor.child_spec(
         {Task, fn -> if boot_sweep?(), do: Helmsman.Autopilots.sweep_soon() end},

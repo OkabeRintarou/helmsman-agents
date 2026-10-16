@@ -831,7 +831,7 @@ defmodule Helmsman.AgentDesigns do
   defp validate_all(scope, agents) do
     errors =
       Enum.reduce(agents, %{}, fn entry, acc ->
-        case Agents.validate_new(scope, Draft.create_attrs(entry)) do
+        case Draft.validate_create(scope, entry) do
           :ok -> acc
           {:error, cs} -> Map.put(acc, entry["name"], cs)
         end
@@ -844,7 +844,10 @@ defmodule Helmsman.AgentDesigns do
   # errors are returned and everything rolls back.
   defp create_all(scope, agents) do
     Enum.reduce_while(agents, {:ok, []}, fn entry, {:ok, created} ->
-      case Agents.insert_new(scope, Draft.create_attrs(entry)) do
+      result =
+        with {:ok, attrs} <- Draft.create_attrs(entry, scope), do: Agents.insert_new(scope, attrs)
+
+      case result do
         {:ok, view} ->
           {:cont, {:ok, created ++ [view]}}
 
@@ -1073,6 +1076,7 @@ defmodule Helmsman.AgentDesigns do
          options:
            design
            |> base_options()
+           |> Map.put(:mcp_servers, Helmsman.McpServers.design_options(design.user_id) |> Enum.map(&Map.drop(&1, [:id])))
            |> put_squad_options(design),
          limits: %{max_agents: Draft.max_agents(), field_rules: Options.rules()}
        }

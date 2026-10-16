@@ -55,7 +55,7 @@ defmodule Helmsman.AgentsTest do
     agent =
       managed_agent_fixture(ctx.scope, %{
         env: %{"KEY" => "execution-secret"},
-        extra_mcp_servers: %{"private" => %{"token" => "mcp-secret"}},
+        extra_mcp_servers: %{"private" => %{"command" => "npx", "token" => "mcp-secret"}},
         instructions: "Execute this",
         custom_args: ["--verbose"]
       })
@@ -63,7 +63,11 @@ defmodule Helmsman.AgentsTest do
     actor = Repo.get_by!(Actor, workspace_id: ctx.workspace.id, name: agent.name)
     assert {:ok, %AgentProfile{} = config} = Agents.execution_config(actor.id)
     assert config.env == %{"KEY" => "execution-secret"}
-    assert config.extra_mcp_servers == %{"private" => %{"token" => "mcp-secret"}}
+
+    assert config.extra_mcp_servers == %{
+             "private" => %{"command" => "npx", "token" => "mcp-secret"}
+           }
+
     assert config.instructions == "Execute this"
     assert config.custom_args == ["--verbose"]
     assert config.runtime_id
@@ -126,7 +130,7 @@ defmodule Helmsman.AgentsTest do
     agent =
       managed_agent_fixture(ctx.scope, %{
         env: %{"A" => "stored-secret", "B" => "delete-me"},
-        extra_mcp_servers: %{"tool" => %{"key" => "mcp-secret"}}
+        extra_mcp_servers: %{"tool" => %{"command" => "npx", "key" => "mcp-secret"}}
       })
 
     Events.subscribe(Events.topic(:workspace, ctx.workspace.id))
@@ -150,7 +154,7 @@ defmodule Helmsman.AgentsTest do
     assert {:ok, _} =
              Agents.update(ctx.scope, agent.name, %{
                env: %{"B" => nil, "C" => "new-secret"},
-               extra_mcp_servers: %{"replacement" => %{}}
+               extra_mcp_servers: %{"replacement" => %{"command" => "npx"}}
              })
 
     assert_receive {:agents_changed}
@@ -160,7 +164,10 @@ defmodule Helmsman.AgentsTest do
              "C" => "new-secret"
            }
 
-    assert Repo.get!(AgentProfile, profile.id).extra_mcp_servers == %{"replacement" => %{}}
+    assert Repo.get!(AgentProfile, profile.id).extra_mcp_servers == %{
+             "replacement" => %{"command" => "npx"}
+           }
+
     assert {:ok, _} = Agents.update(ctx.scope, agent.name, %{extra_mcp_servers: nil})
     assert Repo.get!(AgentProfile, profile.id).extra_mcp_servers == nil
   end
@@ -169,7 +176,7 @@ defmodule Helmsman.AgentsTest do
     agent =
       managed_agent_fixture(ctx.scope, %{
         env: %{"A" => "stored-secret"},
-        extra_mcp_servers: %{"tool" => %{"key" => "mcp-secret"}}
+        extra_mcp_servers: %{"tool" => %{"command" => "npx", "key" => "mcp-secret"}}
       })
 
     Events.subscribe(Events.topic(:workspace, ctx.workspace.id))
@@ -338,6 +345,17 @@ defmodule Helmsman.AgentsTest do
 
   defp contains_secret?(value, secret) when is_tuple(value),
     do: value |> Tuple.to_list() |> contains_secret?(secret)
+
+  test "legacy invalid MCP is untouched when changing model, and empty map clears it", ctx do
+    agent = managed_agent_fixture(ctx.scope)
+    profile = Repo.get_by!(AgentProfile, actor_id: agent.actor_id)
+    legacy = %{"my docs" => %{"token" => "legacy-secret"}}
+    Repo.update!(Ecto.Changeset.change(profile, extra_mcp_servers: legacy))
+    assert {:ok, _} = Agents.update(ctx.scope, agent.name, %{model: "new-model"})
+    assert Repo.get_by!(AgentProfile, actor_id: agent.actor_id).extra_mcp_servers == legacy
+    assert {:ok, _} = Agents.update(ctx.scope, agent.name, %{extra_mcp_servers: %{}})
+    assert Repo.get_by!(AgentProfile, actor_id: agent.actor_id).extra_mcp_servers == %{}
+  end
 
   defp contains_secret?(_, _), do: false
 end

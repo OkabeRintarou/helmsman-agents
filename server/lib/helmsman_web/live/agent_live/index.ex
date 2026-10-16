@@ -120,6 +120,13 @@ defmodule HelmsmanWeb.AgentLive.Index do
   end
 
   @impl true
+  def handle_event("mcp_validate", params, socket),
+    do: {:reply, HelmsmanWeb.McpEditor.validate_reply(params), socket}
+
+  def handle_event("mcp_import", params, socket) do
+    {:reply, HelmsmanWeb.McpEditor.import_reply(params), socket}
+  end
+
   def handle_event("agent_form_" <> _ = event, params, socket) do
     case AgentForm.handle_event(event, params, socket) do
       {:saved, view, socket} ->

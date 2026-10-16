@@ -24,6 +24,7 @@ defmodule HelmsmanWeb.AgentDesignComponents do
   def field_label("model"), do: dgettext("ui", "模型")
   def field_label("effort"), do: dgettext("ui", "推理强度")
   def field_label("instructions"), do: dgettext("ui", "指令")
+  def field_label("mcp_servers"), do: dgettext("ui", "MCP 服务器")
   def field_label("capabilities"), do: dgettext("ui", "能力")
   def field_label("access"), do: dgettext("ui", "谁能触发")
   def field_label("max_concurrency"), do: dgettext("ui", "并发上限")
@@ -406,6 +407,13 @@ defmodule HelmsmanWeb.AgentDesignComponents do
         {dgettext("ui", "它能在工作区里新建任务并指派")}
       </p>
 
+      <p :if={(@agent["mcp_servers"] || []) != []} data-field="mcp_servers" class="text-label">
+        <span>{dgettext("ui", "MCP 服务器")}</span>
+        · {Enum.map_join(@agent["mcp_servers"], ", ", fn name ->
+          type = Map.get(Map.get(@lookup, :mcp_servers, %{}), name)
+          if type, do: "#{name}（#{type}）", else: name
+        end)}
+      </p>
       <details :if={(@agent["instructions"] || "") != ""} data-field="instructions">
         <summary class="cursor-pointer text-label text-fg-muted">
           {dgettext("ui", "指令（%{size}）", size: @size)}
@@ -507,6 +515,9 @@ defmodule HelmsmanWeb.AgentDesignComponents do
           data-warn="create_tasks"
         >
           {dgettext("ui", "可以建任务")}
+        </.badge>
+        <.badge :if={(a["mcp_servers"] || []) != []} tone={:warning}>
+          {dgettext("ui", "新增 MCP：%{names}", names: Enum.join(a["mcp_servers"], ", "))}
         </.badge>
       </li>
     </ul>

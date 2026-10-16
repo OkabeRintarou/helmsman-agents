@@ -311,6 +311,12 @@ defmodule HelmsmanWeb.Layouts do
         label: dgettext("ui", "供应商账号"),
         icon: "lucide-key-round",
         navigate: "/users/settings/provider-accounts"
+      },
+      %{
+        id: "hm-mcp-servers",
+        label: dgettext("ui", "我的 MCP 服务器"),
+        icon: "lucide-plug",
+        navigate: "/users/settings/mcp-servers"
       }
     ]
 
@@ -417,7 +423,7 @@ defmodule HelmsmanWeb.Layouts do
   """
   attr :flash, :map, required: true
   attr :current_scope, :map, required: true
-  attr :active, :atom, required: true, values: [:account, :provider_accounts]
+  attr :active, :atom, required: true, values: [:account, :provider_accounts, :mcp_servers]
 
   attr :avatar, :map,
     default: %{},
@@ -440,6 +446,9 @@ defmodule HelmsmanWeb.Layouts do
       </:tab>
       <:tab navigate="/users/settings/provider-accounts" active={@active == :provider_accounts}>
         {dgettext("ui", "供应商账号")}
+      </:tab>
+      <:tab navigate="/users/settings/mcp-servers" active={@active == :mcp_servers}>
+        {dgettext("ui", "我的 MCP 服务器")}
       </:tab>
       {render_slot(@inner_block)}
     </.settings_frame>

@@ -99,7 +99,7 @@ defmodule HelmsmanWeb.AgentFormTest do
 
       assert Map.keys(attrs) |> Enum.sort() ==
                Enum.sort(~w(name description provider runtime_id provider_account_id model effort
-                            instructions access capabilities max_concurrency timeout_minutes
+                            instructions access capabilities mcp_servers max_concurrency timeout_minutes
                             idle_timeout_minutes))
     end
 

@@ -45,6 +45,12 @@ defmodule HelmsmanMCP.Tools.ProposeAgent do
       effort:
         {:meta, {:either, {:string, nil}},
          [description: "Reasoning effort, from the runtime's list; null: the CLI default."]},
+      mcp_servers:
+        {:meta, {:either, {{:list, :string}, nil}},
+         [
+           description:
+             "Personal MCP definition names selected from get_design, at most 16. No server configuration or values; null: []."
+         ]},
       capabilities:
         {:meta, {:either, {{:list, :string}, nil}},
          [description: "[] or [\"create_tasks\"]; null: []."]},

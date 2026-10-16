@@ -12,10 +12,10 @@ defmodule HelmsmanProtocol.RepoRegistrationTest do
 
   test "registration is protocol 7, the current version, and the minimum stays 1" do
     assert @vr == 7
-    assert HelmsmanProtocol.version() == @vr
+    assert HelmsmanProtocol.version() >= @vr
     assert HelmsmanProtocol.min_version() == 1
     assert HelmsmanProtocol.compatible?(@vr)
-    refute HelmsmanProtocol.compatible?(@vr + 1)
+    refute HelmsmanProtocol.compatible?(HelmsmanProtocol.version() + 1)
   end
 
   test "roundtrip: register, a two-item browse result and a change result" do

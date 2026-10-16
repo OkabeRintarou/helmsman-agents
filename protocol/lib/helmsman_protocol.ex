@@ -3,7 +3,7 @@ defmodule HelmsmanProtocol do
   Wire protocol shared by the Helmsman server and the Helmsman daemon.
   """
 
-  @version 7
+  @version 8
   @providers ~w(claude codex copilot cursor)a
 
   @doc """
@@ -13,8 +13,8 @@ defmodule HelmsmanProtocol do
 
   ## Examples
 
-      iex> HelmsmanProtocol.version()
-      7
+      iex> HelmsmanProtocol.version() >= HelmsmanProtocol.mcp_env_version()
+      true
 
   """
   @spec version() :: pos_integer()
@@ -43,6 +43,10 @@ defmodule HelmsmanProtocol do
   @spec repo_registration_version() :: pos_integer()
   def repo_registration_version, do: 7
 
+  @doc "Protocol version that introduced MCP environment references and local checks."
+  @spec mcp_env_version() :: pos_integer()
+  def mcp_env_version, do: 8
+
   @doc "Returns the oldest protocol version accepted by this build."
   @spec min_version() :: pos_integer()
   def min_version, do: 1
@@ -64,7 +68,9 @@ defmodule HelmsmanProtocol do
       true
       iex> HelmsmanProtocol.compatible?(7)
       true
-      iex> HelmsmanProtocol.compatible?(8)
+      iex> HelmsmanProtocol.compatible?(HelmsmanProtocol.mcp_env_version())
+      true
+      iex> HelmsmanProtocol.compatible?(HelmsmanProtocol.version() + 1)
       false
   """
   @spec compatible?(term()) :: boolean()

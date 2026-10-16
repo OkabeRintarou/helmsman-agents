@@ -2,7 +2,7 @@ defmodule HelmsmanDaemon.Adapters.Codex do
   @moduledoc "Unattended Codex app-server with a shared Codex home and per-thread MCP."
   @behaviour HelmsmanDaemon.Adapter
   alias HelmsmanDaemon.Adapters.Codex.{Config, Home, Output, Provider, Source, Vendor}
-  alias HelmsmanDaemon.{Env, Exec, Launch}
+  alias HelmsmanDaemon.{Exec, Launch}
   @minimum Version.parse!("0.162.0")
   @efforts ~w(low medium high xhigh)
   def vendor, do: Vendor.infer()
@@ -38,16 +38,24 @@ defmodule HelmsmanDaemon.Adapters.Codex do
   end
 
   def prepare(spec, _run_dir, work_dir) do
-    prepare(spec, nil, work_dir, Env.agent(System.get_env(), spec.agent.env))
+    prepare(spec, nil, work_dir, HelmsmanDaemon.McpEnv.cli_env(System.get_env(), spec.agent.env))
   end
 
   def prepare(spec, _run_dir, work_dir, env) do
     with {:ok, location} <- Home.resolve(),
          {:ok, config} <- Config.read_validated(location),
          :ok <- Config.project_config(work_dir) do
+      {extra, mcp_events} = HelmsmanDaemon.McpEnv.resolve(spec.agent.extra_mcp_servers, env)
+      spec = %{spec | agent: %{spec.agent | extra_mcp_servers: extra}}
       home = Home.prepare(location)
       env = Map.put(Map.new(env), "CODEX_HOME", home)
       provider_result = check_provider(spec, home, env, config)
+
+      provider_result =
+        case provider_result do
+          {:ok, warnings} -> {:ok, mcp_events ++ warnings}
+          error -> error
+        end
 
       finish_prepare(provider_result, spec, work_dir, location, config)
     else

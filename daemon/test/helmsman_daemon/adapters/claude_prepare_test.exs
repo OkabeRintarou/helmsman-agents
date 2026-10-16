@@ -1,5 +1,6 @@
 defmodule HelmsmanDaemon.Adapters.ClaudePrepareTest do
   use HelmsmanDaemon.Case
+  import ExUnit.CaptureLog
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Claude
 
@@ -150,5 +151,37 @@ defmodule HelmsmanDaemon.Adapters.ClaudePrepareTest do
     end
 
     assert {:error, {:workspace_prepare, _}} = Claude.prepare(run, Path.join(dir, "missing"), dir)
+  end
+
+  test "local references expand before writing private MCP; missing server is dropped" do
+    run = spec(20)
+
+    run = %{
+      run
+      | agent: %{
+          run.agent
+          | custom_args: [],
+            extra_mcp_servers: %{
+              "good" => %{"command" => "npx", "env" => %{"TOKEN" => "${env:CANARY}"}},
+              "missing" => %{"command" => "${env:NOT_SET}"}
+            }
+        }
+    }
+
+    dir = Paths.private_dir!(Paths.run(20))
+
+    {result, log} =
+      with_log(fn -> Claude.prepare(run, dir, dir, %{"CANARY" => "CANARY_CLAUDE_VALUE"}) end)
+
+    assert {:ok, launch} = result
+    refute log =~ "CANARY_CLAUDE_VALUE"
+    path = Path.join(dir, "mcp.json")
+    config = JSON.decode!(File.read!(path))["mcpServers"]
+    assert config["good"]["env"]["TOKEN"] == "CANARY_CLAUDE_VALUE"
+    refute Map.has_key?(config, "missing")
+    assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+    assert [{:status, %{level: :warning, message: message}}] = launch.events
+    assert message =~ "NOT_SET"
+    refute inspect(launch.events) =~ "CANARY_CLAUDE_VALUE"
   end
 end

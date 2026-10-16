@@ -53,6 +53,7 @@ defmodule Helmsman.Runs.Claim do
   """
 
   import Ecto.Query, warn: false
+  require Logger
 
   alias Helmsman.Actors.Actor
   alias Helmsman.AgentDesigns
@@ -71,6 +72,8 @@ defmodule Helmsman.Runs.Claim do
   alias Helmsman.Tasks.Task
   alias Helmsman.Tx
   alias Helmsman.Workspaces.Membership
+
+  alias Helmsman.McpServers.Entry, as: McpEntry
 
   @batch 50
   @max_scan 200
@@ -183,7 +186,9 @@ defmodule Helmsman.Runs.Claim do
          true <- task_free?(run),
          {:ok, locked} <- lock_rows(run, state.daemon.user_id),
          true <- agent_free?(locked.profile),
-         true <- account_supported?(locked.profile, state.protocol) do
+         true <- account_supported?(locked.profile, state.protocol),
+         locked <- effective_mcp(locked),
+         true <- mcp_supported?(locked.profile, state.protocol) do
       # Read after the task lock and the check that the task has no active
       # run: the run a trigger waits for has ended, its facts are final.
       # A design run's conversation is read without a lock
@@ -217,6 +222,23 @@ defmodule Helmsman.Runs.Claim do
 
   defp agent_free?(%AgentProfile{} = profile),
     do: active_count(:agent_id, profile.actor_id) < profile.max_concurrency
+
+  defp effective_mcp(%{profile: nil} = locked), do: locked
+
+  defp effective_mcp(locked) do
+    {mcp, warnings} = Helmsman.McpServers.effective(locked.profile)
+
+    locked
+    |> Map.put(:mcp_own_names, Map.keys(locked.profile.extra_mcp_servers || %{}))
+    |> Map.put(:profile, %{locked.profile | extra_mcp_servers: mcp, mcp_warnings: warnings})
+  end
+
+  defp mcp_supported?(nil, _protocol), do: true
+
+  defp mcp_supported?(profile, protocol) do
+    protocol >= HelmsmanProtocol.mcp_env_version() or
+      not McpEntry.contains_refs?(profile.extra_mcp_servers)
+  end
 
   defp account_supported?(nil, _protocol), do: true
   defp account_supported?(%AgentProfile{provider_account_id: nil}, _protocol), do: true
@@ -429,13 +451,30 @@ defmodule Helmsman.Runs.Claim do
       )
 
     {:ok, token} = RunTokens.issue(run)
-    {:ok, spec} = Spec.build(run, token, state.base_url, repo)
+    {:ok, spec} = Spec.build(run, token, state.base_url, repo, locked.profile)
+    log_mcp_collisions(run, locked)
     # A claimed run makes its task wait (`run`): its dependents are told
     # (`add-dependency-dispatch` decision 6). After the commit, so that
     # claiming never waits on another transaction's job insert.
     Tx.after_commit(fn -> Dependencies.changed(run.task_id) end)
     Tx.after_commit(fn -> claimed_event(run) end)
     %{state | slots: state.slots - 1, specs: [spec | state.specs]}
+  end
+
+  defp log_mcp_collisions(_run, %{profile: %{mcp_warnings: []}}), do: :ok
+
+  defp log_mcp_collisions(run, locked) do
+    own = MapSet.new(locked.mcp_own_names, &String.downcase/1)
+
+    for ref <- Helmsman.McpServers.references([run.agent_id])[run.agent_id] || [],
+        MapSet.member?(own, String.downcase(ref.name)) do
+      Tx.after_commit(fn ->
+        Logger.warning("Personal MCP definition shadowed by agent configuration",
+          agent_id: run.agent_id,
+          mcp_definition_name: ref.name
+        )
+      end)
+    end
   end
 
   # The metric `helmsman.runs.claim.wait_ms`: from creation to claim. Only

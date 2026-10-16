@@ -18,7 +18,8 @@ defmodule HelmsmanProtocol.Messages do
     {"finished", Report.Finished},
     {"rotate_token", Report.RotateToken},
     {"repo_browse_result", Report.RepoBrowseResult},
-    {"repo_change_result", Report.RepoChangeResult}
+    {"repo_change_result", Report.RepoChangeResult},
+    {"mcp_check_result", Report.McpCheckResult}
   ]
   @pushes [
     {"runs_available", Push.RunsAvailable},
@@ -28,7 +29,8 @@ defmodule HelmsmanProtocol.Messages do
     {"revoked", Push.Revoked},
     {"repo_browse", Push.RepoBrowse},
     {"repo_register", Push.RepoRegister},
-    {"repo_remove", Push.RepoRemove}
+    {"repo_remove", Push.RepoRemove},
+    {"mcp_check", Push.McpCheck}
   ]
   @replies %{
     "join" => Reply.Join,
@@ -46,9 +48,12 @@ defmodule HelmsmanProtocol.Messages do
     "finished" => Reply.Empty,
     "rotate_token" => Reply.RotateToken,
     "repo_browse_result" => Reply.Empty,
-    "repo_change_result" => Reply.Empty
+    "repo_change_result" => Reply.Empty,
+    "mcp_check_result" => Reply.Empty
   }
   @since %{
+    "mcp_check" => HelmsmanProtocol.mcp_env_version(),
+    "mcp_check_result" => HelmsmanProtocol.mcp_env_version(),
     "repo_status" => HelmsmanProtocol.local_repositories_version(),
     "cleanup_check" => HelmsmanProtocol.cleanup_version(),
     "repo_browse" => HelmsmanProtocol.repo_registration_version(),
@@ -191,8 +196,18 @@ defmodule HelmsmanProtocol.Messages do
   defp encode_run(run, version) do
     with {:ok, run} <- encode_account(run, version),
          {:ok, run} <- encode_headers(run, version),
-         {:ok, run} <- encode_mode(run, version) do
+         {:ok, run} <- encode_mode(run, version),
+         {:ok, run} <- encode_mcp_warnings(run, version) do
       encode_repo(run, version)
+    end
+  end
+
+  defp encode_mcp_warnings(run, version) do
+    if version >= HelmsmanProtocol.mcp_env_version() do
+      {:ok, run}
+    else
+      # Older daemons can run configurations without local references.
+      {:ok, drop_in(run, "agent", "mcp_warnings")}
     end
   end
 

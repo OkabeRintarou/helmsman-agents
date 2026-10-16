@@ -1,5 +1,6 @@
 defmodule HelmsmanDaemon.Adapters.CopilotPrepareTest do
   use HelmsmanDaemon.Case
+  import ExUnit.CaptureLog
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Copilot
 
@@ -126,5 +127,39 @@ defmodule HelmsmanDaemon.Adapters.CopilotPrepareTest do
     refute "--session-id" in launch.argv
     refute "--model" in launch.argv
     assert Copilot.init_state(run, launch).session_id == "existing"
+  end
+
+  test "local references expand before private MCP and missing entries produce safe warnings" do
+    run = spec(20)
+
+    run = %{
+      run
+      | agent: %{
+          run.agent
+          | custom_args: [],
+            extra_mcp_servers: %{
+              "good" => %{"command" => "npx", "env" => %{"TOKEN" => "${env:CANARY}"}},
+              "missing" => %{"command" => "${env:NOT_SET}"}
+            }
+        }
+    }
+
+    {result, log} =
+      with_log(fn ->
+        Copilot.prepare(run, Paths.run(20), Paths.home(), %{
+          "CANARY" => "CANARY_COPILOT_VALUE"
+        })
+      end)
+
+    assert {:ok, launch} = result
+    refute log =~ "CANARY_COPILOT_VALUE"
+    path = Path.join(Paths.run(20), "mcp.json")
+    config = JSON.decode!(File.read!(path))["mcpServers"]
+    assert config["good"]["env"]["TOKEN"] == "CANARY_COPILOT_VALUE"
+    refute Map.has_key?(config, "missing")
+    assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+    assert [{:status, %{level: :warning, message: message}}] = launch.events
+    assert message =~ "NOT_SET"
+    refute inspect(launch.events) =~ "CANARY_COPILOT_VALUE"
   end
 end

@@ -8,7 +8,13 @@ defmodule HelmsmanProtocol.RunSpec.Agent do
   list(:custom_args, :string, max: 64, item_min_bytes: 1, item_max_bytes: 4_096)
   field(:env, :string_map)
   field(:extra_mcp_servers, :json_object)
+  list(:mcp_warnings, :string, nullable: true, max: 16, item_max_bytes: 256)
   embeds(:provider_account, HelmsmanProtocol.ProviderAccount, nullable: true)
+
+  def to_wire(value) do
+    wire = HelmsmanProtocol.Schema.encode(value, __schema__())
+    if value.mcp_warnings == nil, do: Map.delete(wire, "mcp_warnings"), else: wire
+  end
 
   use HelmsmanProtocol.Redacted, [
     :env,

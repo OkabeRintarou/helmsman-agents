@@ -308,7 +308,9 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
   defp one_line(text), do: String.replace(text, ~r/[\x00-\x1F\x7F]+/u, " ")
 
-  defp options(user, workspace) do
+  defp options(user, workspace), do: options_base(user, workspace) <> mcp_options(user)
+
+  defp options_base(user, workspace) do
     runtimes = Options.runtimes(workspace.id, user.id)
     accounts = Options.accounts(user.id)
     head = "Options for #{user.display_name}:\n"
@@ -330,7 +332,10 @@ defmodule Helmsman.AgentDesigns.Prompt do
 
   # A squad conversation's options: the identities follow the runtimes and
   # accounts in the same 16 KB.
-  defp options(user, workspace, identities) do
+  defp options(user, workspace, identities),
+    do: options_base(user, workspace, identities) <> mcp_options(user)
+
+  defp options_base(user, workspace, identities) do
     runtimes = Options.runtimes(workspace.id, user.id)
     accounts = Options.accounts(user.id)
     head = "Options for #{user.display_name}:\n"
@@ -340,6 +345,19 @@ defmodule Helmsman.AgentDesigns.Prompt do
     {accounts_text, left} = lines_text(accounts, &account_line/1, left, :accounts)
     {identities_text, _left} = lines_text(identities, & &1, left, :identities)
     head <> runtimes_text <> accounts_text <> identities_text <> rules
+  end
+
+  defp mcp_options(user) do
+    case Helmsman.McpServers.design_options(user.id) do
+      [] ->
+        ""
+
+      definitions ->
+        "Personal MCP definitions (choose names in mcp_servers, at most 16; never write server configurations):\n" <>
+          Enum.map_join(definitions, "", fn d ->
+            "- #{one_line(d.name)} (#{d.type}, #{one_line(d.program || "")})\n"
+          end)
+    end
   end
 
   defp runtime_line(runtime), do: "- " <> Options.runtime_line(runtime) <> "\n"

@@ -63,6 +63,7 @@ defmodule Helmsman.Policy do
     :update_workspace,
     # the user's own provider accounts (no workspace)
     :manage_provider_accounts,
+    :manage_mcp_servers,
     # creation conversations and confirming their drafts
     # (`add-agent-conversation` decision 6)
     :design_agents,
@@ -125,6 +126,7 @@ defmodule Helmsman.Policy do
     :manage_github,
     :manage_github_app,
     :manage_provider_accounts,
+    :manage_mcp_servers,
     :merge_pull_request,
     :run_agent,
     :view_runs,
@@ -435,10 +437,10 @@ defmodule Helmsman.Policy do
   # `scope.user`'s accounts.
   defp check(
          %Scope{user: %User{}, via: via, token: nil, run: nil, actor: actor},
-         :manage_provider_accounts,
+         action,
          _resource
        )
-       when via in [nil, :web],
+       when via in [nil, :web] and action in [:manage_provider_accounts, :manage_mcp_servers],
        do: allow_if(is_nil(actor) or actor.kind == :human)
 
   ## Creation conversations (`add-agent-conversation` decisions 6, 7)

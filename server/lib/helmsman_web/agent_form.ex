@@ -35,13 +35,13 @@ defmodule HelmsmanWeb.AgentForm do
   import HelmsmanWeb.ProviderAccountComponents,
     only: [accounts_path: 0, accounts_path: 1, host: 1, supported?: 1]
 
-  alias Helmsman.{Agents, Members, ProviderAccounts, Runtimes}
+  alias Helmsman.{Agents, McpServers, Members, ProviderAccounts, Runtimes}
   alias HelmsmanWeb.{FormErrors, MarkdownEditor}
 
   @basic ~w(description)
-  @execution ~w(provider runtime_id provider_account_id model effort instructions custom_args)
+  @execution ~w(mcp_server_ids provider runtime_id provider_account_id model effort instructions custom_args)
   @access ~w(access access_member_ids capabilities wake_on_requested)
-  @draft_fields ~w(description provider runtime_id provider_account_id model effort instructions
+  @draft_fields ~w(mcp_servers description provider runtime_id provider_account_id model effort instructions
                    access capabilities max_concurrency timeout_minutes idle_timeout_minutes)
   @draft_modes [:draft_new, :draft_edit]
   @limits ~w(max_concurrency timeout_minutes idle_timeout_minutes)
@@ -63,6 +63,8 @@ defmodule HelmsmanWeb.AgentForm do
     "max_concurrency" => "2",
     "timeout_minutes" => "120",
     "idle_timeout_minutes" => "20",
+    "mcp_server_ids" => [],
+    "mcp_servers" => [],
     "env_delete" => [],
     "env_add" => %{}
   }
@@ -116,6 +118,7 @@ defmodule HelmsmanWeb.AgentForm do
     Map.merge(@defaults, strings)
     |> Map.merge(%{
       "name" => view.name,
+      "mcp_server_ids" => Enum.map(Map.get(view, :mcp_server_refs, []), &to_string(&1.id)),
       "runtime_id" => runtime_param(view.runtime),
       "provider_account_id" => runtime_param(view[:provider_account]),
       "custom_args" => Enum.join(List.wrap(view.custom_args), "\n"),
@@ -185,6 +188,7 @@ defmodule HelmsmanWeb.AgentForm do
 
     Map.merge(@defaults, %{
       "name" => entry["name"] || "",
+      "mcp_servers" => Map.get(entry, "mcp_servers", []),
       "description" => entry["description"] || "",
       "provider" => entry["provider"] || @defaults["provider"],
       "runtime_id" => id_param(entry["runtime_id"]),
@@ -217,8 +221,60 @@ defmodule HelmsmanWeb.AgentForm do
           []
       end
 
-    form |> Map.put(:members, members) |> load_runtimes(scope) |> load_accounts(scope)
+    definitions = mcp_definitions(form, scope)
+    config = mcp_config(form, scope)
+
+    form
+    |> Map.put_new(:mcp_config, config)
+    |> Map.put(:mcp_summaries, mcp_summaries(form, scope))
+    |> Map.put(:mcp_definitions, definitions)
+    |> Map.put(:members, members)
+    |> load_runtimes(scope)
+    |> load_accounts(scope)
   end
+
+  defp mcp_definitions(%{configure?: true}, scope) do
+    case McpServers.list(scope) do
+      {:ok, definitions} -> definitions
+      _ -> []
+    end
+  end
+
+  defp mcp_definitions(_, _), do: []
+
+  defp mcp_config(%{mode: :edit, configure?: true, base: %{actor_id: id} = base}, scope)
+       when is_integer(id) do
+    actor = %Helmsman.Actors.Actor{
+      id: id,
+      owner_id: base.owner.id,
+      workspace_id: scope.workspace.id,
+      kind: :agent
+    }
+
+    case McpServers.agent_editable(scope, actor) do
+      {:ok, config} -> config
+      _ -> %{}
+    end
+  end
+
+  defp mcp_config(_, _), do: %{}
+
+  defp mcp_summaries(%{mode: :edit, base: %{actor_id: id} = base}, scope)
+       when is_integer(id) do
+    actor = %Helmsman.Actors.Actor{
+      id: id,
+      owner_id: base.owner.id,
+      workspace_id: scope.workspace.id,
+      kind: :agent
+    }
+
+    case McpServers.agent_summaries(scope, actor) do
+      {:ok, summaries} -> summaries
+      _ -> []
+    end
+  end
+
+  defp mcp_summaries(_, _), do: []
 
   defp load_runtimes(%{configure?: false} = form, _scope), do: Map.put(form, :runtimes, [])
 
@@ -547,6 +603,10 @@ defmodule HelmsmanWeb.AgentForm do
       |> Enum.map(&String.trim_trailing/1)
       |> Enum.reject(&(String.trim(&1) == ""))
 
+  defp value("mcp_servers", names), do: reject_blank(names)
+
+  defp value("mcp_server_ids", ids), do: ids |> reject_blank() |> Enum.map(&integer/1)
+
   defp value("access_member_ids", ids),
     do: ids |> List.wrap() |> Enum.map(&integer/1) |> Enum.sort()
 
@@ -757,7 +817,7 @@ defmodule HelmsmanWeb.AgentForm do
   # `updated_at` has second precision: compare the configuration itself too.
   @config_keys ~w(updated_at description provider model effort instructions custom_args access
                   access_member_ids capabilities max_concurrency timeout_minutes
-                  idle_timeout_minutes env_names extra_mcp_server_names)a
+                  idle_timeout_minutes env_names extra_mcp_server_names mcp_server_refs)a
   defp config(view),
     do:
       view
@@ -1129,6 +1189,20 @@ defmodule HelmsmanWeb.AgentForm do
         />
       </fieldset>
 
+      <fieldset :if={draft?(@form)} id="agent-draft-mcp" class="flex flex-col gap-2">
+        <legend>{dgettext("ui", "我的 MCP 服务器")}</legend>
+        <input type="hidden" name="agent[mcp_servers][]" value="" />
+        <label :for={d <- @form.mcp_definitions} class="flex items-center gap-2 text-label">
+          <input
+            type="checkbox"
+            name="agent[mcp_servers][]"
+            value={d.name}
+            checked={d.name in @p["mcp_servers"]}
+          />{d.name} · {d.type}
+        </label>
+        <p :for={error <- Map.get(@e, :mcp_servers, [])} class="text-caption text-danger">{error}</p>
+      </fieldset>
+
       <p :if={draft?(@form)} id="agent-form-draft-note" class="text-caption text-fg-muted">
         {dgettext(
           "ui",
@@ -1232,26 +1306,35 @@ defmodule HelmsmanWeb.AgentForm do
           </.button>
         </div>
 
-        <p class="text-label font-medium text-fg">{dgettext("ui", "额外的 MCP 服务器")}</p>
-        <p :if={existing_mcp(@form) != []} id="agent-mcp-names" class="text-caption text-fg-muted">
-          {Enum.join(existing_mcp(@form), "、")}
-        </p>
-        <div id={"agent-form-#{@gen}-mcp"} phx-update="ignore">
-          <textarea
-            name="agent[mcp]"
-            rows="4"
-            autocomplete="off"
-            spellcheck="false"
-            aria-label={dgettext("ui", "额外的 MCP 服务器（JSON）")}
-            placeholder={dgettext("ui", "JSON 对象，留空不变，填写则整体替换")}
-            class="block w-full rounded-field border border-border-strong bg-surface px-2 py-1.5 font-mono text-label text-fg"
-          ></textarea>
-        </div>
-        <label :if={existing_mcp(@form) != []} class="flex items-center gap-2 text-body text-fg">
-          <input type="hidden" name="agent[mcp_clear]" value="false" />
-          <input type="checkbox" name="agent[mcp_clear]" value="true" class="size-4 accent-brand" />
-          {dgettext("ui", "清除全部")}
+        <p class="text-label font-medium text-fg">{dgettext("ui", "我的 MCP 服务器")}</p>
+        <.link navigate="/users/settings/mcp-servers" class="text-caption text-brand">{dgettext(
+          "ui",
+          "管理个人定义"
+        )}</.link>
+        <input :if={not @locked?} type="hidden" name="agent[mcp_server_ids][]" value="" />
+        <label
+          :for={d <- @form.mcp_definitions}
+          :if={not @locked?}
+          class="flex items-start gap-2 text-label"
+        >
+          <input
+            type="checkbox"
+            name="agent[mcp_server_ids][]"
+            value={d.id}
+            checked={to_string(d.id) in @p["mcp_server_ids"]}
+          />
+          <HelmsmanWeb.McpEditor.summaries summaries={[d.summary]} />
         </label>
+        <p class="text-label font-medium text-fg">{dgettext("ui", "这个 Agent 专用")}</p>
+        <HelmsmanWeb.McpEditor.editor
+          :if={not @locked?}
+          id={"agent-form-#{@gen}-mcp"}
+          config={@form.mcp_config}
+          provider={@p["provider"]}
+        />
+        <div :if={@locked?} id="agent-mcp-names">
+          <HelmsmanWeb.McpEditor.summaries summaries={@form.mcp_summaries} />
+        </div>
       </fieldset>
     </.form>
     """
@@ -1490,7 +1573,4 @@ defmodule HelmsmanWeb.AgentForm do
 
   defp existing_env(%{base: %{env_names: names}}) when is_list(names), do: names
   defp existing_env(_form), do: []
-
-  defp existing_mcp(%{base: %{extra_mcp_server_names: names}}) when is_list(names), do: names
-  defp existing_mcp(_form), do: []
 end

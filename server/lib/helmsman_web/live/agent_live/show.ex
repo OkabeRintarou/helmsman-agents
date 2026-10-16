@@ -20,7 +20,17 @@ defmodule HelmsmanWeb.AgentLive.Show do
   import HelmsmanWeb.RunComponents,
     only: [run_card: 1, cancellable?: 2, trigger_summary: 1, duration_text: 1]
 
-  alias Helmsman.{Agents, Dispatch, Events, Members, Policy, Presence, ProviderAccounts}
+  alias Helmsman.{
+    Agents,
+    Dispatch,
+    Events,
+    McpServers,
+    Members,
+    Policy,
+    Presence,
+    ProviderAccounts
+  }
+
   alias HelmsmanWeb.{AgentForm, AvatarData, MarkdownEditor, RunActions, RunComponents, RunData}
   alias HelmsmanWeb.{Throttle, Url}
   alias Phoenix.HTML.Engine
@@ -60,6 +70,8 @@ defmodule HelmsmanWeb.AgentLive.Show do
              member_names: member_names(scope),
              can_run?: Policy.authorize(scope, :run_agent) == :ok,
              availability: nil,
+             mcp_check_id: nil,
+             mcp_check_result: nil,
              usage: nil,
              runs: %{
                active: [],
@@ -96,7 +108,21 @@ defmodule HelmsmanWeb.AgentLive.Show do
     online? = agent.kind == "external" and external_online?(scope, agent.name)
     status = status(agent, if(online?, do: MapSet.new([agent.name]), else: MapSet.new()))
 
+    actor = %Helmsman.Actors.Actor{
+      id: agent.actor_id,
+      workspace_id: agent.workspace_id,
+      owner_id: agent.owner.id,
+      kind: :agent
+    }
+
+    summaries =
+      case McpServers.agent_summaries(scope, actor) do
+        {:ok, summaries} -> summaries
+        _ -> []
+      end
+
     assign(socket,
+      mcp_summaries: summaries,
       agent: agent,
       status: status,
       online?: online?,
@@ -339,6 +365,20 @@ defmodule HelmsmanWeb.AgentLive.Show do
   ## Events
 
   @impl true
+  def handle_event("mcp_check", _, socket) do
+    case McpServers.Check.request(socket.assigns.current_scope, socket.assigns.agent.name) do
+      {:ok, id} -> {:noreply, assign(socket, mcp_check_id: id, mcp_check_result: nil)}
+      {:error, reason} -> {:noreply, assign(socket, :mcp_check_result, {:error, reason})}
+    end
+  end
+
+  def handle_event("mcp_validate", params, socket),
+    do: {:reply, HelmsmanWeb.McpEditor.validate_reply(params), socket}
+
+  def handle_event("mcp_import", params, socket) do
+    {:reply, HelmsmanWeb.McpEditor.import_reply(params), socket}
+  end
+
   def handle_event("agent_form_" <> _ = event, params, socket) do
     case AgentForm.handle_event(event, params, socket) do
       {:saved, view, socket} ->
@@ -416,6 +456,12 @@ defmodule HelmsmanWeb.AgentLive.Show do
   end
 
   @impl true
+  def handle_info({:mcp_check_result, id, result}, socket) do
+    if socket.assigns.mcp_check_id == id,
+      do: {:noreply, assign(socket, mcp_check_id: nil, mcp_check_result: result)},
+      else: {:noreply, socket}
+  end
+
   def handle_info(message, socket)
       when message in [{:agents_changed}, {:runtimes_changed}],
       do: {:noreply, Throttle.schedule(socket)}
@@ -802,11 +848,36 @@ defmodule HelmsmanWeb.AgentLive.Show do
               </span>
             </.property_row>
             <.property_row label={dgettext("ui", "MCP 服务器")} data-mcp-names>
-              <span :if={(@agent.extra_mcp_server_names || []) != []} class="flex flex-wrap gap-1">
-                <code :for={n <- @agent.extra_mcp_server_names} class="font-mono text-label text-fg">
-                  {n}
-                </code>
-              </span>
+              <HelmsmanWeb.McpEditor.summaries summaries={@mcp_summaries} />
+              <button
+                :if={@agent.owner.id == @current_scope.user.id}
+                id="mcp-check"
+                type="button"
+                phx-click="mcp_check"
+                disabled={is_nil(@agent.runtime) or @mcp_check_id != nil}
+                class="mt-2 text-label text-brand"
+              >{dgettext("ui", "本机检查")}</button>
+              <p
+                :if={is_nil(@agent.runtime) and @agent.owner.id == @current_scope.user.id}
+                class="text-caption text-fg-muted"
+              >
+                {dgettext("ui", "未绑定运行时，无法检查")}
+              </p>
+              <p :if={@mcp_check_id} class="text-caption text-fg-muted">{dgettext("ui", "正在检查…")}</p>
+              <%= case @mcp_check_result do %>
+                <% {:error, reason} -> %>
+                  <p id="mcp-check-error" class="text-caption text-danger">{check_error(reason)}</p>
+                <% {:ok, results} -> %>
+                  <div id="mcp-check-results">
+                    <p :for={r <- results} class="text-caption">
+                      {r.name} · {command_found(r.command_found)}
+                      <span :if={r.missing_env != []}>{dgettext("ui", "缺少环境变量 %{names}",
+                        names: Enum.join(r.missing_env, ", ")
+                      )}</span> <span :if={r.dropped}>{dropped_text(r.dropped)}</span>
+                    </p>
+                  </div>
+                <% _ -> %>
+              <% end %>
             </.property_row>
             <.property_row label={dgettext("ui", "描述")} value={@agent.description} data-description />
             <.property_row :if={@agent.inserted_at} label={dgettext("ui", "创建时间")}>
@@ -986,4 +1057,17 @@ defmodule HelmsmanWeb.AgentLive.Show do
     </.side_panel>
     """
   end
+
+  defp dropped_text(:missing_target), do: dgettext("ui", "服务器没有命令或地址，会被丢弃")
+  defp dropped_text(_), do: dgettext("ui", "此 CLI 不支持该类型，服务器会被丢弃")
+
+  defp command_found(:yes), do: dgettext("ui", "命令已找到")
+  defp command_found(:no), do: dgettext("ui", "命令未找到")
+  defp command_found(_), do: ""
+  defp check_error(:timeout), do: dgettext("ui", "检查超时，请重试")
+  defp check_error(:daemon_offline), do: dgettext("ui", "执行机器离线，无法检查")
+  defp check_error(:daemon_outdated), do: dgettext("ui", "守护进程版本过低，请升级后检查")
+  defp check_error(:rate_limited), do: dgettext("ui", "请等待 10 秒再检查")
+  defp check_error(:no_runtime), do: dgettext("ui", "未绑定运行时，无法检查")
+  defp check_error(_), do: dgettext("ui", "无法检查，请确认运行时可用")
 end

@@ -9,6 +9,8 @@ defmodule HelmsmanWeb.DaemonChannel do
   alias Helmsman.LocalRepositories.WebRegistration
   alias HelmsmanProtocol.{ErrorReply, Messages, Push, Reply}
 
+  alias Helmsman.McpServers.Check, as: McpCheck
+
   # `add-local-repo-web-registration` D9: browse requests this connection
   # sent, `{request_id, deadline}` oldest first.
   @max_pending_browse 16
@@ -132,6 +134,16 @@ defmodule HelmsmanWeb.DaemonChannel do
 
       _ ->
         {:reply, {:error, error(:invalid_payload)}, socket}
+    end
+  end
+
+  defp handle_report("mcp_check_result", report, socket) do
+    if connection_state(socket) == :valid and
+         socket.assigns.protocol >= HelmsmanProtocol.mcp_env_version() do
+      McpCheck.deliver(socket.assigns.daemon_id, report)
+      respond("mcp_check_result", %Reply.Empty{}, socket)
+    else
+      {:reply, {:error, error(:invalid_payload)}, socket}
     end
   end
 
@@ -370,6 +382,19 @@ defmodule HelmsmanWeb.DaemonChannel do
   # `add-local-repo-web-registration` D9: only a connection whose
   # authorization is current is sent a request; one that cannot encode it
   # (an older protocol than recorded) answers `daemon_outdated` at once.
+  def handle_info({:mcp_check_request, request}, socket) do
+    case connection_state(socket) do
+      :valid ->
+        if socket.assigns.protocol >= HelmsmanProtocol.mcp_env_version(),
+          do: push_message(request, socket)
+
+        {:noreply, socket}
+
+      _ ->
+        stop(socket)
+    end
+  end
+
   def handle_info({:local_repo_request, request}, socket) do
     case connection_state(socket) do
       :valid -> push_repo_request(request, socket)

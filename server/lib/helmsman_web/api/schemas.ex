@@ -439,7 +439,15 @@ defmodule HelmsmanWeb.API.Schemas.AgentList do
                 archived: %Schema{type: :boolean},
                 busy: %Schema{type: :boolean},
                 queued: %Schema{type: :integer},
-                wake_on_requested: %Schema{type: :boolean}
+                wake_on_requested: %Schema{type: :boolean},
+                mcp_server_refs: %Schema{
+                  type: :array,
+                  items: %Schema{
+                    type: :object,
+                    properties: %{name: string(), source: string()},
+                    required: [:name, :source]
+                  }
+                }
               }),
             required: [
               :name,

@@ -365,6 +365,11 @@ if config_env() == :prod do
   log_metadata = [
     :request_id,
     :workspace_id,
+    :user_id,
+    :agent_id,
+    :mcp_definition_name,
+    :server_name,
+    :action,
     :token_id,
     :api_actor,
     :run_id,

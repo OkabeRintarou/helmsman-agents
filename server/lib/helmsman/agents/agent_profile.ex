@@ -6,7 +6,9 @@ defmodule Helmsman.Agents.AgentProfile do
   alias Helmsman.Workspaces.Membership
 
   @type t :: %__MODULE__{}
-  @fields ~w(provider runtime_id provider_account_id model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args env extra_mcp_servers wake_on_requested)a
+  alias Helmsman.McpServers.Entry
+
+  @fields ~w(provider runtime_id provider_account_id model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args env extra_mcp_servers mcp_server_ids wake_on_requested)a
   @derive {Inspect, except: [:env, :extra_mcp_servers]}
   schema "agent_profiles" do
     belongs_to :workspace, Helmsman.Workspaces.Workspace
@@ -27,6 +29,8 @@ defmodule Helmsman.Agents.AgentProfile do
     field :custom_args, {:array, :string}, default: []
     field :env, Helmsman.Encrypted.Map, redact: true
     field :extra_mcp_servers, Helmsman.Encrypted.Map, redact: true
+    field :mcp_server_ids, {:array, :integer}, virtual: true
+    field :mcp_warnings, {:array, :string}, virtual: true, default: []
     field :wake_on_requested, :boolean, default: true
     field :archived_at, :utc_datetime
     timestamps(type: :utc_datetime)
@@ -61,6 +65,7 @@ defmodule Helmsman.Agents.AgentProfile do
     |> validate_members(actor.workspace_id)
     |> validate_provider_account(actor)
     |> validate_binding(actor)
+    |> Helmsman.McpServers.validate_refs(actor)
     |> unique_constraint(:actor_id)
     |> foreign_key_constraint(:runtime_id, name: :agent_profiles_runtime_workspace_fkey)
     |> foreign_key_constraint(:actor_id, name: :agent_profiles_actor_workspace_fkey)
@@ -170,31 +175,27 @@ defmodule Helmsman.Agents.AgentProfile do
   end
 
   defp validate_mcp(cs) do
-    case get_field(cs, :extra_mcp_servers) do
-      nil ->
+    case fetch_change(cs, :extra_mcp_servers) do
+      :error ->
         cs
 
-      servers when is_map(servers) ->
-        cond do
-          Enum.any?(Map.keys(servers), &(is_binary(&1) and String.downcase(&1) == "helmsman")) ->
-            add_error(cs, :extra_mcp_servers, "helmsman is reserved")
-
-          not json_within_limit?(servers) ->
-            add_error(cs, :extra_mcp_servers, "must be a JSON object of at most 32 KB")
-
-          true ->
-            cs
-        end
-
-      _ ->
-        add_error(cs, :extra_mcp_servers, "must be an object")
+      {:ok, servers} ->
+        validate_mcp_entries(cs, servers)
     end
   end
 
-  defp json_within_limit?(servers) do
-    case Jason.encode(servers) do
-      {:ok, json} -> byte_size(json) <= 32_768
-      _ -> false
+  defp validate_mcp_entries(cs, servers) do
+    case Entry.validate(servers, cs.data.extra_mcp_servers) do
+      {:ok, merged} ->
+        put_change(cs, :extra_mcp_servers, merged)
+
+      {:error, errors} ->
+        Enum.reduce(errors, cs, fn {path, message}, acc ->
+          add_error(acc, :extra_mcp_servers, "%{path}: %{message}",
+            path: path,
+            message: message
+          )
+        end)
     end
   end
 

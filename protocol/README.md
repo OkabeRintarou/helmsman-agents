@@ -167,3 +167,7 @@ expired_token / access_denied 返回 error；426 先验证结构化 ErrorReply �
 测试包含字段边界、嵌套错误路径、脱敏、消息目录，以及每个核心结构各 200 次固定种子的 JSON 往返。
 
 供应商账号请求头从 `HelmsmanProtocol.provider_account_headers_version/0`（5）起支持：`headers` 为最多 8 项的 `{name, value}` 列表（默认空）；名字 1–64 字节 HTTP token，不区分大小写唯一且禁止保留名；值 1–4096 字节可见 ASCII/内部空格。Inspect 隐去值。按低于 5 的目标版本编码 claim 时，空 headers 省略，非空返回 `{:not_in_version, version}`。
+
+## MCP 本机检查（协议 8）
+
+`mcp_check`：check_id、runtime_id、agent_env（敏感，不进日志）、servers（至多64项：name、type、command 原文、env_refs）。`mcp_check_result`：check_id、results（至多64项：name、command_found yes/no/n/a、missing_env、dropped unsupported_type 或 null）。不传参数、地址、请求头或展开后的值；旧守护进程不接收检查、不领取含本机变量引用的运行。

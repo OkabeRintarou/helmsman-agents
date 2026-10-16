@@ -29,6 +29,7 @@ import Editor from "./hooks/editor"
 import Mermaid from "./hooks/mermaid"
 import BoardDrag from "./hooks/board_drag"
 import AvatarCropper from "./hooks/avatar_cropper"
+import McpEditor from "./hooks/mcp_editor.mjs"
 
 const RECENT_TASKS = "hm:recent-tasks"
 const recentTasks = () => {
@@ -43,7 +44,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
     recent_tasks: recentTasks(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }),
-  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid, AvatarCropper, BoardDrag},
+  hooks: {...colocatedHooks, Hotkeys, Editor, Mermaid, AvatarCropper, BoardDrag, McpEditor},
   dom: {
     // A failed avatar stays hidden across patches until its address changes.
     onBeforeElUpdated(from, to) {

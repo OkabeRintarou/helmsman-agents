@@ -189,6 +189,11 @@ config :logger, :default_formatter,
   metadata: [
     :request_id,
     :workspace_id,
+    :user_id,
+    :agent_id,
+    :mcp_definition_name,
+    :server_name,
+    :action,
     :token_id,
     :api_actor,
     :run_id,
@@ -230,6 +235,9 @@ config :phoenix, :filter_parameters, [
   "headers",
   "env_add",
   "env_new",
+  "agent_env",
+  "mcp",
+  "text",
   "roots",
   "repositories"
 ]

@@ -1,5 +1,6 @@
 defmodule HelmsmanDaemon.Adapters.CursorPrepareTest do
   use HelmsmanDaemon.Case
+  import ExUnit.CaptureLog
   @moduletag :tmp_dir
   alias HelmsmanDaemon.Adapters.Cursor
   alias HelmsmanDaemon.Adapters.Cursor.Home
@@ -97,4 +98,34 @@ defmodule HelmsmanDaemon.Adapters.CursorPrepareTest do
   end
 
   defp md5(path), do: :crypto.hash(:md5, path) |> Base.encode16(case: :lower)
+
+  test "local references expand in private HOME with 0600 and safe missing warnings", %{
+    work: work
+  } do
+    run =
+      cursor_spec(20,
+        agent: [
+          extra_mcp_servers: %{
+            "good" => %{"command" => "npx", "env" => %{"TOKEN" => "${env:CANARY}"}},
+            "missing" => %{"command" => "${env:NOT_SET}"}
+          }
+        ]
+      )
+
+    dir = Paths.private_dir!(Paths.run(20))
+
+    {result, log} =
+      with_log(fn -> Cursor.prepare(run, dir, work, %{"CANARY" => "CANARY_CURSOR_VALUE"}) end)
+
+    assert {:ok, launch} = result
+    refute log =~ "CANARY_CURSOR_VALUE"
+    path = Path.join([dir, "home", ".cursor", "mcp.json"])
+    config = JSON.decode!(File.read!(path))["mcpServers"]
+    assert config["good"]["env"]["TOKEN"] == "CANARY_CURSOR_VALUE"
+    refute Map.has_key?(config, "missing")
+    assert Bitwise.band(File.stat!(path).mode, 0o777) == 0o600
+    assert [{:status, %{level: :warning, message: message}}] = launch.events
+    assert message =~ "NOT_SET"
+    refute inspect(launch.events) =~ "CANARY_CURSOR_VALUE"
+  end
 end

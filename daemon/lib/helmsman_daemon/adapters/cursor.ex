@@ -172,10 +172,18 @@ defmodule HelmsmanDaemon.Adapters.Cursor do
   ## Launch (decisions 3–6, 8, 10)
 
   def prepare(spec, run_dir, work_dir),
-    do: prepare(spec, run_dir, work_dir, Env.agent(System.get_env(), spec.agent.env))
+    do:
+      prepare(
+        spec,
+        run_dir,
+        work_dir,
+        HelmsmanDaemon.McpEnv.cli_env(System.get_env(), spec.agent.env)
+      )
 
   def prepare(spec, run_dir, work_dir, env) do
     config = Home.config()
+    {extra, mcp_events} = HelmsmanDaemon.McpEnv.resolve(spec.agent.extra_mcp_servers, env)
+    spec = %{spec | agent: %{spec.agent | extra_mcp_servers: extra}}
 
     with :ok <- Home.usable(config),
          :ok <- Home.ensure_dirs!(),
@@ -217,7 +225,7 @@ defmodule HelmsmanDaemon.Adapters.Cursor do
          stdin: spec.prompt,
          close_stdin?: true,
          track_descendants: true,
-         events: Enum.map(warnings, &{:status, %{level: :warning, message: &1}})
+         events: mcp_events ++ Enum.map(warnings, &{:status, %{level: :warning, message: &1}})
        }}
     else
       {:error, {reason, message}} when is_atom(reason) ->

@@ -73,9 +73,18 @@ defmodule HelmsmanDaemon.Adapters.Claude do
   # credentials; its CLAUDE.md still loads through the additional directory.
   @claude_md_env {"CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1"}
 
-  def prepare(spec, run_dir, work_dir) do
+  def prepare(spec, run_dir, work_dir),
+    do:
+      prepare(
+        spec,
+        run_dir,
+        work_dir,
+        HelmsmanDaemon.McpEnv.cli_env(System.get_env(), spec.agent.env)
+      )
+
+  def prepare(spec, run_dir, work_dir, cli_env) do
     path = Path.join(run_dir, "mcp.json")
-    extra = spec.agent.extra_mcp_servers
+    {extra, mcp_events} = HelmsmanDaemon.McpEnv.resolve(spec.agent.extra_mcp_servers, cli_env)
 
     config = %{
       "mcpServers" =>
@@ -136,7 +145,7 @@ defmodule HelmsmanDaemon.Adapters.Claude do
          stdin: frame(spec.prompt),
          close_stdin?: false,
          env: [@claude_md_env | env],
-         events: events ++ provider_events
+         events: mcp_events ++ events ++ provider_events
        }}
     else
       {:error, reason} ->

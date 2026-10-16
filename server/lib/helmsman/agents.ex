@@ -8,7 +8,7 @@ defmodule Helmsman.Agents do
   alias Helmsman.{Events, Policy, ProviderAccounts, Repo, Runs, Workspaces}
   alias Helmsman.Runs.Run
 
-  @execution_fields ~w(provider runtime_id provider_account_id model effort instructions custom_args env extra_mcp_servers capabilities access access_member_ids wake_on_requested)
+  @execution_fields ~w(provider runtime_id provider_account_id model effort instructions custom_args env extra_mcp_servers mcp_server_ids capabilities access access_member_ids wake_on_requested)
   @view_fields ~w(provider model effort instructions description access access_member_ids capabilities max_concurrency timeout_minutes idle_timeout_minutes custom_args wake_on_requested inserted_at updated_at)a
 
   @doc false
@@ -31,7 +31,8 @@ defmodule Helmsman.Agents do
     with :ok <- managed(profile),
          :ok <- active(profile),
          true <- is_nil(actor.disabled_at) do
-      {:ok, profile}
+      {mcp, warnings} = Helmsman.McpServers.effective(profile)
+      {:ok, %{profile | extra_mcp_servers: mcp, mcp_warnings: warnings}}
     else
       false -> {:error, :agent_disabled}
       error -> error
@@ -85,7 +86,8 @@ defmodule Helmsman.Agents do
          {:ok, profile} <-
            %AgentProfile{workspace_id: actor.workspace_id, actor_id: actor.id}
            |> AgentProfile.changeset(attrs, actor)
-           |> Repo.insert() do
+           |> Repo.insert(log: false) do
+      if profile.mcp_server_ids, do: Helmsman.McpServers.save_refs(actor, profile.mcp_server_ids)
       notify_accounts(actor, nil, profile.provider_account_id)
       notify(actor)
       {:ok, hd(views([actor]))}
@@ -158,7 +160,8 @@ defmodule Helmsman.Agents do
   defp write_profile(actor, profile, attrs) do
     with :ok <- managed(profile),
          :ok <- active(profile),
-         {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update() do
+         {:ok, updated} <- profile |> AgentProfile.changeset(attrs, actor) |> Repo.update(log: false) do
+      save_mcp_refs(actor, updated)
       move_pending_runs(actor, profile.runtime_id, updated.runtime_id)
       notify_accounts(actor, profile.provider_account_id, updated.provider_account_id)
 
@@ -199,6 +202,11 @@ defmodule Helmsman.Agents do
     end
     |> scrub_result()
   end
+
+  defp save_mcp_refs(actor, %{mcp_server_ids: ids}) when is_list(ids),
+    do: Helmsman.McpServers.save_refs(actor, ids)
+
+  defp save_mcp_refs(_, _), do: :ok
 
   # Rebinding moves the agent's queued runs to the new runtime (bound and
   # locked FOR SHARE by the changeset); unbinding cancels them.
@@ -338,10 +346,15 @@ defmodule Helmsman.Agents do
       |> Enum.reject(&is_nil/1)
       |> account_summaries()
 
+    refs = Helmsman.McpServers.references(ids)
     counts = Runs.counts(ids)
 
     Enum.map(actors, fn actor ->
       view(actor, profiles[actor.id], owners, {runtimes, accounts}, counts[actor.id] || %{})
+      |> Map.put(:mcp_server_refs, refs[actor.id] || [])
+      |> Map.update(:extra_mcp_server_names, [], fn names ->
+        Enum.sort(Enum.uniq((names || []) ++ Enum.map(refs[actor.id] || [], & &1.name)))
+      end)
     end)
   end
 

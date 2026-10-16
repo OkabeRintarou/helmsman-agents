@@ -12,7 +12,7 @@ defmodule Helmsman.EncryptedMapTest do
 
     managed_agent_fixture(scope, %{
       env: %{"API_KEY" => "unique-secret-value"},
-      extra_mcp_servers: %{"private" => %{"key" => "unique-mcp-secret"}}
+      extra_mcp_servers: %{"private" => %{"command" => "npx", "key" => "unique-mcp-secret"}}
     })
 
     profile = Repo.one!(AgentProfile)
@@ -25,7 +25,7 @@ defmodule Helmsman.EncryptedMapTest do
     assert Repo.get!(AgentProfile, profile.id).env == %{"API_KEY" => "unique-secret-value"}
 
     assert Repo.get!(AgentProfile, profile.id).extra_mcp_servers == %{
-             "private" => %{"key" => "unique-mcp-secret"}
+             "private" => %{"command" => "npx", "key" => "unique-mcp-secret"}
            }
 
     refute inspect(profile) =~ "unique-secret-value"
