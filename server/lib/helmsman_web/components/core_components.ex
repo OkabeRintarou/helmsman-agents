@@ -242,7 +242,7 @@ defmodule HelmsmanWeb.CoreComponents do
   @doc false
   def tooltip_class(placement) do
     [
-      "hm-tooltip pointer-events-none absolute z-50 w-max max-w-64 rounded-badge px-2 py-1",
+      "hm-tooltip pointer-events-none absolute z-50 w-max max-w-64 whitespace-normal rounded-badge px-2 py-1",
       "bg-fg text-surface text-caption font-normal shadow-popover",
       case placement do
         :top -> "bottom-full left-1/2 -translate-x-1/2 mb-1.5"

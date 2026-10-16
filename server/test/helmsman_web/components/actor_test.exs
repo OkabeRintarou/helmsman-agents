@@ -18,6 +18,15 @@ defmodule HelmsmanWeb.Components.ActorTest do
     assert system =~ "text-fg-muted"
   end
 
+  # A chip in a `truncate` cell inherits `white-space: nowrap`; an unwrapped tooltip
+  # overflows the cell even while hidden, and Firefox then replaces the whole chip
+  # with the ellipsis.
+  test "the chip's tooltip wraps even inside a nowrap cell" do
+    html = render_component(&actor_chip/1, actor: @agent)
+    assert [tooltip] = Regex.run(~r/<span aria-hidden="true" class="hm-tooltip[^"]*"/, html)
+    assert tooltip =~ "whitespace-normal"
+  end
+
   describe "actor_mark/1 (add-actor-avatars D2, web-components 身份标记)" do
     defp mark(actor, opts \\ []),
       do: render_component(&actor_mark/1, Keyword.merge([actor: actor], opts))
