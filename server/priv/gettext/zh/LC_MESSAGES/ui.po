@@ -6000,7 +6000,7 @@ msgstr ""
 msgid "%{helper} 没有回复文字"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "%{helper} 现在不能启动：%{reason}。可以更换起草 Agent"
 msgstr ""
@@ -6108,7 +6108,7 @@ msgstr ""
 msgid "创建对话的运行不能重试，请在对话里重新发送"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "发送"
 msgstr ""
@@ -6133,7 +6133,7 @@ msgstr ""
 msgid "和 AI 对话创建"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "回复会进入 %{helper} 的执行记录，不要粘贴密钥"
 msgstr ""
@@ -6153,7 +6153,7 @@ msgstr ""
 msgid "它能在工作区里新建任务并指派"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "对话"
 msgstr ""
@@ -6173,7 +6173,7 @@ msgstr ""
 msgid "对话会在你的机器上由 %{helper} 处理。"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "对话创建"
 msgstr ""
@@ -6238,7 +6238,7 @@ msgstr ""
 msgid "开始对话"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "开始新的对话"
 msgstr ""
@@ -6268,12 +6268,12 @@ msgstr ""
 msgid "无输出时长"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "更换"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "更换起草 Agent"
 msgstr ""
@@ -6283,12 +6283,12 @@ msgstr ""
 msgid "更新了草稿"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "有变化"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "正在发送…"
 msgstr ""
@@ -6319,7 +6319,7 @@ msgstr ""
 msgid "没有权限"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "消息"
 msgstr ""
@@ -6377,7 +6377,7 @@ msgstr ""
 msgid "等 %{helper} 回复完再确认"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "等这一轮结束后再更换"
 msgstr ""
@@ -6387,7 +6387,7 @@ msgstr ""
 msgid "系统消息"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "继续描述，或回答 AI 的问题"
 msgstr ""
@@ -6461,7 +6461,7 @@ msgstr ""
 msgid "起草 Agent 换成了 %{name}"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "起草："
 msgstr ""
@@ -6487,17 +6487,17 @@ msgstr ""
 msgid "这一轮被取消"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "这个对话 7 天没有活动，已过期"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "这个对话已放弃"
 msgstr ""
 
-#: lib/helmsman_web/live/agent_design_live.ex
+#: lib/helmsman_web/design_conversation_components.ex
 #, elixir-autogen, elixir-format
 msgid "这个对话已确认，创建了"
 msgstr ""
