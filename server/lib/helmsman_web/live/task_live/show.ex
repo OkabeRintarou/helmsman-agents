@@ -451,7 +451,12 @@ defmodule HelmsmanWeb.TaskLive.Show do
   ## Notifications
 
   @impl true
-  def handle_info({:transition_panel, result, _ident}, socket) when result in [:done, :refresh],
+  def handle_info({:transition_panel, :done, _ident}, socket) do
+    socket = refresh(socket)
+    {:noreply, put_transition_task(socket, socket.assigns.task)}
+  end
+
+  def handle_info({:transition_panel, :refresh, _ident}, socket),
     do: {:noreply, refresh(socket)}
 
   def handle_info({:transition_panel, :closed, _ident}, socket), do: {:noreply, socket}

@@ -8,6 +8,7 @@ defmodule HelmsmanWeb.TaskLive.IdleHintTest do
   import Helmsman.RunsFixtures
   import Helmsman.SquadsFixtures
   import HelmsmanWeb.LiveHelpers
+  import HelmsmanWeb.PortalHelpers
 
   alias Helmsman.{Actors, Agents, Dispatch, Feedback, Repo, Tasks}
 
@@ -242,5 +243,31 @@ defmodule HelmsmanWeb.TaskLive.IdleHintTest do
     view |> element("#transition-in_progress") |> render_click()
     refute render(view) =~ "已改为进行中。改状态不会启动"
     refute has_element?(view, "#task-idle-hint")
+  end
+
+  test "reason-panel transition to IN_PROGRESS retains the idle flash after component split",
+       ctx do
+    # Legacy assignments without a continuation grant can be reopened without
+    # creating a run; this is the panel path that needs the idle hint.
+    Repo.delete_all(from(g in Helmsman.Runs.TaskGrant, where: g.task_id == ^ctx.task.id))
+    Repo.update_all(from(t in Tasks.Task, where: t.id == ^ctx.task.id), set: [status: :done])
+    {:ok, view, _} = open(ctx)
+    view |> element("#transition-in_progress") |> render_click()
+    session = portal_attr(view, "transition-panel", "input[name=editor_session]", "value")
+
+    view
+    |> with_target("#panel-host")
+    |> render_submit("submit_transition", %{
+      "transition" => %{"comment" => "继续处理"},
+      "editor_session" => session
+    })
+
+    assert {:ok, %{status: :in_progress}} = Tasks.get(ctx.alice_scope, ctx.task.ident)
+    refute open?(view, "transition-panel")
+    assert has_element?(view, "#task-idle-hint")
+
+    eventually(fn -> has_element?(view, "#flash-info", "已改为进行中。改状态不会启动 keel/dev") end)
+    assert has_element?(view, "#start-idle-agent")
+    assert runs_of(ctx.task.id) == []
   end
 end
