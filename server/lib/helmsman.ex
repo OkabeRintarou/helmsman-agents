@@ -10,6 +10,7 @@ defmodule Helmsman do
       RateLimit,
       Vault,
       AgentDesigns,
+      AgentDesigns.Kinds,
       Autopilots,
       Agents,
       Avatars,

@@ -67,6 +67,21 @@ defmodule Helmsman.AgentDesignsFixtures do
     view
   end
 
+  @doc """
+  Opens a conversation of any `kind` through the shared start
+  (`AgentDesigns.start_conversation/4`): an edit kind targets `target` (an
+  actor) with an empty baseline. `{:ok, view}` or the error.
+  """
+  def start_kind(scope, kind, target \\ nil, message \\ "Change it", helper \\ "helper") do
+    AgentDesigns.start_conversation(scope, kind, %{helper: helper, message: message}, fn _ ->
+      if target,
+        do:
+          {:ok, %{"agents" => []},
+           [target_actor_id: target.id, baseline: %{"agent" => %{"name" => target.name}}]},
+        else: {:ok, %{"agents" => []}, []}
+    end)
+  end
+
   @doc "The conversation row `id`."
   def design!(id), do: Repo.get!(AgentDesign, id)
 

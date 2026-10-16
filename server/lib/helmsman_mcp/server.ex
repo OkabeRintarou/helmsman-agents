@@ -40,6 +40,7 @@ defmodule HelmsmanMCP.Server do
   alias Anubis.Server.Response
   alias Anubis.Server.Supervisor, as: AnubisSupervisor
   alias Helmsman.Accounts.Scope
+  alias Helmsman.AgentDesigns.Kinds
 
   alias HelmsmanMCP.{
     ErrorText,
@@ -124,7 +125,7 @@ defmodule HelmsmanMCP.Server do
         all
         |> Enum.reject(&(Map.has_key?(required, &1.name) and required[&1.name] not in caps))
         |> run_tools(caller)
-        |> squad_tools(frame.context)
+        |> design_tools(frame.context)
     end
   end
 
@@ -142,17 +143,24 @@ defmodule HelmsmanMCP.Server do
 
   defp run_tools(tools, :session), do: tools
 
-  # `add-squads` decision 12: `propose_squad` only in squad conversations.
-  defp squad_tools(tools, context) do
-    if Enum.any?(tools, &(&1.name == "propose_squad")) and not squad_design?(context),
-      do: Enum.reject(tools, &(&1.name == "propose_squad")),
-      else: tools
+  # `add-squads` decision 12, `add-edit-design-conversations` decision 7: a
+  # design run lists the draft tools of its conversation's kind only.
+  defp design_tools(tools, context) do
+    case design_kind(context) do
+      nil ->
+        tools
+
+      kind ->
+        allowed = Kinds.tools(kind)
+        draft_tools = Kinds.all_tools()
+        Enum.reject(tools, &(&1.name in draft_tools and &1.name not in allowed))
+    end
   end
 
-  defp squad_design?(context) do
+  defp design_kind(context) do
     case request_scope(context) do
-      {:ok, %Scope{via: :run, run: run}} -> Helmsman.AgentDesigns.squad_run?(run)
-      _other -> false
+      {:ok, %Scope{via: :run, run: run}} -> Helmsman.AgentDesigns.run_kind(run)
+      _other -> nil
     end
   end
 

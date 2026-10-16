@@ -5,6 +5,7 @@ defmodule HelmsmanMCP.ErrorText do
   clauses here.
   """
 
+  alias Helmsman.AgentDesigns.Kinds
   alias HelmsmanMCP.{Context, OrchestrationErrorText}
 
   @doc """
@@ -61,6 +62,13 @@ defmodule HelmsmanMCP.ErrorText do
   # `add-squads` decision 12.
   def format({:design, :not_squad}, _ctx),
     do: {:ok, "This is not a squad conversation: propose_squad is not available."}
+
+  # `add-edit-design-conversations` decision 7.
+  def format({:design, {:wrong_kind, tool, kind}}, _ctx) do
+    {:ok,
+     "This is #{Kinds.label(kind)}: #{tool} is not available. " <>
+       "The draft was not changed."}
+  end
 
   def format({:referenced_by_squad, name}, _ctx) do
     {:ok,

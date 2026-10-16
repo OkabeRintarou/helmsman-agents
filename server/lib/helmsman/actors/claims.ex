@@ -32,6 +32,9 @@ defmodule Helmsman.Actors.Claims do
     {"squads", "actor_id"},
     {"squads", "leader_agent_id"},
     {"agent_designs", "helper_agent_id"},
+    # The target of an edit conversation: an agent or a squad
+    # (`add-edit-design-conversations` decision 4).
+    {"agent_designs", "target_actor_id"},
     {"autopilots", "agent_id"},
     # Agents' and squads' avatars only: a human's avatar is their user's
     # (`add-actor-avatars` decision 3).

@@ -8,12 +8,18 @@ defmodule Helmsman.AgentDesigns.AgentDesign do
   `draft` is `%{"agents" => [entry]}` in the order the agents were added
   (`Helmsman.AgentDesigns.Draft`); `pending_edits` the user's changes not
   yet told to the helper (decision 16).
+
+  `add-edit-design-conversations`: `kind` (`Helmsman.AgentDesigns.Kinds`)
+  and its generated `slot`; an edit conversation has its `target_actor_id`
+  and the `baseline` it started from; `applied` the changes a confirm
+  wrote.
   """
 
   use Ecto.Schema
 
   alias Helmsman.Accounts.User
   alias Helmsman.Actors.Actor
+  alias Helmsman.AgentDesigns.Kinds
   alias Helmsman.Runs.Run
   alias Helmsman.Workspaces.Workspace
 
@@ -26,7 +32,11 @@ defmodule Helmsman.AgentDesigns.AgentDesign do
     belongs_to :workspace, Workspace
     belongs_to :user, User
     belongs_to :helper_agent, Actor
-    field :kind, Ecto.Enum, values: [:agent, :squad], default: :agent
+    field :kind, Ecto.Enum, values: Kinds.kinds(), default: :agent
+    field :slot, Ecto.Enum, values: Kinds.slots(), writable: :never, read_after_writes: true
+    belongs_to :target_actor, Actor
+    field :baseline, :map
+    field :applied, {:array, :map}
     field :status, Ecto.Enum, values: @statuses, default: :open
     field :draft, :map, default: %{"agents" => []}
     field :draft_version, :integer, default: 0

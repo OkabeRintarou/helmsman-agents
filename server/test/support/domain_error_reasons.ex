@@ -117,6 +117,7 @@ defmodule Helmsman.DomainErrorReasons do
       {"not a design run", {:design, :not_design_run}},
       {"design turn ended", {:design, :turn_ended}},
       {"not a squad design", {:design, :not_squad}},
+      {"tool outside the kind", {:design, {:wrong_kind, "withdraw_agent", :agent_edit}}},
       {"referenced by squad", {:referenced_by_squad, "web/dev"}},
       {"invalid squad", {:invalid_squad, changeset}},
       {"draft full", :draft_full},

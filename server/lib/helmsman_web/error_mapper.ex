@@ -86,6 +86,7 @@ defmodule HelmsmanWeb.ErrorMapper do
   defp map({:cannot_invoke, agent}), do: {403, "cannot_invoke", %{agent: agent}}
   defp map(reason) when reason in [:no_identity, :no_actor], do: {403, "no_identity", %{}}
   defp map({:design, :not_design_run}), do: {403, "forbidden", %{}}
+  defp map({:design, {:wrong_kind, _tool, _kind}}), do: {403, "forbidden", %{}}
 
   # 404
   defp map(:not_found), do: {404, "not_found", %{}}

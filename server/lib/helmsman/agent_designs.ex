@@ -13,9 +13,16 @@ defmodule Helmsman.AgentDesigns do
   `confirm/3`, in the user's own web session.
 
   Web side (first argument a web scope, `:design_agents`): `helpers/1`,
-  `current/1`, `get/2`, `start/2`, `send/3`, `stop_turn/2`, `discard/2`,
+  `current/2`, `get/2`, `start/2`, `send/3`, `stop_turn/2`, `discard/2`,
   `change_helper/3`, `put_agent/4`, `remove_agent/4`, `confirm/3`. A
   conversation is only ever its user's: anybody else gets `:not_found`.
+
+  Kinds (`add-edit-design-conversations`, `Helmsman.AgentDesigns.Kinds`):
+  each belongs to a slot (one `open` conversation per user, workspace and
+  slot) and has its own draft tools; every kind shares the turns,
+  settling, stopping, expiry and pending edits here. The start
+  (`start_conversation/4`), `describe/1`, `view/2`, the prompt and
+  `confirm/3` dispatch on the kind.
 
   Locks (decision 10): the conversation row first (`FOR UPDATE`), then the
   helper's actor and profile, its runtime, then runs. The run side
@@ -34,6 +41,7 @@ defmodule Helmsman.AgentDesigns do
     AgentDesign,
     AgentDesignMessage,
     Draft,
+    Kinds,
     Options,
     Prompt,
     SquadDraft
@@ -133,11 +141,15 @@ defmodule Helmsman.AgentDesigns do
     }
   end
 
-  @doc "The user's `open` conversation in the workspace, or nil."
-  @spec current(Scope.t()) :: {:ok, view() | nil} | {:error, :forbidden}
-  def current(%Scope{} = scope) do
+  @doc """
+  The user's `open` conversation of the slot `slot` in the workspace
+  (`add-edit-design-conversations` decision 3), or nil. `current/1` is the
+  `:create` slot.
+  """
+  @spec current(Scope.t(), Kinds.slot()) :: {:ok, view() | nil} | {:error, :forbidden}
+  def current(%Scope{} = scope, slot \\ :create) when is_atom(slot) do
     with :ok <- Policy.authorize(scope, :design_agents) do
-      case Repo.one(own(scope) |> where([d], d.status == :open)) do
+      case Repo.one(own(scope) |> where([d], d.status == :open and d.slot == ^slot)) do
         nil -> {:ok, nil}
         design -> {:ok, view(scope, design)}
       end
@@ -174,27 +186,20 @@ defmodule Helmsman.AgentDesigns do
   ## Starting and turns
 
   @doc """
-  Starts a conversation with the helper `helper` (a name) and its first
-  message `message` (decision 4): the conversation and its first turn in
-  one transaction. Errors: `:forbidden`, a message changeset (`:message`),
-  `{:design_open, id}` (the user already has one), `:not_found`,
-  `:not_managed` and the reasons the helper cannot be dispatched
-  (`unauthorized`, `agent_disabled`, `agent_archived`, `no_runtime`,
-  `runtime_disabled`); nothing is written then.
+  Starts a creation conversation (`agent`, the default, or `squad`) with
+  the helper `helper` (a name) and its first message `message` (decision
+  4): the conversation and its first turn in one transaction. Errors:
+  `:forbidden`, a message changeset (`:message`), a `kind` changeset (any
+  other kind: edit conversations start with `start_edit/2`),
+  `{:design_open, id}` (the user already has one in the slot),
+  `:not_found`, `:not_managed` and the reasons the helper cannot be
+  dispatched (`unauthorized`, `agent_disabled`, `agent_archived`,
+  `no_runtime`, `runtime_disabled`); nothing is written then.
   """
   @spec start(Scope.t(), map()) :: {:ok, view()} | {:error, term()}
   def start(%Scope{} = scope, attrs) when is_map(attrs) do
-    helper = attrs[:helper] || attrs["helper"]
-    message = attrs[:message] || attrs["message"]
-
-    with {:ok, kind} <- check_kind(Map.get(attrs, :kind, attrs["kind"])),
-         {:ok, text} <- check_message(message) do
-      Workspaces.write_transaction(
-        scope,
-        :design_agents,
-        nil,
-        &start_locked(&1, helper, text, kind)
-      )
+    with {:ok, kind} <- check_kind(Map.get(attrs, :kind, attrs["kind"])) do
+      start_conversation(scope, kind, attrs, fn _scope -> {:ok, empty_draft(kind), []} end)
     end
   end
 
@@ -209,11 +214,45 @@ defmodule Helmsman.AgentDesigns do
      |> Ecto.Changeset.add_error(:kind, "must be agent or squad")}
   end
 
-  defp start_locked(scope, helper, text, kind) do
-    with nil <- open_id(scope),
+  defp empty_draft(:squad), do: %{"agents" => [], "squad" => SquadDraft.empty()}
+  defp empty_draft(:agent), do: %{"agents" => []}
+
+  @doc false
+  # The start shared by every kind (`add-edit-design-conversations`
+  # decision 3): `attrs` has the `helper` name and the first `message`;
+  # `build` runs in the write transaction (membership row held `FOR
+  # SHARE`) after the slot is checked and before the helper is locked, and
+  # returns the initial draft and the kind's own columns (`target_actor_id`,
+  # `baseline`, ...) or an error. Then the helper, the row (the slot's
+  # partial unique index) and the first turn.
+  @spec start_conversation(
+          Scope.t(),
+          Kinds.kind(),
+          map(),
+          (Scope.t() -> {:ok, map(), keyword()} | {:error, term()})
+        ) :: {:ok, view()} | {:error, term()}
+  def start_conversation(%Scope{} = scope, kind, attrs, build)
+      when is_atom(kind) and is_map(attrs) and is_function(build, 1) do
+    helper = attrs[:helper] || attrs["helper"]
+
+    with {:ok, text} <- check_message(attrs[:message] || attrs["message"]) do
+      Workspaces.write_transaction(
+        scope,
+        :design_agents,
+        nil,
+        &start_locked(&1, kind, helper, text, build)
+      )
+    end
+  end
+
+  defp start_locked(scope, kind, helper, text, build) do
+    slot = Kinds.slot(kind)
+
+    with nil <- open_id(scope, slot),
          _ = test_hook(:design_start_checked),
+         {:ok, draft, fields} <- build.(scope),
          {:ok, agent, profile} <- lock_helper(scope.workspace.id, name: helper),
-         {:ok, design} <- insert_design(scope, agent, kind),
+         {:ok, design} <- insert_design(scope, agent, kind, draft, fields),
          {:ok, design} <- turn(scope, design, agent, profile, text) do
       {:ok, view(scope, design)}
     else
@@ -222,36 +261,39 @@ defmodule Helmsman.AgentDesigns do
     end
   end
 
-  defp open_id(scope),
-    do: Repo.one(own(scope) |> where([d], d.status == :open) |> select([d], d.id))
+  defp open_id(scope, slot),
+    do:
+      Repo.one(
+        own(scope)
+        |> where([d], d.status == :open and d.slot == ^slot)
+        |> select([d], d.id)
+      )
 
-  # The partial unique index keeps one `open` conversation per user and
-  # workspace: a concurrent start that committed first wins, and this one
-  # reads its ID.
-  defp insert_design(scope, agent, kind) do
+  # The partial unique index keeps one `open` conversation per user,
+  # workspace and slot: a concurrent start that committed first wins, and
+  # this one reads its ID.
+  defp insert_design(scope, agent, kind, draft, fields) do
     now = DateTime.utc_now()
-
-    draft =
-      if kind == :squad,
-        do: %{"agents" => [], "squad" => SquadDraft.empty()},
-        else: %{"agents" => []}
 
     {:ok, design} =
       Repo.insert(
-        %AgentDesign{
-          workspace_id: scope.workspace.id,
-          user_id: scope.user.id,
-          helper_agent_id: agent.id,
-          kind: kind,
-          draft: draft,
-          last_activity_at: now
-        },
+        struct!(
+          %AgentDesign{
+            workspace_id: scope.workspace.id,
+            user_id: scope.user.id,
+            helper_agent_id: agent.id,
+            kind: kind,
+            draft: draft,
+            last_activity_at: now
+          },
+          fields
+        ),
         on_conflict: :nothing,
-        conflict_target: {:unsafe_fragment, "(workspace_id, user_id) WHERE status = 'open'"}
+        conflict_target: {:unsafe_fragment, "(workspace_id, user_id, slot) WHERE status = 'open'"}
       )
 
     case design.id do
-      nil -> {:error, {:design_open, open_id(scope)}}
+      nil -> {:error, {:design_open, open_id(scope, Kinds.slot(kind))}}
       _id -> {:ok, design}
     end
   end
@@ -752,14 +794,36 @@ defmodule Helmsman.AgentDesigns do
       draft: design.draft,
       draft_version: design.draft_version,
       trigger_summary:
-        if(design.kind == :squad, do: SquadDraft.trigger_summary(design.draft, scope)),
+        if(design.kind in [:squad, :squad_edit],
+          do: SquadDraft.trigger_summary(design.draft, scope)
+        ),
       pending_edits: design.pending_edits,
       user_messages: design.user_messages,
       usage: usage(run_ids),
       created_agents: created,
+      applied: design.applied,
       inserted_at: design.inserted_at,
       last_activity_at: design.last_activity_at
     }
+    |> Map.merge(view_kind(scope, design))
+  end
+
+  # `add-edit-design-conversations` decision 4: an edit conversation's
+  # target, baseline and the draft against it; the creation kinds have none.
+  defp view_kind(_scope, %AgentDesign{kind: kind}) when kind in [:agent, :squad],
+    do: %{target: nil, baseline: nil, changes: [], conflicts: [], readonly: []}
+
+  defp view_kind(_scope, %AgentDesign{kind: kind} = design)
+       when kind in [:agent_edit, :squad_edit] do
+    target =
+      Repo.one(
+        from(a in Actor,
+          where: a.id == ^design.target_actor_id,
+          select: %{id: a.id, name: a.name, kind: a.kind}
+        )
+      )
+
+    %{target: target, baseline: design.baseline, changes: [], conflicts: [], readonly: []}
   end
 
   defp helper_of(scope, actor_id) do
@@ -903,7 +967,8 @@ defmodule Helmsman.AgentDesigns do
   @spec withdraw_agent(Scope.t(), term()) :: {:ok, map()} | {:error, term()}
   def withdraw_agent(%Scope{} = scope, name) do
     draft_write(scope, fn design, _user_scope ->
-      with :ok <- not_referenced(design.draft, name),
+      with :ok <- kind_tool(design, "withdraw_agent"),
+           :ok <- not_referenced(design.draft, name),
            {:ok, draft, entry} <- Draft.remove(design.draft, name) do
         {:ok, design, draft, %{removed: entry["name"]}}
       else
@@ -924,7 +989,7 @@ defmodule Helmsman.AgentDesigns do
   @spec propose_squad(Scope.t(), map()) :: {:ok, map()} | {:error, term()}
   def propose_squad(%Scope{} = scope, attrs) when is_map(attrs) do
     draft_write(scope, fn design, user_scope ->
-      with :ok <- squad_tool(design),
+      with :ok <- kind_tool(design, "propose_squad"),
            {:ok, draft, squad, _fields} <- squad_put(design.draft, attrs, user_scope, "ai") do
         summary = SquadDraft.trigger_summary(draft, user_scope)
 
@@ -934,20 +999,31 @@ defmodule Helmsman.AgentDesigns do
     end)
   end
 
-  @doc "Whether the design run `run` is a turn of a squad conversation."
-  @spec squad_run?(Run.t()) :: boolean()
-  def squad_run?(%Run{} = run) do
+  @doc """
+  The kind of the conversation the design run `run` belongs to (its draft
+  tools are `Kinds.tools/1` of it), or nil for any other run.
+  """
+  @spec run_kind(Run.t()) :: Kinds.kind() | nil
+  def run_kind(%Run{} = run) do
     case Runs.design_run?(run) && Runs.design_id(run) do
       id when is_integer(id) ->
-        Repo.exists?(from(d in AgentDesign, where: d.id == ^id and d.kind == :squad))
+        Repo.one(from(d in AgentDesign, where: d.id == ^id, select: d.kind))
 
       _other ->
-        false
+        nil
     end
   end
 
-  defp squad_tool(%AgentDesign{kind: :squad}), do: :ok
-  defp squad_tool(_design), do: {:error, {:design, :not_squad}}
+  # `add-edit-design-conversations` decision 7: a draft tool outside its
+  # conversation's kind is refused with the kind (`add-squads` decision
+  # 12's text for `propose_squad` in an agent conversation).
+  defp kind_tool(%AgentDesign{kind: kind}, tool) do
+    cond do
+      tool in Kinds.tools(kind) -> :ok
+      kind == :agent and tool == "propose_squad" -> {:error, {:design, :not_squad}}
+      true -> {:error, {:design, {:wrong_kind, tool, kind}}}
+    end
+  end
 
   defp squad_warnings(draft, summary) do
     restricted =
